@@ -5,6 +5,7 @@ coverage/
 .openskill-kit/
 tmp/
 *.log
+*.tsbuildinfo
 .env
 .env.*
 !.env.example
