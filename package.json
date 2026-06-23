@@ -9,17 +9,32 @@
     "packages/*"
   ],
   "bin": {
-    "openskill-kit": "packages/cli/dist/index.js"
+    "openskill-kit": "dist/index.cjs"
   },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "dist/**/*",
+    "docs/",
+    "packages/*/dist/**/*",
+    "packages/*/package.json",
+    "packages/codex-plugin/.codex-plugin/",
+    "packages/codex-plugin/skills/"
+  ],
   "scripts": {
-    "build": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server",
+    "build": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server && tsx scripts/build-bin.ts",
     "typecheck": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server --pretty false",
     "test": "vitest --run",
     "lint": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server --pretty false",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "package:dry-run": "npm pack --dry-run",
+    "release-check": "tsx scripts/release-check.ts"
   },
   "devDependencies": {
     "@types/node": "^24.10.2",
+    "esbuild": "^0.28.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
