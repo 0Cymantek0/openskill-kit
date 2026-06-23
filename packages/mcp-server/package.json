@@ -1,0 +1,15 @@
+{
+  "name": "@openskill-kit/mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server placeholder for openskill-kit core tools.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "openskill-kit-mcp": "dist/index.js"
+  },
+  "dependencies": {
+    "@openskill-kit/core": "file:../core"
+  }
+}

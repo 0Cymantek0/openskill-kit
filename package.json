@@ -1,0 +1,27 @@
+{
+  "name": "openskill-kit",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Independent OpenSkill-inspired skill evolution engine and coding-agent adapters.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "bin": {
+    "openskill-kit": "packages/cli/dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server",
+    "typecheck": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server --pretty false",
+    "test": "vitest --run",
+    "lint": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server --pretty false",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.16"
+  }
+}

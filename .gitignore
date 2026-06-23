@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.openskillkit/
+.openskill-kit/
+tmp/
+*.log
+.env
+.env.*
+!.env.example
+
+# Local research/session inputs. Keep public repo sanitized.
+AGENTS.md
+prompt.md
+research.md
+openskill.pdf

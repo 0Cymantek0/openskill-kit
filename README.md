@@ -1,0 +1,51 @@
+# openskill-kit
+
+Independent OpenSkill-inspired engine for drafting, auditing, testing, and
+installing portable agent skills.
+
+This is a clean-room implementation inspired by the OpenSkill paper. It is not
+the official OpenLAIR/OpenSkill implementation.
+
+## Quickstart
+
+```bash
+npm install
+npm run build
+npx openskill-kit doctor --json
+npx openskill-kit draft "repo test workflow" --no-llm
+```
+
+Drafted skills are written under `.openskill-kit/runs/<run-id>/candidate/`.
+
+## Core Commands
+
+```bash
+openskill-kit init
+openskill-kit doctor
+openskill-kit draft "topic" --no-llm
+openskill-kit learn "topic" --no-llm
+openskill-kit audit <skill-path>
+openskill-kit test <skill-path>
+openskill-kit install <skill-path> --target opencode-project --dry-run
+openskill-kit install <skill-path> --target agents-project --yes
+openskill-kit list
+openskill-kit inspect <skill-name-or-path>
+openskill-kit uninstall <skill-name> --target agents-project --yes
+openskill-kit version
+```
+
+## Safety Model
+
+Generated or imported skills are untrusted until audited. openskill-kit scans
+`SKILL.md`, references, scripts, and package files for prompt-injection phrases,
+credential access, suspicious network execution, destructive commands, privilege
+escalation, and obfuscated execution. Critical findings block install unless
+`--allow-critical-risk` is passed.
+
+## Limitations
+
+The current implementation is the first local spine: deterministic drafting,
+schema validation, scanner, verifier report, registry, installer, CLI, OpenCode
+adapter shell, and Codex plugin bundle. Full open-world retrieval, holdout
+verifier packs, sandboxed evolution, and benchmark leakage audits are planned
+next and are not faked.

@@ -1,0 +1,13 @@
+{
+  "name": "@openskill-kit/opencode-plugin",
+  "version": "0.1.0",
+  "description": "Thin OpenCode adapter for openskill-kit.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@openskill-kit/core": "file:../core",
+    "zod": "^4.2.1"
+  }
+}

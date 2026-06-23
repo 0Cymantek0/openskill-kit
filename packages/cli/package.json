@@ -1,0 +1,16 @@
+{
+  "name": "@openskill-kit/cli",
+  "version": "0.1.0",
+  "description": "CLI for the independent OpenSkill-inspired skill evolution engine.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "openskill-kit": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@openskill-kit/core": "file:../core",
+    "commander": "^14.0.2"
+  }
+}

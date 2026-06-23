@@ -1,0 +1,10 @@
+{
+  "name": "openskill-kit",
+  "version": "0.1.0",
+  "description": "Local Codex plugin bundle for using OpenSkillKit safely.",
+  "skills": [
+    {
+      "path": "skills/openskill-kit"
+    }
+  ]
+}
