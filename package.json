@@ -19,8 +19,10 @@
     "CHANGELOG.md",
     "dist/**/*",
     "docs/",
+    "examples/",
     "packages/*/dist/**/*",
     "packages/*/package.json",
+    "packages/codex-plugin/.mcp.json",
     "packages/codex-plugin/.codex-plugin/",
     "packages/codex-plugin/skills/"
   ],

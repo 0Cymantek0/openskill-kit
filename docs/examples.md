@@ -1,5 +1,7 @@
 # Examples
 
+Complete static samples also live under `examples/`.
+
 ## Instruction-only Skill
 
 ```bash

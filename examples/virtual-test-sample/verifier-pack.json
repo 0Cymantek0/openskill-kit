@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "openskill-kit.verifier-pack.v0",
+  "skillName": "generated-skill-sample",
+  "generatedAt": "2026-06-24T00:00:00.000Z",
+  "assertions": [
+    {
+      "id": "assert.skill-frontmatter-valid",
+      "type": "schema",
+      "description": "SKILL.md frontmatter parses and required fields are present.",
+      "severity": "error"
+    },
+    {
+      "id": "assert.skill-safety-scan-pass",
+      "type": "safety",
+      "description": "Skill package has no high or critical safety findings.",
+      "severity": "error"
+    }
+  ],
+  "visibleAssertionIds": [
+    "assert.skill-frontmatter-valid"
+  ],
+  "holdoutAssertionIds": [
+    "assert.skill-safety-scan-pass"
+  ],
+  "commands": [],
+  "warnings": [
+    "Sample only; real verifier packs are generated from local package context."
+  ]
+}
