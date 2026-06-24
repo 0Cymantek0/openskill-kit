@@ -1,8 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { ProjectConfigSchema, type ProjectConfig } from "../config/schema.js";
+import type { ProjectConfig } from "../config/schema.js";
+import { migrateProjectConfig } from "../config/migrations.js";
+import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { EventInputSchema, EventSchema, type OpenSkillEvent, type OpenSkillEventInput } from "./schema.js";
+import { migrateEvent } from "./migrations.js";
 import { redactValue } from "./redaction.js";
 
 export interface EventStoreIndex {
@@ -52,11 +55,13 @@ export async function appendEvent(projectRoot: string, input: OpenSkillEventInpu
       containsCode: normalizedInput.privacy?.containsCode ?? false
     }
   });
-  const eventPath = eventFile(root, event.timestamp);
-  await fs.mkdir(path.dirname(eventPath), { recursive: true });
-  await fs.appendFile(eventPath, `${JSON.stringify(event)}\n`, "utf8");
-  const indexPath = await updateEventIndex(root, event);
-  return { event, eventPath, indexPath, redactionMatches };
+  return withFileLock(path.join(root, ".openskill-kit", "events", ".events.lock"), async () => {
+    const eventPath = eventFile(root, event.timestamp);
+    await fs.mkdir(path.dirname(eventPath), { recursive: true });
+    await fs.appendFile(eventPath, `${JSON.stringify(event)}\n`, "utf8");
+    const indexPath = await updateEventIndex(root, event);
+    return { event, eventPath, indexPath, redactionMatches };
+  });
 }
 
 export async function readEvents(projectRoot: string): Promise<OpenSkillEvent[]> {
@@ -68,7 +73,7 @@ export async function readEvents(projectRoot: string): Promise<OpenSkillEvent[]>
     const text = await fs.readFile(path.join(dir, file), "utf8");
     for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
-      events.push(EventSchema.parse(JSON.parse(line)));
+      events.push(migrateEvent(JSON.parse(line)));
     }
   }
   return events.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -76,7 +81,7 @@ export async function readEvents(projectRoot: string): Promise<OpenSkillEvent[]>
 
 export async function readProjectConfig(projectRoot: string): Promise<ProjectConfig> {
   const configPath = path.join(path.resolve(projectRoot), ".openskill-kit", "config.json");
-  return ProjectConfigSchema.parse(JSON.parse(await fs.readFile(configPath, "utf8")));
+  return migrateProjectConfig(JSON.parse(await fs.readFile(configPath, "utf8")), projectRoot);
 }
 
 function shouldStoreRaw(eventType: OpenSkillEvent["eventType"], config: ProjectConfig): boolean {
@@ -123,7 +128,6 @@ async function updateEventIndex(root: string, event: OpenSkillEvent): Promise<st
   existing.files[file] = entry;
   existing.eventCount += 1;
   existing.updatedAt = new Date().toISOString();
-  await fs.mkdir(path.dirname(indexPath), { recursive: true });
-  await fs.writeFile(indexPath, JSON.stringify(existing, null, 2), "utf8");
+  await writeJsonAtomic(indexPath, existing);
   return indexPath;
 }

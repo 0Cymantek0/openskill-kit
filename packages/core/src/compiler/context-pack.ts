@@ -1,7 +1,7 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readProjectConfig } from "../events/store.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
+import { writeFileAtomic } from "../storage/atomic.js";
 import type { PreferenceNode } from "../preferences/schema.js";
 
 export interface CompileContextPackResult {
@@ -18,8 +18,7 @@ export async function compileContextPack(projectRoot: string): Promise<CompileCo
   const active = graph.nodes.filter((node) => node.status === "active" || node.status === "locked");
   const body = renderContextPack(config.projectName, active);
   const contextPackPath = path.join(root, ".openskill-kit", "compiled", "context-pack.md");
-  await fs.mkdir(path.dirname(contextPackPath), { recursive: true });
-  await fs.writeFile(contextPackPath, body, "utf8");
+  await writeFileAtomic(contextPackPath, body);
   return { schemaVersion: "openskill-kit.context-pack.v1", contextPackPath, activePreferenceCount: active.length, bytes: Buffer.byteLength(body) };
 }
 

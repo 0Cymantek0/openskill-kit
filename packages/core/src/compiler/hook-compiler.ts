@@ -1,5 +1,5 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
+import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
 export interface CompileHooksResult {
   schemaVersion: "openskill-kit.hooks.v1";
@@ -11,20 +11,19 @@ export async function compileHookAdapter(projectRoot: string): Promise<CompileHo
   const root = path.resolve(projectRoot);
   const hooksDir = path.join(root, ".openskill-kit", "compiled", "hooks");
   const scriptsDir = path.join(hooksDir, "scripts");
-  await fs.mkdir(scriptsDir, { recursive: true });
   const promptScript = path.join(scriptsDir, "osk-prompt-submit.cjs");
   const sessionScript = path.join(scriptsDir, "osk-session-end.cjs");
   const scriptBody = hookScriptBody();
-  await fs.writeFile(promptScript, scriptBody, "utf8");
-  await fs.writeFile(sessionScript, scriptBody, "utf8");
+  await writeFileAtomic(promptScript, scriptBody);
+  await writeFileAtomic(sessionScript, scriptBody);
   const hooksPath = path.join(hooksDir, "hooks.json");
-  await fs.writeFile(hooksPath, JSON.stringify({
+  await writeJsonAtomic(hooksPath, {
     schemaVersion: "openskill-kit.hooks.v1",
     hooks: [
       { event: "prompt-submit", command: "node .openskill-kit/compiled/hooks/scripts/osk-prompt-submit.cjs" },
       { event: "session-end", command: "node .openskill-kit/compiled/hooks/scripts/osk-session-end.cjs" }
     ]
-  }, null, 2), "utf8");
+  });
   return { schemaVersion: "openskill-kit.hooks.v1", hooksPath, scripts: [promptScript, sessionScript] };
 }
 
@@ -64,19 +63,49 @@ const event = {
 const dir = path.join(root, ".openskill-kit", "events");
 fs.mkdirSync(dir, { recursive: true });
 const file = path.join(dir, now.slice(0, 7) + ".jsonl");
-fs.appendFileSync(file, JSON.stringify(event) + "\\n", "utf8");
 const indexPath = path.join(dir, "index.json");
-let index = { schemaVersion: "openskill-kit.event-index.v1", eventCount: 0, files: {}, updatedAt: now };
-if (fs.existsSync(indexPath)) index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
-const name = path.basename(file);
-const entry = index.files[name] || { count: 0, firstTimestamp: now, lastTimestamp: now };
-entry.count += 1;
-entry.firstTimestamp = entry.firstTimestamp < now ? entry.firstTimestamp : now;
-entry.lastTimestamp = entry.lastTimestamp > now ? entry.lastTimestamp : now;
-index.files[name] = entry;
-index.eventCount += 1;
-index.updatedAt = now;
-fs.writeFileSync(indexPath, JSON.stringify(index, null, 2), "utf8");
+withLock(path.join(dir, ".events.lock"), () => {
+  fs.appendFileSync(file, JSON.stringify(event) + "\\n", "utf8");
+  let index = { schemaVersion: "openskill-kit.event-index.v1", eventCount: 0, files: {}, updatedAt: now };
+  if (fs.existsSync(indexPath)) index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+  const name = path.basename(file);
+  const entry = index.files[name] || { count: 0, firstTimestamp: now, lastTimestamp: now };
+  entry.count += 1;
+  entry.firstTimestamp = entry.firstTimestamp < now ? entry.firstTimestamp : now;
+  entry.lastTimestamp = entry.lastTimestamp > now ? entry.lastTimestamp : now;
+  index.files[name] = entry;
+  index.eventCount += 1;
+  index.updatedAt = now;
+  writeJsonAtomic(indexPath, index);
+});
+function withLock(lock, fn) {
+  const start = Date.now();
+  while (true) {
+    try {
+      fs.mkdirSync(lock, { recursive: false });
+      break;
+    } catch (error) {
+      if (error && error.code !== "EEXIST") throw error;
+      const stat = fs.existsSync(lock) ? fs.statSync(lock) : undefined;
+      if (stat && Date.now() - stat.mtimeMs > 30000) {
+        fs.rmSync(lock, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() - start > 10000) throw new Error("Timed out waiting for event lock");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+  try {
+    fn();
+  } finally {
+    fs.rmSync(lock, { recursive: true, force: true });
+  }
+}
+function writeJsonAtomic(filePath, value) {
+  const temp = filePath + "." + process.pid + "." + Date.now() + ".tmp";
+  fs.writeFileSync(temp, JSON.stringify(value, null, 2) + "\\n", "utf8");
+  fs.renameSync(temp, filePath);
+}
 function redact(value) {
   if (typeof value === "string") {
     return value

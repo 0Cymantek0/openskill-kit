@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
@@ -105,9 +105,9 @@ program.command("observe")
 program.command("learn")
   .description("Learn adaptive preferences, or draft a legacy skill when topic is supplied")
   .argument("[topic]", "Legacy skill topic")
-  .option("--no-llm", "Do not use LLM provider", true)
-  .option("--evidence-file <path>", "Add a local evidence file to the ledger", collectOption, [])
-  .option("--evidence-url <url>", "Fetch an explicit HTTP(S) evidence URL", collectOption, [])
+  .addOption(new Option("--no-llm", "Legacy draft mode only").default(true).hideHelp())
+  .addOption(new Option("--evidence-file <path>", "Legacy draft mode evidence file").argParser(collectOption).default([]).hideHelp())
+  .addOption(new Option("--evidence-url <url>", "Legacy draft mode evidence URL").argParser(collectOption).default([]).hideHelp())
   .option("--json", "Print JSON")
   .action(async (topic, options) => {
     if (topic) {

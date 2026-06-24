@@ -1,0 +1,196 @@
+import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import os from "node:os";
+import path from "node:path";
+import {
+  appendEvent,
+  applyPreferenceReview,
+  detectConflicts,
+  getAdaptiveStatus,
+  importProjectBehaviorPack,
+  initAdaptiveProject,
+  migrateProjectConfig,
+  redactValue,
+  scoreConfidence,
+  verifyProjectBehaviorPack,
+  type PreferenceGraph,
+  type PreferenceNode
+} from "../src/index.js";
+
+describe("phase 1 hardening", () => {
+  it("counts only active and locked preferences in status", async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, ".openskill-kit", "preferences", "graph.json"), graph([
+      pref("active-one", "active"),
+      pref("locked-one", "locked"),
+      pref("candidate-one", "candidate"),
+      pref("rejected-one", "rejected"),
+      pref("conflict-one", "conflict")
+    ]));
+    const status = await getAdaptiveStatus(root);
+    expect(status.activePreferenceCount).toBe(2);
+  });
+
+  it("applies review transitions without silently activating conflicts", async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, ".openskill-kit", "preferences", "graph.json"), graph([
+      pref("candidate-one", "candidate"),
+      pref("conflict-one", "conflict"),
+      pref("reject-one", "candidate"),
+      pref("lock-one", "candidate")
+    ]));
+
+    const reviewed = await applyPreferenceReview(root, { activateAll: true, reject: ["pref_reject-one"], lock: ["pref_lock-one"] }, new Date("2026-06-25T00:00:00.000Z"));
+    expect(reviewed.nodes.find((node) => node.id === "pref_candidate-one")?.status).toBe("active");
+    expect(reviewed.nodes.find((node) => node.id === "pref_conflict-one")?.status).toBe("conflict");
+    expect(reviewed.nodes.find((node) => node.id === "pref_reject-one")?.status).toBe("rejected");
+    expect(reviewed.nodes.find((node) => node.id === "pref_lock-one")?.status).toBe("locked");
+  });
+
+  it("detects opposing overlapping preference conflicts", () => {
+    const conflicts = detectConflicts([
+      pref("prefer-tests", "candidate", "Prefer run focused tests before final answer", "positive", "testing"),
+      pref("avoid-tests", "candidate", "Do not run focused tests before final answer", "negative", "testing")
+    ]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]?.nodeIds).toEqual(["pref_prefer-tests", "pref_avoid-tests"]);
+  });
+
+  it("scores confidence with positive, negative, and decayed evidence", () => {
+    const score = scoreConfidence([
+      {
+        schemaVersion: "openskill-kit.signal.v1",
+        id: "sig_positive",
+        eventIds: ["evt_positive"],
+        extractedAt: "2026-06-25T00:00:00.000Z",
+        kind: "explicit-preference",
+        category: "testing",
+        scope: { level: "project", paths: [] },
+        statement: "Prefer focused tests",
+        polarity: "positive",
+        weight: 0.8,
+        evidence: [{ eventId: "evt_positive" }]
+      },
+      {
+        schemaVersion: "openskill-kit.signal.v1",
+        id: "sig_negative",
+        eventIds: ["evt_negative"],
+        extractedAt: "2026-03-27T00:00:00.000Z",
+        kind: "rejection",
+        category: "testing",
+        scope: { level: "project", paths: [] },
+        statement: "Prefer focused tests",
+        polarity: "negative",
+        weight: 0.8,
+        evidence: [{ eventId: "evt_negative" }]
+      }
+    ], 90, new Date("2026-06-25T00:00:00.000Z"));
+    expect(score).toBeGreaterThan(0.5);
+    expect(score).toBeLessThan(0.75);
+  });
+
+  it("fails pack verification for private paths, missing hashes, and tampering", async () => {
+    const pack = await mkdtemp(path.join(os.tmpdir(), "osk-pack-bad-"));
+    await mkdir(path.join(pack, ".openskill-kit", "events"), { recursive: true });
+    await writeFile(path.join(pack, ".openskill-kit", "events", "2026-06.jsonl"), "{}", "utf8");
+    await writeJson(path.join(pack, "manifest.json"), {
+      schemaVersion: "openskill-kit.project-pack.v1",
+      privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
+      files: [".openskill-kit/events/2026-06.jsonl", "missing-hash.txt"],
+      hashes: { ".openskill-kit/events/2026-06.jsonl": "bad" }
+    });
+    const result = await verifyProjectBehaviorPack(pack);
+    expect(result.status).toBe("fail");
+    expect(result.issues).toContain("Private path included: .openskill-kit/events/");
+    expect(result.issues).toContain("Hash mismatch for .openskill-kit/events/2026-06.jsonl");
+    expect(result.issues).toContain("Missing hash for missing-hash.txt");
+  });
+
+  it("plans pack import without writing files or importing hooks by default", async () => {
+    const pack = await mkdtemp(path.join(os.tmpdir(), "osk-pack-good-"));
+    await writeFile(path.join(pack, "policy.md"), "# Policy\n", "utf8");
+    await mkdir(path.join(pack, ".openskill-kit", "compiled", "hooks"), { recursive: true });
+    await writeFile(path.join(pack, ".openskill-kit", "compiled", "hooks", "hooks.json"), "{}", "utf8");
+    await writeJson(path.join(pack, "manifest.json"), {
+      schemaVersion: "openskill-kit.project-pack.v1",
+      privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
+      files: ["policy.md", ".openskill-kit/compiled/hooks/hooks.json"],
+      hashes: {
+        "policy.md": await sha256(path.join(pack, "policy.md")),
+        ".openskill-kit/compiled/hooks/hooks.json": await sha256(path.join(pack, ".openskill-kit", "compiled", "hooks", "hooks.json"))
+      }
+    });
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-import-plan-"));
+    const result = await importProjectBehaviorPack(root, pack);
+    expect(result.status).toBe("planned");
+    expect(result.files.map((file) => file.destination)).not.toContain(path.join(root, ".openskill-kit", "compiled", "hooks", "hooks.json"));
+    await expect(stat(path.join(root, "policy.md"))).rejects.toThrow();
+  });
+
+  it("redacts nested values plus intent and raw refs before event storage", async () => {
+    const root = await tempProject();
+    const secret = ["phase", "one", "secret"].join("-");
+    const direct = redactValue({ nested: { token: `TOKEN=${secret}` } });
+    expect(JSON.stringify(direct.value)).not.toContain(secret);
+    const result = await appendEvent(root, {
+      sessionId: "redaction",
+      eventType: "user-prompt-submit",
+      intent: `Always hide TOKEN=${secret}`,
+      rawRef: `ref TOKEN=${secret}`,
+      source: { adapter: "test" },
+      normalized: { text: `Prompt TOKEN=${secret}` }
+    });
+    const eventLog = await readFile(result.eventPath, "utf8");
+    expect(eventLog).not.toContain(secret);
+    expect(result.redactionMatches).toContain("secret-assignment");
+  });
+
+  it("migrates legacy local config shape into current defaults", async () => {
+    const migrated = migrateProjectConfig({ schemaVersion: "openskill-kit.config.v0" }, "C:/tmp/example-project");
+    expect(migrated.schemaVersion).toBe("openskill-kit.config.v1");
+    expect(migrated.privacy.localOnly).toBe(true);
+  });
+});
+
+async function tempProject(): Promise<string> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "osk-phase1-"));
+  await initAdaptiveProject({ projectRoot: root, projectName: "phase1", now: new Date("2026-06-25T00:00:00.000Z") });
+  return root;
+}
+
+function graph(nodes: PreferenceNode[]): PreferenceGraph {
+  return {
+    schemaVersion: "openskill-kit.preference-graph.v1",
+    projectId: "phase1",
+    nodes,
+    conflicts: [],
+    updatedAt: "2026-06-25T00:00:00.000Z"
+  };
+}
+
+function pref(id: string, status: PreferenceNode["status"], statement = `Prefer ${id}`, polarity: PreferenceNode["polarity"] = "positive", category: PreferenceNode["category"] = "workflow"): PreferenceNode {
+  return {
+    schemaVersion: "openskill-kit.preference-node.v1",
+    id: `pref_${id}`,
+    title: id,
+    statement,
+    category,
+    scope: { level: "project", paths: [] },
+    confidence: 0.8,
+    status,
+    polarity,
+    evidence: [{ signalId: `sig_${id}`, eventIds: [`evt_${id}`], weight: 0.8 }],
+    createdAt: "2026-06-25T00:00:00.000Z",
+    updatedAt: "2026-06-25T00:00:00.000Z"
+  };
+}
+
+async function writeJson(file: string, value: unknown): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function sha256(file: string): Promise<string> {
+  return createHash("sha256").update(await readFile(file)).digest("hex");
+}

@@ -21,7 +21,7 @@ export interface AdaptiveStatus {
 export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveStatus> {
   const root = path.resolve(projectRoot);
   const config = await readProjectConfig(root).catch(() => undefined);
-  const graph = await readJson(path.join(root, ".openskill-kit", "preferences", "graph.json")).catch(() => undefined) as { nodes?: unknown[] } | undefined;
+  const graph = await readJson(path.join(root, ".openskill-kit", "preferences", "graph.json")).catch(() => undefined) as { nodes?: Array<{ status?: string }> } | undefined;
   const candidates = await readJson(path.join(root, ".openskill-kit", "preferences", "candidates", "pending.json")).catch(() => []) as unknown[];
   const signalCount = await countJsonl(path.join(root, ".openskill-kit", "signals", "normalized.jsonl"));
   const eventIndex = await readJson(path.join(root, ".openskill-kit", "events", "index.json")).catch(() => undefined) as { eventCount?: number } | undefined;
@@ -33,7 +33,7 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
     projectName: config?.projectName,
     eventCount: eventIndex?.eventCount ?? 0,
     signalCount,
-    activePreferenceCount: graph?.nodes?.length ?? 0,
+    activePreferenceCount: graph?.nodes?.filter((node) => node.status === "active" || node.status === "locked").length ?? 0,
     candidateCount: Array.isArray(candidates) ? candidates.length : 0,
     compiled: {
       contextPack: await exists(path.join(root, ".openskill-kit", "compiled", "context-pack.md")),

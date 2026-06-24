@@ -2,9 +2,11 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { readProjectConfig } from "../events/store.js";
+import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { SignalSchema, type Signal } from "../signals/schema.js";
 import { scoreConfidence } from "./confidence.js";
 import { detectConflicts } from "./conflict.js";
+import { migratePreferenceGraph } from "./migrations.js";
 import { PreferenceGraphSchema, PreferenceNodeSchema, type PreferenceGraph, type PreferenceNode } from "./schema.js";
 
 export interface UpdateGraphResult {
@@ -17,77 +19,79 @@ export interface UpdateGraphResult {
 
 export async function updatePreferenceGraph(projectRoot: string, now = new Date()): Promise<UpdateGraphResult> {
   const root = path.resolve(projectRoot);
-  const config = await readProjectConfig(root);
-  const existing = await readGraph(root, config.projectId, now);
-  const signals = await readSignals(root);
-  const grouped = groupSignals(signals);
-  const byId = new Map(existing.nodes.map((node) => [node.id, node]));
-  const nextNodes: PreferenceNode[] = [];
-  for (const group of grouped) {
-    const id = `pref_${shortHash(`${group[0]?.category}:${group[0]?.statement.toLowerCase()}`)}`;
-    const existingNode = byId.get(id);
-    const confidence = scoreConfidence(group, config.learning.decayHalfLifeDays, now);
-    const status = existingNode?.status && existingNode.status !== "candidate"
-      ? existingNode.status
-      : confidence >= config.learning.minConfidenceToApply && config.learning.mode === "auto-apply-safe" ? "active" : "candidate";
-    nextNodes.push(PreferenceNodeSchema.parse({
-      schemaVersion: "openskill-kit.preference-node.v1",
-      id,
-      title: titleFromStatement(group[0]?.statement ?? "Preference"),
-      statement: group[0]?.statement ?? "Preference",
-      category: group[0]?.category ?? "general",
-      scope: mergeScopes(group),
-      confidence,
-      status,
-      polarity: dominantPolarity(group),
-      evidence: group.map((signal) => ({
-        signalId: signal.id,
-        eventIds: signal.eventIds,
-        weight: signal.weight,
-        quote: signal.evidence[0]?.quote,
-        command: signal.evidence[0]?.command
-      })),
-      createdAt: existingNode?.createdAt ?? now.toISOString(),
+  return withFileLock(path.join(root, ".openskill-kit", "preferences", ".graph.lock"), async () => {
+    const config = await readProjectConfig(root);
+    const existing = await readGraph(root, config.projectId, now);
+    const signals = await readSignals(root);
+    const grouped = groupSignals(signals);
+    const byId = new Map(existing.nodes.map((node) => [node.id, node]));
+    const nextNodes: PreferenceNode[] = [];
+    for (const group of grouped) {
+      const id = `pref_${shortHash(`${group[0]?.category}:${group[0]?.statement.toLowerCase()}`)}`;
+      const existingNode = byId.get(id);
+      const confidence = scoreConfidence(group, config.learning.decayHalfLifeDays, now);
+      const status = existingNode?.status && existingNode.status !== "candidate"
+        ? existingNode.status
+        : confidence >= config.learning.minConfidenceToApply && config.learning.mode === "auto-apply-safe" ? "active" : "candidate";
+      nextNodes.push(PreferenceNodeSchema.parse({
+        schemaVersion: "openskill-kit.preference-node.v1",
+        id,
+        title: titleFromStatement(group[0]?.statement ?? "Preference"),
+        statement: group[0]?.statement ?? "Preference",
+        category: group[0]?.category ?? "general",
+        scope: mergeScopes(group),
+        confidence,
+        status,
+        polarity: dominantPolarity(group),
+        evidence: group.map((signal) => ({
+          signalId: signal.id,
+          eventIds: signal.eventIds,
+          weight: signal.weight,
+          quote: signal.evidence[0]?.quote,
+          command: signal.evidence[0]?.command
+        })),
+        createdAt: existingNode?.createdAt ?? now.toISOString(),
+        updatedAt: now.toISOString()
+      }));
+    }
+    const merged = mergeLockedAndRejected(existing.nodes, nextNodes);
+    const conflicts = detectConflicts(merged.filter((node) => node.status === "active" || node.status === "candidate"));
+    const graph = PreferenceGraphSchema.parse({
+      schemaVersion: "openskill-kit.preference-graph.v1",
+      projectId: config.projectId,
+      nodes: merged.map((node) => conflicts.some((conflict) => conflict.nodeIds.includes(node.id)) && node.status === "candidate" ? { ...node, status: "conflict" } : node),
+      conflicts,
       updatedAt: now.toISOString()
-    }));
-  }
-  const merged = mergeLockedAndRejected(existing.nodes, nextNodes);
-  const conflicts = detectConflicts(merged.filter((node) => node.status === "active" || node.status === "candidate"));
-  const graph = PreferenceGraphSchema.parse({
-    schemaVersion: "openskill-kit.preference-graph.v1",
-    projectId: config.projectId,
-    nodes: merged.map((node) => conflicts.some((conflict) => conflict.nodeIds.includes(node.id)) && node.status === "candidate" ? { ...node, status: "conflict" } : node),
-    conflicts,
-    updatedAt: now.toISOString()
+    });
+    const graphPath = graphFile(root);
+    const candidatesPath = pendingFile(root);
+    await writeJsonAtomic(graphPath, graph);
+    const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
+    await writeJsonAtomic(candidatesPath, pending);
+    return { schemaVersion: "openskill-kit.graph-update.v1", graphPath, candidatesPath, graph, candidateCount: pending.length };
   });
-  const graphPath = graphFile(root);
-  const candidatesPath = pendingFile(root);
-  await fs.mkdir(path.dirname(graphPath), { recursive: true });
-  await fs.writeFile(graphPath, JSON.stringify(graph, null, 2), "utf8");
-  await fs.mkdir(path.dirname(candidatesPath), { recursive: true });
-  const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
-  await fs.writeFile(candidatesPath, JSON.stringify(pending, null, 2), "utf8");
-  return { schemaVersion: "openskill-kit.graph-update.v1", graphPath, candidatesPath, graph, candidateCount: pending.length };
 }
 
 export async function applyPreferenceReview(projectRoot: string, options: { activate?: string[]; reject?: string[]; activateAll?: boolean; lock?: string[] }, now = new Date()): Promise<PreferenceGraph> {
   const root = path.resolve(projectRoot);
-  const config = await readProjectConfig(root);
-  const graph = await readGraph(root, config.projectId, now);
-  const activate = new Set(options.activate ?? []);
-  const reject = new Set(options.reject ?? []);
-  const lock = new Set(options.lock ?? []);
-  const nodes = graph.nodes.map((node) => {
-    if (options.activateAll && (node.status === "candidate" || node.status === "conflict")) return { ...node, status: "active" as const, updatedAt: now.toISOString() };
-    if (activate.has(node.id)) return { ...node, status: "active" as const, updatedAt: now.toISOString() };
-    if (reject.has(node.id)) return { ...node, status: "rejected" as const, updatedAt: now.toISOString() };
-    if (lock.has(node.id)) return { ...node, status: "locked" as const, updatedAt: now.toISOString() };
-    return node;
+  return withFileLock(path.join(root, ".openskill-kit", "preferences", ".graph.lock"), async () => {
+    const config = await readProjectConfig(root);
+    const graph = await readGraph(root, config.projectId, now);
+    const activate = new Set(options.activate ?? []);
+    const reject = new Set(options.reject ?? []);
+    const lock = new Set(options.lock ?? []);
+    const nodes = graph.nodes.map((node) => {
+      if (reject.has(node.id)) return { ...node, status: "rejected" as const, updatedAt: now.toISOString() };
+      if (lock.has(node.id)) return { ...node, status: "locked" as const, updatedAt: now.toISOString() };
+      if (activate.has(node.id)) return { ...node, status: "active" as const, updatedAt: now.toISOString() };
+      if (options.activateAll && node.status === "candidate") return { ...node, status: "active" as const, updatedAt: now.toISOString() };
+      return node;
+    });
+    const next = PreferenceGraphSchema.parse({ ...graph, nodes, conflicts: detectConflicts(nodes.filter((node) => node.status === "active" || node.status === "candidate" || node.status === "conflict")), updatedAt: now.toISOString() });
+    await writeJsonAtomic(graphFile(root), next);
+    await writeJsonAtomic(pendingFile(root), next.nodes.filter((node) => node.status === "candidate" || node.status === "conflict"));
+    return next;
   });
-  const next = PreferenceGraphSchema.parse({ ...graph, nodes, conflicts: detectConflicts(nodes.filter((node) => node.status === "active" || node.status === "candidate")), updatedAt: now.toISOString() });
-  await fs.writeFile(graphFile(root), JSON.stringify(next, null, 2), "utf8");
-  await fs.writeFile(pendingFile(root), JSON.stringify(next.nodes.filter((node) => node.status === "candidate" || node.status === "conflict"), null, 2), "utf8");
-  return next;
 }
 
 export async function explainPreference(projectRoot: string, id: string): Promise<PreferenceNode | undefined> {
@@ -103,7 +107,7 @@ export async function readPreferenceGraph(projectRoot: string): Promise<Preferen
 
 async function readGraph(root: string, projectId: string, now: Date): Promise<PreferenceGraph> {
   return fs.readFile(graphFile(root), "utf8")
-    .then((text) => PreferenceGraphSchema.parse(JSON.parse(text)))
+    .then((text) => migratePreferenceGraph(JSON.parse(text)))
     .catch(() => PreferenceGraphSchema.parse({ schemaVersion: "openskill-kit.preference-graph.v1", projectId, nodes: [], conflicts: [], updatedAt: now.toISOString() }));
 }
 

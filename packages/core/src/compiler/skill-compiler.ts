@@ -1,7 +1,7 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readProjectConfig } from "../events/store.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
+import { writeFileAtomic } from "../storage/atomic.js";
 import type { PreferenceNode } from "../preferences/schema.js";
 
 export interface CompileSkillsResult {
@@ -17,10 +17,9 @@ export async function compileBehaviorSkills(projectRoot: string): Promise<Compil
   const active = graph.nodes.filter((node) => node.status === "active" || node.status === "locked");
   const skillsDir = path.join(root, ".openskill-kit", "compiled", "skills");
   const projectBehaviorDir = path.join(skillsDir, "project-behavior");
-  await fs.mkdir(path.join(projectBehaviorDir, "references"), { recursive: true });
   const skillBody = renderProjectBehaviorSkill(config.projectName, active);
-  await fs.writeFile(path.join(projectBehaviorDir, "SKILL.md"), skillBody, "utf8");
-  await fs.writeFile(path.join(projectBehaviorDir, "references", "active-preferences.md"), renderReference(active), "utf8");
+  await writeFileAtomic(path.join(projectBehaviorDir, "SKILL.md"), skillBody);
+  await writeFileAtomic(path.join(projectBehaviorDir, "references", "active-preferences.md"), renderReference(active));
   return { schemaVersion: "openskill-kit.skill-compile.v1", skillsDir, skillPaths: [projectBehaviorDir] };
 }
 

@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
+import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 
 export interface ProjectBehaviorPackResult {
   schemaVersion: "openskill-kit.project-pack.v1";
@@ -12,38 +13,40 @@ export interface ProjectBehaviorPackResult {
 
 export async function exportProjectBehaviorPack(projectRoot: string): Promise<ProjectBehaviorPackResult> {
   const root = path.resolve(projectRoot);
-  const packRoot = path.join(root, ".openskill-kit", "compiled", "project-behavior-pack");
-  await fs.rm(packRoot, { recursive: true, force: true });
-  const files = [
-    ".openskill-kit/config.json",
-    ".openskill-kit/project.json",
-    ".openskill-kit/preferences/graph.md",
-    ".openskill-kit/preferences/active/index.md",
-    ".openskill-kit/compiled/context-pack.md",
-    ".openskill-kit/compiled/skills/project-behavior/SKILL.md",
-    ".openskill-kit/compiled/skills/project-behavior/references/active-preferences.md",
-    ".openskill-kit/compiled/hooks/hooks.json",
-    ".openskill-kit/compiled/mcp/server-config.json"
-  ];
-  for (const rel of files) {
-    const source = path.join(root, rel);
-    if (!await exists(source)) continue;
-    const dest = path.join(packRoot, rel);
-    await fs.mkdir(path.dirname(dest), { recursive: true });
-    await fs.copyFile(source, dest);
-  }
-  const copied = await listFiles(packRoot);
-  const hashes = Object.fromEntries(await Promise.all(copied.map(async (file) => [file, await sha256(path.join(packRoot, file))])));
-  const manifestPath = path.join(packRoot, "manifest.json");
-  await fs.writeFile(manifestPath, JSON.stringify({
-    schemaVersion: "openskill-kit.project-pack.v1",
-    createdAt: new Date().toISOString(),
-    includes: ["preferences", "skills", "hooks", "mcp"],
-    privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
-    files: copied,
-    hashes
-  }, null, 2), "utf8");
-  return { schemaVersion: "openskill-kit.project-pack.v1", packPath: packRoot, manifestPath, files: [...copied, "manifest.json"].sort() };
+  return withFileLock(path.join(root, ".openskill-kit", "compiled", ".pack.lock"), async () => {
+    const packRoot = path.join(root, ".openskill-kit", "compiled", "project-behavior-pack");
+    await fs.rm(packRoot, { recursive: true, force: true });
+    const files = [
+      ".openskill-kit/config.json",
+      ".openskill-kit/project.json",
+      ".openskill-kit/preferences/graph.md",
+      ".openskill-kit/preferences/active/index.md",
+      ".openskill-kit/compiled/context-pack.md",
+      ".openskill-kit/compiled/skills/project-behavior/SKILL.md",
+      ".openskill-kit/compiled/skills/project-behavior/references/active-preferences.md",
+      ".openskill-kit/compiled/hooks/hooks.json",
+      ".openskill-kit/compiled/mcp/server-config.json"
+    ];
+    for (const rel of files) {
+      const source = path.join(root, rel);
+      if (!await exists(source)) continue;
+      const dest = path.join(packRoot, rel);
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      await fs.copyFile(source, dest);
+    }
+    const copied = await listFiles(packRoot);
+    const hashes = Object.fromEntries(await Promise.all(copied.map(async (file) => [file, await sha256(path.join(packRoot, file))])));
+    const manifestPath = path.join(packRoot, "manifest.json");
+    await writeJsonAtomic(manifestPath, {
+      schemaVersion: "openskill-kit.project-pack.v1",
+      createdAt: new Date().toISOString(),
+      includes: ["preferences", "skills", "hooks", "mcp"],
+      privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
+      files: copied,
+      hashes
+    });
+    return { schemaVersion: "openskill-kit.project-pack.v1", packPath: packRoot, manifestPath, files: [...copied, "manifest.json"].sort() };
+  });
 }
 
 export interface VerifyProjectBehaviorPackResult {
@@ -106,7 +109,7 @@ export async function signProjectBehaviorPack(packPathInput: string, keyDirInput
       publicKeyPath: keys.publicKeyPath
     }
   };
-  await fs.writeFile(manifestPath, JSON.stringify(signed, null, 2), "utf8");
+  await writeJsonAtomic(manifestPath, signed);
   return { schemaVersion: "openskill-kit.project-pack-sign.v1", packPath, manifestPath, publicKeyPath: keys.publicKeyPath, signature };
 }
 
@@ -122,21 +125,23 @@ export interface ImportProjectBehaviorPackResult {
 export async function importProjectBehaviorPack(projectRootInput: string, packPathInput: string, options: { dryRun?: boolean; trustHooks?: boolean } = {}): Promise<ImportProjectBehaviorPackResult> {
   const projectRoot = path.resolve(projectRootInput);
   const packPath = path.resolve(packPathInput);
-  const verification = await verifyProjectBehaviorPack(packPath);
-  if (verification.status === "fail") {
-    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "blocked", packPath, projectRoot, files: [], issues: verification.issues };
-  }
-  const files = verification.files
-    .filter((file) => options.trustHooks === true || !file.startsWith(".openskill-kit/compiled/hooks/"))
-    .map((file) => ({ source: path.join(packPath, file), destination: path.join(projectRoot, file) }));
-  if (options.dryRun !== false) {
-    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "planned", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"] };
-  }
-  for (const file of files) {
-    await fs.mkdir(path.dirname(file.destination), { recursive: true });
-    await fs.copyFile(file.source, file.destination);
-  }
-  return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "imported", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"] };
+  return withFileLock(path.join(projectRoot, ".openskill-kit", ".import.lock"), async () => {
+    const verification = await verifyProjectBehaviorPack(packPath);
+    if (verification.status === "fail") {
+      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "blocked", packPath, projectRoot, files: [], issues: verification.issues };
+    }
+    const files = verification.files
+      .filter((file) => options.trustHooks === true || !file.startsWith(".openskill-kit/compiled/hooks/"))
+      .map((file) => ({ source: path.join(packPath, file), destination: path.join(projectRoot, file) }));
+    if (options.dryRun !== false) {
+      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "planned", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"] };
+    }
+    for (const file of files) {
+      await fs.mkdir(path.dirname(file.destination), { recursive: true });
+      await fs.copyFile(file.source, file.destination);
+    }
+    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "imported", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"] };
+  });
 }
 
 async function listFiles(root: string): Promise<string[]> {
@@ -180,8 +185,9 @@ async function ensureSigningKeys(keyDir: string): Promise<{ privateKey: string; 
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
     publicKeyEncoding: { type: "spki", format: "pem" }
   });
-  await fs.writeFile(privateKeyPath, pair.privateKey, { encoding: "utf8", mode: 0o600 });
-  await fs.writeFile(publicKeyPath, pair.publicKey, "utf8");
+  await writeFileAtomic(privateKeyPath, pair.privateKey);
+  await fs.chmod(privateKeyPath, 0o600).catch(() => undefined);
+  await writeFileAtomic(publicKeyPath, pair.publicKey);
   return { privateKey: pair.privateKey, publicKey: pair.publicKey, publicKeyPath };
 }
 
