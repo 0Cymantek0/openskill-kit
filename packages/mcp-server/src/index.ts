@@ -6,14 +6,27 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
+  appendEvent,
+  compileBehaviorLayer,
   draftSkill,
   evaluateSkill,
+  explainPreference,
+  exportProjectBehaviorPack,
+  extractSignals,
   evolveSkill,
+  getAdaptiveStatus,
+  initAdaptiveProject,
+  importProjectBehaviorPack,
   installSkill,
   loadSkillPackage,
+  readPreferenceGraph,
   readRegistry,
+  runBehaviorEval,
   runDoctor,
   scanSkillPath,
+  signProjectBehaviorPack,
+  updatePreferenceGraph,
+  verifyProjectBehaviorPack,
   verifySkill,
   type InstallTarget
 } from "@openskill-kit/core";
@@ -32,7 +45,196 @@ export function createOpenSkillMcpServer(): McpServer {
     { name: "openskill-kit-mcp", version: VERSION },
     {
       instructions:
-        "Use openskill-kit tools to draft, verify, audit, and install coding-agent skills. Default to local deterministic mode. Keep dryRun true unless user explicitly approves writes."
+        "Use OpenSkillKit tools to load project behavior, record safe local events, learn preference candidates, compile behavior artifacts, and install skills. Keep dryRun true unless user explicitly approves writes."
+    }
+  );
+
+  server.registerTool(
+    "osk_bootstrap_session",
+    {
+      title: "OpenSkillKit Bootstrap Session",
+      description: "Initialize or inspect the local Adaptive Skill Graph for this project.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, projectName: z.string().min(1).optional(), init: z.boolean().default(true) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, projectName, init }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const result = init ? await initAdaptiveProject({ projectRoot: root, projectName }) : await getAdaptiveStatus(root);
+      return toolResult(result, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_context_pack",
+    {
+      title: "OpenSkillKit Context Pack",
+      description: "Return compiled project behavior context pack status and content.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const contextPath = path.join(root, ".openskill-kit", "compiled", "context-pack.md");
+      const text = await import("node:fs/promises").then((fs) => fs.readFile(contextPath, "utf8").catch(() => ""));
+      return toolResult({ path: contextPath, content: text }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_relevant_preferences",
+    {
+      title: "OpenSkillKit Relevant Preferences",
+      description: "Return active preferences, optionally filtered by query text.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, query: z.string().optional(), limit: z.number().int().min(1).max(50).default(12) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, query, limit }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const graph = await readPreferenceGraph(root);
+      const words = new Set((query ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2));
+      const nodes = graph.nodes
+        .filter((node) => node.status === "active" || node.status === "locked")
+        .map((node) => ({ node, score: relevance(node.statement, words) + node.confidence }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map((item) => item.node);
+      return toolResult({ nodes }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_record_event",
+    {
+      title: "OpenSkillKit Record Event",
+      description: "Record one redacted local lifecycle event.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        sessionId: z.string().min(1).default("mcp-session"),
+        eventType: z.enum(["session-start", "instructions-loaded", "user-prompt-submit", "assistant-message", "pre-tool-use", "post-tool-use", "post-tool-use-failure", "file-changed", "task-created", "task-completed", "permission-denied", "user-accepted", "user-rejected", "user-edited", "test-result", "review-comment", "session-end"]),
+        intent: z.string().optional(),
+        normalized: z.record(z.string(), z.unknown()).default({}),
+        files: z.array(z.object({ path: z.string(), action: z.enum(["read", "write", "edit", "delete", "rename", "unknown"]).default("unknown") })).default([]),
+        commands: z.array(z.object({ command: z.string(), args: z.array(z.string()).default([]), status: z.enum(["pass", "fail", "blocked", "timeout", "unknown"]).default("unknown"), exitCode: z.number().nullable().optional() })).default([])
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, sessionId, eventType, intent, normalized, files, commands }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await appendEvent(root, { sessionId, eventType, intent, source: { adapter: "mcp" }, normalized, files, commands }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_learn_from_session",
+    {
+      title: "OpenSkillKit Learn From Session",
+      description: "Extract signals and update preference candidates from recorded events.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const signals = await extractSignals(root);
+      const graph = await updatePreferenceGraph(root);
+      return toolResult({ signals, graph }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_compile_behavior_layer",
+    {
+      title: "OpenSkillKit Compile Behavior Layer",
+      description: "Compile active behavior into context pack, skill, hooks, and MCP config.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await compileBehaviorLayer(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_explain_preference",
+    {
+      title: "OpenSkillKit Explain Preference",
+      description: "Explain one preference node and its evidence.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, id: z.string().min(1) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, id }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await explainPreference(root, id), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_export_behavior_pack",
+    {
+      title: "OpenSkillKit Export Behavior Pack",
+      description: "Export reviewed project behavior without private event logs.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await exportProjectBehaviorPack(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_verify_behavior_pack",
+    {
+      title: "OpenSkillKit Verify Behavior Pack",
+      description: "Verify pack manifest, privacy flags, and file hashes.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, packPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await verifyProjectBehaviorPack(resolvePath(packPath, root)), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_sign_behavior_pack",
+    {
+      title: "OpenSkillKit Sign Behavior Pack",
+      description: "Sign a Project Behavior Pack with a local Ed25519 key.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1), keyDir: z.string().optional() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, packPath, keyDir }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await signProjectBehaviorPack(resolvePath(packPath, root), keyDir ? resolvePath(keyDir, root) : undefined), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_import_behavior_pack",
+    {
+      title: "OpenSkillKit Import Behavior Pack",
+      description: "Plan or import a verified Project Behavior Pack. Hooks require explicit trust.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1), dryRun: z.boolean().default(true), trustHooks: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, packPath, dryRun, trustHooks }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await importProjectBehaviorPack(root, resolvePath(packPath, root), { dryRun, trustHooks }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_run_behavior_eval",
+    {
+      title: "OpenSkillKit Behavior Eval",
+      description: "Run deterministic behavior adherence evals over compiled artifacts.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, scenariosPath: z.string().optional() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, scenariosPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runBehaviorEval({ projectRoot: root, scenariosPath }), root);
     }
   );
 
@@ -226,6 +428,14 @@ function sanitizeText(value: string, projectRoot: string): string {
     const replacement = root === os.homedir() || root === path.normalize(os.homedir()) ? "~" : ".";
     return current.replaceAll(root, replacement);
   }, value);
+}
+
+function relevance(statement: string, words: Set<string>): number {
+  if (words.size === 0) return 0;
+  const lower = statement.toLowerCase();
+  let score = 0;
+  for (const word of words) if (lower.includes(word)) score += 0.1;
+  return score;
 }
 
 if (isDirectRun()) {

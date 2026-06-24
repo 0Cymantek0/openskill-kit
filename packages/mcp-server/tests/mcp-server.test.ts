@@ -35,9 +35,37 @@ describe("openskill-kit MCP server", () => {
           "openskill_evaluate",
           "openskill_install",
           "openskill_list",
-          "openskill_inspect"
+          "openskill_inspect",
+          "osk_bootstrap_session",
+          "osk_record_event",
+          "osk_learn_from_session",
+          "osk_compile_behavior_layer"
         ])
       );
+
+      const boot = await client.callTool({
+        name: "osk_bootstrap_session",
+        arguments: { projectRoot: root, init: true }
+      });
+      const bootText = boot.content.find((item) => item.type === "text")?.text;
+      expect(bootText).toBeTruthy();
+      expect(bootText).not.toContain(root);
+
+      await client.callTool({
+        name: "osk_record_event",
+        arguments: {
+          projectRoot: root,
+          sessionId: "mcp-adaptive",
+          eventType: "user-prompt-submit",
+          normalized: { text: "Always run npm test before finishing." }
+        }
+      });
+      const learned = await client.callTool({
+        name: "osk_learn_from_session",
+        arguments: { projectRoot: root }
+      });
+      const learnedText = learned.content.find((item) => item.type === "text")?.text;
+      expect(learnedText).toContain("run npm test");
 
       const draft = await client.callTool({
         name: "openskill_draft",
