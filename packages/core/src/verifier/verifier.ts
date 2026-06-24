@@ -1,13 +1,16 @@
 import { promises as fs } from "node:fs";
+import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { readEvidenceLedger, type EvidenceLedger } from "../evidence/ledger.js";
 import { createLocalSandboxPolicy, type SandboxPolicy } from "../sandbox/policy.js";
+import { runSandboxCommand } from "../sandbox/runner.js";
 import { scanSkillPath, type SafetyReport } from "../safety/scanner.js";
 import { validateSkillPackage, loadSkillPackage } from "../skill/parser.js";
 import type { ValidationIssue } from "../skill/schema.js";
-import { buildVerifierExecution, writeVerifierExecution, type AssertionResult, type VerifierExecution } from "./execution.js";
+import { buildVerifierExecution, writeVerifierExecution, type AssertionResult, type VerifierCommandResult, type VerifierExecution, type VerifierMutationResult } from "./execution.js";
 import { runSkillPackageFixture, type FixtureCheckResult } from "./fixture.js";
-import { buildVerifierPack, readVerifierPack, type VerifierPack } from "./pack.js";
+import { buildVerifierPack, readVerifierPack, type VerifierCommand, type VerifierPack } from "./pack.js";
 
 export interface VerifierReport {
   status: "pass" | "fail" | "warning";
@@ -19,6 +22,8 @@ export interface VerifierReport {
   executionPath?: string;
   assertionResults: AssertionResult[];
   fixtureResults: FixtureCheckResult[];
+  commandResults: VerifierCommandResult[];
+  mutationResults: VerifierMutationResult[];
   issues: ValidationIssue[];
   safety: SafetyReport;
   scores: {
@@ -30,12 +35,17 @@ export interface VerifierReport {
   };
 }
 
-export async function verifySkill(skillPath: string, reportDir?: string, sandboxPolicy?: SandboxPolicy): Promise<VerifierReport> {
+export interface VerifyOptions {
+  runRepoChecks?: boolean;
+}
+
+export async function verifySkill(skillPath: string, reportDir?: string, sandboxPolicy?: SandboxPolicy, options: VerifyOptions = {}): Promise<VerifierReport> {
   const issues = await validateSkillPackage(skillPath);
   const safety = await scanSkillPath(skillPath);
   const pkg = issues.some((issue) => issue.severity === "error") ? undefined : await loadSkillPackage(skillPath);
   const ledger = await readSiblingLedger(pkg?.root);
   const verifierPack = pkg ? await readSiblingVerifierPack(pkg.root).catch(() => buildVerifierPack(pkg, ledger)) : undefined;
+  const projectRoot = pkg ? deriveProjectRoot(pkg.root) : undefined;
   const assertionResults = verifierPack ? evaluateAssertions(verifierPack, {
     issues,
     safety,
@@ -46,8 +56,15 @@ export async function verifySkill(skillPath: string, reportDir?: string, sandbox
     hasVerification: Boolean(pkg?.body.includes("Verification checklist"))
   }) : [];
   const generatedAt = new Date();
-  const effectivePolicy = sandboxPolicy ?? createLocalSandboxPolicy({ projectRoot: path.dirname(path.resolve(skillPath)) });
+  const effectivePolicy = sandboxPolicy ?? createLocalSandboxPolicy({ projectRoot: projectRoot ?? path.dirname(path.resolve(skillPath)) });
   const fixtureResults = pkg ? [await runSkillPackageFixture(pkg, effectivePolicy)] : [];
+  const mutationResults = pkg ? [await runSkillPackageMutation(pkg)] : [];
+  const commandResults = verifierPack ? await evaluateVerifierCommands(verifierPack.commands, effectivePolicy, projectRoot ?? effectivePolicy.projectRoot, options.runRepoChecks === true) : [];
+  assertionResults.push(...commandResults.map((command) => result(
+    command.assertionId,
+    command.status === "skipped" ? "warning" : command.status === "pass" ? "pass" : "fail",
+    command.message
+  )));
   const execution = verifierPack ? buildVerifierExecution({
     skillName: pkg?.manifest.name,
     generatedAt,
@@ -55,7 +72,9 @@ export async function verifySkill(skillPath: string, reportDir?: string, sandbox
     visibleAssertionIds: verifierPack.visibleAssertionIds,
     holdoutAssertionIds: verifierPack.holdoutAssertionIds,
     sandboxPolicy: effectivePolicy,
-    fixtureResults
+    fixtureResults,
+    commandResults,
+    mutationResults
   }) : undefined;
   const bodyLength = pkg?.body.length ?? 999999;
   const scores = {
@@ -67,15 +86,19 @@ export async function verifySkill(skillPath: string, reportDir?: string, sandbox
   };
   const hasError = issues.some((issue) => issue.severity === "error") || safety.status === "fail";
   const hasFixtureFailure = fixtureResults.some((fixture) => fixture.status === "fail" || fixture.status === "blocked" || fixture.status === "timeout");
+  const hasCommandFailure = commandResults.some((command) => command.status === "fail" || command.status === "blocked" || command.status === "timeout");
+  const hasMutationFailure = mutationResults.some((mutation) => mutation.status === "survived" || mutation.status === "error");
   const hasWarning = issues.some((issue) => issue.severity === "warning") || Object.values(safety.summary).some((count) => count > 0) || fixtureResults.some((fixture) => fixture.status === "missing");
   const report: VerifierReport = {
-    status: hasError || hasFixtureFailure ? "fail" : hasWarning ? "warning" : "pass",
+    status: hasError || hasFixtureFailure || hasCommandFailure || hasMutationFailure ? "fail" : hasWarning ? "warning" : "pass",
     skillPath: path.normalize(skillPath),
     generatedAt: generatedAt.toISOString(),
     verifierPack,
     execution,
     assertionResults,
     fixtureResults,
+    commandResults,
+    mutationResults,
     issues,
     safety,
     scores
@@ -94,6 +117,86 @@ export async function verifySkill(skillPath: string, reportDir?: string, sandbox
   return report;
 }
 
+async function runSkillPackageMutation(pkg: Awaited<ReturnType<typeof loadSkillPackage>>): Promise<VerifierMutationResult> {
+  const fixturePath = path.join(pkg.root, "tests", "skill-package-fixture.cjs");
+  if (!existsSync(fixturePath)) {
+    return {
+      id: "mutation.remove-verification-section",
+      status: "skipped",
+      message: "Mutation skipped because generated fixture is missing."
+    };
+  }
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openskill-mutant-"));
+  const mutantRoot = path.join(tempRoot, path.basename(pkg.root));
+  try {
+    await fs.cp(pkg.root, mutantRoot, { recursive: true });
+    const skillPath = path.join(mutantRoot, "SKILL.md");
+    const markdown = await fs.readFile(skillPath, "utf8");
+    await fs.writeFile(skillPath, markdown.replace("Verification checklist", "Verification removed"), "utf8");
+    const mutantPkg = await loadSkillPackage(mutantRoot);
+    const result = await runSkillPackageFixture(mutantPkg, createLocalSandboxPolicy({ projectRoot: mutantPkg.root }));
+    return {
+      id: "mutation.remove-verification-section",
+      status: result.status === "fail" ? "killed" : result.status === "pass" ? "survived" : "error",
+      message: result.status === "fail"
+        ? "Verifier fixture killed mutant with missing verification section."
+        : `Verifier fixture did not cleanly kill mutant; fixture status ${result.status}.`
+    };
+  } catch (error) {
+    return {
+      id: "mutation.remove-verification-section",
+      status: "error",
+      message: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function evaluateVerifierCommands(commands: VerifierCommand[], policy: SandboxPolicy, projectRoot: string, runRepoChecks: boolean): Promise<VerifierCommandResult[]> {
+  const results: VerifierCommandResult[] = [];
+  for (const command of commands) {
+    if (!runRepoChecks) {
+      results.push({
+        id: command.id,
+        assertionId: command.assertionId,
+        status: "skipped",
+        message: "Repository command check recorded but not executed; pass runRepoChecks to run it."
+      });
+      continue;
+    }
+    const commandSpec = normalizeVerifierCommand(command);
+    const commandResult = await runSandboxCommand(policy, {
+      command: commandSpec.command,
+      args: commandSpec.args,
+      cwd: path.resolve(projectRoot, command.cwd)
+    });
+    results.push({
+      id: command.id,
+      assertionId: command.assertionId,
+      status: commandResult.status,
+      message: commandResult.status === "pass"
+        ? `Repository command passed: ${command.command} ${command.args.join(" ")}`
+        : `Repository command did not pass: ${command.command} ${command.args.join(" ")}`,
+      command: commandResult
+    });
+  }
+  return results;
+}
+
+function normalizeVerifierCommand(command: VerifierCommand): { command: string; args: string[] } {
+  if (command.command !== "npm" || process.platform !== "win32") {
+    return { command: command.command, args: command.args };
+  }
+  const npmExecPath = process.env.npm_execpath && existsSync(process.env.npm_execpath)
+    ? process.env.npm_execpath
+    : path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+  if (existsSync(npmExecPath)) {
+    return { command: process.execPath, args: [npmExecPath, ...command.args] };
+  }
+  return { command: command.command, args: command.args };
+}
+
 function evaluateAssertions(pack: VerifierPack, state: {
   issues: ValidationIssue[];
   safety: SafetyReport;
@@ -103,7 +206,7 @@ function evaluateAssertions(pack: VerifierPack, state: {
   hasCommonMistakes: boolean;
   hasVerification: boolean;
 }): AssertionResult[] {
-  return pack.assertions.map((assertion) => {
+  return pack.assertions.filter((assertion) => assertion.type !== "repo-command").map((assertion) => {
     if (assertion.id === "assert.skill-frontmatter-valid") {
       const failed = state.issues.some((issue) => issue.severity === "error");
       return result(assertion.id, failed ? "fail" : "pass", failed ? "Skill schema validation failed." : "Skill schema validation passed.");
@@ -139,6 +242,13 @@ async function readSiblingLedger(skillRoot?: string): Promise<EvidenceLedger | u
 async function readSiblingVerifierPack(skillRoot: string): Promise<VerifierPack> {
   const runRoot = path.resolve(skillRoot, "..", "..");
   return readVerifierPack(path.join(runRoot, "verifier-pack.json"));
+}
+
+function deriveProjectRoot(skillRoot: string): string | undefined {
+  const parts = path.resolve(skillRoot).split(path.sep);
+  const marker = parts.lastIndexOf(".openskill-kit");
+  if (marker <= 0) return undefined;
+  return parts.slice(0, marker).join(path.sep) || path.sep;
 }
 
 function result(assertionId: string, status: AssertionResult["status"], message: string): AssertionResult {

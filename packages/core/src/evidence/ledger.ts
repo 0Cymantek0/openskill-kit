@@ -10,6 +10,7 @@ export const EvidenceSourceSchema = z.object({
   trust: z.enum(["trusted-local", "user-provided", "unverified-external", "generated"]),
   title: z.string().min(1),
   path: z.string().optional(),
+  url: z.string().url().optional(),
   capturedAt: z.string().datetime(),
   sha256: z.string().length(64).optional(),
   excerpt: z.string().max(2000).optional()
@@ -37,7 +38,15 @@ export type EvidenceSource = z.infer<typeof EvidenceSourceSchema>;
 export type EvidenceClaim = z.infer<typeof EvidenceClaimSchema>;
 export type EvidenceLedger = z.infer<typeof EvidenceLedgerSchema>;
 
-export function createLocalEvidenceLedger(task: string, context: RepoContext, now = new Date()): EvidenceLedger {
+export interface AdditionalEvidence {
+  title: string;
+  content: string;
+  kind: "manual" | "external";
+  path?: string;
+  url?: string;
+}
+
+export function createLocalEvidenceLedger(task: string, context: RepoContext, now = new Date(), additionalEvidence: AdditionalEvidence[] = []): EvidenceLedger {
   const capturedAt = now.toISOString();
   const sources: EvidenceSource[] = context.files.slice(0, 12).map((file, index) => ({
     id: `src.repo.${index + 1}`,
@@ -73,6 +82,26 @@ export function createLocalEvidenceLedger(task: string, context: RepoContext, no
     });
   }
 
+  const addedSources: Array<{ id: string; evidence: AdditionalEvidence; sequence: number }> = [];
+  const counts: Record<AdditionalEvidence["kind"], number> = { manual: 0, external: 0 };
+  for (const evidence of additionalEvidence) {
+    counts[evidence.kind] += 1;
+    const sequence = counts[evidence.kind];
+    const id = evidence.kind === "external" ? `src.external.${sequence}` : `src.manual.${sequence}`;
+    addedSources.push({ id, evidence, sequence });
+    sources.push({
+      id,
+      type: evidence.kind,
+      trust: evidence.kind === "external" ? "unverified-external" : "user-provided",
+      title: evidence.title,
+      path: evidence.path,
+      url: evidence.url,
+      capturedAt,
+      sha256: sha256(evidence.content),
+      excerpt: evidence.content.slice(0, 2000)
+    });
+  }
+
   const claims: EvidenceClaim[] = [
     {
       id: "claim.repo.package-manager",
@@ -100,6 +129,18 @@ export function createLocalEvidenceLedger(task: string, context: RepoContext, no
     }
   ];
 
+  for (const source of addedSources) {
+    const tag = source.evidence.kind;
+    claims.push({
+      id: `claim.${tag}.${source.sequence}`,
+      text: `${tag === "external" ? "External" : "User supplied"} evidence source: ${source.evidence.title}`,
+      sourceIds: [source.id],
+      confidence: tag === "external" ? 0.55 : 0.7,
+      status: "supported",
+      tags: [tag, "evidence"]
+    });
+  }
+
   return {
     schemaVersion: "openskill-kit.evidence.v0",
     task,
@@ -108,7 +149,9 @@ export function createLocalEvidenceLedger(task: string, context: RepoContext, no
     claims,
     warnings: [
       ...context.warnings,
-      "Ledger contains local repository evidence only; no external retrieval was performed."
+      additionalEvidence.some((item) => item.kind === "external")
+        ? "External evidence is unverified and must be checked against installed versions and local repo truth."
+        : "Ledger contains local repository evidence only; no external retrieval was performed."
     ]
   };
 }

@@ -43,6 +43,9 @@ export async function runSandboxCommand(policy: SandboxPolicy, commandInput: San
       blockedReason
     };
   }
+  if (policy.mode === "docker") {
+    return runDockerSandboxCommand(policy, commandInput.command, args, cwd, started);
+  }
 
   try {
     const result = await execFileAsync(commandInput.command, args, {
@@ -78,18 +81,94 @@ export async function runSandboxCommand(policy: SandboxPolicy, commandInput: San
   }
 }
 
+async function runDockerSandboxCommand(policy: SandboxPolicy, command: string, args: string[], cwd: string, started: number): Promise<SandboxCommandResult> {
+  const image = policy.dockerImage;
+  if (!image) {
+    return {
+      status: "blocked",
+      command,
+      args,
+      cwd: path.relative(policy.projectRoot, cwd) || ".",
+      exitCode: null,
+      stdout: "",
+      stderr: "",
+      durationMs: Date.now() - started,
+      blockedReason: "docker image missing from sandbox policy"
+    };
+  }
+  const relativeCwd = path.relative(policy.projectRoot, cwd) || ".";
+  const workspaceCwd = relativeCwd === "." ? "/workspace" : `/workspace/${relativeCwd.replaceAll("\\", "/")}`;
+  const dockerArgs = [
+    "run",
+    "--rm",
+    "--network",
+    policy.allowNetwork ? "bridge" : "none",
+    "-v",
+    `${policy.projectRoot}:/workspace`,
+    "-w",
+    workspaceCwd,
+    image,
+    command,
+    ...args
+  ];
+  try {
+    const result = await execFileAsync("docker", dockerArgs, {
+      cwd: policy.projectRoot,
+      env: buildSandboxEnv(policy),
+      timeout: policy.timeoutMs,
+      maxBuffer: policy.maxOutputBytes,
+      windowsHide: true
+    });
+    return {
+      status: "pass",
+      command,
+      args,
+      cwd: relativeCwd,
+      exitCode: 0,
+      stdout: truncate(result.stdout, policy.maxOutputBytes),
+      stderr: truncate(result.stderr, policy.maxOutputBytes),
+      durationMs: Date.now() - started
+    };
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: number | string | null; killed?: boolean };
+    const timedOut = err.killed === true || err.code === "ETIMEDOUT";
+    return {
+      status: timedOut ? "timeout" : "fail",
+      command,
+      args,
+      cwd: relativeCwd,
+      exitCode: typeof err.code === "number" ? err.code : null,
+      stdout: truncate(err.stdout ?? "", policy.maxOutputBytes),
+      stderr: truncate(err.stderr ?? err.message, policy.maxOutputBytes),
+      durationMs: Date.now() - started
+    };
+  }
+}
+
 function validateCommand(policy: SandboxPolicy, command: string, args: string[], cwd: string): string | undefined {
   if (!isPathInside(policy.projectRoot, cwd)) {
     return "cwd must stay inside project root";
   }
   const normalizedCommand = commandName(command);
-  if (!policy.allowedCommands.map(commandName).includes(normalizedCommand)) {
+  if (!isAllowedCommand(policy, command, normalizedCommand)) {
     return `command not allowed by sandbox policy: ${normalizedCommand}`;
   }
   if (args.some((arg) => /[|;&`]/.test(arg))) {
     return "shell metacharacters are blocked in arguments";
   }
   return undefined;
+}
+
+function isAllowedCommand(policy: SandboxPolicy, command: string, normalizedCommand: string): boolean {
+  if (hasPathSeparator(command)) {
+    const resolvedCommand = path.resolve(command);
+    return policy.allowedCommands.some((allowed) => hasPathSeparator(allowed) && path.resolve(allowed) === resolvedCommand);
+  }
+  return policy.allowedCommands.map(commandName).includes(normalizedCommand);
+}
+
+function hasPathSeparator(value: string): boolean {
+  return value.includes("/") || value.includes("\\");
 }
 
 function buildSandboxEnv(policy: SandboxPolicy, extraEnv?: Record<string, string | undefined>): NodeJS.ProcessEnv {

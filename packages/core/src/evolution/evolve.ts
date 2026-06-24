@@ -16,6 +16,10 @@ export const EvolutionRoundSchema = z.object({
   completedAt: z.string().datetime(),
   verifierStatus: z.enum(["pass", "fail", "warning"]),
   diagnosis: EvolutionDiagnosisSchema,
+  repair: z.object({
+    status: z.enum(["applied", "skipped"]),
+    actions: z.array(z.string())
+  }).optional(),
   reportPath: z.string().optional(),
   executionPath: z.string().optional()
 });
@@ -46,17 +50,41 @@ export interface EvolveOptions {
   projectRoot: string;
   noLlm?: boolean;
   now?: Date;
+  evidenceFiles?: string[];
+  evidenceUrls?: string[];
+  maxRounds?: number;
+  runRepoChecks?: boolean;
 }
 
 export async function evolveSkill(options: EvolveOptions): Promise<EvolutionRun> {
   const draft = await draftSkill(options);
+  return evolveDraft(draft, {
+    topic: options.topic,
+    maxRounds: options.maxRounds,
+    runRepoChecks: options.runRepoChecks
+  });
+}
+
+export async function evolveDraft(draft: DraftResult, options: { topic: string; maxRounds?: number; runRepoChecks?: boolean }): Promise<EvolutionRun> {
   const roundsDir = path.join(draft.runDir, "rounds");
   await fs.mkdir(roundsDir, { recursive: true });
 
-  const round = await runRound(draft, "round-0");
-  const status = round.diagnosis.nextAction === "freeze"
+  const maxRounds = Math.max(1, Math.min(options.maxRounds ?? 3, 5));
+  const rounds: EvolutionRound[] = [];
+  for (let index = 0; index < maxRounds; index += 1) {
+    const round = await runRound(draft, `round-${index}`, options.runRepoChecks === true);
+    rounds.push(round);
+    if (round.diagnosis.nextAction === "freeze" || round.diagnosis.nextAction === "manual-review") break;
+    const repair = await repairSkillPackage(draft.skillDir, round.diagnosis);
+    round.repair = repair;
+    await fs.writeFile(path.join(draft.runDir, "rounds", `${round.id}.json`), JSON.stringify(round, null, 2), "utf8");
+    if (repair.status === "skipped") break;
+  }
+
+  const finalRound = rounds[rounds.length - 1]!;
+  const status = finalRound.diagnosis.nextAction === "freeze"
     ? "frozen"
-    : round.diagnosis.nextAction === "manual-review"
+    : finalRound.diagnosis.nextAction === "manual-review"
       ? "manual-review"
       : "needs-refinement";
 
@@ -68,15 +96,16 @@ export async function evolveSkill(options: EvolveOptions): Promise<EvolutionRun>
     skillName: draft.skillName,
     skillDir: draft.skillDir,
     status,
-    rounds: [round],
+    rounds,
     artifacts: {
       draftRun: path.join(draft.runDir, "run.json"),
       evolution: path.join(draft.runDir, "evolution.json"),
       roundsDir
     },
     limitations: [
-      "This evolve loop runs deterministic local draft plus one verifier round.",
-      "No LLM refinement, external retrieval, or downstream agent benchmark is executed yet."
+      "This evolve loop runs deterministic local draft plus capped verifier rounds.",
+      "Refinement is deterministic package repair only; no LLM refinement is executed yet.",
+      "No downstream agent benchmark is executed yet."
     ]
   };
 
@@ -85,10 +114,10 @@ export async function evolveSkill(options: EvolveOptions): Promise<EvolutionRun>
   return evolution;
 }
 
-async function runRound(draft: DraftResult, id: string): Promise<EvolutionRound> {
+async function runRound(draft: DraftResult, id: string, runRepoChecks: boolean): Promise<EvolutionRound> {
   const startedAt = new Date();
   const reportDir = path.join(draft.runDir, "reports", id);
-  const report = await verifySkill(draft.skillDir, reportDir);
+  const report = await verifySkill(draft.skillDir, reportDir, undefined, { runRepoChecks });
   const completedAt = new Date();
   const diagnosis = diagnoseVerifierReport(report);
   const round: EvolutionRound = {
@@ -103,6 +132,32 @@ async function runRound(draft: DraftResult, id: string): Promise<EvolutionRound>
   EvolutionRoundSchema.parse(round);
   await fs.writeFile(path.join(draft.runDir, "rounds", `${id}.json`), JSON.stringify(round, null, 2), "utf8");
   return round;
+}
+
+export async function repairSkillPackage(skillDir: string, diagnosis: EvolutionDiagnosis): Promise<{ status: "applied" | "skipped"; actions: string[] }> {
+  if (diagnosis.nextAction !== "refine-required") {
+    return { status: "skipped", actions: [] };
+  }
+  const skillPath = path.join(skillDir, "SKILL.md");
+  const actions: string[] = [];
+  let markdown = await fs.readFile(skillPath, "utf8");
+  if (!markdown.includes("## Verification checklist")) {
+    markdown += "\n## Verification checklist\n- Run the verifier command for this skill package.\n";
+    actions.push("Added missing Verification checklist section.");
+  }
+  if (!markdown.includes("## Common mistakes")) {
+    markdown += "\n## Common mistakes\n- Do not skip validation or hide verifier failures.\n";
+    actions.push("Added missing Common mistakes section.");
+  }
+  if (!markdown.includes("## References")) {
+    markdown += "\n## References\n- [Research notes](references/research.md)\n";
+    actions.push("Added missing References section.");
+  }
+  if (actions.length === 0) {
+    return { status: "skipped", actions: [] };
+  }
+  await fs.writeFile(skillPath, markdown, "utf8");
+  return { status: "applied", actions };
 }
 
 export function diagnoseVerifierReport(report: VerifierReport): EvolutionDiagnosis {

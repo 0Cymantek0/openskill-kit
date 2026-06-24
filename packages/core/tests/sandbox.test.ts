@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createLocalSandboxPolicy, runSandboxCommand } from "../src/index.js";
+import { createDockerSandboxPolicy, createLocalSandboxPolicy, runSandboxCommand } from "../src/index.js";
 
 describe("local sandbox runner", () => {
   it("runs allowed commands without shell expansion", async () => {
@@ -35,6 +35,41 @@ describe("local sandbox runner", () => {
     });
     expect(cwdEscape.status).toBe("blocked");
     expect(cwdEscape.blockedReason).toContain("cwd");
+
+    const badCommand = await runSandboxCommand(policy, {
+      command: "git",
+      args: ["--version"],
+      cwd: root
+    });
+    expect(badCommand.status).toBe("blocked");
+    expect(badCommand.blockedReason).toContain("command not allowed");
+  });
+
+  it("does not allow path-qualified commands by basename alone", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-sandbox-"));
+    const policy = createLocalSandboxPolicy({ projectRoot: root, allowedCommands: ["node"] });
+
+    const result = await runSandboxCommand(policy, {
+      command: path.join(root, "node"),
+      args: ["--version"],
+      cwd: root
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.blockedReason).toContain("command not allowed");
+  });
+
+  it("supports docker sandbox policy while preserving command allowlist", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-sandbox-"));
+    const policy = createDockerSandboxPolicy({
+      projectRoot: root,
+      image: "node:20-alpine",
+      allowedCommands: ["node"]
+    });
+
+    expect(policy.mode).toBe("docker");
+    expect(policy.allowNetwork).toBe(false);
+    expect(policy.dockerImage).toBe("node:20-alpine");
 
     const badCommand = await runSandboxCommand(policy, {
       command: "git",
