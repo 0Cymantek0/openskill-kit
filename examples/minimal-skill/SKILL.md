@@ -2,7 +2,7 @@
 name: minimal-skill
 description: Minimal instruction-only skill example
 license: MIT
-compatibility: opencode,codex
+compatibility: local-agent,agent-plugin
 metadata:
   example: true
 ---

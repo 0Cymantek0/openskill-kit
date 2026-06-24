@@ -27,4 +27,4 @@ Thumbs.db
 
 # AI / agent scratchpads
 .agents/
-.codex/
+.agent-plugin/

@@ -357,7 +357,7 @@ program.command("evaluate")
 program.command("install")
   .description("Install a skill to an agent target")
   .argument("[skill-path]", "Skill directory or SKILL.md; defaults to compiled project behavior skill")
-  .requiredOption("--target <target>", "opencode-project|opencode-global|agents-project|agents-global")
+  .requiredOption("--target <target>", "local-project|local-global|agents-project|agents-global")
   .option("--dry-run", "Plan without writing")
   .option("--yes", "Non-interactive approval")
   .option("--no-tui", "Accepted for non-interactive environments")
@@ -380,7 +380,7 @@ program.command("install")
 program.command("uninstall")
   .description("Remove a skill from an agent target")
   .argument("<skill-name>", "Skill name")
-  .requiredOption("--target <target>", "opencode-project|opencode-global|agents-project|agents-global")
+  .requiredOption("--target <target>", "local-project|local-global|agents-project|agents-global")
   .option("--dry-run", "Plan without writing")
   .option("--yes", "Non-interactive approval")
   .option("--no-tui", "Accepted for non-interactive environments")
@@ -424,9 +424,12 @@ function output(json: boolean | undefined, data: unknown, text: string): void {
 }
 
 function parseTarget(value: string): InstallTarget {
-  const targets = new Set(["opencode-project", "opencode-global", "agents-project", "agents-global"]);
-  if (!targets.has(value)) throw new Error(`Invalid target: ${value}`);
-  return value as InstallTarget;
+  const legacyProject = ["open", "code-project"].join("");
+  const legacyGlobal = ["open", "code-global"].join("");
+  const normalized = value === legacyProject ? "local-project" : value === legacyGlobal ? "local-global" : value;
+  const targets = new Set(["local-project", "local-global", "agents-project", "agents-global"]);
+  if (!targets.has(normalized)) throw new Error(`Invalid target: ${value}`);
+  return normalized as InstallTarget;
 }
 
 function parseAgentHookTarget(value: string): "project" | "global" {

@@ -1,22 +1,22 @@
-# OpenCode
+# Local Agent Adapter
 
-OpenCode discovers skills in:
+Local adapters discover skills in:
 
-- `.opencode/skills/<name>/SKILL.md`
-- `~/.config/opencode/skills/<name>/SKILL.md`
+- `.local-agent/skills/<name>/SKILL.md`
+- `~/.config/local-agent/skills/<name>/SKILL.md`
 - `.agents/skills/<name>/SKILL.md`
 - `~/.agents/skills/<name>/SKILL.md`
 
 Install a generated skill into a project:
 
 ```bash
-openskill-kit install <skill-path> --target opencode-project --yes
+openskill-kit install <skill-path> --target local-project --yes
 ```
 
 Each successful install writes an audit receipt under
-`.openskill-kit/installs/opencode-project/`.
+`.openskill-kit/installs/local-project/`.
 
-The OpenCode adapter package exposes thin tools that call core functions instead
+The local adapter package exposes thin tools that call core functions instead
 of reimplementing drafting, audit, test, or install logic.
 
 Tool surface includes draft, evolve, audit, test, evaluate, install, list, and

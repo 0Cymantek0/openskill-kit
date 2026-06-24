@@ -10,7 +10,7 @@ A skill package is a directory containing `SKILL.md` and optional
 name: repo-test-workflow
 description: Debug and verify repository test failures
 license: MIT
-compatibility: opencode,codex
+compatibility: local-agent,agent-plugin
 metadata:
   generated_by: openskill-kit
 ---

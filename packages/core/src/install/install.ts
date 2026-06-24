@@ -5,7 +5,7 @@ import { loadSkillPackage } from "../skill/parser.js";
 import { verifySkill } from "../verifier/verifier.js";
 import { upsertRegistryEntry } from "../registry/registry.js";
 
-export type InstallTarget = "opencode-project" | "opencode-global" | "agents-project" | "agents-global";
+export type InstallTarget = "local-project" | "local-global" | "agents-project" | "agents-global";
 
 export interface InstallOptions {
   skillPath: string;
@@ -151,10 +151,10 @@ export async function uninstallSkill(options: UninstallOptions): Promise<Install
 export function resolveTargetDir(options: { target: InstallTarget; projectRoot: string; homeDir?: string }): string {
   const home = options.homeDir ?? os.homedir();
   switch (options.target) {
-    case "opencode-project":
-      return path.join(options.projectRoot, ".opencode", "skills");
-    case "opencode-global":
-      return path.join(home, ".config", "opencode", "skills");
+    case "local-project":
+      return path.join(options.projectRoot, ".local-agent", "skills");
+    case "local-global":
+      return path.join(home, ".config", "local-agent", "skills");
     case "agents-project":
       return path.join(options.projectRoot, ".agents", "skills");
     case "agents-global":
@@ -171,8 +171,8 @@ async function writeInstallReceipt(file: string, receipt: Record<string, unknown
   await fs.writeFile(file, JSON.stringify(receipt, null, 2), "utf8");
 }
 
-function adapterName(target: InstallTarget): "opencode" | "agents" {
-  return target.startsWith("opencode") ? "opencode" : "agents";
+function adapterName(target: InstallTarget): "local" | "agents" {
+  return target.startsWith("local") ? "local" : "agents";
 }
 
 async function exists(target: string): Promise<boolean> {

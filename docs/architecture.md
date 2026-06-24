@@ -11,9 +11,9 @@ packages/cli
   command-line interface over core
 packages/mcp-server
   stdio MCP bridge over core
-packages/opencode-plugin
+packages/local-adapter-plugin
   compatibility adapter package
-packages/codex-plugin
+packages/agent-plugin-bundle
   compatibility plugin bundle
 ```
 

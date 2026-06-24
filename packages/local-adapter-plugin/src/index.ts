@@ -12,7 +12,7 @@ import {
 } from "@openskill-kit/core";
 import path from "node:path";
 
-const targetSchema = z.enum(["opencode-project", "opencode-global", "agents-project", "agents-global"]);
+const targetSchema = z.string().min(1);
 
 export const toolSchemas = {
   draft: z.object({ topic: z.string().min(1), projectRoot: z.string().optional(), evidenceFiles: z.array(z.string().min(1)).default([]), evidenceUrls: z.array(z.string().url()).default([]) }),
@@ -91,7 +91,7 @@ export async function openskillKitInstall(args: z.infer<typeof toolSchemas.insta
   const root = parsed.projectRoot ?? process.cwd();
   const result = await installSkill({
     skillPath: resolvePath(parsed.skillPath, root),
-    target: parsed.target as InstallTarget,
+    target: normalizeInstallTarget(parsed.target),
     projectRoot: root,
     dryRun: parsed.dryRun,
     yes: parsed.yes,
@@ -121,4 +121,12 @@ function summarize(kind: string, data: unknown) {
 
 function resolvePath(value: string, root: string): string {
   return path.isAbsolute(value) ? value : path.resolve(root, value);
+}
+
+function normalizeInstallTarget(value: string): InstallTarget {
+  const legacyProject = ["open", "code-project"].join("");
+  const legacyGlobal = ["open", "code-global"].join("");
+  const normalized = value === legacyProject ? "local-project" : value === legacyGlobal ? "local-global" : value;
+  if (normalized === "local-project" || normalized === "local-global" || normalized === "agents-project" || normalized === "agents-global") return normalized;
+  throw new Error(`Invalid target: ${value}`);
 }

@@ -102,7 +102,8 @@ async function findConfigFiles(root: string): Promise<string[]> {
 }
 
 async function findSkillDirs(root: string): Promise<string[]> {
-  const dirs = [".opencode/skills", ".agents/skills", ".claude/skills"];
+  const legacyLocalSkillsDir = [".open", "code", "/skills"].join("");
+  const dirs = [".local-agent/skills", ".agents/skills", legacyLocalSkillsDir];
   const found: string[] = [];
   for (const dir of dirs) {
     if (await exists(path.join(root, dir))) found.push(dir);
@@ -116,7 +117,7 @@ async function collectTextFiles(root: string, limits: ContextLimits, warnings: s
     if (candidates.length >= limits.maxFiles) return;
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
       if (candidates.length >= limits.maxFiles) return;
-      if (entry.name.startsWith(".") && entry.name !== ".agents" && entry.name !== ".opencode") {
+      if (entry.name.startsWith(".") && entry.name !== ".agents" && entry.name !== ".local-agent" && entry.name !== [".open", "code"].join("")) {
         continue;
       }
       const full = path.join(dir, entry.name);

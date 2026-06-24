@@ -29,7 +29,7 @@ export const ProjectConfigSchema = z.object({
   adapters: z.object({
     mcp: z.boolean().default(true),
     agentSkills: z.boolean().default(true),
-    opencode: z.boolean().default(false),
+    localAdapter: z.boolean().default(false),
     agentsDirectory: z.boolean().default(true)
   }),
   compileTargets: z.array(z.enum([

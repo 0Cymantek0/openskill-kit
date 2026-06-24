@@ -22,15 +22,15 @@
     "examples/",
     "packages/*/dist/**/*",
     "packages/*/package.json",
-    "packages/codex-plugin/.mcp.json",
-    "packages/codex-plugin/.codex-plugin/",
-    "packages/codex-plugin/skills/"
+    "packages/agent-plugin-bundle/.mcp.json",
+    "packages/agent-plugin-bundle/.agent-plugin/",
+    "packages/agent-plugin-bundle/skills/"
   ],
   "scripts": {
-    "build": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server && tsx scripts/build-bin.ts",
-    "typecheck": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server --pretty false",
+    "build": "tsc -b packages/core packages/cli packages/local-adapter-plugin packages/mcp-server && tsx scripts/build-bin.ts",
+    "typecheck": "tsc -b packages/core packages/cli packages/local-adapter-plugin packages/mcp-server --pretty false",
     "test": "vitest --run",
-    "lint": "tsc -b packages/core packages/cli packages/opencode-plugin packages/mcp-server --pretty false",
+    "lint": "tsc -b packages/core packages/cli packages/local-adapter-plugin packages/mcp-server --pretty false",
     "smoke": "tsx scripts/smoke.ts",
     "package:dry-run": "npm pack --dry-run",
     "release-check": "tsx scripts/release-check.ts"

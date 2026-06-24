@@ -8,7 +8,7 @@ OpenLAIR/OpenSkill implementation.
 
 - `prompt.md`: requires `openskill-kit` as the public package/CLI name, TypeScript,
   Node 20+, local-first defaults, skill validation, scanner, installer, CLI,
-  OpenCode adapter, Codex plugin, tests, docs, and small commits.
+  local adapter, agent plugin, tests, docs, and small commits.
 - `research.md`: broadens the system into an evidence-backed skill-and-verifier
   compiler with explicit evidence ledgers, leakage barriers, verifier packs,
   sandbox/evolution loops, and adapter exports.
@@ -18,9 +18,9 @@ OpenLAIR/OpenSkill implementation.
   skill evolution with self-built virtual tasks, and zero-shot target evaluation.
 - Official OpenLAIR/OpenSkill repository currently hosts overview/roadmap only;
   code is not published. This repo must stay clean-room and independent.
-- OpenCode and Codex official docs both support `SKILL.md` directories with
-  progressive disclosure. OpenCode loads `.opencode/skills`, `.agents/skills`,
-  and compatible global paths. Codex reads `.agents/skills` and plugin bundles.
+- Compatible agent docs support `SKILL.md` directories with progressive
+  disclosure. Local adapters load `.local-agent/skills`, `.agents/skills`, and
+  compatible global paths. Agent plugin bundles read `.agents/skills`.
 
 ## Product Shape
 
@@ -29,8 +29,8 @@ Phase 1 builds the narrow but real spine:
 1. Core package with skill parser, validator, scanner, context collector,
    deterministic draft engine, verifier, registry, and safe installer.
 2. CLI package exposing `openskill-kit` commands with JSON output where useful.
-3. Thin OpenCode adapter package that calls core only.
-4. Codex plugin package containing a local skill that teaches Codex how to use
+3. Thin local adapter package that calls core only.
+4. Agent plugin package containing a local skill that teaches compatible agents how to use
    the CLI safely.
 5. Smoke test proving draft, audit, test, dry-run install, actual install, list,
    inspect, and uninstall against temp directories.
@@ -41,7 +41,7 @@ Next phases add deeper OpenSkill paper fidelity:
 2. Verifier pack separation with visible/holdout/mutation checks.
 3. Sandboxed skill evolution loop with capped retries.
 4. Optional MCP server tools.
-5. Adapter installers for real OpenCode/Codex config.
+5. Adapter installers for real local agent config.
 6. Benchmark-grade leakage audits and real-repo evaluation reports.
 
 ## Architecture Rules

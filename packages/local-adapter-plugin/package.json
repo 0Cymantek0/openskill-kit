@@ -1,7 +1,7 @@
 {
-  "name": "@openskill-kit/opencode-plugin",
+  "name": "@openskill-kit/local-adapter-plugin",
   "version": "0.1.0",
-  "description": "Thin OpenCode adapter for openskill-kit.",
+  "description": "Thin local adapter for openskill-kit.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",

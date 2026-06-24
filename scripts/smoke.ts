@@ -122,11 +122,11 @@ const dryRun = await runJson(["install", draft.skillDir, "--target", "agents-pro
 if (dryRun.status !== "planned") throw new Error("dry-run install failed");
 await expectMissing(path.join(root, ".agents", "skills", draft.skillName));
 
-const openCodeInstall = await runJson(["install", draft.skillDir, "--target", "opencode-project", "--yes", "--json"]);
-if (openCodeInstall.status !== "installed") throw new Error("OpenCode install failed");
-await stat(path.join(root, ".opencode", "skills", draft.skillName, "SKILL.md"));
-await runJson(["uninstall", draft.skillName, "--target", "opencode-project", "--yes", "--json"]);
-await expectMissing(path.join(root, ".opencode", "skills", draft.skillName));
+const localInstall = await runJson(["install", draft.skillDir, "--target", "local-project", "--yes", "--json"]);
+if (localInstall.status !== "installed") throw new Error("local install failed");
+await stat(path.join(root, ".local-agent", "skills", draft.skillName, "SKILL.md"));
+await runJson(["uninstall", draft.skillName, "--target", "local-project", "--yes", "--json"]);
+await expectMissing(path.join(root, ".local-agent", "skills", draft.skillName));
 
 const installed = await runJson(["install", draft.skillDir, "--target", "agents-project", "--yes", "--json"]);
 if (installed.status !== "installed") throw new Error("install failed");

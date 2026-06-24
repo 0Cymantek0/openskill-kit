@@ -2,7 +2,7 @@
 name: generated-skill-sample
 description: Sample generated repository debugging skill
 license: MIT
-compatibility: opencode,codex
+compatibility: local-agent,agent-plugin
 metadata:
   generated_by: openskill-kit
   example: true

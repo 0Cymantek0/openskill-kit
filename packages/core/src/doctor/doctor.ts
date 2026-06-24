@@ -25,13 +25,12 @@ export async function runDoctor(projectRoot: string, homeDir = os.homedir()): Pr
   checks.push(await npmCheck());
   checks.push(await commandCheck("docker", ["--version"], "optional Docker availability", true));
   checks.push(await repoCheck(projectRoot));
-  checks.push(await writableCheck(path.join(projectRoot, ".opencode", "skills"), "OpenCode project skill target"));
+  checks.push(await writableCheck(path.join(projectRoot, ".local-agent", "skills"), "Local project skill target"));
   checks.push(await writableCheck(path.join(projectRoot, ".agents", "skills"), "Agents project skill target"));
-  checks.push(await writableCheck(path.join(homeDir, ".config", "opencode", "skills"), "OpenCode global skill target"));
+  checks.push(await writableCheck(path.join(homeDir, ".config", "local-agent", "skills"), "Local global skill target"));
   checks.push(await writableCheck(path.join(homeDir, ".agents", "skills"), "Agents global skill target"));
   checks.push(sandboxPolicyCheck(projectRoot));
-  checks.push(optionalSecretCheck("OPENAI_API_KEY"));
-  checks.push(optionalSecretCheck("ANTHROPIC_API_KEY"));
+  checks.push(optionalSecretCheck("MODEL_PROVIDER_API_KEY"));
   const status = checks.some((check) => check.status === "fail") ? "fail" : checks.some((check) => check.status === "warn") ? "warn" : "pass";
   return { status, checks };
 }

@@ -180,7 +180,7 @@ describe("evidence ledger and verifier pack", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-pack-"));
     const skillDir = path.join(root, "portable-skill");
     await mkdir(path.join(skillDir, "references"), { recursive: true });
-    await writeFile(path.join(skillDir, "SKILL.md"), "---\nname: portable-skill\ndescription: Portable skill\ncompatibility: opencode,codex\n---\n\n## When to use\nUse it.\n\n## When not to use\nAvoid unrelated tasks.\n\n## Verification checklist\n- Run tests.\n\n## Common mistakes\n- Do not skip validation.\n\n## References\n- [Notes](references/research.md)\n", "utf8");
+    await writeFile(path.join(skillDir, "SKILL.md"), "---\nname: portable-skill\ndescription: Portable skill\ncompatibility: local-agent,agent-plugin\n---\n\n## When to use\nUse it.\n\n## When not to use\nAvoid unrelated tasks.\n\n## Verification checklist\n- Run tests.\n\n## Common mistakes\n- Do not skip validation.\n\n## References\n- [Notes](references/research.md)\n", "utf8");
     await writeFile(path.join(skillDir, "references", "research.md"), "# Notes\n", "utf8");
     await mkdir(path.join(skillDir, "tests"));
     await writeFile(path.join(skillDir, "tests", "skill-package-fixture.cjs"), "console.log('ok')\n", "utf8");

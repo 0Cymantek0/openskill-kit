@@ -8,7 +8,7 @@ Run from a directory you own or choose a project-local target.
 
 Inspect the audit report. Do not override unless you understand the finding.
 
-## Skill not visible in Codex or OpenCode
+## Skill not visible in local agent
 
 Restart the agent and confirm the skill folder contains `SKILL.md` with valid
 frontmatter.

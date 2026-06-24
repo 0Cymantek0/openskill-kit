@@ -2,7 +2,7 @@
 name: openskill-kit
 description: Use openskill-kit to draft, audit, test, and install portable agent skills
 license: MIT
-compatibility: codex
+compatibility: agent-plugin
 metadata:
   package: openskill-kit
 ---

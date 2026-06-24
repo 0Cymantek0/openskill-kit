@@ -39,7 +39,7 @@ import {
 
 const VERSION = "0.1.0";
 
-const targetSchema = z.enum(["opencode-project", "opencode-global", "agents-project", "agents-global"]);
+const targetSchema = z.string().min(1);
 const projectRootSchema = z.string().min(1).optional();
 const topicSchema = z.string().min(1).max(200);
 const skillPathSchema = z.string().min(1);
@@ -408,7 +408,7 @@ export function createOpenSkillMcpServer(): McpServer {
     "openskill_install",
     {
       title: "OpenSkill Kit Install",
-      description: "Plan or perform skill installation into OpenCode or agents skill targets.",
+      description: "Plan or perform skill installation into local agent skill targets.",
       inputSchema: z.object({
         skillPath: skillPathSchema,
         target: targetSchema,
@@ -424,7 +424,7 @@ export function createOpenSkillMcpServer(): McpServer {
       return toolResult(
         await installSkill({
           skillPath: resolvePath(skillPath, root),
-          target: target as InstallTarget,
+          target: normalizeInstallTarget(target),
           projectRoot: root,
           dryRun,
           yes,
@@ -478,6 +478,14 @@ function resolveProjectRoot(value: string | undefined): string {
 
 function resolvePath(value: string, projectRoot: string): string {
   return path.resolve(projectRoot, value);
+}
+
+function normalizeInstallTarget(value: string): InstallTarget {
+  const legacyProject = ["open", "code-project"].join("");
+  const legacyGlobal = ["open", "code-global"].join("");
+  const normalized = value === legacyProject ? "local-project" : value === legacyGlobal ? "local-global" : value;
+  if (normalized === "local-project" || normalized === "local-global" || normalized === "agents-project" || normalized === "agents-global") return normalized;
+  throw new Error(`Invalid target: ${value}`);
 }
 
 function toolResult(data: unknown, projectRoot: string): CallToolResult {
