@@ -3,12 +3,23 @@ import { rm } from "node:fs/promises";
 
 await rm("dist", { recursive: true, force: true });
 
-await build({
-  entryPoints: ["packages/cli/src/index.ts"],
-  outfile: "dist/index.cjs",
-  bundle: true,
-  platform: "node",
-  target: "node20",
-  format: "cjs",
-  sourcemap: false
-});
+await Promise.all([
+  build({
+    entryPoints: ["packages/cli/src/index.ts"],
+    outfile: "dist/index.cjs",
+    bundle: true,
+    platform: "node",
+    target: "node20",
+    format: "cjs",
+    sourcemap: false
+  }),
+  build({
+    entryPoints: ["packages/mcp-server/src/index.ts"],
+    outfile: "dist/openskill-kit-mcp.cjs",
+    bundle: true,
+    platform: "node",
+    target: "node20",
+    format: "cjs",
+    sourcemap: false
+  })
+]);

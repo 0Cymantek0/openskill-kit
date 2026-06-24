@@ -12,7 +12,7 @@ packages/opencode-plugin
 packages/codex-plugin
   local Codex plugin bundle and skill instructions
 packages/mcp-server
-  future stdio MCP bridge over core
+  stdio MCP bridge over core
 ```
 
 ## Data Flow
@@ -83,3 +83,20 @@ Core includes `local-process` sandbox policy and command runner primitives:
 This is not a container boundary and does not provide OS-level network blocking.
 The policy records `allowNetwork=false` as metadata so later Docker/gVisor
 runners can preserve the same interface.
+
+## MCP Bridge
+
+`openskill-kit-mcp` exposes core through stdio tools for local coding agents:
+
+- `openskill_doctor`
+- `openskill_draft`
+- `openskill_evolve`
+- `openskill_audit`
+- `openskill_test`
+- `openskill_install`
+- `openskill_list`
+- `openskill_inspect`
+
+Tool outputs include structured JSON and sanitized text. Project and home paths
+are redacted from responses, and install defaults stay dry-run unless caller
+explicitly asks to write.

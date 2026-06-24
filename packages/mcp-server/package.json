@@ -1,7 +1,7 @@
 {
   "name": "@openskill-kit/mcp-server",
   "version": "0.1.0",
-  "description": "MCP server placeholder for openskill-kit core tools.",
+  "description": "Stdio MCP server for openskill-kit core tools.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -10,6 +10,8 @@
     "openskill-kit-mcp": "dist/index.js"
   },
   "dependencies": {
-    "@openskill-kit/core": "file:../core"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@openskill-kit/core": "file:../core",
+    "zod": "^4.4.3"
   }
 }

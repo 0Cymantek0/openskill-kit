@@ -4,12 +4,18 @@ import { mkdtemp, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("dist", "index.cjs");
+const mcp = path.resolve("dist", "openskill-kit-mcp.cjs");
 
 if (!existsSync(cli)) {
   throw new Error("built CLI not found; run npm run build before smoke");
+}
+if (!existsSync(mcp)) {
+  throw new Error("built MCP server not found; run npm run build before smoke");
 }
 
 const root = await mkdtemp(path.join(os.tmpdir(), "openskill-kit-smoke-"));
@@ -67,6 +73,12 @@ if (evolved.status !== "frozen" || evolved.rounds?.[0]?.diagnosis?.kind !== "pas
 await stat(path.join(root, evolved.artifacts.evolution));
 await stat(path.join(root, evolved.artifacts.roundsDir, "round-0.json"));
 
+const mcpDraft = await runMcpDraft();
+if (mcpDraft.skillName !== "smoke-mcp-skill" || String(mcpDraft.skillDir).includes(root)) {
+  throw new Error("MCP draft result missing or unsanitized");
+}
+await stat(path.join(root, ".openskill-kit", "runs", mcpDraft.runId, "candidate", mcpDraft.skillName, "SKILL.md"));
+
 console.log("smoke passed");
 
 async function runJson(args: string[]): Promise<any> {
@@ -83,5 +95,31 @@ async function expectMissing(target: string): Promise<void> {
     throw new Error("path should not exist");
   } catch (error) {
     if (error instanceof Error && error.message === "path should not exist") throw error;
+  }
+}
+
+async function runMcpDraft(): Promise<any> {
+  const client = new Client({ name: "openskill-kit-smoke", version: "0.1.0" }, { capabilities: {} });
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [mcp],
+    cwd: root,
+    stderr: "pipe"
+  });
+  try {
+    await client.connect(transport);
+    const listed = await client.listTools();
+    if (!listed.tools.some((tool) => tool.name === "openskill_draft")) {
+      throw new Error("MCP tools missing openskill_draft");
+    }
+    const draftResult = await client.callTool({
+      name: "openskill_draft",
+      arguments: { topic: "smoke mcp skill", projectRoot: root, noLlm: true }
+    });
+    const text = draftResult.content.find((item) => item.type === "text")?.text;
+    if (!text) throw new Error("MCP draft returned no text content");
+    return JSON.parse(text);
+  } finally {
+    await client.close();
   }
 }

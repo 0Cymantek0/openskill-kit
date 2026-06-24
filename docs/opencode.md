@@ -17,3 +17,6 @@ The OpenCode adapter package exposes thin tools that call core functions instead
 of reimplementing drafting, audit, test, or install logic.
 
 Tool surface includes draft, evolve, audit, test, install, list, and doctor.
+
+For MCP-capable hosts, run `openskill-kit-mcp`. It exposes the same core through
+stdio tools with sanitized structured output.

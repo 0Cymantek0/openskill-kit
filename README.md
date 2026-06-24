@@ -22,7 +22,12 @@ and checks stay inspectable.
 `openskill-kit test <skill>` writes `verifier.json` and
 `verifier-execution.json` under `.openskill-kit/reports/`.
 Generated drafts include `tests/skill-package-fixture.cjs`; `test` runs it
-through the local sandbox runner.
+through the local sandbox runner. Coding agents can also attach through the
+stdio MCP server:
+
+```bash
+openskill-kit-mcp
+```
 
 ## Core Commands
 
@@ -55,9 +60,9 @@ escalation, and obfuscated execution. Critical findings block install unless
 The current implementation is the first local spine: deterministic drafting,
 local evidence ledger, package-level verifier pack, schema validation, scanner,
 verifier report, local sandbox policy metadata, registry, installer, CLI,
-OpenCode adapter shell, and Codex plugin bundle. Full open-world retrieval,
-container sandboxing, skill evolution, and benchmark leakage audits are planned
-next and are not faked.
+stdio MCP server, OpenCode adapter shell, and Codex plugin bundle. Full
+open-world retrieval, container sandboxing, autonomous refinement, and benchmark
+leakage audits are planned next and are not faked.
 
 `evolve` currently runs one deterministic round: draft, verify, diagnose, and
 freeze only when the verifier passes. It writes `evolution.json` and

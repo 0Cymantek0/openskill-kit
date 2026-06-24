@@ -9,7 +9,8 @@
     "packages/*"
   ],
   "bin": {
-    "openskill-kit": "dist/index.cjs"
+    "openskill-kit": "dist/index.cjs",
+    "openskill-kit-mcp": "dist/openskill-kit-mcp.cjs"
   },
   "files": [
     "README.md",
