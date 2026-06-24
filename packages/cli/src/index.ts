@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
   draftSkill,
+  forgeSkill,
   installSkill,
   loadSkillPackage,
   readRegistry,
@@ -76,6 +77,17 @@ program.command("learn")
   .action(async (topic, options) => {
     const result = await draftSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false });
     output(options.json, result, `Drafted ${result.skillName} at ${result.skillDir}`);
+  });
+
+program.command("forge")
+  .description("Draft and verify a skill through the local evolution loop")
+  .argument("<topic>", "Skill topic")
+  .option("--no-llm", "Do not use LLM provider", true)
+  .option("--json", "Print JSON")
+  .action(async (topic, options) => {
+    const result = await forgeSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false });
+    output(options.json, result, `Forge ${result.status}: ${result.skillName}\nRun: ${result.runDir}`);
+    process.exitCode = result.status === "needs-refinement" ? 1 : 0;
   });
 
 program.command("audit")
@@ -163,8 +175,8 @@ program.parseAsync(process.argv).catch((error) => {
 });
 
 function output(json: boolean | undefined, data: unknown, text: string): void {
-  if (json) console.log(JSON.stringify(data, null, 2));
-  else console.log(text);
+  if (json) console.log(JSON.stringify(sanitizeForOutput(data), null, 2));
+  else console.log(sanitizeText(text));
 }
 
 function parseTarget(value: string): InstallTarget {
@@ -179,4 +191,20 @@ async function resolveSkillArg(value: string): Promise<string> {
   const found = registry.skills.find((skill) => skill.name === value);
   if (!found) throw new Error(`Skill not found in registry: ${value}`);
   return found.sourcePath;
+}
+
+function sanitizeForOutput(value: unknown): unknown {
+  if (typeof value === "string") return sanitizeText(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeForOutput(item));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, sanitizeForOutput(nested)]));
+  }
+  return value;
+}
+
+function sanitizeText(value: string): string {
+  const cwd = process.cwd();
+  return value
+    .replaceAll(cwd, ".")
+    .replaceAll(path.normalize(cwd), ".");
 }

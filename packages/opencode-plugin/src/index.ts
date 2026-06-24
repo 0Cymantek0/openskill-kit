@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   draftSkill,
+  forgeSkill,
   installSkill,
   readRegistry,
   runDoctor,
@@ -13,6 +14,7 @@ const targetSchema = z.enum(["opencode-project", "opencode-global", "agents-proj
 
 export const toolSchemas = {
   draft: z.object({ topic: z.string().min(1), projectRoot: z.string().optional() }),
+  forge: z.object({ topic: z.string().min(1), projectRoot: z.string().optional() }),
   audit: z.object({ skillPath: z.string().min(1) }),
   test: z.object({ skillPath: z.string().min(1) }),
   install: z.object({ skillPath: z.string().min(1), target: targetSchema, dryRun: z.boolean().default(true) }),
@@ -24,6 +26,20 @@ export async function openskillKitDraft(args: z.infer<typeof toolSchemas.draft>)
   const parsed = toolSchemas.draft.parse(args);
   const result = await draftSkill({ topic: parsed.topic, projectRoot: parsed.projectRoot ?? process.cwd(), noLlm: true });
   return summarize("drafted", result);
+}
+
+export async function openskillKitForge(args: z.infer<typeof toolSchemas.forge>) {
+  const parsed = toolSchemas.forge.parse(args);
+  const result = await forgeSkill({ topic: parsed.topic, projectRoot: parsed.projectRoot ?? process.cwd(), noLlm: true });
+  return summarize(`forge ${result.status}`, {
+    skillName: result.skillName,
+    runDir: result.runDir,
+    rounds: result.rounds.map((round) => ({
+      id: round.id,
+      verifierStatus: round.verifierStatus,
+      diagnosis: round.diagnosis
+    }))
+  });
 }
 
 export async function openskillKitAudit(args: z.infer<typeof toolSchemas.audit>) {

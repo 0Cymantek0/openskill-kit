@@ -3,6 +3,7 @@ export * from "./skill/parser.js";
 export * from "./safety/scanner.js";
 export * from "./context/collector.js";
 export * from "./evidence/ledger.js";
+export * from "./evolution/evolve.js";
 export * from "./draft/draft.js";
 export * from "./verifier/verifier.js";
 export * from "./verifier/execution.js";

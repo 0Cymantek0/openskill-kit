@@ -60,6 +60,13 @@ if (inspected.manifest?.name !== draft.skillName) throw new Error("inspect faile
 await runJson(["uninstall", draft.skillName, "--target", "agents-project", "--yes", "--json"]);
 await expectMissing(path.join(root, ".agents", "skills", draft.skillName));
 
+const forged = await runJson(["forge", "smoke forge skill", "--no-llm", "--json"]);
+if (forged.status !== "frozen" || forged.rounds?.[0]?.diagnosis?.kind !== "pass") {
+  throw new Error("forge loop did not freeze clean candidate");
+}
+await stat(path.join(root, forged.artifacts.evolution));
+await stat(path.join(root, forged.artifacts.roundsDir, "round-0.json"));
+
 console.log("smoke passed");
 
 async function runJson(args: string[]): Promise<any> {

@@ -17,11 +17,12 @@ Do not use for hidden benchmark answers, secret extraction, or unapproved global
 installation.
 
 ## Workflow
-1. Prefer `openskill-kit draft "<topic>" --no-llm` for local deterministic drafts.
-2. Run `openskill-kit audit <skill-path>` before install.
-3. Run `openskill-kit test <skill-path>` and inspect report paths.
-4. Install with explicit target only, such as `--target agents-project`.
-5. Keep generated `SKILL.md` concise; bulky notes belong in references.
+1. Prefer `openskill-kit forge "<topic>" --no-llm` when user wants draft plus local verification loop.
+2. Use `openskill-kit draft "<topic>" --no-llm` only when a candidate without loop diagnosis is enough.
+3. Run `openskill-kit audit <skill-path>` before install.
+4. Run `openskill-kit test <skill-path>` and inspect report paths.
+5. Install with explicit target only, such as `--target agents-project`.
+6. Keep generated `SKILL.md` concise; bulky notes belong in references.
 
 ## Safety
 Critical audit findings block install unless user explicitly approves override.

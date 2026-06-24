@@ -12,6 +12,7 @@ the official OpenLAIR/OpenSkill implementation.
 npm install
 npm run build
 npx openskill-kit doctor --json
+npx openskill-kit forge "repo test workflow" --no-llm
 npx openskill-kit draft "repo test workflow" --no-llm
 ```
 
@@ -28,6 +29,7 @@ through the local sandbox runner.
 ```bash
 openskill-kit init
 openskill-kit doctor
+openskill-kit forge "topic" --no-llm
 openskill-kit draft "topic" --no-llm
 openskill-kit learn "topic" --no-llm
 openskill-kit audit <skill-path>
@@ -56,3 +58,7 @@ verifier report, local sandbox policy metadata, registry, installer, CLI,
 OpenCode adapter shell, and Codex plugin bundle. Full open-world retrieval,
 container sandboxing, skill evolution, and benchmark leakage audits are planned
 next and are not faked.
+
+`forge` currently runs one deterministic round: draft, verify, diagnose, and
+freeze only when the verifier passes. It writes `evolution.json` and
+`rounds/round-0.json`; it does not fake LLM refinement.
