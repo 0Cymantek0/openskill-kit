@@ -7,6 +7,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
   draftSkill,
+  evaluateSkill,
   evolveSkill,
   installSkill,
   loadSkillPackage,
@@ -23,6 +24,8 @@ const targetSchema = z.enum(["opencode-project", "opencode-global", "agents-proj
 const projectRootSchema = z.string().min(1).optional();
 const topicSchema = z.string().min(1).max(200);
 const skillPathSchema = z.string().min(1);
+const evidenceFilesSchema = z.array(z.string().min(1)).default([]);
+const evidenceUrlsSchema = z.array(z.string().url()).default([]);
 
 export function createOpenSkillMcpServer(): McpServer {
   const server = new McpServer(
@@ -49,12 +52,12 @@ export function createOpenSkillMcpServer(): McpServer {
     {
       title: "OpenSkill Kit Draft",
       description: "Draft a deterministic local skill package for a topic.",
-      inputSchema: z.object({ topic: topicSchema, projectRoot: projectRootSchema, noLlm: z.boolean().default(true) }),
+      inputSchema: z.object({ topic: topicSchema, projectRoot: projectRootSchema, noLlm: z.boolean().default(true), evidenceFiles: evidenceFilesSchema, evidenceUrls: evidenceUrlsSchema }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ topic, projectRoot, noLlm }) => {
+    async ({ topic, projectRoot, noLlm, evidenceFiles, evidenceUrls }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await draftSkill({ topic, projectRoot: root, noLlm }), root);
+      return toolResult(await draftSkill({ topic, projectRoot: root, noLlm, evidenceFiles, evidenceUrls }), root);
     }
   );
 
@@ -63,12 +66,20 @@ export function createOpenSkillMcpServer(): McpServer {
     {
       title: "OpenSkill Kit Evolve",
       description: "Draft and verify a skill through the local evolution loop.",
-      inputSchema: z.object({ topic: topicSchema, projectRoot: projectRootSchema, noLlm: z.boolean().default(true) }),
+      inputSchema: z.object({
+        topic: topicSchema,
+        projectRoot: projectRootSchema,
+        noLlm: z.boolean().default(true),
+        evidenceFiles: evidenceFilesSchema,
+        evidenceUrls: evidenceUrlsSchema,
+        maxRounds: z.number().int().min(1).max(5).default(3),
+        runRepoChecks: z.boolean().default(false)
+      }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ topic, projectRoot, noLlm }) => {
+    async ({ topic, projectRoot, noLlm, evidenceFiles, evidenceUrls, maxRounds, runRepoChecks }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await evolveSkill({ topic, projectRoot: root, noLlm }), root);
+      return toolResult(await evolveSkill({ topic, projectRoot: root, noLlm, evidenceFiles, evidenceUrls, maxRounds, runRepoChecks }), root);
     }
   );
 
@@ -91,14 +102,28 @@ export function createOpenSkillMcpServer(): McpServer {
     {
       title: "OpenSkill Kit Test",
       description: "Run verifier pack checks against a skill package.",
-      inputSchema: z.object({ skillPath: skillPathSchema, projectRoot: projectRootSchema }),
+      inputSchema: z.object({ skillPath: skillPathSchema, projectRoot: projectRootSchema, runRepoChecks: z.boolean().default(false) }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ skillPath, projectRoot }) => {
+    async ({ skillPath, projectRoot, runRepoChecks }) => {
       const root = resolveProjectRoot(projectRoot);
       const absoluteSkillPath = resolvePath(skillPath, root);
       const reportDir = path.join(root, ".openskill-kit", "reports", path.basename(absoluteSkillPath));
-      return toolResult(await verifySkill(absoluteSkillPath, reportDir), root);
+      return toolResult(await verifySkill(absoluteSkillPath, reportDir, undefined, { runRepoChecks }), root);
+    }
+  );
+
+  server.registerTool(
+    "openskill_evaluate",
+    {
+      title: "OpenSkill Kit Evaluate",
+      description: "Write a leakage-aware evaluation report for a skill package.",
+      inputSchema: z.object({ skillPath: skillPathSchema, projectRoot: projectRootSchema, runRepoChecks: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ skillPath, projectRoot, runRepoChecks }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await evaluateSkill(resolvePath(skillPath, root), { runRepoChecks }), root);
     }
   );
 

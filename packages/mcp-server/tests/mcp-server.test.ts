@@ -32,6 +32,7 @@ describe("openskill-kit MCP server", () => {
           "openskill_evolve",
           "openskill_audit",
           "openskill_test",
+          "openskill_evaluate",
           "openskill_install",
           "openskill_list",
           "openskill_inspect"
@@ -52,6 +53,16 @@ describe("openskill-kit MCP server", () => {
 
       const skillMarkdown = await readFile(path.join(root, ".openskill-kit", "runs", parsed.runId, "candidate", parsed.skillName, "SKILL.md"), "utf8");
       expect(skillMarkdown).toContain("mcp agent handoff");
+
+      const evaluation = await client.callTool({
+        name: "openskill_evaluate",
+        arguments: { skillPath: parsed.skillDir, projectRoot: root }
+      });
+      const evaluationText = evaluation.content.find((item) => item.type === "text")?.text;
+      expect(evaluationText).toBeTruthy();
+      const evaluationParsed = JSON.parse(evaluationText ?? "{}");
+      expect(evaluationParsed.schemaVersion).toBe("openskill-kit.evaluation.v0");
+      expect(evaluationParsed.status).not.toBe("fail");
     } finally {
       await client.close();
     }

@@ -19,10 +19,14 @@ installation.
 ## Workflow
 1. Prefer `openskill-kit evolve "<topic>" --no-llm` when user wants draft plus local verification loop.
 2. Use `openskill-kit draft "<topic>" --no-llm` only when a candidate without loop diagnosis is enough.
-3. Run `openskill-kit audit <skill-path>` before install.
-4. Run `openskill-kit test <skill-path>` and inspect report paths.
-5. Install with explicit target only, such as `--target agents-project`.
-6. Keep generated `SKILL.md` concise; bulky notes belong in references.
+3. Add explicit evidence with `--evidence-file <path>` or opt-in URL evidence with `--evidence-url <url>` when user supplies trusted sources.
+4. Run `openskill-kit audit <skill-path>` before install.
+5. Run `openskill-kit test <skill-path>` and inspect report paths. Use `--run-repo-checks` when the user wants verifier-pack repo scripts executed.
+6. Run `openskill-kit evaluate <skill-path>` for one leakage-aware readiness report before install.
+7. Install with explicit target only, such as `--target agents-project`.
+8. Keep generated `SKILL.md` concise; bulky notes belong in references.
 
 ## Safety
 Critical audit findings block install unless user explicitly approves override.
+Hidden-test, oracle, and ground-truth evidence inputs are blocked by leakage audit.
+The bundled `.mcp.json` can expose the same core through `openskill-kit-mcp`.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   draftSkill,
+  evaluateSkill,
   evolveSkill,
   installSkill,
   readRegistry,
@@ -9,28 +10,44 @@ import {
   verifySkill,
   type InstallTarget
 } from "@openskill-kit/core";
+import path from "node:path";
 
 const targetSchema = z.enum(["opencode-project", "opencode-global", "agents-project", "agents-global"]);
 
 export const toolSchemas = {
-  draft: z.object({ topic: z.string().min(1), projectRoot: z.string().optional() }),
-  evolve: z.object({ topic: z.string().min(1), projectRoot: z.string().optional() }),
-  audit: z.object({ skillPath: z.string().min(1) }),
-  test: z.object({ skillPath: z.string().min(1) }),
-  install: z.object({ skillPath: z.string().min(1), target: targetSchema, dryRun: z.boolean().default(true) }),
+  draft: z.object({ topic: z.string().min(1), projectRoot: z.string().optional(), evidenceFiles: z.array(z.string().min(1)).default([]), evidenceUrls: z.array(z.string().url()).default([]) }),
+  evolve: z.object({
+    topic: z.string().min(1),
+    projectRoot: z.string().optional(),
+    evidenceFiles: z.array(z.string().min(1)).default([]),
+    evidenceUrls: z.array(z.string().url()).default([]),
+    maxRounds: z.number().int().min(1).max(5).default(3),
+    runRepoChecks: z.boolean().default(false)
+  }),
+  audit: z.object({ skillPath: z.string().min(1), projectRoot: z.string().optional() }),
+  test: z.object({ skillPath: z.string().min(1), projectRoot: z.string().optional(), runRepoChecks: z.boolean().default(false) }),
+  evaluate: z.object({ skillPath: z.string().min(1), projectRoot: z.string().optional(), runRepoChecks: z.boolean().default(false) }),
+  install: z.object({
+    skillPath: z.string().min(1),
+    target: targetSchema,
+    projectRoot: z.string().optional(),
+    dryRun: z.boolean().default(true),
+    yes: z.boolean().default(false),
+    allowCriticalRisk: z.boolean().default(false)
+  }),
   list: z.object({ projectRoot: z.string().optional() }),
   doctor: z.object({ projectRoot: z.string().optional() })
 };
 
 export async function openskillKitDraft(args: z.infer<typeof toolSchemas.draft>) {
   const parsed = toolSchemas.draft.parse(args);
-  const result = await draftSkill({ topic: parsed.topic, projectRoot: parsed.projectRoot ?? process.cwd(), noLlm: true });
+  const result = await draftSkill({ topic: parsed.topic, projectRoot: parsed.projectRoot ?? process.cwd(), noLlm: true, evidenceFiles: parsed.evidenceFiles, evidenceUrls: parsed.evidenceUrls });
   return summarize("drafted", result);
 }
 
 export async function openskillKitEvolve(args: z.infer<typeof toolSchemas.evolve>) {
   const parsed = toolSchemas.evolve.parse(args);
-  const result = await evolveSkill({ topic: parsed.topic, projectRoot: parsed.projectRoot ?? process.cwd(), noLlm: true });
+  const result = await evolveSkill({ topic: parsed.topic, projectRoot: parsed.projectRoot ?? process.cwd(), noLlm: true, evidenceFiles: parsed.evidenceFiles, evidenceUrls: parsed.evidenceUrls, maxRounds: parsed.maxRounds, runRepoChecks: parsed.runRepoChecks });
   return summarize(`evolve ${result.status}`, {
     skillName: result.skillName,
     runDir: result.runDir,
@@ -44,23 +61,41 @@ export async function openskillKitEvolve(args: z.infer<typeof toolSchemas.evolve
 
 export async function openskillKitAudit(args: z.infer<typeof toolSchemas.audit>) {
   const parsed = toolSchemas.audit.parse(args);
-  const report = await scanSkillPath(parsed.skillPath);
+  const root = parsed.projectRoot ?? process.cwd();
+  const report = await scanSkillPath(resolvePath(parsed.skillPath, root));
   return summarize(`audit ${report.status}`, { score: report.score, findings: report.findings.length });
 }
 
 export async function openskillKitTest(args: z.infer<typeof toolSchemas.test>) {
   const parsed = toolSchemas.test.parse(args);
-  const report = await verifySkill(parsed.skillPath);
-  return summarize(`test ${report.status}`, { scores: report.scores, issues: report.issues.length });
+  const root = parsed.projectRoot ?? process.cwd();
+  const report = await verifySkill(resolvePath(parsed.skillPath, root), undefined, undefined, { runRepoChecks: parsed.runRepoChecks });
+  return summarize(`test ${report.status}`, { scores: report.scores, issues: report.issues.length, commands: report.commandResults.length });
+}
+
+export async function openskillKitEvaluate(args: z.infer<typeof toolSchemas.evaluate>) {
+  const parsed = toolSchemas.evaluate.parse(args);
+  const root = parsed.projectRoot ?? process.cwd();
+  const report = await evaluateSkill(resolvePath(parsed.skillPath, root), { runRepoChecks: parsed.runRepoChecks });
+  return summarize(`evaluate ${report.status}`, {
+    verifierStatus: report.verifierStatus,
+    leakageStatus: report.leakageStatus,
+    gates: report.gates,
+    metrics: report.metrics,
+    artifacts: report.artifacts
+  });
 }
 
 export async function openskillKitInstall(args: z.infer<typeof toolSchemas.install>) {
   const parsed = toolSchemas.install.parse(args);
+  const root = parsed.projectRoot ?? process.cwd();
   const result = await installSkill({
-    skillPath: parsed.skillPath,
+    skillPath: resolvePath(parsed.skillPath, root),
     target: parsed.target as InstallTarget,
-    projectRoot: process.cwd(),
-    dryRun: parsed.dryRun
+    projectRoot: root,
+    dryRun: parsed.dryRun,
+    yes: parsed.yes,
+    allowCriticalRisk: parsed.allowCriticalRisk
   });
   return summarize(result.status, result);
 }
@@ -82,4 +117,8 @@ function summarize(kind: string, data: unknown) {
     kind,
     data
   };
+}
+
+function resolvePath(value: string, root: string): string {
+  return path.isAbsolute(value) ? value : path.resolve(root, value);
 }

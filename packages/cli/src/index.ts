@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
   draftSkill,
+  evaluateSkill,
   evolveSkill,
   installSkill,
   loadSkillPackage,
@@ -63,9 +64,11 @@ program.command("draft")
   .description("Draft a deterministic local skill")
   .argument("<topic>", "Skill topic")
   .option("--no-llm", "Do not use LLM provider", true)
+  .option("--evidence-file <path>", "Add a local evidence file to the ledger", collectOption, [])
+  .option("--evidence-url <url>", "Fetch an explicit HTTP(S) evidence URL", collectOption, [])
   .option("--json", "Print JSON")
   .action(async (topic, options) => {
-    const result = await draftSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false });
+    const result = await draftSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false, evidenceFiles: options.evidenceFile, evidenceUrls: options.evidenceUrl });
     output(options.json, result, `Drafted ${result.skillName} at ${result.skillDir}`);
   });
 
@@ -73,9 +76,11 @@ program.command("learn")
   .description("Alias for draft in deterministic local mode")
   .argument("<topic>", "Skill topic")
   .option("--no-llm", "Do not use LLM provider", true)
+  .option("--evidence-file <path>", "Add a local evidence file to the ledger", collectOption, [])
+  .option("--evidence-url <url>", "Fetch an explicit HTTP(S) evidence URL", collectOption, [])
   .option("--json", "Print JSON")
   .action(async (topic, options) => {
-    const result = await draftSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false });
+    const result = await draftSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false, evidenceFiles: options.evidenceFile, evidenceUrls: options.evidenceUrl });
     output(options.json, result, `Drafted ${result.skillName} at ${result.skillDir}`);
   });
 
@@ -83,9 +88,13 @@ program.command("evolve")
   .description("Draft and verify a skill through the local evolution loop")
   .argument("<topic>", "Skill topic")
   .option("--no-llm", "Do not use LLM provider", true)
+  .option("--evidence-file <path>", "Add a local evidence file to the ledger", collectOption, [])
+  .option("--evidence-url <url>", "Fetch an explicit HTTP(S) evidence URL", collectOption, [])
+  .option("--max-rounds <number>", "Maximum deterministic evolution rounds", parseIntegerOption)
+  .option("--run-repo-checks", "Execute repository command checks during evolution")
   .option("--json", "Print JSON")
   .action(async (topic, options) => {
-    const result = await evolveSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false });
+    const result = await evolveSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false, evidenceFiles: options.evidenceFile, evidenceUrls: options.evidenceUrl, maxRounds: options.maxRounds, runRepoChecks: options.runRepoChecks === true });
     output(options.json, result, `evolve ${result.status}: ${result.skillName}\nRun: ${result.runDir}`);
     process.exitCode = result.status === "needs-refinement" ? 1 : 0;
   });
@@ -103,11 +112,23 @@ program.command("audit")
 program.command("test")
   .description("Validate and verify a skill package")
   .argument("<skill-path>", "Skill directory or SKILL.md")
+  .option("--run-repo-checks", "Execute repository command checks from verifier pack")
   .option("--json", "Print JSON")
   .action(async (skillPath, options) => {
     const reportDir = path.join(".openskill-kit", "reports", path.basename(path.resolve(skillPath)));
-    const report = await verifySkill(skillPath, reportDir);
+    const report = await verifySkill(skillPath, reportDir, undefined, { runRepoChecks: options.runRepoChecks === true });
     output(options.json, report, `Verifier ${report.status}: safety ${report.scores.safety}, structure ${report.scores.structure}\nReport: ${report.reportPath ?? reportDir}`);
+    process.exitCode = report.status === "fail" ? 1 : 0;
+  });
+
+program.command("evaluate")
+  .description("Write a leakage-aware evaluation report for a skill package")
+  .argument("<skill-path>", "Skill directory or SKILL.md")
+  .option("--run-repo-checks", "Execute repository command checks from verifier pack")
+  .option("--json", "Print JSON")
+  .action(async (skillPath, options) => {
+    const report = await evaluateSkill(skillPath, { runRepoChecks: options.runRepoChecks === true });
+    output(options.json, report, `Evaluation ${report.status}: verifier ${report.verifierStatus}, leakage ${report.leakageStatus}\nReport: ${report.artifacts.evaluation}`);
     process.exitCode = report.status === "fail" ? 1 : 0;
   });
 
@@ -183,6 +204,16 @@ function parseTarget(value: string): InstallTarget {
   const targets = new Set(["opencode-project", "opencode-global", "agents-project", "agents-global"]);
   if (!targets.has(value)) throw new Error(`Invalid target: ${value}`);
   return value as InstallTarget;
+}
+
+function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function parseIntegerOption(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) throw new Error(`Invalid number: ${value}`);
+  return parsed;
 }
 
 async function resolveSkillArg(value: string): Promise<string> {

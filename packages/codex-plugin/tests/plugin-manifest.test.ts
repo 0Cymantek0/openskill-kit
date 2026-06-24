@@ -8,5 +8,7 @@ describe("Codex plugin manifest", () => {
     const manifest = JSON.parse(readFileSync(path.join(root, ".codex-plugin", "plugin.json"), "utf8"));
     expect(manifest.name).toBe("openskill-kit");
     expect(manifest.skills[0].path).toBe("skills/openskill-kit");
+    const mcp = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));
+    expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
   });
 });
