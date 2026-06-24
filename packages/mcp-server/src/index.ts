@@ -19,10 +19,12 @@ import {
   initAdaptiveProject,
   importProjectBehaviorPack,
   installSkill,
+  inspectProjectBehaviorPack,
   loadSkillPackage,
   readPreferenceGraph,
   readRegistry,
   retrieveRelevantPreferences,
+  diffProjectBehaviorPacks,
   runAgentDoctor,
   runBehaviorEval,
   runDoctor,
@@ -196,6 +198,34 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, packPath }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await verifyProjectBehaviorPack(resolvePath(packPath, root)), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_inspect_behavior_pack",
+    {
+      title: "OpenSkillKit Inspect Behavior Pack",
+      description: "Inspect pack manifest, privacy flags, and signature state.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, packPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await inspectProjectBehaviorPack(resolvePath(packPath, root)), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_diff_behavior_pack",
+    {
+      title: "OpenSkillKit Diff Behavior Pack",
+      description: "Diff two Project Behavior Packs by manifest hashes.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, leftPackPath: z.string().min(1), rightPackPath: z.string().min(1) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, leftPackPath, rightPackPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await diffProjectBehaviorPacks(resolvePath(leftPackPath, root), resolvePath(rightPackPath, root)), root);
     }
   );
 

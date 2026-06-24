@@ -17,6 +17,7 @@ import {
   initAdaptiveProject,
   importProjectBehaviorPack,
   installSkill,
+  inspectProjectBehaviorPack,
   loadSkillPackage,
   retrieveRelevantPreferences,
   runAgentDoctor,
@@ -26,6 +27,7 @@ import {
   runDoctor,
   scanSkillPath,
   signProjectBehaviorPack,
+  diffProjectBehaviorPacks,
   uninstallSkill,
   updatePreferenceGraph,
   verifyProjectBehaviorPack,
@@ -223,6 +225,26 @@ program.command("verify-pack")
     const result = await verifyProjectBehaviorPack(packPath);
     output(options.json, result, `${result.status}: ${result.issues.join("; ") || "pack verified"}`);
     process.exitCode = result.status === "fail" ? 1 : 0;
+  });
+
+program.command("inspect-pack")
+  .description("Inspect a Project Behavior Pack manifest, privacy, and signature")
+  .argument("<pack-path>", "Pack directory")
+  .option("--json", "Print JSON")
+  .action(async (packPath, options) => {
+    const result = await inspectProjectBehaviorPack(packPath);
+    output(options.json, result, `${result.status}: ${result.fileCount} file(s), signature ${result.signature.status}`);
+    process.exitCode = result.status === "fail" ? 1 : 0;
+  });
+
+program.command("diff-pack")
+  .description("Diff two Project Behavior Packs by manifest hashes")
+  .argument("<left-pack-path>", "Left pack directory")
+  .argument("<right-pack-path>", "Right pack directory")
+  .option("--json", "Print JSON")
+  .action(async (leftPackPath, rightPackPath, options) => {
+    const result = await diffProjectBehaviorPacks(leftPackPath, rightPackPath);
+    output(options.json, result, `Added: ${result.added.length}\nRemoved: ${result.removed.length}\nChanged: ${result.changed.length}`);
   });
 
 program.command("sign-pack")

@@ -71,9 +71,13 @@ await stat(path.join(root, ".agents", "skills", "project-behavior", "SKILL.md"))
 const pack = await runJson(["pack", "--json"]);
 await stat(path.join(root, pack.manifestPath));
 const signedPack = await runJson(["sign-pack", pack.packPath, "--key-dir", path.join(root, ".openskill-kit", "keys"), "--json"]);
-if (!signedPack.signature || !signedPack.publicKeyPath) throw new Error("pack signing failed");
+if (!signedPack.signature || !signedPack.publicKeyPath || !signedPack.keyId) throw new Error("pack signing failed");
 const verifiedPack = await runJson(["verify-pack", pack.packPath, "--json"]);
 if (verifiedPack.status !== "pass" || verifiedPack.signature?.status !== "valid") throw new Error("pack verification failed");
+const inspectedPack = await runJson(["inspect-pack", pack.packPath, "--json"]);
+if (inspectedPack.signature?.keyId !== signedPack.keyId) throw new Error("pack inspect failed");
+const packDiff = await runJson(["diff-pack", pack.packPath, pack.packPath, "--json"]);
+if (packDiff.changed?.length !== 0 || packDiff.added?.length !== 0 || packDiff.removed?.length !== 0) throw new Error("pack diff failed");
 const behaviorEval = await runJson(["eval", "--json"]);
 if (behaviorEval.status !== "pass" || behaviorEval.adherence !== 1) throw new Error("behavior eval failed");
 const importRoot = await mkdtemp(path.join(os.tmpdir(), "openskill-kit-import-"));

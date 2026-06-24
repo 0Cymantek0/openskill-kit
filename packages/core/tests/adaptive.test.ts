@@ -12,9 +12,11 @@ import {
   getAdaptiveStatus,
   initAdaptiveProject,
   importProjectBehaviorPack,
+  inspectProjectBehaviorPack,
   installSkill,
   runBehaviorEval,
   signProjectBehaviorPack,
+  diffProjectBehaviorPacks,
   updatePreferenceGraph,
   verifyProjectBehaviorPack,
   verifySkill
@@ -82,10 +84,16 @@ describe("adaptive behavior layer", () => {
     const pack = await exportProjectBehaviorPack(root);
     await expect(stat(pack.manifestPath)).resolves.toBeTruthy();
     expect(pack.files).not.toContain(".openskill-kit/events/2026-06.jsonl");
-    await signProjectBehaviorPack(pack.packPath, path.join(root, ".openskill-kit", "keys"));
+    const signed = await signProjectBehaviorPack(pack.packPath, path.join(root, ".openskill-kit", "keys"));
+    expect(signed.keyId).toHaveLength(16);
     const packVerify = await verifyProjectBehaviorPack(pack.packPath);
     expect(packVerify.status).toBe("pass");
     expect(packVerify.signature?.status).toBe("valid");
+    expect(packVerify.signature?.keyId).toBe(signed.keyId);
+    const inspected = await inspectProjectBehaviorPack(pack.packPath);
+    expect(inspected.signature.keyId).toBe(signed.keyId);
+    const diff = await diffProjectBehaviorPacks(pack.packPath, pack.packPath);
+    expect(diff.changed).toHaveLength(0);
 
     const importRoot = await mkdtemp(path.join(os.tmpdir(), "osk-import-"));
     const importPlan = await importProjectBehaviorPack(importRoot, pack.packPath);

@@ -100,6 +100,8 @@ generated skill text.
 - `osk_export_behavior_pack`
 - `osk_sign_behavior_pack`
 - `osk_verify_behavior_pack`
+- `osk_inspect_behavior_pack`
+- `osk_diff_behavior_pack`
 - `osk_import_behavior_pack`
 - `osk_run_behavior_eval`
 - `osk_agent_doctor`

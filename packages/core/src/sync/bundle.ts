@@ -60,6 +60,7 @@ export interface VerifyProjectBehaviorPackResult {
   files: string[];
   signature: {
     status: "present" | "missing" | "valid" | "invalid";
+    keyId?: string;
     publicKeyPath?: string;
   };
 }
@@ -93,6 +94,7 @@ export interface SignProjectBehaviorPackResult {
   packPath: string;
   manifestPath: string;
   publicKeyPath: string;
+  keyId: string;
   signature: string;
 }
 
@@ -104,16 +106,72 @@ export async function signProjectBehaviorPack(packPathInput: string, keyDirInput
   const keys = await ensureSigningKeys(keyDir);
   const payload = canonicalSignableManifest(manifest);
   const signature = cryptoSign(null, Buffer.from(payload), keys.privateKey).toString("base64");
+  const keyId = createHash("sha256").update(keys.publicKey).digest("hex").slice(0, 16);
   const signed = {
     ...manifest,
     signature: {
       algorithm: "ed25519",
+      keyId,
       value: signature,
+      publicKey: keys.publicKey,
       publicKeyPath: keys.publicKeyPath
     }
   };
   await writeJsonAtomic(manifestPath, signed);
-  return { schemaVersion: "openskill-kit.project-pack-sign.v1", packPath, manifestPath, publicKeyPath: keys.publicKeyPath, signature };
+  return { schemaVersion: "openskill-kit.project-pack-sign.v1", packPath, manifestPath, publicKeyPath: keys.publicKeyPath, keyId, signature };
+}
+
+export interface InspectProjectBehaviorPackResult {
+  schemaVersion: "openskill-kit.project-pack-inspect.v1";
+  packPath: string;
+  status: "pass" | "fail";
+  fileCount: number;
+  includes: string[];
+  privacy: unknown;
+  signature: VerifyProjectBehaviorPackResult["signature"];
+  issues: string[];
+}
+
+export async function inspectProjectBehaviorPack(packPathInput: string): Promise<InspectProjectBehaviorPackResult> {
+  const packPath = path.resolve(packPathInput);
+  const manifest = await readManifest(packPath);
+  const verification = await verifyProjectBehaviorPack(packPath);
+  return {
+    schemaVersion: "openskill-kit.project-pack-inspect.v1",
+    packPath,
+    status: verification.status,
+    fileCount: manifest.files?.length ?? 0,
+    includes: manifest.includes ?? [],
+    privacy: manifest.privacy,
+    signature: verification.signature,
+    issues: verification.issues
+  };
+}
+
+export interface DiffProjectBehaviorPackResult {
+  schemaVersion: "openskill-kit.project-pack-diff.v1";
+  leftPackPath: string;
+  rightPackPath: string;
+  added: string[];
+  removed: string[];
+  changed: string[];
+  unchanged: string[];
+}
+
+export async function diffProjectBehaviorPacks(leftPackPathInput: string, rightPackPathInput: string): Promise<DiffProjectBehaviorPackResult> {
+  const leftPackPath = path.resolve(leftPackPathInput);
+  const rightPackPath = path.resolve(rightPackPathInput);
+  const left = await readManifest(leftPackPath);
+  const right = await readManifest(rightPackPath);
+  const leftHashes = left.hashes ?? {};
+  const rightHashes = right.hashes ?? {};
+  const leftFiles = new Set(Object.keys(leftHashes));
+  const rightFiles = new Set(Object.keys(rightHashes));
+  const added = [...rightFiles].filter((file) => !leftFiles.has(file)).sort();
+  const removed = [...leftFiles].filter((file) => !rightFiles.has(file)).sort();
+  const changed = [...rightFiles].filter((file) => leftFiles.has(file) && leftHashes[file] !== rightHashes[file]).sort();
+  const unchanged = [...rightFiles].filter((file) => leftFiles.has(file) && leftHashes[file] === rightHashes[file]).sort();
+  return { schemaVersion: "openskill-kit.project-pack-diff.v1", leftPackPath, rightPackPath, added, removed, changed, unchanged };
 }
 
 export interface ImportProjectBehaviorPackResult {
@@ -197,11 +255,12 @@ async function ensureSigningKeys(keyDir: string): Promise<{ privateKey: string; 
 async function verifyManifestSignature(packPath: string, manifest: any): Promise<VerifyProjectBehaviorPackResult["signature"]> {
   if (!manifest.signature?.value) return { status: "missing" };
   const publicKeyPath = manifest.signature.publicKeyPath;
-  if (typeof publicKeyPath !== "string") return { status: "invalid" };
-  const publicKey = await fs.readFile(publicKeyPath, "utf8").catch(() => undefined);
+  const publicKey = typeof manifest.signature.publicKey === "string"
+    ? manifest.signature.publicKey
+    : typeof publicKeyPath === "string" ? await fs.readFile(publicKeyPath, "utf8").catch(() => undefined) : undefined;
   if (!publicKey) return { status: "invalid", publicKeyPath };
   const ok = cryptoVerify(null, Buffer.from(canonicalSignableManifest(manifest)), publicKey, Buffer.from(manifest.signature.value, "base64"));
-  return { status: ok ? "valid" : "invalid", publicKeyPath };
+  return { status: ok ? "valid" : "invalid", keyId: manifest.signature.keyId, publicKeyPath };
 }
 
 function canonicalSignableManifest(manifest: any): string {

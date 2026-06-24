@@ -67,6 +67,8 @@ openskill-kit eval
 openskill-kit pack
 openskill-kit sign-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit verify-pack .openskill-kit/compiled/project-behavior-pack
+openskill-kit inspect-pack .openskill-kit/compiled/project-behavior-pack
+openskill-kit diff-pack <old-pack-path> <new-pack-path>
 openskill-kit import-pack <pack-path> --dry-run
 openskill-kit doctor
 ```
@@ -110,6 +112,8 @@ Key tools:
 - `osk_export_behavior_pack`
 - `osk_sign_behavior_pack`
 - `osk_verify_behavior_pack`
+- `osk_inspect_behavior_pack`
+- `osk_diff_behavior_pack`
 - `osk_import_behavior_pack`
 - `osk_run_behavior_eval`
 - `osk_agent_doctor`
