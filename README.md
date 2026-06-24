@@ -21,6 +21,9 @@ npx openskill-kit observe --type user-prompt-submit --text "Always run npm test 
 npx openskill-kit learn
 npx openskill-kit review --activate-all
 npx openskill-kit compile
+npx openskill-kit daemon
+npx openskill-kit agent doctor
+npx openskill-kit agent install-hooks --target project --yes
 npx openskill-kit install --target agents-project --yes
 npx openskill-kit status
 ```
@@ -55,6 +58,9 @@ openskill-kit review --reject <preference-id>
 openskill-kit review --activate-all
 openskill-kit compile
 openskill-kit explain <preference-id>
+openskill-kit daemon
+openskill-kit agent doctor
+openskill-kit agent install-hooks --target project --yes
 openskill-kit install --target agents-project --yes
 openskill-kit eval
 openskill-kit pack
@@ -105,6 +111,9 @@ Key tools:
 - `osk_verify_behavior_pack`
 - `osk_import_behavior_pack`
 - `osk_run_behavior_eval`
+- `osk_agent_doctor`
+- `osk_install_agent_hooks`
+- `osk_run_lifecycle_once`
 
 Legacy skill drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.

@@ -8,6 +8,9 @@ npx openskill-kit observe --type user-prompt-submit --text "Always run npm test 
 npx openskill-kit learn
 npx openskill-kit review --activate-all
 npx openskill-kit compile
+npx openskill-kit daemon
+npx openskill-kit agent doctor
+npx openskill-kit agent install-hooks --target project --yes
 npx openskill-kit install --target agents-project --yes
 npx openskill-kit eval
 npx openskill-kit pack
@@ -26,6 +29,8 @@ Generated adaptive artifacts:
 - `.openskill-kit/compiled/mcp/server-config.json`: MCP tool surface metadata.
 - `.openskill-kit/compiled/plugin/`: attachable agent plugin bundle.
 - `.openskill-kit/compiled/project-behavior-pack/`: shareable reviewed behavior.
+- `.openskill-kit/sessions/summaries/`: session-level learning summaries.
+- `.agents/hooks/openskill-kit.json`: installed local hook adapter config.
 
 Manual skill scaffolding remains available:
 

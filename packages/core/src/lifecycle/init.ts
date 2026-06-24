@@ -83,6 +83,8 @@ async function ensureAdaptiveDirectories(root: string): Promise<void> {
     "compiled/plugin",
     "reviews/patches",
     "installs",
+    "sessions/summaries",
+    "runtime",
     "evals/scenarios",
     "evals/runs",
     "reports"

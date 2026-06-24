@@ -15,14 +15,17 @@ import {
   extractSignals,
   evolveSkill,
   getAdaptiveStatus,
+  installAgentHooks,
   initAdaptiveProject,
   importProjectBehaviorPack,
   installSkill,
   loadSkillPackage,
   readPreferenceGraph,
   readRegistry,
+  runAgentDoctor,
   runBehaviorEval,
   runDoctor,
+  runLifecycleOnce,
   scanSkillPath,
   signProjectBehaviorPack,
   updatePreferenceGraph,
@@ -235,6 +238,48 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, scenariosPath }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runBehaviorEval({ projectRoot: root, scenariosPath }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_agent_doctor",
+    {
+      title: "OpenSkillKit Agent Doctor",
+      description: "Check local agent hook readiness.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runAgentDoctor(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_install_agent_hooks",
+    {
+      title: "OpenSkillKit Install Agent Hooks",
+      description: "Plan or install generated lifecycle hook config for a local agent target.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, target: z.enum(["project", "global"]), dryRun: z.boolean().default(true), yes: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, target, dryRun, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await installAgentHooks({ projectRoot: root, target, dryRun, yes }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_run_lifecycle_once",
+    {
+      title: "OpenSkillKit Run Lifecycle Once",
+      description: "Summarize recent events, learn high-value signals, update graph, and optionally compile safe active behavior.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, maxEvents: z.number().int().min(1).max(5000).default(250), compileSafe: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, maxEvents, compileSafe }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runLifecycleOnce({ projectRoot: root, maxEvents, compileSafe }), root);
     }
   );
 

@@ -23,7 +23,8 @@ export async function extractSignals(projectRoot: string, now = new Date()): Pro
   const config = await readProjectConfig(root);
   const events = await readEvents(root);
   const signals: Signal[] = [];
-  for (const event of events) signals.push(...extractFromEvent(event, now));
+  const learnableEvents = config.learning.highValueOnly ? events.filter((event) => classifyHighValueEvent(event).reasons.length > 0) : events;
+  for (const event of learnableEvents) signals.push(...extractFromEvent(event, now));
   signals.push(...await extractRepoPatternSignals(root, config.projectId, now));
   const deduped = dedupeSignals(signals);
   const signalsPath = path.join(root, ".openskill-kit", "signals", "normalized.jsonl");
@@ -47,6 +48,26 @@ export function extractFromEvent(event: OpenSkillEvent, now = new Date()): Signa
   return out;
 }
 
+export interface HighValueEventClassification {
+  eventId: string;
+  sessionId: string;
+  eventType: OpenSkillEvent["eventType"];
+  reasons: string[];
+}
+
+export function classifyHighValueEvent(event: OpenSkillEvent): HighValueEventClassification {
+  const reasons: string[] = [];
+  const text = eventText(event);
+  if (hasExplicitPreference(text)) reasons.push("explicit-preference");
+  if (event.eventType === "user-rejected") reasons.push("user-rejection");
+  if (event.eventType === "user-edited" || event.eventType === "file-changed") reasons.push("manual-edit");
+  if (event.eventType === "review-comment") reasons.push("review-comment");
+  if (event.eventType === "test-result" && event.commands.some((command) => command.status === "fail" || command.status === "blocked" || command.exitCode && command.exitCode !== 0)) reasons.push("test-failure");
+  if (event.eventType === "user-accepted") reasons.push("accepted-output");
+  if ((event.eventType === "post-tool-use" || event.eventType === "test-result") && event.commands.some((command) => command.status === "pass")) reasons.push("successful-command");
+  return { eventId: event.id, sessionId: event.sessionId, eventType: event.eventType, reasons: [...new Set(reasons)].sort() };
+}
+
 function extractExplicitPreferences(event: OpenSkillEvent, text: string, now: Date): Signal[] {
   const signals: Signal[] = [];
   for (const pattern of explicitPatterns) {
@@ -60,6 +81,14 @@ function extractExplicitPreferences(event: OpenSkillEvent, text: string, now: Da
     }
   }
   return signals;
+}
+
+function hasExplicitPreference(text: string): boolean {
+  if (!text) return false;
+  return [
+    /\b(always|prefer|use|keep|make sure to|default to)\s+.{8,220}?(?:[.!?\n]|$)/i,
+    /\b(never|avoid|do not|don't|stop)\s+.{8,220}?(?:[.!?\n]|$)/i
+  ].some((pattern) => pattern.test(text));
 }
 
 function extractToolChoice(event: OpenSkillEvent, now: Date): Signal[] {

@@ -38,6 +38,8 @@ init
   config.json
   project.json
   events/
+  sessions/
+  runtime/
   signals/
   preferences/
   compiled/
@@ -75,6 +77,8 @@ The compiler writes:
 - `compiled/plugin/plugin.json`
 - `preferences/graph.md`
 - `preferences/active/*.md`
+- `sessions/summaries/*.json`
+- `runtime/last-run.json`
 
 Output is deterministic: stable headings, stable sorting, and no timestamp in
 generated skill text.
@@ -95,6 +99,9 @@ generated skill text.
 - `osk_verify_behavior_pack`
 - `osk_import_behavior_pack`
 - `osk_run_behavior_eval`
+- `osk_agent_doctor`
+- `osk_install_agent_hooks`
+- `osk_run_lifecycle_once`
 
 Legacy drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.

@@ -13,10 +13,13 @@ import {
   extractSignals,
   evolveSkill,
   getAdaptiveStatus,
+  installAgentHooks,
   initAdaptiveProject,
   importProjectBehaviorPack,
   installSkill,
   loadSkillPackage,
+  runAgentDoctor,
+  runLifecycleOnce,
   readRegistry,
   runBehaviorEval,
   runDoctor,
@@ -67,6 +70,35 @@ program.command("doctor")
     const report = await runDoctor(process.cwd());
     output(options.json, report, `Doctor ${report.status}: ${report.checks.length} checks`);
     process.exitCode = report.status === "fail" ? 1 : 0;
+  });
+
+const agent = program.command("agent")
+  .description("Inspect and install local agent adapters");
+
+agent.command("doctor")
+  .description("Check adaptive agent hook readiness")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const report = await runAgentDoctor(process.cwd());
+    output(options.json, report, `Agent doctor ${report.status}: ${report.checks.length} checks`);
+    process.exitCode = report.status === "fail" ? 1 : 0;
+  });
+
+agent.command("install-hooks")
+  .description("Install generated lifecycle hook config for a local agent target")
+  .requiredOption("--target <target>", "project|global")
+  .option("--dry-run", "Plan without writing")
+  .option("--yes", "Non-interactive approval")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await installAgentHooks({
+      projectRoot: process.cwd(),
+      target: parseAgentHookTarget(options.target),
+      dryRun: options.dryRun === true,
+      yes: options.yes === true
+    });
+    output(options.json, result, result.messages.join("\n"));
+    process.exitCode = result.status === "blocked" ? 1 : 0;
   });
 
 program.command("draft")
@@ -207,6 +239,32 @@ program.command("eval")
     process.exitCode = result.status === "fail" ? 1 : 0;
   });
 
+program.command("daemon")
+  .description("Run one autonomous lifecycle cycle, or watch repeatedly when --watch is set")
+  .option("--watch", "Keep running on an interval")
+  .option("--interval-ms <number>", "Watch interval in milliseconds", parseIntegerOption, 30000)
+  .option("--max-events <number>", "Maximum recent events to summarize", parseIntegerOption, 250)
+  .option("--compile-safe", "Compile active preferences when no conflicts exist")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    if (options.watch === true) {
+      await runLifecycleWatch(options);
+      return;
+    }
+    const result = await runLifecycleOnce({ projectRoot: process.cwd(), maxEvents: options.maxEvents, compileSafe: options.compileSafe === true });
+    output(options.json, result, `Lifecycle run: ${result.processedEventCount} event(s), ${result.highValueEvents.length} high-value event(s), ${result.graph.candidateCount} candidate(s)`);
+  });
+
+program.command("watch")
+  .description("Alias for one autonomous lifecycle cycle")
+  .option("--max-events <number>", "Maximum recent events to summarize", parseIntegerOption, 250)
+  .option("--compile-safe", "Compile active preferences when no conflicts exist")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await runLifecycleOnce({ projectRoot: process.cwd(), maxEvents: options.maxEvents, compileSafe: options.compileSafe === true });
+    output(options.json, result, `Lifecycle run: ${result.processedEventCount} event(s), ${result.highValueEvents.length} high-value event(s), ${result.graph.candidateCount} candidate(s)`);
+  });
+
 program.command("evolve")
   .description("Draft and verify a skill through the local evolution loop")
   .argument("<topic>", "Skill topic")
@@ -330,6 +388,11 @@ function parseTarget(value: string): InstallTarget {
   return value as InstallTarget;
 }
 
+function parseAgentHookTarget(value: string): "project" | "global" {
+  if (value === "project" || value === "global") return value;
+  throw new Error(`Invalid agent hook target: ${value}`);
+}
+
 function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -346,6 +409,14 @@ async function resolveSkillArg(value: string): Promise<string> {
   const found = registry.skills.find((skill) => skill.name === value);
   if (!found) throw new Error(`Skill not found in registry: ${value}`);
   return found.sourcePath;
+}
+
+async function runLifecycleWatch(options: { intervalMs: number; maxEvents: number; compileSafe?: boolean; json?: boolean }): Promise<void> {
+  while (true) {
+    const result = await runLifecycleOnce({ projectRoot: process.cwd(), maxEvents: options.maxEvents, compileSafe: options.compileSafe === true });
+    output(options.json, result, `Lifecycle run: ${result.processedEventCount} event(s), ${result.highValueEvents.length} high-value event(s), ${result.graph.candidateCount} candidate(s)`);
+    await new Promise((resolve) => setTimeout(resolve, options.intervalMs));
+  }
 }
 
 function sanitizeForOutput(value: unknown): unknown {

@@ -36,7 +36,15 @@ export async function compileBehaviorLayer(projectRoot: string): Promise<Compile
         "osk_record_event",
         "osk_learn_from_session",
         "osk_compile_behavior_layer",
-        "osk_explain_preference"
+        "osk_explain_preference",
+        "osk_export_behavior_pack",
+        "osk_sign_behavior_pack",
+        "osk_verify_behavior_pack",
+        "osk_import_behavior_pack",
+        "osk_run_behavior_eval",
+        "osk_agent_doctor",
+        "osk_install_agent_hooks",
+        "osk_run_lifecycle_once"
       ],
       contextPack: path.relative(root, contextPack.contextPackPath).replace(/\\/g, "/")
     });

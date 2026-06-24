@@ -39,7 +39,10 @@ describe("openskill-kit MCP server", () => {
           "osk_bootstrap_session",
           "osk_record_event",
           "osk_learn_from_session",
-          "osk_compile_behavior_layer"
+          "osk_compile_behavior_layer",
+          "osk_agent_doctor",
+          "osk_install_agent_hooks",
+          "osk_run_lifecycle_once"
         ])
       );
 
@@ -66,6 +69,13 @@ describe("openskill-kit MCP server", () => {
       });
       const learnedText = learned.content.find((item) => item.type === "text")?.text;
       expect(learnedText).toContain("run npm test");
+
+      const lifecycle = await client.callTool({
+        name: "osk_run_lifecycle_once",
+        arguments: { projectRoot: root }
+      });
+      const lifecycleText = lifecycle.content.find((item) => item.type === "text")?.text;
+      expect(lifecycleText).toContain("highValueEvents");
 
       const draft = await client.callTool({
         name: "openskill_draft",
