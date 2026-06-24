@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import type { SandboxPolicy } from "../sandbox/policy.js";
 
 export const AssertionResultSchema = z.object({
   assertionId: z.string().min(1),
@@ -12,6 +13,13 @@ export const VerifierExecutionSchema = z.object({
   schemaVersion: z.literal("openskill-kit.verifier-execution.v0"),
   skillName: z.string().min(1).optional(),
   generatedAt: z.string().datetime(),
+  sandbox: z.object({
+    mode: z.literal("local-process"),
+    allowNetwork: z.boolean(),
+    timeoutMs: z.number().int().min(100),
+    maxOutputBytes: z.number().int().min(1024),
+    limitations: z.array(z.string())
+  }).optional(),
   visibleResults: z.array(AssertionResultSchema),
   holdoutResults: z.array(AssertionResultSchema),
   summary: z.object({
@@ -33,6 +41,7 @@ export function buildVerifierExecution(input: {
   assertionResults: AssertionResult[];
   visibleAssertionIds: string[];
   holdoutAssertionIds: string[];
+  sandboxPolicy?: SandboxPolicy;
 }): VerifierExecution {
   const visible = new Set(input.visibleAssertionIds);
   const holdout = new Set(input.holdoutAssertionIds);
@@ -43,6 +52,13 @@ export function buildVerifierExecution(input: {
     schemaVersion: "openskill-kit.verifier-execution.v0",
     skillName: input.skillName,
     generatedAt: (input.generatedAt ?? new Date()).toISOString(),
+    sandbox: input.sandboxPolicy ? {
+      mode: input.sandboxPolicy.mode,
+      allowNetwork: input.sandboxPolicy.allowNetwork,
+      timeoutMs: input.sandboxPolicy.timeoutMs,
+      maxOutputBytes: input.sandboxPolicy.maxOutputBytes,
+      limitations: input.sandboxPolicy.limitations
+    } : undefined,
     visibleResults,
     holdoutResults,
     summary: {

@@ -43,6 +43,8 @@ describe("evidence ledger and verifier pack", () => {
     expect(report.assertionResults.some((result) => result.assertionId === "assert.skill-safety-scan-pass" && result.status === "pass")).toBe(true);
     expect(report.execution?.visibleResults.length).toBeGreaterThan(0);
     expect(report.execution?.holdoutResults.length).toBeGreaterThan(0);
+    expect(report.execution?.sandbox?.mode).toBe("local-process");
+    expect(report.execution?.sandbox?.allowNetwork).toBe(false);
   });
 
   it("writes verifier report and execution artifacts", async () => {

@@ -50,6 +50,7 @@ escalation, and obfuscated execution. Critical findings block install unless
 
 The current implementation is the first local spine: deterministic drafting,
 local evidence ledger, package-level verifier pack, schema validation, scanner,
-verifier report, registry, installer, CLI, OpenCode adapter shell, and Codex
-plugin bundle. Full open-world retrieval, holdout verifier packs, sandboxed
-evolution, and benchmark leakage audits are planned next and are not faked.
+verifier report, local sandbox policy metadata, registry, installer, CLI,
+OpenCode adapter shell, and Codex plugin bundle. Full open-world retrieval,
+container sandboxing, skill evolution, and benchmark leakage audits are planned
+next and are not faked.

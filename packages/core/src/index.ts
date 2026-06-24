@@ -9,4 +9,6 @@ export * from "./verifier/execution.js";
 export * from "./verifier/pack.js";
 export * from "./install/install.js";
 export * from "./registry/registry.js";
+export * from "./sandbox/policy.js";
+export * from "./sandbox/runner.js";
 export * from "./doctor/doctor.js";

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createLocalSandboxPolicy } from "../sandbox/policy.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -28,6 +29,7 @@ export async function runDoctor(projectRoot: string, homeDir = os.homedir()): Pr
   checks.push(await writableCheck(path.join(projectRoot, ".agents", "skills"), "Agents project skill target"));
   checks.push(await writableCheck(path.join(homeDir, ".config", "opencode", "skills"), "OpenCode global skill target"));
   checks.push(await writableCheck(path.join(homeDir, ".agents", "skills"), "Agents global skill target"));
+  checks.push(sandboxPolicyCheck(projectRoot));
   checks.push(optionalSecretCheck("OPENAI_API_KEY"));
   checks.push(optionalSecretCheck("ANTHROPIC_API_KEY"));
   const status = checks.some((check) => check.status === "fail") ? "fail" : checks.some((check) => check.status === "warn") ? "warn" : "pass";
@@ -86,4 +88,13 @@ function optionalSecretCheck(name: string): DoctorCheck {
   return process.env[name]
     ? { name: `Optional ${name}`, status: "pass", message: "Configured (value hidden)" }
     : { name: `Optional ${name}`, status: "warn", message: "Not configured" };
+}
+
+function sandboxPolicyCheck(projectRoot: string): DoctorCheck {
+  const policy = createLocalSandboxPolicy({ projectRoot });
+  return {
+    name: "Local sandbox policy",
+    status: "warn",
+    message: `${policy.mode}; no shell; cwd constrained; network isolation metadata only`
+  };
 }

@@ -12,3 +12,8 @@ Inspect the audit report. Do not override unless you understand the finding.
 
 Restart the agent and confirm the skill folder contains `SKILL.md` with valid
 frontmatter.
+
+## Sandbox command blocked
+
+Check cwd stays inside the project root, command is allowlisted, and arguments
+do not contain shell metacharacters.

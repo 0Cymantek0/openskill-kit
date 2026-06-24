@@ -33,6 +33,9 @@ const report = await runJson(["test", draft.skillDir, "--json"]);
 if (report.status === "fail" || !Array.isArray(report.assertionResults) || report.assertionResults.length === 0 || !report.executionPath) {
   throw new Error("verifier failed");
 }
+if (report.execution?.sandbox?.mode !== "local-process") {
+  throw new Error("verifier sandbox metadata missing");
+}
 await stat(path.join(root, report.executionPath));
 
 const dryRun = await runJson(["install", draft.skillDir, "--target", "agents-project", "--dry-run", "--json"]);

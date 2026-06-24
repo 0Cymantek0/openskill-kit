@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readEvidenceLedger, type EvidenceLedger } from "../evidence/ledger.js";
+import { createLocalSandboxPolicy, type SandboxPolicy } from "../sandbox/policy.js";
 import { scanSkillPath, type SafetyReport } from "../safety/scanner.js";
 import { validateSkillPackage, loadSkillPackage } from "../skill/parser.js";
 import type { ValidationIssue } from "../skill/schema.js";
@@ -27,7 +28,7 @@ export interface VerifierReport {
   };
 }
 
-export async function verifySkill(skillPath: string, reportDir?: string): Promise<VerifierReport> {
+export async function verifySkill(skillPath: string, reportDir?: string, sandboxPolicy?: SandboxPolicy): Promise<VerifierReport> {
   const issues = await validateSkillPackage(skillPath);
   const safety = await scanSkillPath(skillPath);
   const pkg = issues.some((issue) => issue.severity === "error") ? undefined : await loadSkillPackage(skillPath);
@@ -48,7 +49,8 @@ export async function verifySkill(skillPath: string, reportDir?: string): Promis
     generatedAt,
     assertionResults,
     visibleAssertionIds: verifierPack.visibleAssertionIds,
-    holdoutAssertionIds: verifierPack.holdoutAssertionIds
+    holdoutAssertionIds: verifierPack.holdoutAssertionIds,
+    sandboxPolicy: sandboxPolicy ?? createLocalSandboxPolicy({ projectRoot: path.dirname(path.resolve(skillPath)) })
   }) : undefined;
   const bodyLength = pkg?.body.length ?? 999999;
   const scores = {

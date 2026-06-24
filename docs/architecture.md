@@ -53,3 +53,17 @@ agent will solve downstream tasks.
 
 Holdout assertions are groundwork for the paper's separation principle. At this
 stage they are deterministic local package checks, not hidden target tests.
+
+## Sandbox Groundwork
+
+Core includes `local-process` sandbox policy and command runner primitives:
+
+- commands run through `execFile`, not a shell
+- working directory must stay inside project root
+- command allowlist is explicit
+- secret-like env keys are stripped
+- timeout and output caps are enforced
+
+This is not a container boundary and does not provide OS-level network blocking.
+The policy records `allowNetwork=false` as metadata so later Docker/gVisor
+runners can preserve the same interface.
