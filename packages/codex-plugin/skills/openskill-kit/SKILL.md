@@ -17,7 +17,7 @@ Do not use for hidden benchmark answers, secret extraction, or unapproved global
 installation.
 
 ## Workflow
-1. Prefer `openskill-kit forge "<topic>" --no-llm` when user wants draft plus local verification loop.
+1. Prefer `openskill-kit evolve "<topic>" --no-llm` when user wants draft plus local verification loop.
 2. Use `openskill-kit draft "<topic>" --no-llm` only when a candidate without loop diagnosis is enough.
 3. Run `openskill-kit audit <skill-path>` before install.
 4. Run `openskill-kit test <skill-path>` and inspect report paths.

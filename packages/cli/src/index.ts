@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
   draftSkill,
-  forgeSkill,
+  evolveSkill,
   installSkill,
   loadSkillPackage,
   readRegistry,
@@ -79,14 +79,14 @@ program.command("learn")
     output(options.json, result, `Drafted ${result.skillName} at ${result.skillDir}`);
   });
 
-program.command("forge")
+program.command("evolve")
   .description("Draft and verify a skill through the local evolution loop")
   .argument("<topic>", "Skill topic")
   .option("--no-llm", "Do not use LLM provider", true)
   .option("--json", "Print JSON")
   .action(async (topic, options) => {
-    const result = await forgeSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false });
-    output(options.json, result, `Forge ${result.status}: ${result.skillName}\nRun: ${result.runDir}`);
+    const result = await evolveSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false });
+    output(options.json, result, `evolve ${result.status}: ${result.skillName}\nRun: ${result.runDir}`);
     process.exitCode = result.status === "needs-refinement" ? 1 : 0;
   });
 

@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { diagnoseVerifierReport, forgeSkill, type VerifierReport } from "../src/index.js";
+import { diagnoseVerifierReport, evolveSkill, type VerifierReport } from "../src/index.js";
 
 describe("evolution loop", () => {
-  it("forges a deterministic skill and writes round artifacts", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "osk-forge-"));
+  it("evolves a deterministic skill and writes round artifacts", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-evolve-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "vitest --run" } }), "utf8");
 
-    const run = await forgeSkill({
+    const run = await evolveSkill({
       topic: "repo test workflow",
       projectRoot: root,
       noLlm: true,

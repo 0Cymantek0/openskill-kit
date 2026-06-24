@@ -43,7 +43,7 @@ web research or agent-performance evaluation.
 - `candidate/<skill>/SKILL.md`: portable skill package.
 - `candidate/<skill>/tests/skill-package-fixture.cjs`: deterministic generated
   fixture run by the sandbox verifier.
-- `evolution.json`: forge-loop status and round summaries.
+- `evolution.json`: evolve-loop status and round summaries.
 - `rounds/round-0.json`: verifier diagnosis for the first local evolution round.
 
 The current verifier pack checks schema, structure, safety, installability,
@@ -65,7 +65,7 @@ skill-package quality rather than downstream agent task success.
 
 ## Evolution Loop
 
-`forge` currently implements the first honest loop: deterministic draft,
+`evolve` currently implements the first honest loop: deterministic draft,
 verifier execution, diagnosis, and local freeze. It can return
 `needs-refinement` or `manual-review`, but autonomous refinement is not enabled
 until provider, retrieval, and sandbox boundaries are stronger.

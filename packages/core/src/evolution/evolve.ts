@@ -41,14 +41,14 @@ export type EvolutionDiagnosis = z.infer<typeof EvolutionDiagnosisSchema>;
 export type EvolutionRound = z.infer<typeof EvolutionRoundSchema>;
 export type EvolutionRun = z.infer<typeof EvolutionRunSchema>;
 
-export interface ForgeOptions {
+export interface EvolveOptions {
   topic: string;
   projectRoot: string;
   noLlm?: boolean;
   now?: Date;
 }
 
-export async function forgeSkill(options: ForgeOptions): Promise<EvolutionRun> {
+export async function evolveSkill(options: EvolveOptions): Promise<EvolutionRun> {
   const draft = await draftSkill(options);
   const roundsDir = path.join(draft.runDir, "rounds");
   await fs.mkdir(roundsDir, { recursive: true });
@@ -75,7 +75,7 @@ export async function forgeSkill(options: ForgeOptions): Promise<EvolutionRun> {
       roundsDir
     },
     limitations: [
-      "This forge loop runs deterministic local draft plus one verifier round.",
+      "This evolve loop runs deterministic local draft plus one verifier round.",
       "No LLM refinement, external retrieval, or downstream agent benchmark is executed yet."
     ]
   };

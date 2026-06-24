@@ -6,7 +6,7 @@ describe("OpenCode tool schemas", () => {
     expect(toolSchemas.draft.parse({ topic: "debug tests" }).topic).toBe("debug tests");
   });
 
-  it("validates forge args", () => {
-    expect(toolSchemas.forge.parse({ topic: "evolve skill" }).topic).toBe("evolve skill");
+  it("validates evolve args", () => {
+    expect(toolSchemas.evolve.parse({ topic: "evolve skill" }).topic).toBe("evolve skill");
   });
 });

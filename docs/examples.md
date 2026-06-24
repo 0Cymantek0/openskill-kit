@@ -12,10 +12,10 @@ openskill-kit draft "write release notes from merged pull requests" --no-llm
 openskill-kit draft "debug failing Vitest tests in this repo" --no-llm
 ```
 
-Run one local forge round:
+Run one local evolve round:
 
 ```bash
-openskill-kit forge "debug failing Vitest tests in this repo" --no-llm
+openskill-kit evolve "debug failing Vitest tests in this repo" --no-llm
 ```
 
 ## Skill With Safe Helper Script
