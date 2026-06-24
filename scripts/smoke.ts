@@ -51,7 +51,11 @@ if (!reviewedAdaptive.nodes?.some((node: { status: string }) => node.status === 
 const compiledAdaptive = await runJson(["compile", "--json"]);
 await stat(path.join(root, ".openskill-kit", "compiled", "context-pack.md"));
 await stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"));
+await stat(path.join(root, ".openskill-kit", "compiled", "behavior", "command-policy.md"));
+await stat(path.join(root, ".openskill-kit", "compiled", "behavior", "review-checklist.md"));
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
+const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
+if (!prefs.items?.length || !prefs.compactMarkdown?.includes("run npm test")) throw new Error("preference retrieval failed");
 const lifecycle = await runJson(["daemon", "--json"]);
 if (lifecycle.processedEventCount < 1 || !lifecycle.summaryPaths?.length) throw new Error("lifecycle daemon run failed");
 const agentDoctor = await runJson(["agent", "doctor", "--json"]);

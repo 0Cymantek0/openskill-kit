@@ -22,6 +22,7 @@ import {
   loadSkillPackage,
   readPreferenceGraph,
   readRegistry,
+  retrieveRelevantPreferences,
   runAgentDoctor,
   runBehaviorEval,
   runDoctor,
@@ -87,21 +88,20 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_get_relevant_preferences",
     {
       title: "OpenSkillKit Relevant Preferences",
-      description: "Return active preferences, optionally filtered by query text.",
-      inputSchema: z.object({ projectRoot: projectRootSchema, query: z.string().optional(), limit: z.number().int().min(1).max(50).default(12) }),
+      description: "Return compact ranked active preferences with relevance reasons.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        query: z.string().optional(),
+        paths: z.array(z.string()).default([]),
+        categories: z.array(z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "security", "workflow", "general"])).default([]),
+        limit: z.number().int().min(1).max(50).default(12)
+      }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
     },
-    async ({ projectRoot, query, limit }) => {
+    async ({ projectRoot, query, paths, categories, limit }) => {
       const root = resolveProjectRoot(projectRoot);
-      const graph = await readPreferenceGraph(root);
-      const words = new Set((query ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2));
-      const nodes = graph.nodes
-        .filter((node) => node.status === "active" || node.status === "locked")
-        .map((node) => ({ node, score: relevance(node.statement, words) + node.confidence }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, limit)
-        .map((item) => item.node);
-      return toolResult({ nodes }, root);
+      const bundle = await retrieveRelevantPreferences({ projectRoot: root, query, paths, categories, limit });
+      return toolResult({ ...bundle, nodes: bundle.items.map((item) => item.node) }, root);
     }
   );
 
@@ -473,14 +473,6 @@ function sanitizeText(value: string, projectRoot: string): string {
     const replacement = root === os.homedir() || root === path.normalize(os.homedir()) ? "~" : ".";
     return current.replaceAll(root, replacement);
   }, value);
-}
-
-function relevance(statement: string, words: Set<string>): number {
-  if (words.size === 0) return 0;
-  const lower = statement.toLowerCase();
-  let score = 0;
-  for (const word of words) if (lower.includes(word)) score += 0.1;
-  return score;
 }
 
 if (isDirectRun()) {

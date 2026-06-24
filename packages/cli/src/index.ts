@@ -18,6 +18,7 @@ import {
   importProjectBehaviorPack,
   installSkill,
   loadSkillPackage,
+  retrieveRelevantPreferences,
   runAgentDoctor,
   runLifecycleOnce,
   readRegistry,
@@ -186,6 +187,24 @@ program.command("explain")
     const node = await explainPreference(process.cwd(), id);
     if (!node) throw new Error(`Preference not found: ${id}`);
     output(options.json, node, `${node.id}\n${node.statement}\nConfidence: ${node.confidence}\nEvidence: ${node.evidence.map((item) => item.signalId).join(", ")}`);
+  });
+
+program.command("prefs")
+  .description("Return ranked active preferences for a task or path")
+  .option("--query <text>", "Task or question text")
+  .option("--path <path>", "Changed or inspected path", collectOption, [])
+  .option("--category <category>", "Preference category", collectOption, [])
+  .option("--limit <number>", "Maximum preferences", parseIntegerOption, 12)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await retrieveRelevantPreferences({
+      projectRoot: process.cwd(),
+      query: options.query,
+      paths: options.path,
+      categories: options.category,
+      limit: options.limit
+    });
+    output(options.json, result, result.compactMarkdown);
   });
 
 program.command("pack")

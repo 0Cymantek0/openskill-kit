@@ -24,6 +24,9 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
       ".openskill-kit/compiled/context-pack.md",
       ".openskill-kit/compiled/skills/project-behavior/SKILL.md",
       ".openskill-kit/compiled/skills/project-behavior/references/active-preferences.md",
+      ".openskill-kit/compiled/behavior/path-map.json",
+      ".openskill-kit/compiled/behavior/command-policy.md",
+      ".openskill-kit/compiled/behavior/review-checklist.md",
       ".openskill-kit/compiled/hooks/hooks.json",
       ".openskill-kit/compiled/mcp/server-config.json"
     ];

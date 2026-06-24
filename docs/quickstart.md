@@ -25,6 +25,9 @@ Generated adaptive artifacts:
 - `.openskill-kit/preferences/active/`: Active Behavior Layer.
 - `.openskill-kit/compiled/context-pack.md`: compact agent context.
 - `.openskill-kit/compiled/skills/project-behavior/`: installable Agent Skill.
+- `.openskill-kit/compiled/behavior/path-map.json`: path-specific behavior map.
+- `.openskill-kit/compiled/behavior/command-policy.md`: command policy.
+- `.openskill-kit/compiled/behavior/review-checklist.md`: review checklist.
 - `.openskill-kit/compiled/hooks/`: generated hook adapter files.
 - `.openskill-kit/compiled/mcp/server-config.json`: MCP tool surface metadata.
 - `.openskill-kit/compiled/plugin/`: attachable agent plugin bundle.

@@ -58,6 +58,7 @@ openskill-kit review --reject <preference-id>
 openskill-kit review --activate-all
 openskill-kit compile
 openskill-kit explain <preference-id>
+openskill-kit prefs --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit daemon
 openskill-kit agent doctor
 openskill-kit agent install-hooks --target project --yes

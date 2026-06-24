@@ -18,6 +18,9 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
     "README.md",
     "skills/project-behavior/SKILL.md",
     "skills/project-behavior/references/active-preferences.md",
+    "behavior/path-map.json",
+    "behavior/command-policy.md",
+    "behavior/review-checklist.md",
     "hooks/hooks.json",
     "mcp/server-config.json"
   ];
@@ -38,6 +41,7 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
     ""
   ].join("\n"));
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior"), path.join(pluginDir, "skills", "project-behavior"));
+  await copyIfExists(path.join(root, ".openskill-kit", "compiled", "behavior"), path.join(pluginDir, "behavior"));
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "hooks"), path.join(pluginDir, "hooks"));
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "mcp"), path.join(pluginDir, "mcp"));
   return { schemaVersion: "openskill-kit.plugin.v1", pluginDir, manifestPath, files };

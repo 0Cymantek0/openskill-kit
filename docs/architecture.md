@@ -75,6 +75,9 @@ The compiler writes:
 - `compiled/hooks/scripts/*.cjs`
 - `compiled/mcp/server-config.json`
 - `compiled/plugin/plugin.json`
+- `compiled/behavior/path-map.json`
+- `compiled/behavior/command-policy.md`
+- `compiled/behavior/review-checklist.md`
 - `preferences/graph.md`
 - `preferences/active/*.md`
 - `sessions/summaries/*.json`

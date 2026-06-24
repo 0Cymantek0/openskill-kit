@@ -2,6 +2,7 @@ import path from "node:path";
 import { compileContextPack } from "./context-pack.js";
 import { compileHookAdapter } from "./hook-compiler.js";
 import { compileAgentPlugin } from "./plugin-compiler.js";
+import { compilePolicyArtifacts } from "./policy-compiler.js";
 import { compileBehaviorSkills } from "./skill-compiler.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
 import { renderPreferenceGraphMarkdown } from "../preferences/render.js";
@@ -14,6 +15,7 @@ export interface CompileBehaviorLayerResult {
   hooksPath: string;
   mcpConfigPath: string;
   pluginManifestPath: string;
+  policyArtifactPaths: string[];
   graphMarkdownPath: string;
 }
 
@@ -25,6 +27,7 @@ export async function compileBehaviorLayer(projectRoot: string): Promise<Compile
     const hooks = await compileHookAdapter(root);
     const graph = await readPreferenceGraph(root);
     const graphMarkdownPath = await renderPreferenceGraphMarkdown(root, graph);
+    const policy = await compilePolicyArtifacts(root);
     const mcpConfigPath = path.join(root, ".openskill-kit", "compiled", "mcp", "server-config.json");
     await writeJsonAtomic(mcpConfigPath, {
       schemaVersion: "openskill-kit.mcp-config.v1",
@@ -56,6 +59,7 @@ export async function compileBehaviorLayer(projectRoot: string): Promise<Compile
       hooksPath: hooks.hooksPath,
       mcpConfigPath,
       pluginManifestPath: plugin.manifestPath,
+      policyArtifactPaths: [policy.pathMapPath, policy.commandPolicyPath, policy.reviewChecklistPath],
       graphMarkdownPath
     };
   });
