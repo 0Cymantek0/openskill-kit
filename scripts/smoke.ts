@@ -1,30 +1,73 @@
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { draftSkill, installSkill, readRegistry, runDoctor, scanSkillPath, uninstallSkill, verifySkill } from "@openskill-kit/core";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+const cli = path.resolve("dist", "index.cjs");
+
+if (!existsSync(cli)) {
+  throw new Error("built CLI not found; run npm run build before smoke");
+}
 
 const root = await mkdtemp(path.join(os.tmpdir(), "openskill-kit-smoke-"));
-await writeFile(path.join(root, "package.json"), JSON.stringify({ scripts: { test: "vitest --run" }, devDependencies: { vitest: "4.0.0" } }), "utf8");
+await writeFile(path.join(root, "package.json"), JSON.stringify({
+  scripts: { test: "vitest --run", typecheck: "tsc --noEmit" },
+  devDependencies: { vitest: "4.0.0", typescript: "5.9.0" }
+}), "utf8");
 
-const doctor = await runDoctor(root, path.join(root, "home"));
+const doctor = await runJson(["doctor", "--json"]);
 if (doctor.status === "fail") throw new Error("doctor failed");
 
-const draft = await draftSkill({ topic: "smoke test skill", projectRoot: root, noLlm: true });
-const audit = await scanSkillPath(draft.skillDir);
+const draft = await runJson(["draft", "smoke test skill", "--no-llm", "--json"]);
+if (!draft.skillDir || !draft.evidenceLedgerPath || !draft.verifierPackPath) {
+  throw new Error("draft did not return required artifact paths");
+}
+
+const audit = await runJson(["audit", draft.skillDir, "--json"]);
 if (audit.status !== "pass") throw new Error("audit failed");
 
-const report = await verifySkill(draft.skillDir);
-if (report.status === "fail") throw new Error("verify failed");
+const report = await runJson(["test", draft.skillDir, "--json"]);
+if (report.status === "fail" || !Array.isArray(report.assertionResults) || report.assertionResults.length === 0) {
+  throw new Error("verifier failed");
+}
 
-const dryRun = await installSkill({ skillPath: draft.skillDir, target: "opencode-project", projectRoot: root, dryRun: true });
-if (dryRun.status !== "planned") throw new Error("dry-run failed");
+const dryRun = await runJson(["install", draft.skillDir, "--target", "agents-project", "--dry-run", "--json"]);
+if (dryRun.status !== "planned") throw new Error("dry-run install failed");
+await expectMissing(path.join(root, ".agents", "skills", draft.skillName));
 
-await installSkill({ skillPath: draft.skillDir, target: "opencode-project", projectRoot: root });
-await stat(path.join(root, ".opencode", "skills", draft.skillName, "SKILL.md"));
+const installed = await runJson(["install", draft.skillDir, "--target", "agents-project", "--yes", "--json"]);
+if (installed.status !== "installed") throw new Error("install failed");
+await stat(path.join(root, ".agents", "skills", draft.skillName, "SKILL.md"));
 
-const registry = await readRegistry(root);
-if (!registry.skills.some((skill) => skill.name === draft.skillName)) throw new Error("registry missing skill");
+const list = await runJson(["list", "--json"]);
+if (!list.skills?.some((skill: { name: string }) => skill.name === draft.skillName)) {
+  throw new Error("list did not include installed skill");
+}
 
-await uninstallSkill({ skillName: draft.skillName, target: "opencode-project", projectRoot: root });
+const inspected = await runJson(["inspect", draft.skillName, "--json"]);
+if (inspected.manifest?.name !== draft.skillName) throw new Error("inspect failed");
+
+await runJson(["uninstall", draft.skillName, "--target", "agents-project", "--yes", "--json"]);
+await expectMissing(path.join(root, ".agents", "skills", draft.skillName));
 
 console.log("smoke passed");
+
+async function runJson(args: string[]): Promise<any> {
+  const { stdout } = await execFileAsync(process.execPath, [cli, ...args], {
+    cwd: root,
+    maxBuffer: 10 * 1024 * 1024
+  });
+  return JSON.parse(stdout);
+}
+
+async function expectMissing(target: string): Promise<void> {
+  try {
+    await stat(target);
+    throw new Error("path should not exist");
+  } catch (error) {
+    if (error instanceof Error && error.message === "path should not exist") throw error;
+  }
+}
