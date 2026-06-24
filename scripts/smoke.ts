@@ -31,6 +31,45 @@ if (!help.includes("openskill-kit") || !help.includes("evaluate")) {
   throw new Error("help output missing expected commands");
 }
 
+const init = await runJson(["init", "--json"]);
+if (init.config?.schemaVersion !== "openskill-kit.config.v1") {
+  throw new Error("adaptive init failed");
+}
+const smokeSecret = ["smoke", "secret"].join("-");
+const observed = await runJson(["observe", "--type", "user-prompt-submit", "--text", `Always run npm test before final response. TOKEN=${smokeSecret}`, "--json"]);
+if (!observed.event?.id || JSON.stringify(observed).includes(smokeSecret)) {
+  throw new Error("observe failed or leaked secret");
+}
+const learnedAdaptive = await runJson(["learn", "--json"]);
+if (!learnedAdaptive.signals?.signals?.some((signal: { statement: string }) => signal.statement.includes("run npm test"))) {
+  throw new Error("adaptive learn did not extract explicit preference");
+}
+const reviewedAdaptive = await runJson(["review", "--activate-all", "--json"]);
+if (!reviewedAdaptive.nodes?.some((node: { status: string }) => node.status === "active")) {
+  throw new Error("adaptive review did not activate preferences");
+}
+const compiledAdaptive = await runJson(["compile", "--json"]);
+await stat(path.join(root, ".openskill-kit", "compiled", "context-pack.md"));
+await stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"));
+if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
+const adaptiveInstall = await runJson(["install", "--target", "agents-project", "--yes", "--json"]);
+if (adaptiveInstall.status !== "installed") throw new Error("adaptive compiled skill install failed");
+await stat(path.join(root, ".agents", "skills", "project-behavior", "SKILL.md"));
+const pack = await runJson(["pack", "--json"]);
+await stat(path.join(root, pack.manifestPath));
+const signedPack = await runJson(["sign-pack", pack.packPath, "--key-dir", path.join(root, ".openskill-kit", "keys"), "--json"]);
+if (!signedPack.signature || !signedPack.publicKeyPath) throw new Error("pack signing failed");
+const verifiedPack = await runJson(["verify-pack", pack.packPath, "--json"]);
+if (verifiedPack.status !== "pass" || verifiedPack.signature?.status !== "valid") throw new Error("pack verification failed");
+const behaviorEval = await runJson(["eval", "--json"]);
+if (behaviorEval.status !== "pass" || behaviorEval.adherence !== 1) throw new Error("behavior eval failed");
+const importRoot = await mkdtemp(path.join(os.tmpdir(), "openskill-kit-import-"));
+const importedPlan = await execFileAsync(process.execPath, [cli, "import-pack", path.join(root, pack.packPath), "--json"], {
+  cwd: importRoot,
+  maxBuffer: 10 * 1024 * 1024
+}).then(({ stdout }) => JSON.parse(stdout));
+if (importedPlan.status !== "planned" || !importedPlan.issues?.length) throw new Error("pack import dry-run failed");
+
 const draft = await runJson(["draft", "smoke test skill", "--no-llm", "--json"]);
 if (!draft.skillDir || !draft.evidenceLedgerPath || !draft.verifierPackPath) {
   throw new Error("draft did not return required artifact paths");
@@ -151,6 +190,9 @@ async function runMcpDraft(): Promise<any> {
     const listed = await client.listTools();
     if (!listed.tools.some((tool) => tool.name === "openskill_draft")) {
       throw new Error("MCP tools missing openskill_draft");
+    }
+    if (!listed.tools.some((tool) => tool.name === "osk_record_event")) {
+      throw new Error("MCP tools missing adaptive event recorder");
     }
     const draftResult = await client.callTool({
       name: "openskill_draft",

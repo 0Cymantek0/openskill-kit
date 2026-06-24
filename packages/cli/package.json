@@ -1,7 +1,7 @@
 {
   "name": "@openskill-kit/cli",
   "version": "0.1.0",
-  "description": "CLI for the independent OpenSkill-inspired skill evolution engine.",
+  "description": "CLI for the OpenSkillKit Adaptive Skill Graph.",
   "license": "MIT",
   "type": "module",
   "bin": {

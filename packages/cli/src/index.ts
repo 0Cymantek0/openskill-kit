@@ -3,15 +3,28 @@ import { Command } from "commander";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
+  appendEvent,
+  applyPreferenceReview,
+  compileBehaviorLayer,
   draftSkill,
   evaluateSkill,
+  explainPreference,
+  exportProjectBehaviorPack,
+  extractSignals,
   evolveSkill,
+  getAdaptiveStatus,
+  initAdaptiveProject,
+  importProjectBehaviorPack,
   installSkill,
   loadSkillPackage,
   readRegistry,
+  runBehaviorEval,
   runDoctor,
   scanSkillPath,
+  signProjectBehaviorPack,
   uninstallSkill,
+  updatePreferenceGraph,
+  verifyProjectBehaviorPack,
   verifySkill,
   type InstallTarget
 } from "@openskill-kit/core";
@@ -20,7 +33,7 @@ const program = new Command();
 
 program
   .name("openskill-kit")
-  .description("Independent OpenSkill-inspired skill evolution engine")
+  .description("OpenSkillKit adaptive project behavior layer")
   .version("0.1.0");
 
 program.command("version")
@@ -30,25 +43,21 @@ program.command("version")
   });
 
 program.command("init")
-  .description("Create local openskill-kit config")
+  .description("Create local Adaptive Skill Graph project state")
+  .option("--project-name <name>", "Project display name")
+  .option("--force", "Rewrite adaptive config")
   .option("--json", "Print JSON")
   .action(async (options) => {
-    const configDir = path.join(process.cwd(), ".openskill-kit");
-    const configPath = path.join(configDir, "config.json");
-    await fs.mkdir(configDir, { recursive: true });
-    const config = {
-      schemaVersion: "openskill-kit.config.v0",
-      projectRoot: process.cwd(),
-      defaults: {
-        noNetwork: true,
-        noLlm: true,
-        maxFiles: 30,
-        maxCharsPerFile: 2000,
-        maxTotalContextChars: 25000
-      }
-    };
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2), "utf8");
-    output(options.json, { configPath, config }, `Created ${configPath}`);
+    const result = await initAdaptiveProject({ projectRoot: process.cwd(), projectName: options.projectName, force: options.force === true });
+    output(options.json, result, `${result.status} ${result.configPath}`);
+  });
+
+program.command("status")
+  .description("Show Adaptive Skill Graph status")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const status = await getAdaptiveStatus(process.cwd());
+    output(options.json, status, `Initialized: ${status.initialized}\nEvents: ${status.eventCount}\nSignals: ${status.signalCount}\nActive preferences: ${status.activePreferenceCount}\nCandidates: ${status.candidateCount}`);
   });
 
 program.command("doctor")
@@ -72,16 +81,130 @@ program.command("draft")
     output(options.json, result, `Drafted ${result.skillName} at ${result.skillDir}`);
   });
 
+program.command("observe")
+  .description("Record an adaptive lifecycle event")
+  .option("--event <path>", "JSON event file")
+  .option("--type <eventType>", "Event type", "user-prompt-submit")
+  .option("--text <text>", "Event text")
+  .option("--session <id>", "Session id", "manual-session")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const fileEvent = options.event ? JSON.parse(await fs.readFile(path.resolve(options.event), "utf8")) : {};
+    const result = await appendEvent(process.cwd(), {
+      ...fileEvent,
+      sessionId: fileEvent.sessionId ?? options.session,
+      eventType: fileEvent.eventType ?? options.type,
+      source: fileEvent.source ?? { adapter: "cli" },
+      normalized: fileEvent.normalized ?? { text: options.text ?? fileEvent.intent ?? "" },
+      intent: fileEvent.intent ?? options.text,
+      privacy: fileEvent.privacy ?? { redacted: false, rawStored: false, containsUserText: Boolean(options.text), containsCode: false }
+    });
+    output(options.json, result, `Recorded ${result.event.id}`);
+  });
+
 program.command("learn")
-  .description("Alias for draft in deterministic local mode")
-  .argument("<topic>", "Skill topic")
+  .description("Learn adaptive preferences, or draft a legacy skill when topic is supplied")
+  .argument("[topic]", "Legacy skill topic")
   .option("--no-llm", "Do not use LLM provider", true)
   .option("--evidence-file <path>", "Add a local evidence file to the ledger", collectOption, [])
   .option("--evidence-url <url>", "Fetch an explicit HTTP(S) evidence URL", collectOption, [])
   .option("--json", "Print JSON")
   .action(async (topic, options) => {
-    const result = await draftSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false, evidenceFiles: options.evidenceFile, evidenceUrls: options.evidenceUrl });
-    output(options.json, result, `Drafted ${result.skillName} at ${result.skillDir}`);
+    if (topic) {
+      const result = await draftSkill({ topic, projectRoot: process.cwd(), noLlm: options.llm === false, evidenceFiles: options.evidenceFile, evidenceUrls: options.evidenceUrl });
+      output(options.json, result, `Drafted ${result.skillName} at ${result.skillDir}`);
+      return;
+    }
+    const signals = await extractSignals(process.cwd());
+    const graph = await updatePreferenceGraph(process.cwd());
+    output(options.json, { signals, graph }, `Learned ${signals.signalCount} signal(s)\nCandidates: ${graph.candidateCount}`);
+  });
+
+program.command("review")
+  .description("Review or apply candidate preferences")
+  .option("--activate <id>", "Activate preference id", collectOption, [])
+  .option("--reject <id>", "Reject preference id", collectOption, [])
+  .option("--lock <id>", "Lock preference id", collectOption, [])
+  .option("--activate-all", "Activate all candidates")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const graph = await applyPreferenceReview(process.cwd(), {
+      activate: options.activate,
+      reject: options.reject,
+      lock: options.lock,
+      activateAll: options.activateAll === true
+    });
+    const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
+    output(options.json, graph, pending.length ? pending.map((node) => `${node.id} ${node.status} ${node.statement}`).join("\n") : "No pending preferences");
+  });
+
+program.command("compile")
+  .description("Compile active preferences into context pack, skill, hooks, and MCP config")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await compileBehaviorLayer(process.cwd());
+    output(options.json, result, `Compiled behavior layer\nContext: ${result.contextPackPath}\nSkill: ${result.skillPaths.join(", ")}`);
+  });
+
+program.command("explain")
+  .description("Explain preference evidence by id")
+  .argument("<id>", "Preference id")
+  .option("--json", "Print JSON")
+  .action(async (id, options) => {
+    const node = await explainPreference(process.cwd(), id);
+    if (!node) throw new Error(`Preference not found: ${id}`);
+    output(options.json, node, `${node.id}\n${node.statement}\nConfidence: ${node.confidence}\nEvidence: ${node.evidence.map((item) => item.signalId).join(", ")}`);
+  });
+
+program.command("pack")
+  .description("Export a shareable Project Behavior Pack")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await exportProjectBehaviorPack(process.cwd());
+    output(options.json, result, `Exported pack ${result.packPath}`);
+  });
+
+program.command("verify-pack")
+  .description("Verify a Project Behavior Pack manifest and hashes")
+  .argument("<pack-path>", "Pack directory")
+  .option("--json", "Print JSON")
+  .action(async (packPath, options) => {
+    const result = await verifyProjectBehaviorPack(packPath);
+    output(options.json, result, `${result.status}: ${result.issues.join("; ") || "pack verified"}`);
+    process.exitCode = result.status === "fail" ? 1 : 0;
+  });
+
+program.command("sign-pack")
+  .description("Sign a Project Behavior Pack with a local Ed25519 key")
+  .argument("<pack-path>", "Pack directory")
+  .option("--key-dir <path>", "Signing key directory")
+  .option("--json", "Print JSON")
+  .action(async (packPath, options) => {
+    const result = await signProjectBehaviorPack(packPath, options.keyDir);
+    output(options.json, result, `Signed pack ${result.packPath}\nPublic key: ${result.publicKeyPath}`);
+  });
+
+program.command("import-pack")
+  .description("Import a Project Behavior Pack")
+  .argument("<pack-path>", "Pack directory")
+  .option("--dry-run", "Plan without writing", true)
+  .option("--yes", "Apply import")
+  .option("--trust-hooks", "Import hook files too")
+  .option("--json", "Print JSON")
+  .action(async (packPath, options) => {
+    const result = await importProjectBehaviorPack(process.cwd(), packPath, { dryRun: options.yes !== true, trustHooks: options.trustHooks === true });
+    output(options.json, result, `${result.status}: ${result.files.length} file(s)`);
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+program.command("eval")
+  .description("Run deterministic behavior adherence evals")
+  .option("--scenarios <path>", "Scenario JSON file")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await runBehaviorEval({ projectRoot: process.cwd(), scenariosPath: options.scenarios });
+    output(options.json, result, `Eval ${result.status}: adherence ${result.adherence}\nReport: ${result.artifacts.markdown}`);
+    process.exitCode = result.status === "fail" ? 1 : 0;
   });
 
 program.command("evolve")
@@ -134,7 +257,7 @@ program.command("evaluate")
 
 program.command("install")
   .description("Install a skill to an agent target")
-  .argument("<skill-path>", "Skill directory or SKILL.md")
+  .argument("[skill-path]", "Skill directory or SKILL.md; defaults to compiled project behavior skill")
   .requiredOption("--target <target>", "opencode-project|opencode-global|agents-project|agents-global")
   .option("--dry-run", "Plan without writing")
   .option("--yes", "Non-interactive approval")
@@ -142,8 +265,9 @@ program.command("install")
   .option("--allow-critical-risk", "Allow install despite critical scanner findings")
   .option("--json", "Print JSON")
   .action(async (skillPath, options) => {
+    const resolvedSkillPath = skillPath ?? path.join(process.cwd(), ".openskill-kit", "compiled", "skills", "project-behavior");
     const result = await installSkill({
-      skillPath,
+      skillPath: resolvedSkillPath,
       target: parseTarget(options.target),
       projectRoot: process.cwd(),
       dryRun: options.dryRun,
