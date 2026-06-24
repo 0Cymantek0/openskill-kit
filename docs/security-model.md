@@ -14,3 +14,7 @@ unless explicitly overridden.
 
 The scanner is a first-pass filter, not a proof of safety. Users must review
 generated skills before trusting them.
+
+Evidence ledgers and verifier packs are auditable artifacts. They record local
+source provenance and deterministic assertions, but they are not hidden benchmark
+truth and do not prove downstream agent performance.

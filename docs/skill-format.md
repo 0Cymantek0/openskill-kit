@@ -17,3 +17,7 @@ metadata:
 ```
 
 Names must match `^[a-z0-9]+(-[a-z0-9]+)*$` and be 1 to 64 characters.
+
+Generated run folders also include `evidence-ledger.json` and
+`verifier-pack.json` beside the candidate folder. Bulky provenance belongs there
+or in `references/`, not in the main `SKILL.md`.

@@ -1,7 +1,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { collectRepoContext, type RepoContext } from "../context/collector.js";
+import { createLocalEvidenceLedger, writeEvidenceLedger } from "../evidence/ledger.js";
+import { loadSkillPackage } from "../skill/parser.js";
 import { slugifySkillName } from "../skill/schema.js";
+import { buildVerifierPack, writeVerifierPack } from "../verifier/pack.js";
 
 export interface DraftOptions {
   topic: string;
@@ -15,6 +18,8 @@ export interface DraftResult {
   runDir: string;
   skillName: string;
   skillDir: string;
+  evidenceLedgerPath: string;
+  verifierPackPath: string;
   files: string[];
   warnings: string[];
 }
@@ -28,27 +33,35 @@ export async function draftSkill(options: DraftOptions): Promise<DraftResult> {
   const candidateDir = path.join(runDir, "candidate", skillName);
   const referencesDir = path.join(candidateDir, "references");
   await fs.mkdir(referencesDir, { recursive: true });
+  const ledgerPath = path.join(runDir, "evidence-ledger.json");
+  const verifierPackPath = path.join(runDir, "verifier-pack.json");
 
   const skillMarkdown = renderSkillMarkdown(skillName, options.topic, context);
+  const ledger = createLocalEvidenceLedger(options.topic, context, now);
   const researchMarkdown = renderResearchMarkdown(options.topic, context);
   const planMarkdown = renderPlanMarkdown(options.topic, context);
   const runJson = {
-    runId,
-    topic: options.topic,
-    mode: options.noLlm ? "deterministic-local" : "deterministic-local",
-    createdAt: now.toISOString(),
-    skillName,
-    artifacts: {
-      context: "context.json",
-      plan: "plan.md",
-      candidate: path.join("candidate", skillName, "SKILL.md").replaceAll("\\", "/")
-    }
+      runId,
+      topic: options.topic,
+      mode: options.noLlm ? "deterministic-local" : "deterministic-local",
+      createdAt: now.toISOString(),
+      skillName,
+      artifacts: {
+        context: "context.json",
+        evidenceLedger: "evidence-ledger.json",
+        verifierPack: "verifier-pack.json",
+        plan: "plan.md",
+        candidate: path.join("candidate", skillName, "SKILL.md").replaceAll("\\", "/")
+      }
   };
 
   await fs.writeFile(path.join(candidateDir, "SKILL.md"), skillMarkdown, "utf8");
   await fs.writeFile(path.join(referencesDir, "research.md"), researchMarkdown, "utf8");
   await fs.writeFile(path.join(runDir, "context.json"), JSON.stringify(context, null, 2), "utf8");
+  await writeEvidenceLedger(ledgerPath, ledger);
   await fs.writeFile(path.join(runDir, "plan.md"), planMarkdown, "utf8");
+  const pkg = await loadSkillPackage(candidateDir);
+  await writeVerifierPack(verifierPackPath, buildVerifierPack(pkg, ledger, now));
   await fs.writeFile(path.join(runDir, "run.json"), JSON.stringify(runJson, null, 2), "utf8");
 
   return {
@@ -56,9 +69,13 @@ export async function draftSkill(options: DraftOptions): Promise<DraftResult> {
     runDir,
     skillName,
     skillDir: candidateDir,
+    evidenceLedgerPath: ledgerPath,
+    verifierPackPath,
     files: [
       path.join(runDir, "run.json"),
       path.join(runDir, "context.json"),
+      ledgerPath,
+      verifierPackPath,
       path.join(runDir, "plan.md"),
       path.join(candidateDir, "SKILL.md"),
       path.join(referencesDir, "research.md")

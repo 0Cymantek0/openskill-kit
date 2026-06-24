@@ -46,7 +46,7 @@ export async function collectRepoContext(rootInput: string, limits: ContextLimit
   };
   const files = await collectTextFiles(root, limits, warnings);
   return {
-    root,
+    root: ".",
     packageManager: await detectPackageManager(root),
     frameworks: detectFrameworks(dependencies),
     scripts,

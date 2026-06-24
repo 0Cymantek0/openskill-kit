@@ -16,6 +16,8 @@ npx openskill-kit draft "repo test workflow" --no-llm
 ```
 
 Drafted skills are written under `.openskill-kit/runs/<run-id>/candidate/`.
+Each run also writes `evidence-ledger.json` and `verifier-pack.json` so claims
+and checks stay inspectable.
 
 ## Core Commands
 
@@ -45,7 +47,7 @@ escalation, and obfuscated execution. Critical findings block install unless
 ## Limitations
 
 The current implementation is the first local spine: deterministic drafting,
-schema validation, scanner, verifier report, registry, installer, CLI, OpenCode
-adapter shell, and Codex plugin bundle. Full open-world retrieval, holdout
-verifier packs, sandboxed evolution, and benchmark leakage audits are planned
-next and are not faked.
+local evidence ledger, package-level verifier pack, schema validation, scanner,
+verifier report, registry, installer, CLI, OpenCode adapter shell, and Codex
+plugin bundle. Full open-world retrieval, holdout verifier packs, sandboxed
+evolution, and benchmark leakage audits are planned next and are not faked.

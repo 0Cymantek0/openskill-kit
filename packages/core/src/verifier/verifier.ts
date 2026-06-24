@@ -1,13 +1,23 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { readEvidenceLedger, type EvidenceLedger } from "../evidence/ledger.js";
 import { scanSkillPath, type SafetyReport } from "../safety/scanner.js";
 import { validateSkillPackage, loadSkillPackage } from "../skill/parser.js";
 import type { ValidationIssue } from "../skill/schema.js";
+import { buildVerifierPack, readVerifierPack, type VerifierPack } from "./pack.js";
+
+export interface AssertionResult {
+  assertionId: string;
+  status: "pass" | "fail" | "warning";
+  message: string;
+}
 
 export interface VerifierReport {
   status: "pass" | "fail" | "warning";
   skillPath: string;
   generatedAt: string;
+  verifierPack?: VerifierPack;
+  assertionResults: AssertionResult[];
   issues: ValidationIssue[];
   safety: SafetyReport;
   scores: {
@@ -23,6 +33,17 @@ export async function verifySkill(skillPath: string, reportDir?: string): Promis
   const issues = await validateSkillPackage(skillPath);
   const safety = await scanSkillPath(skillPath);
   const pkg = issues.some((issue) => issue.severity === "error") ? undefined : await loadSkillPackage(skillPath);
+  const ledger = await readSiblingLedger(pkg?.root);
+  const verifierPack = pkg ? await readSiblingVerifierPack(pkg.root).catch(() => buildVerifierPack(pkg, ledger)) : undefined;
+  const assertionResults = verifierPack ? evaluateAssertions(verifierPack, {
+    issues,
+    safety,
+    bodyLength: pkg?.body.length ?? 999999,
+    hasCompatibility: Boolean(pkg?.manifest.compatibility),
+    hasReferences: Boolean(pkg?.files.some((file) => file.startsWith("references/"))),
+    hasCommonMistakes: Boolean(pkg?.body.includes("Common mistakes")),
+    hasVerification: Boolean(pkg?.body.includes("Verification checklist"))
+  }) : [];
   const bodyLength = pkg?.body.length ?? 999999;
   const scores = {
     safety: safety.score,
@@ -37,6 +58,8 @@ export async function verifySkill(skillPath: string, reportDir?: string): Promis
     status: hasError ? "fail" : hasWarning ? "warning" : "pass",
     skillPath: path.resolve(skillPath),
     generatedAt: new Date().toISOString(),
+    verifierPack,
+    assertionResults,
     issues,
     safety,
     scores
@@ -46,4 +69,55 @@ export async function verifySkill(skillPath: string, reportDir?: string): Promis
     await fs.writeFile(path.join(reportDir, "verifier.json"), JSON.stringify(report, null, 2), "utf8");
   }
   return report;
+}
+
+function evaluateAssertions(pack: VerifierPack, state: {
+  issues: ValidationIssue[];
+  safety: SafetyReport;
+  bodyLength: number;
+  hasCompatibility: boolean;
+  hasReferences: boolean;
+  hasCommonMistakes: boolean;
+  hasVerification: boolean;
+}): AssertionResult[] {
+  return pack.assertions.map((assertion) => {
+    if (assertion.id === "assert.skill-frontmatter-valid") {
+      const failed = state.issues.some((issue) => issue.severity === "error");
+      return result(assertion.id, failed ? "fail" : "pass", failed ? "Skill schema validation failed." : "Skill schema validation passed.");
+    }
+    if (assertion.id === "assert.skill-progressive-disclosure-sections") {
+      const passed = state.hasReferences && state.hasCommonMistakes && state.hasVerification;
+      return result(assertion.id, passed ? "pass" : "warning", passed ? "Progressive-disclosure sections present." : "Some recommended sections are missing.");
+    }
+    if (assertion.id === "assert.skill-safety-scan-pass") {
+      return result(assertion.id, state.safety.status === "pass" ? "pass" : "fail", state.safety.status === "pass" ? "Safety scan passed." : "Safety scan has high or critical findings.");
+    }
+    if (assertion.id === "assert.skill-install-simulation") {
+      const failed = state.issues.some((issue) => issue.severity === "error");
+      return result(assertion.id, failed ? "fail" : "pass", failed ? "Install simulation blocked by validation errors." : "Install simulation prerequisites passed.");
+    }
+    if (assertion.id === "assert.skill-context-efficient") {
+      const passed = state.bodyLength <= 4000;
+      return result(assertion.id, passed ? "pass" : "warning", passed ? "Main skill body is concise." : "Main skill body is too large for efficient discovery.");
+    }
+    if (assertion.id === "assert.skill-portable-adapters") {
+      return result(assertion.id, state.hasCompatibility ? "pass" : "warning", state.hasCompatibility ? "Compatibility metadata present." : "Compatibility metadata missing.");
+    }
+    return result(assertion.id, "warning", "Assertion type has no evaluator yet.");
+  });
+}
+
+async function readSiblingLedger(skillRoot?: string): Promise<EvidenceLedger | undefined> {
+  if (!skillRoot) return undefined;
+  const runRoot = path.resolve(skillRoot, "..", "..");
+  return readEvidenceLedger(path.join(runRoot, "evidence-ledger.json")).catch(() => undefined);
+}
+
+async function readSiblingVerifierPack(skillRoot: string): Promise<VerifierPack> {
+  const runRoot = path.resolve(skillRoot, "..", "..");
+  return readVerifierPack(path.join(runRoot, "verifier-pack.json"));
+}
+
+function result(assertionId: string, status: AssertionResult["status"], message: string): AssertionResult {
+  return { assertionId, status, message };
 }
