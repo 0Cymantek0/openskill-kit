@@ -1,7 +1,7 @@
 {
   "name": "@openskill-kit/core",
   "version": "0.1.0",
-  "description": "Core openskill-kit engine.",
+  "description": "Core OpenSkillKit Adaptive Skill Graph engine.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
