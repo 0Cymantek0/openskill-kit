@@ -1,0 +1,39 @@
+import { z } from "zod";
+import { SignalSchema } from "../signals/schema.js";
+
+export const PreferenceNodeSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.preference-node.v1"),
+  id: z.string().min(1),
+  title: z.string().min(1),
+  statement: z.string().min(1),
+  category: SignalSchema.shape.category,
+  scope: SignalSchema.shape.scope,
+  confidence: z.number().min(0).max(1),
+  status: z.enum(["candidate", "active", "rejected", "locked", "conflict"]),
+  polarity: SignalSchema.shape.polarity,
+  evidence: z.array(z.object({
+    signalId: z.string(),
+    eventIds: z.array(z.string()),
+    weight: z.number(),
+    quote: z.string().optional(),
+    command: z.string().optional()
+  })).default([]),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+});
+
+export type PreferenceNode = z.infer<typeof PreferenceNodeSchema>;
+
+export const PreferenceGraphSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.preference-graph.v1"),
+  projectId: z.string().min(1),
+  nodes: z.array(PreferenceNodeSchema).default([]),
+  conflicts: z.array(z.object({
+    id: z.string(),
+    nodeIds: z.array(z.string()).min(2),
+    reason: z.string()
+  })).default([]),
+  updatedAt: z.string().datetime()
+});
+
+export type PreferenceGraph = z.infer<typeof PreferenceGraphSchema>;
