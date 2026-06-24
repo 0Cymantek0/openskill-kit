@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { SandboxPolicy } from "../sandbox/policy.js";
+import type { FixtureCheckResult } from "./fixture.js";
 
 export const AssertionResultSchema = z.object({
   assertionId: z.string().min(1),
@@ -22,12 +23,18 @@ export const VerifierExecutionSchema = z.object({
   }).optional(),
   visibleResults: z.array(AssertionResultSchema),
   holdoutResults: z.array(AssertionResultSchema),
+  fixtureResults: z.array(z.object({
+    id: z.string().min(1),
+    status: z.enum(["pass", "fail", "blocked", "timeout", "missing"]),
+    message: z.string().min(1)
+  })),
   summary: z.object({
     pass: z.number().int().min(0),
     fail: z.number().int().min(0),
     warning: z.number().int().min(0),
     visible: z.number().int().min(0),
-    holdout: z.number().int().min(0)
+    holdout: z.number().int().min(0),
+    fixtures: z.number().int().min(0)
   }),
   limitations: z.array(z.string())
 });
@@ -42,6 +49,7 @@ export function buildVerifierExecution(input: {
   visibleAssertionIds: string[];
   holdoutAssertionIds: string[];
   sandboxPolicy?: SandboxPolicy;
+  fixtureResults?: FixtureCheckResult[];
 }): VerifierExecution {
   const visible = new Set(input.visibleAssertionIds);
   const holdout = new Set(input.holdoutAssertionIds);
@@ -61,12 +69,18 @@ export function buildVerifierExecution(input: {
     } : undefined,
     visibleResults,
     holdoutResults,
+    fixtureResults: (input.fixtureResults ?? []).map((fixture) => ({
+      id: fixture.id,
+      status: fixture.status,
+      message: fixture.message
+    })),
     summary: {
       pass: all.filter((result) => result.status === "pass").length,
       fail: all.filter((result) => result.status === "fail").length,
       warning: all.filter((result) => result.status === "warning").length,
       visible: visibleResults.length,
-      holdout: holdoutResults.length
+      holdout: holdoutResults.length,
+      fixtures: input.fixtureResults?.length ?? 0
     },
     limitations: [
       "This execution validates package-level assertions only.",

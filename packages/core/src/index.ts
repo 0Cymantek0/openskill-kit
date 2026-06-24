@@ -6,6 +6,7 @@ export * from "./evidence/ledger.js";
 export * from "./draft/draft.js";
 export * from "./verifier/verifier.js";
 export * from "./verifier/execution.js";
+export * from "./verifier/fixture.js";
 export * from "./verifier/pack.js";
 export * from "./install/install.js";
 export * from "./registry/registry.js";

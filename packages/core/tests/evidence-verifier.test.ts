@@ -41,8 +41,10 @@ describe("evidence ledger and verifier pack", () => {
     expect(ledger.task).toBe("repo verifier skill");
     expect(pack.assertions.map((assertion) => assertion.id)).toContain("assert.skill-safety-scan-pass");
     expect(report.assertionResults.some((result) => result.assertionId === "assert.skill-safety-scan-pass" && result.status === "pass")).toBe(true);
+    expect(report.fixtureResults.some((result) => result.id === "fixture.skill-package" && result.status === "pass")).toBe(true);
     expect(report.execution?.visibleResults.length).toBeGreaterThan(0);
     expect(report.execution?.holdoutResults.length).toBeGreaterThan(0);
+    expect(report.execution?.fixtureResults[0]?.status).toBe("pass");
     expect(report.execution?.sandbox?.mode).toBe("local-process");
     expect(report.execution?.sandbox?.allowNetwork).toBe(false);
   });
@@ -62,6 +64,7 @@ describe("evidence ledger and verifier pack", () => {
     const execution = await readVerifierExecution(report.executionPath!);
     expect(execution.summary.visible).toBeGreaterThan(0);
     expect(execution.summary.holdout).toBeGreaterThan(0);
+    expect(execution.summary.fixtures).toBe(1);
     expect(execution.limitations.join(" ")).toContain("not hidden benchmark tests");
   });
 
@@ -71,6 +74,8 @@ describe("evidence ledger and verifier pack", () => {
     await mkdir(path.join(skillDir, "references"), { recursive: true });
     await writeFile(path.join(skillDir, "SKILL.md"), "---\nname: portable-skill\ndescription: Portable skill\ncompatibility: opencode,codex\n---\n\n## When to use\nUse it.\n\n## When not to use\nAvoid unrelated tasks.\n\n## Verification checklist\n- Run tests.\n\n## Common mistakes\n- Do not skip validation.\n\n## References\n- [Notes](references/research.md)\n", "utf8");
     await writeFile(path.join(skillDir, "references", "research.md"), "# Notes\n", "utf8");
+    await mkdir(path.join(skillDir, "tests"));
+    await writeFile(path.join(skillDir, "tests", "skill-package-fixture.cjs"), "console.log('ok')\n", "utf8");
     const pkg = await loadSkillPackage(skillDir);
     const pack = buildVerifierPack(pkg);
 

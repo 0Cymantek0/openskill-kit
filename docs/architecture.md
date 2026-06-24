@@ -40,6 +40,8 @@ web research or agent-performance evaluation.
 - `verifier-pack.json`: deterministic package-quality assertions.
 - `plan.md`: short execution plan.
 - `candidate/<skill>/SKILL.md`: portable skill package.
+- `candidate/<skill>/tests/skill-package-fixture.cjs`: deterministic generated
+  fixture run by the sandbox verifier.
 
 The current verifier pack checks schema, structure, safety, installability,
 context efficiency, and portability. It intentionally does not claim that an
@@ -53,6 +55,10 @@ agent will solve downstream tasks.
 
 Holdout assertions are groundwork for the paper's separation principle. At this
 stage they are deterministic local package checks, not hidden target tests.
+
+Generated fixture checks currently validate package structure from disk through
+the sandbox runner. They are real command executions, but they still validate
+skill-package quality rather than downstream agent task success.
 
 ## Sandbox Groundwork
 

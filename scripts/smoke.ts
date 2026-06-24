@@ -36,6 +36,9 @@ if (report.status === "fail" || !Array.isArray(report.assertionResults) || repor
 if (report.execution?.sandbox?.mode !== "local-process") {
   throw new Error("verifier sandbox metadata missing");
 }
+if (report.execution?.fixtureResults?.[0]?.status !== "pass") {
+  throw new Error("verifier fixture did not pass");
+}
 await stat(path.join(root, report.executionPath));
 
 const dryRun = await runJson(["install", draft.skillDir, "--target", "agents-project", "--dry-run", "--json"]);

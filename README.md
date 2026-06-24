@@ -20,6 +20,8 @@ Each run also writes `evidence-ledger.json` and `verifier-pack.json` so claims
 and checks stay inspectable.
 `openskill-kit test <skill>` writes `verifier.json` and
 `verifier-execution.json` under `.openskill-kit/reports/`.
+Generated drafts include `tests/skill-package-fixture.cjs`; `test` runs it
+through the local sandbox runner.
 
 ## Core Commands
 

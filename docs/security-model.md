@@ -27,3 +27,7 @@ The current sandbox runner is `local-process`: no shell, cwd containment,
 allowlisted commands, redacted env, timeout, and output caps. It is not an
 OS-enforced container. Treat untrusted scripts as unsafe until a container runner
 is enabled and reviewed.
+
+Generated fixture checks are authored by OpenSkill-Kit and run by the verifier.
+Skill helper scripts from users or third parties are not executed by install and
+must be separately reviewed.

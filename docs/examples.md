@@ -16,3 +16,7 @@ openskill-kit draft "debug failing Vitest tests in this repo" --no-llm
 
 Helper scripts are allowed only when the scanner and user review approve them.
 Scripts are never executed by default during install.
+
+Generated drafts include a safe fixture under `tests/` that `openskill-kit test`
+runs through the local sandbox. This checks package structure without executing
+user-authored helper scripts.

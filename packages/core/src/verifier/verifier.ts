@@ -6,6 +6,7 @@ import { scanSkillPath, type SafetyReport } from "../safety/scanner.js";
 import { validateSkillPackage, loadSkillPackage } from "../skill/parser.js";
 import type { ValidationIssue } from "../skill/schema.js";
 import { buildVerifierExecution, writeVerifierExecution, type AssertionResult, type VerifierExecution } from "./execution.js";
+import { runSkillPackageFixture, type FixtureCheckResult } from "./fixture.js";
 import { buildVerifierPack, readVerifierPack, type VerifierPack } from "./pack.js";
 
 export interface VerifierReport {
@@ -17,6 +18,7 @@ export interface VerifierReport {
   reportPath?: string;
   executionPath?: string;
   assertionResults: AssertionResult[];
+  fixtureResults: FixtureCheckResult[];
   issues: ValidationIssue[];
   safety: SafetyReport;
   scores: {
@@ -44,13 +46,16 @@ export async function verifySkill(skillPath: string, reportDir?: string, sandbox
     hasVerification: Boolean(pkg?.body.includes("Verification checklist"))
   }) : [];
   const generatedAt = new Date();
+  const effectivePolicy = sandboxPolicy ?? createLocalSandboxPolicy({ projectRoot: path.dirname(path.resolve(skillPath)) });
+  const fixtureResults = pkg ? [await runSkillPackageFixture(pkg, effectivePolicy)] : [];
   const execution = verifierPack ? buildVerifierExecution({
     skillName: pkg?.manifest.name,
     generatedAt,
     assertionResults,
     visibleAssertionIds: verifierPack.visibleAssertionIds,
     holdoutAssertionIds: verifierPack.holdoutAssertionIds,
-    sandboxPolicy: sandboxPolicy ?? createLocalSandboxPolicy({ projectRoot: path.dirname(path.resolve(skillPath)) })
+    sandboxPolicy: effectivePolicy,
+    fixtureResults
   }) : undefined;
   const bodyLength = pkg?.body.length ?? 999999;
   const scores = {
@@ -61,14 +66,16 @@ export async function verifySkill(skillPath: string, reportDir?: string, sandbox
     portability: pkg?.manifest.compatibility ? 100 : 70
   };
   const hasError = issues.some((issue) => issue.severity === "error") || safety.status === "fail";
-  const hasWarning = issues.some((issue) => issue.severity === "warning") || Object.values(safety.summary).some((count) => count > 0);
+  const hasFixtureFailure = fixtureResults.some((fixture) => fixture.status === "fail" || fixture.status === "blocked" || fixture.status === "timeout");
+  const hasWarning = issues.some((issue) => issue.severity === "warning") || Object.values(safety.summary).some((count) => count > 0) || fixtureResults.some((fixture) => fixture.status === "missing");
   const report: VerifierReport = {
-    status: hasError ? "fail" : hasWarning ? "warning" : "pass",
+    status: hasError || hasFixtureFailure ? "fail" : hasWarning ? "warning" : "pass",
     skillPath: path.normalize(skillPath),
     generatedAt: generatedAt.toISOString(),
     verifierPack,
     execution,
     assertionResults,
+    fixtureResults,
     issues,
     safety,
     scores

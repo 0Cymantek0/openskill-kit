@@ -4,6 +4,7 @@ import { collectRepoContext, type RepoContext } from "../context/collector.js";
 import { createLocalEvidenceLedger, writeEvidenceLedger } from "../evidence/ledger.js";
 import { loadSkillPackage } from "../skill/parser.js";
 import { slugifySkillName } from "../skill/schema.js";
+import { writeSkillPackageFixture } from "../verifier/fixture.js";
 import { buildVerifierPack, writeVerifierPack } from "../verifier/pack.js";
 
 export interface DraftOptions {
@@ -57,6 +58,7 @@ export async function draftSkill(options: DraftOptions): Promise<DraftResult> {
 
   await fs.writeFile(path.join(candidateDir, "SKILL.md"), skillMarkdown, "utf8");
   await fs.writeFile(path.join(referencesDir, "research.md"), researchMarkdown, "utf8");
+  const fixturePath = await writeSkillPackageFixture(candidateDir);
   await fs.writeFile(path.join(runDir, "context.json"), JSON.stringify(context, null, 2), "utf8");
   await writeEvidenceLedger(ledgerPath, ledger);
   await fs.writeFile(path.join(runDir, "plan.md"), planMarkdown, "utf8");
@@ -78,6 +80,7 @@ export async function draftSkill(options: DraftOptions): Promise<DraftResult> {
       verifierPackPath,
       path.join(runDir, "plan.md"),
       path.join(candidateDir, "SKILL.md"),
+      fixturePath,
       path.join(referencesDir, "research.md")
     ],
     warnings: context.warnings

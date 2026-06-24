@@ -12,9 +12,11 @@ describe("draft, verify, install", () => {
     expect(await readFile(path.join(draft.skillDir, "SKILL.md"), "utf8")).toContain("name: test-skill");
     await expect(stat(draft.evidenceLedgerPath)).resolves.toBeTruthy();
     await expect(stat(draft.verifierPackPath)).resolves.toBeTruthy();
+    await expect(stat(path.join(draft.skillDir, "tests", "skill-package-fixture.cjs"))).resolves.toBeTruthy();
     const report = await verifySkill(draft.skillDir);
     expect(report.status).not.toBe("fail");
     expect(report.assertionResults.length).toBeGreaterThan(0);
+    expect(report.fixtureResults[0]?.status).toBe("pass");
     const dryRun = await installSkill({ skillPath: draft.skillDir, target: "agents-project", projectRoot: root, dryRun: true });
     expect(dryRun.status).toBe("planned");
     await expect(stat(path.join(root, ".agents", "skills", "test-skill"))).rejects.toThrow();
