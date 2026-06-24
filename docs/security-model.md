@@ -18,3 +18,7 @@ generated skills before trusting them.
 Evidence ledgers and verifier packs are auditable artifacts. They record local
 source provenance and deterministic assertions, but they are not hidden benchmark
 truth and do not prove downstream agent performance.
+
+Verifier execution reports split visible and holdout assertions. In the current
+implementation both groups are local deterministic package checks; future
+sandboxed evolution can use the split without changing report consumers.

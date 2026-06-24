@@ -18,6 +18,8 @@ npx openskill-kit draft "repo test workflow" --no-llm
 Drafted skills are written under `.openskill-kit/runs/<run-id>/candidate/`.
 Each run also writes `evidence-ledger.json` and `verifier-pack.json` so claims
 and checks stay inspectable.
+`openskill-kit test <skill>` writes `verifier.json` and
+`verifier-execution.json` under `.openskill-kit/reports/`.
 
 ## Core Commands
 

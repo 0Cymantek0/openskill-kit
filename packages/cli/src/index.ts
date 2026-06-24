@@ -93,8 +93,9 @@ program.command("test")
   .argument("<skill-path>", "Skill directory or SKILL.md")
   .option("--json", "Print JSON")
   .action(async (skillPath, options) => {
-    const report = await verifySkill(skillPath, path.join(process.cwd(), ".openskill-kit", "reports", path.basename(path.resolve(skillPath))));
-    output(options.json, report, `Verifier ${report.status}: safety ${report.scores.safety}, structure ${report.scores.structure}`);
+    const reportDir = path.join(".openskill-kit", "reports", path.basename(path.resolve(skillPath)));
+    const report = await verifySkill(skillPath, reportDir);
+    output(options.json, report, `Verifier ${report.status}: safety ${report.scores.safety}, structure ${report.scores.structure}\nReport: ${report.reportPath ?? reportDir}`);
     process.exitCode = report.status === "fail" ? 1 : 0;
   });
 

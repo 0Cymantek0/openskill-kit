@@ -64,7 +64,7 @@ export function buildVerifierPack(pkg: SkillPackage, ledger?: EvidenceLedger, no
       type: "installability",
       sourceClaimIds: [],
       deterministic: true,
-      visibleToExecutor: true,
+      visibleToExecutor: false,
       strength: "high"
     },
     {
@@ -82,7 +82,7 @@ export function buildVerifierPack(pkg: SkillPackage, ledger?: EvidenceLedger, no
       type: "portability",
       sourceClaimIds: [],
       deterministic: true,
-      visibleToExecutor: true,
+      visibleToExecutor: false,
       strength: "medium"
     }
   ];
@@ -92,8 +92,8 @@ export function buildVerifierPack(pkg: SkillPackage, ledger?: EvidenceLedger, no
     skillName: pkg.manifest.name,
     createdAt: now.toISOString(),
     assertions,
-    visibleAssertionIds: assertions.map((assertion) => assertion.id),
-    holdoutAssertionIds: [],
+    visibleAssertionIds: assertions.filter((assertion) => assertion.visibleToExecutor).map((assertion) => assertion.id),
+    holdoutAssertionIds: assertions.filter((assertion) => !assertion.visibleToExecutor).map((assertion) => assertion.id),
     warnings: [
       "Verifier pack checks skill package quality only; it does not claim downstream agent performance.",
       ...(ledger ? ledger.warnings : ["No evidence ledger supplied for verifier pack."])

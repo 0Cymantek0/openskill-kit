@@ -44,3 +44,12 @@ web research or agent-performance evaluation.
 The current verifier pack checks schema, structure, safety, installability,
 context efficiency, and portability. It intentionally does not claim that an
 agent will solve downstream tasks.
+
+`test` writes two execution artifacts:
+
+- `verifier.json`: full human/machine report, scores, issues, safety findings.
+- `verifier-execution.json`: assertion execution split into visible and holdout
+  groups.
+
+Holdout assertions are groundwork for the paper's separation principle. At this
+stage they are deterministic local package checks, not hidden target tests.

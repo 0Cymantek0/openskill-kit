@@ -30,9 +30,10 @@ const audit = await runJson(["audit", draft.skillDir, "--json"]);
 if (audit.status !== "pass") throw new Error("audit failed");
 
 const report = await runJson(["test", draft.skillDir, "--json"]);
-if (report.status === "fail" || !Array.isArray(report.assertionResults) || report.assertionResults.length === 0) {
+if (report.status === "fail" || !Array.isArray(report.assertionResults) || report.assertionResults.length === 0 || !report.executionPath) {
   throw new Error("verifier failed");
 }
+await stat(path.join(root, report.executionPath));
 
 const dryRun = await runJson(["install", draft.skillDir, "--target", "agents-project", "--dry-run", "--json"]);
 if (dryRun.status !== "planned") throw new Error("dry-run install failed");

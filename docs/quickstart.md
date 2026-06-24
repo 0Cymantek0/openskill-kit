@@ -11,3 +11,5 @@ npx openskill-kit audit .openskill-kit/runs/<run>/candidate/handle-repo-test-fai
 npx openskill-kit test .openskill-kit/runs/<run>/candidate/handle-repo-test-failures
 npx openskill-kit install .openskill-kit/runs/<run>/candidate/handle-repo-test-failures --target agents-project --dry-run
 ```
+
+Verifier outputs are written to `.openskill-kit/reports/<skill>/`.
