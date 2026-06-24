@@ -1,91 +1,130 @@
-# openskill-kit
+# OpenSkillKit
 
-Independent OpenSkill-inspired engine for drafting, auditing, testing, and
-installing portable agent skills.
+OpenSkillKit is a local-first Adaptive Skill Graph for AI coding agents. It
+observes project work, extracts evidence-backed Preference Nodes, keeps an
+inspectable Behavior Profile, and compiles the Active Behavior Layer into
+Context Packs, Agent Skills, hooks, MCP tools, and shareable Project Behavior
+Packs.
 
-This is a clean-room implementation inspired by the OpenSkill paper. It is not
-the official OpenLAIR/OpenSkill implementation.
+It is not model training and it does not need provider keys. The host agent
+does the reasoning; OpenSkillKit supplies project-local behavior memory,
+evidence, safety gates, and generated artifacts agents already know how to use.
 
 ## Quickstart
 
 ```bash
 npm install
 npm run build
-npx openskill-kit doctor --json
-npx openskill-kit evolve "repo test workflow" --no-llm
-npx openskill-kit draft "repo test workflow" --no-llm
-npx openskill-kit draft "repo test workflow" --evidence-file research.md --no-llm
-npx openskill-kit draft "repo test workflow" --evidence-url https://example.com/docs --no-llm
-npx openskill-kit evaluate .openskill-kit/runs/<run-id>/candidate/<skill> --run-repo-checks
+
+npx openskill-kit init
+npx openskill-kit observe --type user-prompt-submit --text "Always run npm test before final response."
+npx openskill-kit learn
+npx openskill-kit review --activate-all
+npx openskill-kit compile
+npx openskill-kit install --target agents-project --yes
+npx openskill-kit status
 ```
 
-Drafted skills are written under `.openskill-kit/runs/<run-id>/candidate/`.
-Each run also writes `run-report.md`, `evidence-ledger.json`,
-`leakage-audit.json`, and `verifier-pack.json` so claims, no-supervision
-checks, verifier checks, warnings, and limitations stay inspectable.
-`openskill-kit test <skill>` writes `verifier.json` and
-`verifier-execution.json` under `.openskill-kit/reports/`, including fixture,
-mutation, and optional repository command results.
-`openskill-kit evaluate <skill>` writes `evaluation.json` and `evaluation.md`
-under `.openskill-kit/evaluations/`, combining verifier, leakage, repository
-command, and mutation gates into one readiness report.
-Generated drafts include `tests/skill-package-fixture.cjs`; `test` runs it
-through the local sandbox runner. Coding agents can also attach through the
-stdio MCP server:
+This creates `.openskill-kit/`, records a redacted event, learns candidate
+preferences, activates them through Learning Review, compiles a Context Pack and
+`project-behavior` skill, then installs that skill into the project agent skill
+directory.
 
-```bash
-openskill-kit-mcp
+## How It Works
+
+```text
+events -> signals -> Preference Kernel -> Behavior Profile
+  -> Active Behavior Layer
+  -> Context Pack + Agent Skills + hooks + MCP config + Project Behavior Pack
 ```
+
+OpenSkillKit stores raw lifecycle events in append-only JSONL only when privacy
+settings allow it. Secret-like content is redacted before storage. Signals and
+Preference Nodes stay reviewable as normal project files.
 
 ## Core Commands
 
 ```bash
 openskill-kit init
+openskill-kit status
+openskill-kit observe --type user-prompt-submit --text "Always prefer focused tests first."
+openskill-kit learn
+openskill-kit review
+openskill-kit review --activate <preference-id>
+openskill-kit review --reject <preference-id>
+openskill-kit review --activate-all
+openskill-kit compile
+openskill-kit explain <preference-id>
+openskill-kit install --target agents-project --yes
+openskill-kit eval
+openskill-kit pack
+openskill-kit sign-pack .openskill-kit/compiled/project-behavior-pack
+openskill-kit verify-pack .openskill-kit/compiled/project-behavior-pack
+openskill-kit import-pack <pack-path> --dry-run
 openskill-kit doctor
-openskill-kit evolve "topic" --no-llm
-openskill-kit evolve "topic" --max-rounds 3 --run-repo-checks --no-llm
-openskill-kit draft "topic" --no-llm
-openskill-kit draft "topic" --evidence-file docs/architecture.md --no-llm
-openskill-kit draft "topic" --evidence-url https://example.com/docs --no-llm
-openskill-kit learn "topic" --no-llm
-openskill-kit audit <skill-path>
-openskill-kit test <skill-path>
-openskill-kit test <skill-path> --run-repo-checks
-openskill-kit evaluate <skill-path>
-openskill-kit evaluate <skill-path> --run-repo-checks
-openskill-kit install <skill-path> --target opencode-project --dry-run
-openskill-kit install <skill-path> --target agents-project --yes
-openskill-kit list
-openskill-kit inspect <skill-name-or-path>
-openskill-kit uninstall <skill-name> --target agents-project --yes
-openskill-kit version
 ```
 
-## Safety Model
+Compatibility commands remain available for manual skill scaffolding:
 
-Generated or imported skills are untrusted until audited. openskill-kit scans
-`SKILL.md`, references, scripts, and package files for prompt-injection phrases,
-credential access, suspicious network execution, destructive commands, privilege
-escalation, and obfuscated execution. Critical findings block install unless
-`--allow-critical-risk` is passed.
+```bash
+openskill-kit draft "repo test workflow" --no-llm
+openskill-kit evolve "repo test workflow" --max-rounds 3 --run-repo-checks --no-llm
+openskill-kit test .openskill-kit/runs/<run-id>/candidate/<skill>
+openskill-kit evaluate .openskill-kit/runs/<run-id>/candidate/<skill>
+```
 
-## Limitations
+## Safety And Privacy
 
-The current implementation is the first local spine: deterministic drafting,
-local evidence ledger, explicit evidence-file and evidence-url ingestion,
-leakage audit for manual/external evidence inputs, package-level verifier pack,
-schema validation, scanner, opt-in repository command verifier execution,
-mutation check for generated package verifiers, verifier report, local sandbox
-policy with optional Docker runner, leakage-aware evaluation report, registry, installer, CLI,
-stdio MCP server, OpenCode adapter shell, and Codex plugin bundle. Full
-open-world retrieval and benchmark-grade downstream agent evaluation are planned
-next and are not faked.
+- Local-only behavior is default.
+- Raw prompts and raw diffs are not stored unless enabled in config.
+- Secret-like values are redacted before event storage.
+- Generated skills and hooks are scanned before install.
+- Install writes receipts under `.openskill-kit/installs/`.
+- Project Behavior Packs exclude private events, raw signals, review drafts, and
+  run outputs by default.
 
-Installs also write `.openskill-kit/installs/<target>/<skill>.json` receipts
-with adapter, source, destination, verifier status, and safety score so coding
-agents can audit what was installed without inferring from copied folders.
+## Agent Integration
 
-`evolve` currently runs capped deterministic rounds: draft, verify, diagnose,
-repair package-level issues when possible, and freeze only when the verifier
-passes. It writes `evolution.json` plus `rounds/round-*.json`; it does not fake
-LLM refinement.
+The stdio MCP server exposes the adaptive runtime:
+
+```bash
+openskill-kit-mcp
+```
+
+Key tools:
+
+- `osk_bootstrap_session`
+- `osk_get_context_pack`
+- `osk_get_relevant_preferences`
+- `osk_record_event`
+- `osk_learn_from_session`
+- `osk_compile_behavior_layer`
+- `osk_explain_preference`
+- `osk_export_behavior_pack`
+- `osk_sign_behavior_pack`
+- `osk_verify_behavior_pack`
+- `osk_import_behavior_pack`
+- `osk_run_behavior_eval`
+
+Legacy skill drafting, audit, test, evaluation, install, list, and inspect tools
+remain available for compatibility.
+
+## Project Owner Workflow
+
+1. Initialize the project.
+2. Let the agent record useful lifecycle events.
+3. Review candidates in small batches.
+4. Compile and install the Active Behavior Layer.
+5. Commit the safe subset of `.openskill-kit/`.
+6. Export a Project Behavior Pack for contributors when needed.
+
+## Current Boundary
+
+This release implements the production spine: adaptive config, event store,
+redaction, deterministic signal extraction, Preference Graph, Learning Review,
+context and skill compilation, standalone hook scripts, plugin output, MCP config
+generation, project skill install, Project Behavior Pack export/verify/import,
+behavior evals, CLI, MCP tools, tests, and smoke coverage.
+
+Advanced AST extraction, hosted sync, signatures, and benchmark-grade
+downstream agent replay are roadmap items. They are not faked.
