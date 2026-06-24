@@ -109,6 +109,13 @@ generated skill text.
 Legacy drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.
 
+## Behavior Evals
+
+`openskill-kit eval` builds scenarios from active preferences or a scenario file,
+retrieves relevant preferences for each task, simulates a behavior-aware plan,
+checks command policy and forbidden behavior, and reports adherence, retrieval
+precision, and privacy leak rate.
+
 ## Legacy Scaffold Path
 
 `draft`, topic-based `learn`, and `evolve` remain deterministic local

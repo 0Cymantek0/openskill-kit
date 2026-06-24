@@ -6,6 +6,7 @@ import {
   compileBehaviorLayer,
   initAdaptiveProject,
   retrieveRelevantPreferences,
+  runBehaviorEval,
   type PreferenceGraph,
   type PreferenceNode
 } from "../src/index.js";
@@ -46,6 +47,11 @@ describe("preference retrieval and policy artifacts", () => {
     expect(await readFile(reviewChecklistPath!, "utf8")).toContain("Do not expose secrets");
     const pathMap = JSON.parse(await readFile(pathMapPath!, "utf8"));
     expect(pathMap.paths["src/parser"][0].id).toBe("pref_path-style");
+
+    const evalReport = await runBehaviorEval({ projectRoot: root, now: new Date("2026-06-25T00:00:00.000Z") });
+    expect(evalReport.status).toBe("pass");
+    expect(evalReport.retrievalPrecision).toBe(1);
+    expect(evalReport.results[0]?.checks.map((check) => check.name)).toEqual(expect.arrayContaining(["retrieval", "plan", "command-policy", "avoidance", "privacy"]));
   });
 });
 

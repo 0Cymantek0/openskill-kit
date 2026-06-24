@@ -5,7 +5,11 @@ export const BehaviorEvalScenarioSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   prompt: z.string().min(1),
-  expectedPreferenceText: z.array(z.string().min(1)).default([])
+  paths: z.array(z.string().min(1)).default([]),
+  expectedPreferenceText: z.array(z.string().min(1)).default([]),
+  expectedPreferenceIds: z.array(z.string().min(1)).default([]),
+  expectedCommandText: z.array(z.string().min(1)).default([]),
+  forbiddenBehaviorText: z.array(z.string().min(1)).default([])
 });
 
 export type BehaviorEvalScenario = z.infer<typeof BehaviorEvalScenarioSchema>;
@@ -16,11 +20,18 @@ export const BehaviorEvalReportSchema = z.object({
   scenarioCount: z.number().int().min(0),
   passCount: z.number().int().min(0),
   adherence: z.number().min(0).max(1),
+  retrievalPrecision: z.number().min(0).max(1),
+  privacyLeakRate: z.number().min(0).max(1),
   results: z.array(z.object({
     id: z.string(),
     title: z.string(),
     status: z.enum(["pass", "fail"]),
-    missing: z.array(z.string())
+    missing: z.array(z.string()),
+    checks: z.array(z.object({
+      name: z.string(),
+      status: z.enum(["pass", "fail"]),
+      details: z.string()
+    }))
   })),
   artifacts: z.object({
     json: z.string(),
