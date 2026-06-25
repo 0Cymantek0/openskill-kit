@@ -30,10 +30,25 @@ describe("preference retrieval and policy artifacts", () => {
     expect(bundle.items[0]?.node.id).toBe("pref_parser-tests");
     expect(bundle.items[0]?.reasons.join(" ")).toContain("path:src/parser");
     expect(bundle.items[0]?.reasons.join(" ")).toContain("task:testing");
+    expect(bundle.items[0]?.level).toBe("critical");
+    expect(bundle.levels.critical.map((item) => item.node.id)).toContain("pref_parser-tests");
     expect(bundle.trace.inferred.languages).toContain("typescript");
     expect(bundle.trace.includedIds).toContain("pref_parser-tests");
     expect(bundle.trace.omitted.some((item) => item.reason === "over-limit")).toBe(true);
     expect(bundle.compactMarkdown).toContain("parser focused tests");
+    expect(bundle.compactMarkdown).toContain("## Critical");
+
+    const packed = await retrieveRelevantPreferences({
+      projectRoot: root,
+      query: "parser test change with api docs",
+      paths: ["src/parser/tokenizer.ts", "src/routes/users.ts"],
+      limit: 3,
+      tokenBudgetLines: 2,
+      now: new Date("2026-06-25T00:00:00.000Z")
+    });
+    expect(packed.budget.requestedLines).toBe(2);
+    expect(packed.budget.usedLines).toBeLessThanOrEqual(2);
+    expect(packed.trace.omitted.some((item) => item.reason === "over-budget")).toBe(true);
   });
 
   it("compiles path map, command policy, and review checklist artifacts", async () => {

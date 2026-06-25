@@ -15,7 +15,11 @@ export interface RetrievedPreference {
   node: PreferenceNode;
   score: number;
   reasons: string[];
+  level: RetrievalLevel;
+  budgetLines: number;
 }
+
+export type RetrievalLevel = "critical" | "focused" | "supporting" | "background";
 
 export interface PreferenceBundle {
   schemaVersion: "openskill-kit.preference-bundle.v1";
@@ -23,6 +27,12 @@ export interface PreferenceBundle {
   paths: string[];
   categories: string[];
   items: RetrievedPreference[];
+  levels: Record<RetrievalLevel, RetrievedPreference[]>;
+  budget: {
+    requestedLines?: number;
+    usedLines: number;
+    omittedForBudget: string[];
+  };
   trace: PreferenceRetrievalTrace;
   compactMarkdown: string;
 }
@@ -36,6 +46,10 @@ export interface PreferenceRetrievalTrace {
   consideredCount: number;
   includedIds: string[];
   omitted: Array<{ id: string; reason: string }>;
+  budget: {
+    requestedLines?: number;
+    usedLines: number;
+  };
 }
 
 export async function retrieveRelevantPreferences(options: PreferenceRetrievalOptions): Promise<PreferenceBundle> {
@@ -54,24 +68,41 @@ export async function retrieveRelevantPreferences(options: PreferenceRetrievalOp
       return keep;
     })
     .map((node) => scoreNode(node, queryWords, paths, inferred, now))
-    .filter((item) => item.score > 0)
+    .filter((item) => {
+      const keep = item.score > 0;
+      if (!keep) omitted.push({ id: item.node.id, reason: "low-score" });
+      return keep;
+    })
     .sort((a, b) => b.score - a.score || b.node.confidence - a.node.confidence || a.node.title.localeCompare(b.node.title));
   const limit = options.limit ?? 12;
-  const items = scored.slice(0, limit);
+  const limited = scored.slice(0, limit);
   for (const item of scored.slice(limit)) omitted.push({ id: item.node.id, reason: "over-limit" });
+  const packed = packItems(limited, options.tokenBudgetLines);
+  for (const id of packed.omittedForBudget) omitted.push({ id, reason: "over-budget" });
+  const levels = groupByLevel(packed.items);
   return {
     schemaVersion: "openskill-kit.preference-bundle.v1",
     query: options.query,
     paths,
     categories: [...categoryFilter].sort(),
-    items,
+    items: packed.items,
+    levels,
+    budget: {
+      requestedLines: options.tokenBudgetLines,
+      usedLines: packed.usedLines,
+      omittedForBudget: packed.omittedForBudget
+    },
     trace: {
       inferred,
       consideredCount: active.length,
-      includedIds: items.map((item) => item.node.id),
-      omitted
+      includedIds: packed.items.map((item) => item.node.id),
+      omitted,
+      budget: {
+        requestedLines: options.tokenBudgetLines,
+        usedLines: packed.usedLines
+      }
     },
-    compactMarkdown: renderCompactBundle(items, options.tokenBudgetLines)
+    compactMarkdown: renderCompactBundle(packed.items)
   };
 }
 
@@ -108,7 +139,7 @@ function scoreNode(node: PreferenceNode, queryWords: Set<string>, paths: string[
     reasons.push("task:documentation");
   }
   if (inferred.taskTypes.includes("security") && node.category === "security") {
-    score += 0.18;
+    score += 0.28;
     reasons.push("task:security");
   }
   if (inferred.taskTypes.includes("architecture") && (node.category === "architecture" || node.category === "dependency-policy")) {
@@ -120,13 +151,79 @@ function scoreNode(node: PreferenceNode, queryWords: Set<string>, paths: string[
     score += recency;
     reasons.push("recent");
   }
-  return { node, score: Math.round(score * 1000) / 1000, reasons };
+  if (isRiskSensitive(node)) {
+    score += 0.12;
+    reasons.push("risk-sensitive");
+  }
+  const rounded = Math.round(score * 1000) / 1000;
+  return { node, score: rounded, reasons, level: retrievalLevel(node, rounded, reasons), budgetLines: preferenceLineCount(node, reasons) };
 }
 
-function renderCompactBundle(items: RetrievedPreference[], tokenBudgetLines?: number): string {
+function renderCompactBundle(items: RetrievedPreference[]): string {
   if (items.length === 0) return "No relevant active preferences.";
-  const lines = items.map((item) => `- ${item.node.statement} (score ${item.score}; ${item.reasons.join(", ")})`);
-  return lines.slice(0, tokenBudgetLines ?? lines.length).join("\n");
+  const groups = groupByLevel(items);
+  const chunks: string[] = [];
+  for (const level of ["critical", "focused", "supporting", "background"] as RetrievalLevel[]) {
+    const group = groups[level];
+    if (!group.length) continue;
+    chunks.push(`## ${titleCase(level)}`);
+    chunks.push(...group.map((item) => `- ${item.node.statement} (score ${item.score}; ${item.reasons.join(", ")})`));
+    chunks.push("");
+  }
+  return chunks.join("\n").trim();
+}
+
+function packItems(items: RetrievedPreference[], tokenBudgetLines?: number): { items: RetrievedPreference[]; usedLines: number; omittedForBudget: string[] } {
+  if (tokenBudgetLines === undefined) {
+    return { items, usedLines: items.reduce((sum, item) => sum + item.budgetLines, 0), omittedForBudget: [] };
+  }
+  const budget = Math.max(1, Math.floor(tokenBudgetLines));
+  const selected: RetrievedPreference[] = [];
+  const omittedForBudget: string[] = [];
+  let usedLines = 0;
+  const sorted = [...items].sort((a, b) => levelRank(a.level) - levelRank(b.level) || b.score - a.score || a.node.title.localeCompare(b.node.title));
+  for (const item of sorted) {
+    if (usedLines + item.budgetLines <= budget) {
+      selected.push(item);
+      usedLines += item.budgetLines;
+    } else {
+      omittedForBudget.push(item.node.id);
+    }
+  }
+  selected.sort((a, b) => levelRank(a.level) - levelRank(b.level) || b.score - a.score || a.node.title.localeCompare(b.node.title));
+  return { items: selected, usedLines, omittedForBudget };
+}
+
+function groupByLevel(items: RetrievedPreference[]): Record<RetrievalLevel, RetrievedPreference[]> {
+  return {
+    critical: items.filter((item) => item.level === "critical"),
+    focused: items.filter((item) => item.level === "focused"),
+    supporting: items.filter((item) => item.level === "supporting"),
+    background: items.filter((item) => item.level === "background")
+  };
+}
+
+function retrievalLevel(node: PreferenceNode, score: number, reasons: string[]): RetrievalLevel {
+  if (node.status === "locked" || (isRiskSensitive(node) && reasons.some((reason) => reason.startsWith("task:") || reason.startsWith("path:")))) return "critical";
+  if (score >= 1.15 || reasons.some((reason) => reason.startsWith("path:"))) return "focused";
+  if (score >= 0.85 || reasons.includes("project-scope")) return "supporting";
+  return "background";
+}
+
+function preferenceLineCount(node: PreferenceNode, reasons: string[]): number {
+  return 1 + (node.exceptions?.length ? 1 : 0) + (reasons.length > 3 ? 1 : 0);
+}
+
+function isRiskSensitive(node: PreferenceNode): boolean {
+  return ["security", "command-policy", "testing", "review-policy"].includes(node.category) || node.polarity === "negative";
+}
+
+function levelRank(level: RetrievalLevel): number {
+  return { critical: 0, focused: 1, supporting: 2, background: 3 }[level];
+}
+
+function titleCase(level: RetrievalLevel): string {
+  return level.slice(0, 1).toUpperCase() + level.slice(1);
 }
 
 function matchingPaths(scopePaths: string[], paths: string[]): string[] {

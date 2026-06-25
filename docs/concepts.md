@@ -58,8 +58,11 @@ extractors. Named extractors let calibration identify which source is reliable.
 ## Retrieval Trace
 
 Every preference retrieval includes inferred languages, task types, considered
-preference count, included IDs, and omitted reasons. This keeps dynamic behavior
-injection explainable and helps tune context budget without guessing.
+preference count, included IDs, omitted reasons, and budget usage. Results are
+progressively grouped as critical, focused, supporting, or background, then
+packed into the requested line budget with over-budget omissions recorded in the
+trace. This keeps dynamic behavior injection explainable and helps tune context
+budget without guessing.
 
 ## Baseline Compare Eval
 

@@ -195,7 +195,8 @@ This release implements the production spine: adaptive config, event store,
 redaction with config validation, deterministic and proposal-based signal
 extraction, Preference Graph, Evidence Cards, memory integrity checks, Learning
 Review, extractor registry, v2 preference metadata, calibration from review outcomes,
-scope/evidence/eval-aware calibration, task/path-aware retrieval,
+scope/evidence/eval-aware calibration, progressive task/path-aware retrieval with
+budget traces,
 target-aware context/skill/manifest/hook/MCP/plugin compilation, standalone hook scripts,
 managed AGENTS/CLAUDE previews and installer, plugin output, MCP config
 generation, project skill install, Project Behavior Pack
