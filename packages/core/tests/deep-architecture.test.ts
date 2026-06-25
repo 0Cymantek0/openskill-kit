@@ -148,6 +148,9 @@ describe("deep architecture hardening", () => {
     const queue = await buildReviewQueue(root);
     const markdown = await readFile(queue.markdownPath, "utf8");
     expect(markdown).toContain("Evidence cards:");
+    expect(markdown).toContain("user-correction");
+    expect(markdown).toContain("project-private");
+    expect(queue.evidenceCards.length).toBeGreaterThan(0);
   });
 
   it("records calibration from review outcomes", async () => {

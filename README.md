@@ -110,6 +110,10 @@ openskill-kit test .openskill-kit/runs/<run-id>/candidate/<skill>
 openskill-kit evaluate .openskill-kit/runs/<run-id>/candidate/<skill>
 ```
 
+`review --tui` supports `e N` for sanitized evidence cards, `p N` for
+compile/privacy preview, and `c` for calibration reliability while reviewing a
+candidate batch.
+
 ## Safety And Privacy
 
 - Local-only behavior is default.

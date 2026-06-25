@@ -5,6 +5,7 @@ import { z } from "zod";
 import { readProjectConfig } from "../events/store.js";
 import { redactValue } from "../events/redaction.js";
 import { SuggestedCompileTargets } from "../schema/constants.js";
+import { readEvidenceCards, type EvidenceCard } from "../evidence/cards.js";
 import { SignalSchema, type Signal } from "../signals/schema.js";
 import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { readPreferenceGraph } from "./graph.js";
@@ -55,6 +56,7 @@ export interface ReviewQueueResult {
   candidateCount: number;
   proposals: SemanticPreferenceProposal[];
   candidates: PreferenceNode[];
+  evidenceCards: EvidenceCard[];
 }
 
 export async function proposeSemanticPreference(projectRoot: string, input: SemanticPreferenceProposalInput, now = new Date()): Promise<ProposeSemanticPreferenceResult> {
@@ -98,12 +100,13 @@ export async function buildReviewQueue(projectRoot: string): Promise<ReviewQueue
   const graph = await readPreferenceGraph(root);
   const candidates = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
   const proposals = await readSemanticProposals(root);
+  const evidenceCards = await readEvidenceCards(root, candidates.flatMap((node) => node.evidence.flatMap((item) => item.cardIds ?? [])));
   const queuePath = path.join(root, ".openskill-kit", "reviews", "queue.json");
   const markdownPath = path.join(root, ".openskill-kit", "reviews", "queue.md");
-  const queue = { schemaVersion: "openskill-kit.review-queue.v1", generatedAt: new Date().toISOString(), proposals, candidates };
+  const queue = { schemaVersion: "openskill-kit.review-queue.v1", generatedAt: new Date().toISOString(), proposals, candidates, evidenceCards };
   await writeJsonAtomic(queuePath, queue);
-  await writeFileAtomic(markdownPath, renderReviewQueueMarkdown(proposals, candidates));
-  return { schemaVersion: "openskill-kit.review-queue.v1", queuePath, markdownPath, candidateCount: candidates.length, proposals, candidates };
+  await writeFileAtomic(markdownPath, renderReviewQueueMarkdown(proposals, candidates, evidenceCards));
+  return { schemaVersion: "openskill-kit.review-queue.v1", queuePath, markdownPath, candidateCount: candidates.length, proposals, candidates, evidenceCards };
 }
 
 function proposalSignal(proposal: SemanticPreferenceProposal, now: Date): Signal {
@@ -123,7 +126,8 @@ function proposalSignal(proposal: SemanticPreferenceProposal, now: Date): Signal
   });
 }
 
-function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], candidates: PreferenceNode[]): string {
+function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], candidates: PreferenceNode[], evidenceCards: EvidenceCard[]): string {
+  const cardsById = new Map(evidenceCards.map((card) => [card.id, card]));
   const lines = ["# Learning Review Queue", ""];
   lines.push("## Semantic Proposals", "");
   if (!proposals.length) lines.push("No semantic proposals.", "");
@@ -138,7 +142,17 @@ function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], cand
   for (const node of candidates.sort((a, b) => a.category.localeCompare(b.category) || b.confidence - a.confidence)) {
     const cardIds = node.evidence.flatMap((item) => item.cardIds ?? []);
     lines.push(`### ${node.id}`, "", `- Status: ${node.status}`, `- Category: ${node.category}`, `- Confidence: ${node.confidence}`, `- Scope: ${node.scope.level}${node.scope.paths.length ? ` (${node.scope.paths.join(", ")})` : ""}`, `- Statement: ${node.statement}`, `- Evidence: ${node.evidence.map((item) => item.signalId).join(", ")}`);
-    if (cardIds.length) lines.push(`- Evidence cards: ${cardIds.join(", ")}`);
+    if (cardIds.length) {
+      lines.push("- Evidence cards:");
+      for (const cardId of cardIds) {
+        const card = cardsById.get(cardId);
+        lines.push(card
+          ? `  - ${card.id}: ${card.kind}, ${card.privacyClass}, ${card.summary}`
+          : `  - ${cardId}`);
+      }
+    }
+    if (node.privacy) lines.push(`- Privacy: ${node.privacy.class} (${node.privacy.rationale})`);
+    if (node.compileTargets?.length) lines.push(`- Compile targets: ${node.compileTargets.join(", ")}`);
     lines.push("");
   }
   return `${lines.join("\n")}\n`;

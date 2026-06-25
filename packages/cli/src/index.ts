@@ -31,6 +31,7 @@ import {
   runLifecycleOnce,
   readRegistry,
   readCalibrationReport,
+  readEvidenceCards,
   runBehaviorEval,
   runBehaviorCompareEval,
   runDoctor,
@@ -718,9 +719,25 @@ async function runReviewTui(projectRoot: string): Promise<{ schemaVersion: "open
         printReviewHelp();
         continue;
       }
+      if (answer === "c" || answer === "calibration") {
+        await printCalibrationDashboard(projectRoot);
+        continue;
+      }
+      const inspectMatch = /^(e|evidence|p|preview)\s+(\d+)$/i.exec(answer);
+      if (inspectMatch) {
+        const index = Number.parseInt(inspectMatch[2]!, 10) - 1;
+        const node = candidates[index];
+        if (!node) {
+          console.log(`No candidate #${index + 1}`);
+          continue;
+        }
+        if (inspectMatch[1]!.toLowerCase().startsWith("p")) printCompilePreview(node);
+        else await printEvidencePreview(projectRoot, node);
+        continue;
+      }
       const match = /^(a|activate|r|reject|l|lock|d|demote)\s+(\d+)$/i.exec(answer);
       if (!match) {
-        console.log("Use: a 1, r 1, l 1, d 1, w, q, ?");
+        console.log("Use: a 1, r 1, l 1, d 1, e 1, p 1, c, w, q, ?");
         continue;
       }
       const index = Number.parseInt(match[2]!, 10) - 1;
@@ -759,7 +776,7 @@ function printReviewScreen(candidates: Array<{ id: string; status: string; categ
     console.log(`   ${node.statement}`);
   }
   console.log("");
-  console.log("a N activate | r N reject | l N lock | d N demote | w write queue | q quit | ? help");
+  console.log("a N activate | r N reject | l N lock | d N demote | e N evidence | p N preview | c calibration | w write queue | q quit | ? help");
 }
 
 function printReviewHelp(): void {
@@ -768,8 +785,75 @@ function printReviewHelp(): void {
   console.log("  r 1  reject candidate 1");
   console.log("  l 1  lock candidate 1");
   console.log("  d 1  demote candidate 1");
+  console.log("  e 1  show sanitized evidence cards for candidate 1");
+  console.log("  p 1  show compile/privacy preview for candidate 1");
+  console.log("  c    show calibration reliability dashboard");
   console.log("  w    write review queue artifacts and exit");
   console.log("  q    quit");
+}
+
+async function printEvidencePreview(projectRoot: string, node: { id: string; evidence: Array<{ signalId: string; eventIds: string[]; cardIds?: string[]; quote?: string; command?: string }> }): Promise<void> {
+  const cards = await readEvidenceCards(projectRoot, node.evidence.flatMap((item) => item.cardIds ?? []));
+  console.log("");
+  console.log(`Evidence for ${node.id}`);
+  console.log("----------------");
+  if (!cards.length) {
+    for (const item of node.evidence) {
+      console.log(`- signal ${item.signalId}; events ${item.eventIds.join(", ")}`);
+      if (item.quote) console.log(`  quote: ${sanitizeText(item.quote)}`);
+      if (item.command) console.log(`  command: ${sanitizeText(item.command)}`);
+    }
+    return;
+  }
+  for (const card of cards) {
+    console.log(`- ${card.id} ${card.kind} ${card.privacyClass} ${card.hash}`);
+    console.log(`  ${sanitizeText(card.summary)}`);
+    if (card.paths.length) console.log(`  paths: ${card.paths.map(sanitizeText).join(", ")}`);
+    if (card.commands.length) console.log(`  commands: ${card.commands.map(sanitizeText).join(", ")}`);
+    if (card.quote) console.log(`  quote: ${sanitizeText(card.quote).slice(0, 240)}`);
+    if (card.privacy.redacted) console.log(`  redacted: ${card.privacy.matches.join(", ") || "yes"}`);
+  }
+}
+
+function printCompilePreview(node: { id: string; strength?: string; privacy?: { class: string; rationale: string }; compileTargets?: string[]; lifecycle?: { state: string }; scope: { level: string; paths: string[] } }): void {
+  console.log("");
+  console.log(`Compile preview for ${node.id}`);
+  console.log("---------------------------");
+  console.log(`strength: ${node.strength ?? "not inferred"}`);
+  console.log(`privacy: ${node.privacy?.class ?? "not inferred"}`);
+  if (node.privacy?.rationale) console.log(`privacy rationale: ${node.privacy.rationale}`);
+  console.log(`targets: ${node.compileTargets?.join(", ") || "not inferred"}`);
+  console.log(`lifecycle: ${node.lifecycle?.state ?? "candidate"}`);
+  console.log(`scope: ${node.scope.level}${node.scope.paths.length ? ` (${node.scope.paths.join(", ")})` : ""}`);
+}
+
+async function printCalibrationDashboard(projectRoot: string): Promise<void> {
+  const report = await readCalibrationReport(projectRoot).catch(() => undefined);
+  console.log("");
+  console.log("Calibration");
+  console.log("-----------");
+  if (!report) {
+    console.log("No calibration data yet.");
+    return;
+  }
+  printCalibrationSection("Categories", report.categories);
+  printCalibrationSection("Extractors", report.extractors);
+  printCalibrationSection("Scopes", report.scopes);
+  printCalibrationSection("Evidence", report.evidenceKinds);
+  printCalibrationSection("Privacy", report.privacyClasses);
+  printCalibrationSection("Evals", report.evalOutcomes);
+}
+
+function printCalibrationSection(title: string, buckets: Record<string, { accepted: number; locked: number; rejected: number; demoted: number; reliability: number }>): void {
+  const entries = Object.entries(buckets).sort((a, b) => a[0].localeCompare(b[0]));
+  console.log(`${title}:`);
+  if (!entries.length) {
+    console.log("  none");
+    return;
+  }
+  for (const [name, bucket] of entries.slice(0, 8)) {
+    console.log(`  ${name}: ${bucket.reliability} (+${bucket.accepted + bucket.locked}/-${bucket.rejected + bucket.demoted})`);
+  }
 }
 
 function sanitizeForOutput(value: unknown): unknown {

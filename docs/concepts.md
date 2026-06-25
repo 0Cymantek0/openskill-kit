@@ -97,7 +97,9 @@ locked.
 
 `openskill-kit review --tui` opens a terminal queue for small batches. Use
 `a N`, `r N`, `l N`, or `d N` to activate, reject, lock, or demote a numbered
-candidate.
+candidate. Use `e N` to inspect sanitized evidence cards, `p N` to preview
+compile/privacy metadata, and `c` to inspect calibration reliability before
+deciding.
 
 ## Project Behavior Pack
 
