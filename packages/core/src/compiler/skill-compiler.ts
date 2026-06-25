@@ -3,6 +3,7 @@ import { readProjectConfig } from "../events/store.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
 import { writeFileAtomic } from "../storage/atomic.js";
 import type { PreferenceNode } from "../preferences/schema.js";
+import { compileDynamicSkillShards } from "./dynamic-skill-compiler.js";
 
 export interface CompileSkillsResult {
   schemaVersion: "openskill-kit.skill-compile.v1";
@@ -20,7 +21,8 @@ export async function compileBehaviorSkills(projectRoot: string): Promise<Compil
   const skillBody = renderProjectBehaviorSkill(config.projectName, active);
   await writeFileAtomic(path.join(projectBehaviorDir, "SKILL.md"), skillBody);
   await writeFileAtomic(path.join(projectBehaviorDir, "references", "active-preferences.md"), renderReference(active));
-  return { schemaVersion: "openskill-kit.skill-compile.v1", skillsDir, skillPaths: [projectBehaviorDir] };
+  const shards = await compileDynamicSkillShards(skillsDir, active);
+  return { schemaVersion: "openskill-kit.skill-compile.v1", skillsDir, skillPaths: [projectBehaviorDir, ...shards.skillPaths] };
 }
 
 function renderProjectBehaviorSkill(projectName: string, nodes: PreferenceNode[]): string {
@@ -46,6 +48,7 @@ function renderProjectBehaviorSkill(projectName: string, nodes: PreferenceNode[]
     "## Operating Rules",
     "",
     "- Load `references/active-preferences.md` before making project-specific decisions.",
+    "- Prefer category shards such as `project-testing`, `project-security`, or `project-architecture` when task scope is narrow.",
     "- Follow active preferences by confidence and scope.",
     "- If active preferences conflict with direct user instruction, follow direct instruction and record new evidence through OpenSkillKit.",
     "- Verify with project commands when available before reporting completion.",

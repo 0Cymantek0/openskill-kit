@@ -50,6 +50,12 @@ describe("preference retrieval and policy artifacts", () => {
     await expect(stat(reviewChecklistPath!)).resolves.toBeTruthy();
     expect(await readFile(commandPolicyPath!, "utf8")).toContain("run npm test");
     expect(await readFile(reviewChecklistPath!, "utf8")).toContain("Do not expose secrets");
+    expect(compiled.skillPaths.some((skillPath) => skillPath.endsWith(`${path.sep}project-testing`))).toBe(true);
+    expect(compiled.skillPaths.some((skillPath) => skillPath.endsWith(`${path.sep}project-architecture`))).toBe(true);
+    await expect(stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-testing", "SKILL.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".openskill-kit", "compiled", "plugin", "skills", "project-testing", "SKILL.md"))).resolves.toBeTruthy();
+    const pluginManifest = JSON.parse(await readFile(path.join(root, ".openskill-kit", "compiled", "plugin", "plugin.json"), "utf8"));
+    expect(pluginManifest.skills).toEqual(expect.arrayContaining(["skills/project-behavior", "skills/project-testing"]));
     const pathMap = JSON.parse(await readFile(pathMapPath!, "utf8"));
     expect(pathMap.paths["src/parser"][0].id).toBe("pref_path-style");
 

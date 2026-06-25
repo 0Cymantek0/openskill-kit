@@ -55,6 +55,7 @@ describe("adaptive behavior layer", () => {
     const compiled = await compileBehaviorLayer(root);
     await expect(stat(compiled.contextPackPath)).resolves.toBeTruthy();
     await expect(stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-testing", "SKILL.md"))).resolves.toBeTruthy();
     await expect(stat(compiled.pluginManifestPath)).resolves.toBeTruthy();
 
     const skillMarkdown = await readFile(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"), "utf8");
@@ -88,6 +89,7 @@ describe("adaptive behavior layer", () => {
     expect(manifest.project.name).toBe("adaptive-fixture");
     expect(manifest.compatibility.configSchema).toBe("openskill-kit.config.v1");
     expect(manifest.generatedArtifacts.some((artifact: { type: string }) => artifact.type === "skill")).toBe(true);
+    expect(pack.files).toContain(".openskill-kit/compiled/skills/project-testing/SKILL.md");
     expect(manifest.privacyStatement).toContain("excludes raw events");
     const signed = await signProjectBehaviorPack(pack.packPath, path.join(root, ".openskill-kit", "keys"));
     expect(signed.keyId).toHaveLength(16);

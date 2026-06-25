@@ -23,8 +23,7 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
       ".openskill-kit/preferences/graph.md",
       ".openskill-kit/preferences/active/index.md",
       ".openskill-kit/compiled/context-pack.md",
-      ".openskill-kit/compiled/skills/project-behavior/SKILL.md",
-      ".openskill-kit/compiled/skills/project-behavior/references/active-preferences.md",
+      ...await compiledSkillFiles(root),
       ".openskill-kit/compiled/behavior/path-map.json",
       ".openskill-kit/compiled/behavior/command-policy.md",
       ".openskill-kit/compiled/behavior/review-checklist.md",
@@ -320,6 +319,12 @@ function artifactType(file: string): string {
   if (file.includes("/preferences/")) return "preference";
   if (file.endsWith("config.json") || file.endsWith("project.json")) return "metadata";
   return "artifact";
+}
+
+async function compiledSkillFiles(root: string): Promise<string[]> {
+  const skillsRoot = path.join(root, ".openskill-kit", "compiled", "skills");
+  const files = await listFiles(skillsRoot);
+  return files.map((file) => `.openskill-kit/compiled/skills/${file}`);
 }
 
 async function ensureSigningKeys(keyDir: string): Promise<{ privateKey: string; publicKey: string; publicKeyPath: string }> {

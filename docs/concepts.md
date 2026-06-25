@@ -58,6 +58,12 @@ adherence before adding heavier A/B infrastructure.
 A grouped domain of related preferences such as testing, security, frontend, or
 workflow.
 
+## Dynamic Skill Shard
+
+Generated category-specific skill such as `project-testing` or
+`project-architecture`. Shards let agents load only the behavior needed for a
+task instead of the broad project behavior skill.
+
 ## Context Pack
 
 Compact markdown summary of active project behavior for agent sessions.

@@ -200,5 +200,10 @@ generation, project skill install, Project Behavior Pack
 export/sign/verify/inspect/diff/review/apply, behavior evals, maintenance
 commands, CLI, MCP tools, tests, and smoke coverage.
 
+Compiled skills include the broad `project-behavior` skill plus scoped dynamic
+shards such as `project-testing`, `project-security`, and `project-architecture`
+when matching active preferences exist. Agents can load the small shard instead
+of the full project behavior when task scope is narrow.
+
 Future depth should focus on larger golden scenario packs, hosted sync, review
 TUI, and real external-agent A/B evals.

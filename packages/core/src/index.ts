@@ -40,6 +40,7 @@ export * from "./preferences/integrity.js";
 export * from "./schema/constants.js";
 export * from "./compiler/context-pack.js";
 export * from "./compiler/skill-compiler.js";
+export * from "./compiler/dynamic-skill-compiler.js";
 export * from "./compiler/hook-compiler.js";
 export * from "./compiler/plugin-compiler.js";
 export * from "./compiler/policy-compiler.js";

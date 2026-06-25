@@ -34,6 +34,7 @@ Generated adaptive artifacts:
 - `.openskill-kit/preferences/active/`: Active Behavior Layer.
 - `.openskill-kit/compiled/context-pack.md`: compact agent context.
 - `.openskill-kit/compiled/skills/project-behavior/`: installable Agent Skill.
+- `.openskill-kit/compiled/skills/project-*/`: scoped dynamic skill shards for active categories.
 - `.openskill-kit/compiled/manifests/`: managed AGENTS.md, CLAUDE.md, and path rule previews.
 - `.openskill-kit/compiled/behavior/path-map.json`: path-specific behavior map.
 - `.openskill-kit/compiled/behavior/command-policy.md`: command policy.
