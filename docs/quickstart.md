@@ -7,6 +7,7 @@ npx openskill-kit init
 npx openskill-kit observe --type user-prompt-submit --text "Always run npm test before final response."
 npx openskill-kit learn
 npx openskill-kit review --activate-all
+npx openskill-kit review --tui
 npx openskill-kit compile
 npx openskill-kit agent install-manifests --target project --dry-run
 npx openskill-kit agent install-manifests --target project --yes

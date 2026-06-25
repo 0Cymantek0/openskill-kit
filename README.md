@@ -59,6 +59,7 @@ openskill-kit observe --type user-prompt-submit --text "Always prefer focused te
 openskill-kit propose --session <session-id> --statement "Prefer parser modules stay dependency-light" --category architecture --evidence-event <event-id>
 openskill-kit learn
 openskill-kit review --queue
+openskill-kit review --tui
 openskill-kit review
 openskill-kit review --activate <preference-id>
 openskill-kit review --reject <preference-id>
@@ -206,4 +207,4 @@ when matching active preferences exist. Agents can load the small shard instead
 of the full project behavior when task scope is narrow.
 
 Future depth should focus on larger golden scenario packs, hosted sync, review
-TUI, and real external-agent A/B evals.
+UI polish, and real external-agent A/B evals.

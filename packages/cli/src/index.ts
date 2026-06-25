@@ -2,6 +2,7 @@
 import { Command, Option } from "commander";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import {
   appendEvent,
   applyPreferenceReview,
@@ -212,6 +213,7 @@ program.command("learn")
 program.command("review")
   .description("Review or apply candidate preferences")
   .option("--queue", "Write rich review queue artifacts")
+  .option("--tui", "Open terminal review queue")
   .option("--activate <id>", "Activate preference id", collectOption, [])
   .option("--reject <id>", "Reject preference id", collectOption, [])
   .option("--lock <id>", "Lock preference id", collectOption, [])
@@ -231,6 +233,11 @@ program.command("review")
   .option("--activate-all", "Activate all candidates")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (options.tui === true) {
+      const result = await runReviewTui(process.cwd());
+      output(options.json, result, result.messages.join("\n"));
+      return;
+    }
     if (options.queue === true) {
       const queue = await buildReviewQueue(process.cwd());
       output(options.json, queue, `Review queue: ${queue.candidateCount} candidate(s), ${queue.proposals.length} proposal(s)\n${queue.markdownPath}`);
@@ -690,6 +697,79 @@ async function runLifecycleWatch(options: { intervalMs: number; maxEvents: numbe
     output(options.json, result, `Lifecycle run: ${result.processedEventCount} event(s), ${result.highValueEvents.length} high-value event(s), ${result.graph.candidateCount} candidate(s)`);
     await new Promise((resolve) => setTimeout(resolve, options.intervalMs));
   }
+}
+
+async function runReviewTui(projectRoot: string): Promise<{ schemaVersion: "openskill-kit.review-tui.v1"; reviewed: number; messages: string[] }> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  let reviewed = 0;
+  const messages: string[] = [];
+  try {
+    while (true) {
+      const queue = await buildReviewQueue(projectRoot);
+      const candidates = queue.candidates;
+      printReviewScreen(candidates);
+      const answer = (await rl.question("review> ")).trim();
+      if (answer === "q" || answer === "quit" || answer === "exit") break;
+      if (answer === "w" || answer === "write") {
+        messages.push(`Review queue written: ${queue.markdownPath}`);
+        break;
+      }
+      if (answer === "?" || answer === "help") {
+        printReviewHelp();
+        continue;
+      }
+      const match = /^(a|activate|r|reject|l|lock|d|demote)\s+(\d+)$/i.exec(answer);
+      if (!match) {
+        console.log("Use: a 1, r 1, l 1, d 1, w, q, ?");
+        continue;
+      }
+      const index = Number.parseInt(match[2]!, 10) - 1;
+      const node = candidates[index];
+      if (!node) {
+        console.log(`No candidate #${index + 1}`);
+        continue;
+      }
+      const command = match[1]!.toLowerCase();
+      const action = command.startsWith("a") ? { activate: [node.id] }
+        : command.startsWith("r") ? { reject: [node.id] }
+          : command.startsWith("l") ? { lock: [node.id] }
+            : { demote: [node.id] };
+      await applyPreferenceReview(projectRoot, action);
+      reviewed += 1;
+      messages.push(`${Object.keys(action)[0]} ${node.id}`);
+    }
+  } finally {
+    rl.close();
+  }
+  return { schemaVersion: "openskill-kit.review-tui.v1", reviewed, messages: messages.length ? messages : ["Review TUI closed without changes"] };
+}
+
+function printReviewScreen(candidates: Array<{ id: string; status: string; category: string; confidence: number; statement: string; scope: { level: string; paths: string[] } }>): void {
+  console.clear();
+  console.log("OpenSkillKit Review");
+  console.log("===================");
+  if (!candidates.length) {
+    console.log("No candidate or conflict preferences.");
+    console.log("q quit");
+    return;
+  }
+  for (const [index, node] of candidates.entries()) {
+    const scope = node.scope.paths.length ? `${node.scope.level}:${node.scope.paths.join(",")}` : node.scope.level;
+    console.log(`${index + 1}. [${node.status}] ${node.category} ${node.confidence} ${scope}`);
+    console.log(`   ${node.statement}`);
+  }
+  console.log("");
+  console.log("a N activate | r N reject | l N lock | d N demote | w write queue | q quit | ? help");
+}
+
+function printReviewHelp(): void {
+  console.log("Commands:");
+  console.log("  a 1  activate candidate 1");
+  console.log("  r 1  reject candidate 1");
+  console.log("  l 1  lock candidate 1");
+  console.log("  d 1  demote candidate 1");
+  console.log("  w    write review queue artifacts and exit");
+  console.log("  q    quit");
 }
 
 function sanitizeForOutput(value: unknown): unknown {

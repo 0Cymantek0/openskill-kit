@@ -81,6 +81,10 @@ Reviewed preferences currently applied to agent behavior and compiled outputs.
 Manual review step where candidate preferences are activated, rejected, or
 locked.
 
+`openskill-kit review --tui` opens a terminal queue for small batches. Use
+`a N`, `r N`, `l N`, or `d N` to activate, reject, lock, or demote a numbered
+candidate.
+
 ## Project Behavior Pack
 
 Shareable, privacy-preserving bundle containing reviewed behavior artifacts and
