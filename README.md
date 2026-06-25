@@ -21,6 +21,7 @@ npx openskill-kit observe --type user-prompt-submit --text "Always run npm test 
 npx openskill-kit learn
 npx openskill-kit review --activate-all
 npx openskill-kit compile
+npx openskill-kit agent install-manifests --target project --dry-run
 npx openskill-kit daemon
 npx openskill-kit agent doctor
 npx openskill-kit agent install-hooks --target project --yes
@@ -33,7 +34,8 @@ npx openskill-kit compact
 This creates `.openskill-kit/`, records a redacted event, learns candidate
 preferences, activates them through Learning Review, compiles a Context Pack and
 `project-behavior` skill, then installs that skill into the project agent skill
-directory.
+directory. Manifest install is separate and reviewable because it writes managed
+blocks into root agent instruction files.
 
 ## How It Works
 
@@ -66,10 +68,15 @@ openskill-kit review --promote <preference-id>
 openskill-kit review --demote <preference-id>
 openskill-kit review --activate-all
 openskill-kit compile
+openskill-kit compile --target context-pack
 openskill-kit explain <preference-id>
+openskill-kit explain <preference-id> --evidence
+openskill-kit calibration
 openskill-kit prefs --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit daemon
 openskill-kit agent doctor
+openskill-kit agent install-manifests --target project --dry-run
+openskill-kit agent install-manifests --target project --yes
 openskill-kit agent install-hooks --target project --yes
 openskill-kit install --target agents-project --yes
 openskill-kit eval
@@ -103,7 +110,14 @@ openskill-kit evaluate .openskill-kit/runs/<run-id>/candidate/<skill>
 - Local-only behavior is default.
 - Raw prompts and raw diffs are not stored unless enabled in config.
 - Secret-like values are redacted before event storage.
+- Invalid custom redaction regexes are reported by `doctor --full` and skipped
+  during event capture.
+- Evidence Cards explain learned preferences without storing raw private prompts.
+- Memory integrity checks block poisoned auto-apply candidates and report risks
+  before compile.
 - Generated skills and hooks are scanned before install.
+- Managed AGENTS/CLAUDE install preserves user-authored content outside the
+  OpenSkillKit block.
 - Install writes receipts under `.openskill-kit/installs/`.
 - Project Behavior Packs exclude private events, raw signals, review drafts, and
   run outputs by default.
@@ -128,6 +142,12 @@ Key tools:
 - `osk_learn_from_session`
 - `osk_compile_behavior_layer`
 - `osk_explain_preference`
+- `osk_get_preference_evidence`
+- `osk_get_behavior_manifest`
+- `osk_preview_manifest_install`
+- `osk_apply_manifest_install`
+- `osk_validate_memory_candidate`
+- `osk_get_calibration_report`
 - `osk_export_behavior_pack`
 - `osk_sign_behavior_pack`
 - `osk_verify_behavior_pack`
@@ -164,11 +184,14 @@ static before/after behavior fixture.
 ## Current Boundary
 
 This release implements the production spine: adaptive config, event store,
-redaction, deterministic and proposal-based signal extraction, Preference Graph,
-Learning Review, task/path-aware retrieval, context and skill compilation,
-standalone hook scripts, plugin output, MCP config generation, project skill
-install, Project Behavior Pack export/sign/verify/inspect/diff/review/apply,
-behavior evals, maintenance commands, CLI, MCP tools, tests, and smoke coverage.
+redaction with config validation, deterministic and proposal-based signal
+extraction, Preference Graph, Evidence Cards, memory integrity checks, Learning
+Review, calibration from review outcomes, task/path-aware retrieval, target-aware
+context/skill/manifest/hook/MCP/plugin compilation, standalone hook scripts,
+managed AGENTS/CLAUDE previews and installer, plugin output, MCP config
+generation, project skill install, Project Behavior Pack
+export/sign/verify/inspect/diff/review/apply, behavior evals, maintenance
+commands, CLI, MCP tools, tests, and smoke coverage.
 
 Future depth should focus on richer scope inference, larger golden scenario
-packs, hosted sync, and calibration from accepted reviews and eval outcomes.
+packs, hosted sync, review TUI, and real agent A/B evals.
