@@ -81,6 +81,7 @@ async function ensureAdaptiveDirectories(root: string): Promise<void> {
     "compiled/hooks/scripts",
     "compiled/mcp",
     "compiled/plugin",
+    "compiled/manifests/claude-rules",
     "reviews/patches",
     "installs",
     "sessions/summaries",

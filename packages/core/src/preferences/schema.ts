@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SignalSchema } from "../signals/schema.js";
+import { PreferenceStatuses } from "../schema/constants.js";
 
 export const PreferenceNodeSchema = z.object({
   schemaVersion: z.literal("openskill-kit.preference-node.v1"),
@@ -9,7 +10,7 @@ export const PreferenceNodeSchema = z.object({
   category: SignalSchema.shape.category,
   scope: SignalSchema.shape.scope,
   confidence: z.number().min(0).max(1),
-  status: z.enum(["candidate", "active", "rejected", "locked", "conflict"]),
+  status: z.enum(PreferenceStatuses),
   polarity: SignalSchema.shape.polarity,
   evidence: z.array(z.object({
     signalId: z.string(),

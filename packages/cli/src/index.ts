@@ -15,6 +15,7 @@ import {
   explainAdaptiveStatus,
   getAdaptiveStatus,
   installAgentHooks,
+  installInstructionManifests,
   initAdaptiveProject,
   importProjectBehaviorPack,
   installSkill,
@@ -40,6 +41,8 @@ import {
   updatePreferenceGraph,
   verifyProjectBehaviorPack,
   verifySkill,
+  CompileTargets,
+  type CompileTarget,
   type InstallTarget
 } from "@openskill-kit/core";
 
@@ -112,6 +115,22 @@ agent.command("install-hooks")
     const result = await installAgentHooks({
       projectRoot: process.cwd(),
       target: parseAgentHookTarget(options.target),
+      dryRun: options.dryRun === true,
+      yes: options.yes === true
+    });
+    output(options.json, result, result.messages.join("\n"));
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+agent.command("install-manifests")
+  .description("Install managed AGENTS.md, CLAUDE.md, and path-scoped rules")
+  .option("--target <target>", "project", "project")
+  .option("--dry-run", "Plan without writing")
+  .option("--yes", "Non-interactive approval")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await installInstructionManifests(process.cwd(), {
+      target: parseManifestTarget(options.target),
       dryRun: options.dryRun === true,
       yes: options.yes === true
     });
@@ -251,10 +270,17 @@ program.command("propose")
 
 program.command("compile")
   .description("Compile active preferences into context pack, skill, hooks, and MCP config")
+  .option("--target <target>", "Compile one target; repeat for several", collectOption, [])
   .option("--json", "Print JSON")
   .action(async (options) => {
-    const result = await compileBehaviorLayer(process.cwd());
-    output(options.json, result, `Compiled behavior layer\nContext: ${result.contextPackPath}\nSkill: ${result.skillPaths.join(", ")}`);
+    const targets = options.target.length ? options.target.map(parseCompileTarget) : undefined;
+    const result = await compileBehaviorLayer(process.cwd(), { targets });
+    output(options.json, result, [
+      `Compiled behavior layer: ${result.compiledTargets.join(", ")}`,
+      result.contextPackPath ? `Context: ${result.contextPackPath}` : undefined,
+      result.skillPaths.length ? `Skill: ${result.skillPaths.join(", ")}` : undefined,
+      result.manifestPaths.length ? `Manifests: ${result.manifestPaths.join(", ")}` : undefined
+    ].filter(Boolean).join("\n"));
   });
 
 program.command("explain")
@@ -563,6 +589,16 @@ function parseTarget(value: string): InstallTarget {
 function parseAgentHookTarget(value: string): "project" | "global" {
   if (value === "project" || value === "global") return value;
   throw new Error(`Invalid agent hook target: ${value}`);
+}
+
+function parseManifestTarget(value: string): "project" {
+  if (value === "project") return value;
+  throw new Error(`Invalid manifest target: ${value}`);
+}
+
+function parseCompileTarget(value: string): CompileTarget {
+  if ((CompileTargets as readonly string[]).includes(value)) return value as CompileTarget;
+  throw new Error(`Invalid compile target: ${value}. Expected one of: ${CompileTargets.join(", ")}`);
 }
 
 function collectOption(value: string, previous: string[]): string[] {

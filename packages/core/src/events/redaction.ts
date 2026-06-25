@@ -11,6 +11,17 @@ interface RedactionRule {
   pattern: RegExp;
 }
 
+export interface RedactionConfigIssue {
+  id: string;
+  pattern: string;
+  message: string;
+}
+
+export interface RedactionConfigValidation {
+  status: "pass" | "fail";
+  issues: RedactionConfigIssue[];
+}
+
 const builtInRules: RedactionRule[] = [
   { id: "private-key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g },
   { id: "github-token", pattern: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g },
@@ -21,14 +32,37 @@ const builtInRules: RedactionRule[] = [
 ];
 
 export function redactValue(value: unknown, config?: ProjectConfig): RedactionResult {
-  const customRules = (config?.privacy.customRedactions ?? []).map((source, index) => ({
-    id: `custom-${index + 1}`,
-    pattern: new RegExp(source, "gi")
-  }));
+  const customRules = compileCustomRedactionRules(config?.privacy.customRedactions ?? []).rules;
   const matches = new Set<string>();
   const rules = [...builtInRules, ...customRules];
   const redacted = redactRecursive(value, rules, matches);
   return { value: redacted, redacted: matches.size > 0, matches: [...matches].sort() };
+}
+
+export function validateRedactionConfig(config: ProjectConfig): RedactionConfigValidation {
+  const compiled = compileCustomRedactionRules(config.privacy.customRedactions);
+  return {
+    status: compiled.issues.length ? "fail" : "pass",
+    issues: compiled.issues
+  };
+}
+
+function compileCustomRedactionRules(sources: string[]): { rules: RedactionRule[]; issues: RedactionConfigIssue[] } {
+  const rules: RedactionRule[] = [];
+  const issues: RedactionConfigIssue[] = [];
+  sources.forEach((source, index) => {
+    const id = `custom-${index + 1}`;
+    try {
+      rules.push({ id, pattern: new RegExp(source, "gi") });
+    } catch (error) {
+      issues.push({
+        id,
+        pattern: source,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+  return { rules, issues };
 }
 
 function redactRecursive(value: unknown, rules: RedactionRule[], matches: Set<string>): unknown {

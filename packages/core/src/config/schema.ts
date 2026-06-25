@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CompileTargets } from "../schema/constants.js";
 
 export const ProjectConfigSchema = z.object({
   schemaVersion: z.literal("openskill-kit.config.v1"),
@@ -32,14 +33,7 @@ export const ProjectConfigSchema = z.object({
     localAdapter: z.boolean().default(false),
     agentsDirectory: z.boolean().default(true)
   }),
-  compileTargets: z.array(z.enum([
-    "context-pack",
-    "agent-skills",
-    "hooks",
-    "mcp-resources",
-    "project-rules",
-    "plugin"
-  ])).default(["context-pack", "agent-skills", "mcp-resources"])
+  compileTargets: z.array(z.enum(CompileTargets)).default([...CompileTargets])
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

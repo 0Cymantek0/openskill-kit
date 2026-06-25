@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { readProjectConfig } from "../events/store.js";
 import { redactValue } from "../events/redaction.js";
+import { SuggestedCompileTargets } from "../schema/constants.js";
 import { SignalSchema, type Signal } from "../signals/schema.js";
 import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { readPreferenceGraph } from "./graph.js";
@@ -29,7 +30,7 @@ export const SemanticPreferenceProposalSchema = z.object({
   })).default([]),
   confidence: z.number().min(0).max(1),
   risk: z.enum(["low", "medium", "high"]).default("medium"),
-  suggestedCompileTargets: z.array(z.enum(["context-pack", "agent-skills", "hooks", "mcp-resources", "project-rules", "plugin", "command-policy", "review-checklist", "path-map"])).default(["context-pack", "agent-skills"])
+  suggestedCompileTargets: z.array(z.enum(SuggestedCompileTargets)).default(["context-pack", "agent-skills"])
 });
 
 export type SemanticPreferenceProposalInput = z.input<typeof SemanticPreferenceProposalSchema>;

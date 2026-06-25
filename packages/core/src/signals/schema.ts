@@ -1,28 +1,19 @@
 import { z } from "zod";
+import { PreferenceCategories, PreferencePolarities, ScopeLevels, SignalKinds } from "../schema/constants.js";
 
 export const SignalSchema = z.object({
   schemaVersion: z.literal("openskill-kit.signal.v1"),
   id: z.string().min(1),
   eventIds: z.array(z.string()).min(1),
   extractedAt: z.string().datetime(),
-  kind: z.enum([
-    "explicit-preference",
-    "acceptance",
-    "rejection",
-    "edit-delta",
-    "tool-choice",
-    "test-outcome",
-    "review-feedback",
-    "semantic-proposal",
-    "repo-pattern"
-  ]),
-  category: z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "api-design", "security", "workflow", "style", "dependency-policy", "review-policy", "command-policy", "documentation", "error-handling", "general"]).default("general"),
+  kind: z.enum(SignalKinds),
+  category: z.enum(PreferenceCategories).default("general"),
   scope: z.object({
-    level: z.enum(["project", "path", "directory", "package", "language", "task", "user", "global"]),
+    level: z.enum(ScopeLevels),
     paths: z.array(z.string()).default([])
   }),
   statement: z.string().min(1),
-  polarity: z.enum(["positive", "negative", "neutral"]).default("positive"),
+  polarity: z.enum(PreferencePolarities).default("positive"),
   weight: z.number().min(0).max(1),
   evidence: z.array(z.object({
     eventId: z.string(),

@@ -8,6 +8,7 @@ import { scoreConfidence } from "./confidence.js";
 import { detectConflicts } from "./conflict.js";
 import { migratePreferenceGraph } from "./migrations.js";
 import { PreferenceGraphSchema, PreferenceNodeSchema, type PreferenceGraph, type PreferenceNode } from "./schema.js";
+import { validateMemoryNodes } from "./integrity.js";
 
 export interface UpdateGraphResult {
   schemaVersion: "openskill-kit.graph-update.v1";
@@ -64,10 +65,10 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
       const id = `pref_${shortHash(`${group[0]?.category}:${group[0]?.statement.toLowerCase()}`)}`;
       const existingNode = byId.get(id);
       const confidence = scoreConfidence(group, config.learning.decayHalfLifeDays, now);
-      const status = existingNode?.status && existingNode.status !== "candidate"
+      const desiredStatus = existingNode?.status && existingNode.status !== "candidate"
         ? existingNode.status
         : confidence >= config.learning.minConfidenceToApply && config.learning.mode === "auto-apply-safe" ? "active" : "candidate";
-      nextNodes.push(PreferenceNodeSchema.parse({
+      const node = PreferenceNodeSchema.parse({
         schemaVersion: "openskill-kit.preference-node.v1",
         id,
         title: titleFromStatement(group[0]?.statement ?? "Preference"),
@@ -75,7 +76,7 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
         category: group[0]?.category ?? "general",
         scope: mergeScopes(group),
         confidence,
-        status,
+        status: desiredStatus,
         polarity: dominantPolarity(group),
         evidence: group.map((signal) => ({
           signalId: signal.id,
@@ -86,7 +87,9 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
         })),
         createdAt: existingNode?.createdAt ?? now.toISOString(),
         updatedAt: now.toISOString()
-      }));
+      });
+      const integrityIssues = desiredStatus === "active" ? validateMemoryNodes([node], { config }).filter((issue) => issue.severity === "fail") : [];
+      nextNodes.push(integrityIssues.length ? { ...node, status: "candidate" } : node);
     }
     const merged = mergeLockedAndRejected(existing.nodes, nextNodes);
     const conflicts = detectConflicts(merged.filter((node) => node.status === "active" || node.status === "candidate"));

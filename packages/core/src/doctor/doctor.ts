@@ -4,6 +4,9 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createLocalSandboxPolicy } from "../sandbox/policy.js";
+import { readProjectConfig } from "../events/store.js";
+import { validateRedactionConfig } from "../events/redaction.js";
+import { CompileTargets, PreferenceCategories } from "../schema/constants.js";
 import { explainAdaptiveStatus } from "../status/status.js";
 import { readRegistry } from "../registry/registry.js";
 import { verifyProjectBehaviorPack } from "../sync/bundle.js";
@@ -48,6 +51,17 @@ export async function runFullDoctor(projectRoot: string, homeDir = os.homedir())
     status: status.status.initialized ? "pass" : "fail",
     message: status.status.initialized ? "Initialized" : "Missing .openskill-kit/config.json"
   });
+  const config = await readProjectConfig(root).catch(() => undefined);
+  if (config) {
+    checks.push(schemaConstantsCheck());
+    checks.push(compileTargetsCheck(config.compileTargets));
+    const redaction = validateRedactionConfig(config);
+    checks.push({
+      name: "Custom redaction config",
+      status: redaction.status === "pass" ? "pass" : "fail",
+      message: redaction.issues.length ? redaction.issues.map((issue) => `${issue.id}: ${issue.message}`).join("; ") : "All custom redactions compile"
+    });
+  }
   checks.push({
     name: "Compiled context pack",
     status: status.status.compiled.contextPack ? "pass" : "warn",
@@ -80,6 +94,20 @@ export async function runFullDoctor(projectRoot: string, homeDir = os.homedir())
   }
   const finalStatus = checks.some((check) => check.status === "fail") ? "fail" : checks.some((check) => check.status === "warn") ? "warn" : "pass";
   return { status: finalStatus, checks };
+}
+
+function schemaConstantsCheck(): DoctorCheck {
+  return PreferenceCategories.includes("api-design")
+    ? { name: "Shared schema constants", status: "pass", message: `${PreferenceCategories.length} categories; api-design available to adapters` }
+    : { name: "Shared schema constants", status: "fail", message: "api-design category missing" };
+}
+
+function compileTargetsCheck(targets: string[]): DoctorCheck {
+  const allowed = new Set<string>(CompileTargets);
+  const unsupported = targets.filter((target) => !allowed.has(target));
+  return unsupported.length
+    ? { name: "Compile targets", status: "fail", message: `Unsupported target(s): ${unsupported.join(", ")}` }
+    : { name: "Compile targets", status: "pass", message: targets.length ? targets.join(", ") : "default target set" };
 }
 
 function checkNode(): DoctorCheck {

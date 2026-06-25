@@ -18,6 +18,7 @@ import {
   explainAdaptiveStatus,
   getAdaptiveStatus,
   installAgentHooks,
+  installInstructionManifests,
   initAdaptiveProject,
   importProjectBehaviorPack,
   installSkill,
@@ -41,8 +42,12 @@ import {
   scanSkillPath,
   signProjectBehaviorPack,
   updatePreferenceGraph,
+  validateMemoryIntegrity,
   verifyProjectBehaviorPack,
   verifySkill,
+  CompileTargets,
+  PreferenceCategories,
+  SuggestedCompileTargets,
   type InstallTarget
 } from "@openskill-kit/core";
 
@@ -118,7 +123,7 @@ export function createOpenSkillMcpServer(): McpServer {
         projectRoot: projectRootSchema,
         query: z.string().optional(),
         paths: z.array(z.string()).default([]),
-        categories: z.array(z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "api-design", "security", "workflow", "style", "dependency-policy", "review-policy", "command-policy", "documentation", "error-handling", "general"])).default([]),
+        categories: z.array(z.enum(PreferenceCategories)).default([]),
         limit: z.number().int().min(1).max(50).default(12)
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
@@ -173,12 +178,12 @@ export function createOpenSkillMcpServer(): McpServer {
     {
       title: "OpenSkillKit Compile Behavior Layer",
       description: "Compile active behavior into context pack, skill, hooks, and MCP config.",
-      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      inputSchema: z.object({ projectRoot: projectRootSchema, targets: z.array(z.enum(CompileTargets)).optional() }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot }) => {
+    async ({ projectRoot, targets }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await compileBehaviorLayer(root), root);
+      return toolResult(await compileBehaviorLayer(root, { targets }), root);
     }
   );
 
@@ -205,7 +210,7 @@ export function createOpenSkillMcpServer(): McpServer {
         projectRoot: projectRootSchema,
         sessionId: z.string().min(1),
         statement: z.string().min(8),
-        category: z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "security", "workflow", "style", "dependency-policy", "review-policy", "command-policy", "documentation", "error-handling", "general"]),
+        category: z.enum(PreferenceCategories),
         scope: z.object({
           level: z.enum(["project", "path", "directory", "package", "language", "task", "user", "global"]),
           paths: z.array(z.string()).default([])
@@ -214,7 +219,7 @@ export function createOpenSkillMcpServer(): McpServer {
         counterevidence: z.array(z.object({ eventId: z.string().min(1), quote: z.string().optional(), reason: z.string().optional() })).default([]),
         confidence: z.number().min(0).max(1),
         risk: z.enum(["low", "medium", "high"]).default("medium"),
-        suggestedCompileTargets: z.array(z.enum(["context-pack", "agent-skills", "hooks", "mcp-resources", "project-rules", "plugin", "command-policy", "review-checklist", "path-map"])).default(["context-pack", "agent-skills"])
+        suggestedCompileTargets: z.array(z.enum(SuggestedCompileTargets)).default(["context-pack", "agent-skills"])
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
@@ -256,7 +261,7 @@ export function createOpenSkillMcpServer(): McpServer {
           id: z.string().min(1),
           title: z.string().optional(),
           statement: z.string().optional(),
-          category: z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "api-design", "security", "workflow", "style", "dependency-policy", "review-policy", "command-policy", "documentation", "error-handling", "general"]).optional(),
+          category: z.enum(PreferenceCategories).optional(),
           scope: z.object({
             level: z.enum(["project", "path", "directory", "package", "language", "task", "user", "global"]),
             paths: z.array(z.string()).default([])
@@ -279,6 +284,70 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, ...options }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await applyPreferenceReview(root, options), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_behavior_manifest",
+    {
+      title: "OpenSkillKit Behavior Manifest",
+      description: "Return generated AGENTS/CLAUDE manifest paths and content.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const fs = await import("node:fs/promises");
+      const agentsPath = path.join(root, ".openskill-kit", "compiled", "manifests", "AGENTS.md");
+      const claudePath = path.join(root, ".openskill-kit", "compiled", "manifests", "CLAUDE.md");
+      return toolResult({
+        agentsPath,
+        claudePath,
+        agents: await fs.readFile(agentsPath, "utf8").catch(() => ""),
+        claude: await fs.readFile(claudePath, "utf8").catch(() => "")
+      }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_preview_manifest_install",
+    {
+      title: "OpenSkillKit Preview Manifest Install",
+      description: "Preview managed AGENTS.md, CLAUDE.md, and path rules installation.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await installInstructionManifests(root, { dryRun: true }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_apply_manifest_install",
+    {
+      title: "OpenSkillKit Apply Manifest Install",
+      description: "Install managed AGENTS.md, CLAUDE.md, and path rules when yes is true.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, yes: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await installInstructionManifests(root, { dryRun: yes !== true, yes }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_validate_memory_candidate",
+    {
+      title: "OpenSkillKit Validate Memory Candidate",
+      description: "Run memory integrity validation over current graph preferences.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await validateMemoryIntegrity(root), root);
     }
   );
 
