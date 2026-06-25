@@ -73,6 +73,7 @@ async function ensureAdaptiveDirectories(root: string): Promise<void> {
   for (const dir of [
     "events",
     "signals",
+    "evidence/cards",
     "evidence/blobs",
     "preferences/active",
     "preferences/candidates",

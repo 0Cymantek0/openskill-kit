@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { readCalibrationReport, type CalibrationReport } from "../preferences/calibration.js";
 import { readProjectConfig } from "../events/store.js";
 
 export interface AdaptiveStatus {
@@ -23,6 +24,11 @@ export interface AdaptiveStatusExplanation {
   status: AdaptiveStatus;
   nextActions: string[];
   stale: boolean;
+  calibration?: {
+    path: string;
+    categories: CalibrationReport["categories"];
+    extractors: CalibrationReport["extractors"];
+  };
 }
 
 export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveStatus> {
@@ -54,6 +60,8 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   const status = await getAdaptiveStatus(root);
   const graphFile = path.join(root, ".openskill-kit", "preferences", "graph.json");
   const contextFile = path.join(root, ".openskill-kit", "compiled", "context-pack.md");
+  const calibrationPath = path.join(root, ".openskill-kit", "preferences", "calibration.json");
+  const calibration = await readCalibrationReport(root).catch(() => undefined);
   const graphMtime = await mtime(graphFile);
   const contextMtime = await mtime(contextFile);
   const stale = Boolean(graphMtime && contextMtime && graphMtime > contextMtime);
@@ -64,8 +72,15 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   if (status.candidateCount > 0) nextActions.push("Run review --queue, then accept or reject candidates.");
   if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
   if (status.activePreferenceCount === 0 && status.candidateCount === 0 && status.signalCount > 0) nextActions.push("Wait for stronger evidence or propose a semantic preference.");
+  if (calibration) nextActions.push(`Calibration loaded: ${Object.keys(calibration.categories).length} categor${Object.keys(calibration.categories).length === 1 ? "y" : "ies"}, ${Object.keys(calibration.extractors).length} extractor(s).`);
   if (nextActions.length === 0) nextActions.push("Behavior layer current; keep collecting high-value events.");
-  return { schemaVersion: "openskill-kit.status-explain.v1", status, nextActions, stale };
+  return {
+    schemaVersion: "openskill-kit.status-explain.v1",
+    status,
+    nextActions,
+    stale,
+    calibration: calibration ? { path: calibrationPath, categories: calibration.categories, extractors: calibration.extractors } : undefined
+  };
 }
 
 async function readJson(file: string): Promise<unknown> {

@@ -14,6 +14,7 @@ import {
   evolveSkill,
   explainAdaptiveStatus,
   getAdaptiveStatus,
+  explainPreferenceWithEvidence,
   installAgentHooks,
   installInstructionManifests,
   initAdaptiveProject,
@@ -27,6 +28,7 @@ import {
   runAgentDoctor,
   runLifecycleOnce,
   readRegistry,
+  readCalibrationReport,
   runBehaviorEval,
   runDoctor,
   runFullDoctor,
@@ -286,8 +288,20 @@ program.command("compile")
 program.command("explain")
   .description("Explain preference evidence by id")
   .argument("<id>", "Preference id")
+  .option("--evidence", "Include sanitized evidence cards")
   .option("--json", "Print JSON")
   .action(async (id, options) => {
+    if (options.evidence === true) {
+      const explained = await explainPreferenceWithEvidence(process.cwd(), id);
+      if (!explained) throw new Error(`Preference not found: ${id}`);
+      output(options.json, explained, [
+        explained.node.id,
+        explained.node.statement,
+        `Confidence: ${explained.node.confidence}`,
+        `Evidence cards: ${explained.cards.map((card) => card.id).join(", ") || "none"}`
+      ].join("\n"));
+      return;
+    }
     const node = await explainPreference(process.cwd(), id);
     if (!node) throw new Error(`Preference not found: ${id}`);
     output(options.json, node, `${node.id}\n${node.statement}\nConfidence: ${node.confidence}\nEvidence: ${node.evidence.map((item) => item.signalId).join(", ")}`);
@@ -309,6 +323,24 @@ program.command("prefs")
       limit: options.limit
     });
     output(options.json, result, result.compactMarkdown);
+  });
+
+program.command("calibration")
+  .description("Show review calibration reliability by category and extractor")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const report = await readCalibrationReport(process.cwd()).catch(() => undefined);
+    if (!report) {
+      output(options.json, { schemaVersion: "openskill-kit.calibration.v1", categories: {}, extractors: {} }, "No calibration data yet. Review candidates to build reliability stats.");
+      return;
+    }
+    const lines = [
+      "Categories:",
+      ...Object.entries(report.categories).map(([name, bucket]) => `- ${name}: ${bucket.reliability} (${bucket.accepted + bucket.locked} accepted, ${bucket.rejected + bucket.demoted} rejected/demoted)`),
+      "Extractors:",
+      ...Object.entries(report.extractors).map(([name, bucket]) => `- ${name}: ${bucket.reliability} (${bucket.accepted + bucket.locked} accepted, ${bucket.rejected + bucket.demoted} rejected/demoted)`)
+    ];
+    output(options.json, report, lines.join("\n"));
   });
 
 program.command("pack")

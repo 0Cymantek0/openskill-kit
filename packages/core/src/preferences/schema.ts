@@ -16,6 +16,7 @@ export const PreferenceNodeSchema = z.object({
     signalId: z.string(),
     eventIds: z.array(z.string()),
     weight: z.number(),
+    cardIds: z.array(z.string()).default([]),
     quote: z.string().optional(),
     command: z.string().optional()
   })).default([]),

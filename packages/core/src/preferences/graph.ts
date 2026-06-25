@@ -4,8 +4,10 @@ import { createHash } from "node:crypto";
 import { readProjectConfig } from "../events/store.js";
 import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { SignalSchema, type Signal } from "../signals/schema.js";
+import { readEvidenceCards, writeEvidenceCardsForSignals, type EvidenceCard } from "../evidence/cards.js";
 import { scoreConfidence } from "./confidence.js";
 import { detectConflicts } from "./conflict.js";
+import { applyCalibrationToSignals, recordCalibrationOutcomes, type CalibrationOutcome } from "./calibration.js";
 import { migratePreferenceGraph } from "./migrations.js";
 import { PreferenceGraphSchema, PreferenceNodeSchema, type PreferenceGraph, type PreferenceNode } from "./schema.js";
 import { validateMemoryNodes } from "./integrity.js";
@@ -52,12 +54,19 @@ export interface ApplyPreferenceReviewOptions {
   splits?: PreferenceReviewSplit[];
 }
 
+export interface PreferenceEvidenceExplanation {
+  schemaVersion: "openskill-kit.preference-evidence.v1";
+  node: PreferenceNode;
+  cards: EvidenceCard[];
+}
+
 export async function updatePreferenceGraph(projectRoot: string, now = new Date()): Promise<UpdateGraphResult> {
   const root = path.resolve(projectRoot);
   return withFileLock(path.join(root, ".openskill-kit", "preferences", ".graph.lock"), async () => {
     const config = await readProjectConfig(root);
     const existing = await readGraph(root, config.projectId, now);
-    const signals = await readSignals(root);
+    const signals = await applyCalibrationToSignals(root, await readSignals(root));
+    const cardsBySignal = await writeEvidenceCardsForSignals(root, signals, config, now);
     const grouped = groupSignals(signals);
     const byId = new Map(existing.nodes.map((node) => [node.id, node]));
     const nextNodes: PreferenceNode[] = [];
@@ -82,6 +91,7 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
           signalId: signal.id,
           eventIds: signal.eventIds,
           weight: signal.weight,
+          cardIds: cardsBySignal.get(signal.id) ?? [],
           quote: signal.evidence[0]?.quote,
           command: signal.evidence[0]?.command
         })),
@@ -137,9 +147,39 @@ export async function applyPreferenceReview(projectRoot: string, options: ApplyP
     nodes = applyReviewMerges(nodes, options.merges ?? [], now);
     nodes = applyReviewSplits(nodes, options.splits ?? [], now);
     const next = PreferenceGraphSchema.parse({ ...graph, nodes, conflicts: detectConflicts(nodes.filter((node) => node.status === "active" || node.status === "candidate" || node.status === "conflict")), updatedAt: now.toISOString() });
+    const outcomes = collectCalibrationOutcomes(graph.nodes, next.nodes, options);
+    if (outcomes.length) await recordCalibrationOutcomes(root, outcomes, now);
     await writeJsonAtomic(graphFile(root), next);
     await writeJsonAtomic(pendingFile(root), next.nodes.filter((node) => node.status === "candidate" || node.status === "conflict"));
     return next;
+  });
+}
+
+function collectCalibrationOutcomes(previous: PreferenceNode[], next: PreferenceNode[], options: ApplyPreferenceReviewOptions): Array<{ node: PreferenceNode; outcome: CalibrationOutcome }> {
+  const previousById = new Map(previous.map((node) => [node.id, node]));
+  const explicit: Array<{ ids: Set<string>; outcome: CalibrationOutcome }> = [
+    { ids: new Set(options.activate ?? []), outcome: "accepted" },
+    { ids: new Set(options.lock ?? []), outcome: "locked" },
+    { ids: new Set(options.reject ?? []), outcome: "rejected" },
+    { ids: new Set(options.demote ?? []), outcome: "demoted" }
+  ];
+  const out: Array<{ node: PreferenceNode; outcome: CalibrationOutcome }> = [];
+  for (const node of next) {
+    const match = explicit.find((entry) => entry.ids.has(node.id));
+    if (match) {
+      out.push({ node, outcome: match.outcome });
+      continue;
+    }
+    const before = previousById.get(node.id);
+    if (options.activateAll && before?.status === "candidate" && node.status === "active") out.push({ node, outcome: "accepted" });
+    if (before && before.status !== "rejected" && node.status === "rejected") out.push({ node, outcome: "rejected" });
+  }
+  const seen = new Set<string>();
+  return out.filter(({ node, outcome }) => {
+    const key = `${node.id}:${outcome}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 
@@ -147,6 +187,14 @@ export async function explainPreference(projectRoot: string, id: string): Promis
   const config = await readProjectConfig(projectRoot);
   const graph = await readGraph(projectRoot, config.projectId, new Date());
   return graph.nodes.find((node) => node.id === id || node.title.toLowerCase() === id.toLowerCase());
+}
+
+export async function explainPreferenceWithEvidence(projectRoot: string, id: string): Promise<PreferenceEvidenceExplanation | undefined> {
+  const node = await explainPreference(projectRoot, id);
+  if (!node) return undefined;
+  const cardIds = node.evidence.flatMap((item) => item.cardIds ?? []);
+  const cards = await readEvidenceCards(projectRoot, cardIds);
+  return { schemaVersion: "openskill-kit.preference-evidence.v1", node, cards };
 }
 
 export async function readPreferenceGraph(projectRoot: string): Promise<PreferenceGraph> {

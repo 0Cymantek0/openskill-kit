@@ -5,8 +5,12 @@ import path from "node:path";
 import {
   appendEvent,
   applyPreferenceReview,
+  buildReviewQueue,
   compileBehaviorLayer,
+  explainPreferenceWithEvidence,
+  explainAdaptiveStatus,
   initAdaptiveProject,
+  readCalibrationReport,
   installInstructionManifests,
   redactValue,
   updatePreferenceGraph,
@@ -88,14 +92,67 @@ describe("deep architecture hardening", () => {
       sessionId: "normal",
       eventType: "user-prompt-submit",
       source: { adapter: "test" },
-      normalized: { text: "Always run focused tests before final answer." }
+      normalized: { text: "Always run focused test before final answer." }
     });
     await import("../src/signals/extract.js").then((mod) => mod.extractSignals(root));
     const graph = await updatePreferenceGraph(root);
     const poisoned = graph.graph.nodes.find((node) => node.statement.includes("ignore previous instructions"));
-    const normal = graph.graph.nodes.find((node) => node.statement.includes("run focused tests"));
+    const normal = graph.graph.nodes.find((node) => node.statement.includes("run focused test"));
     expect(poisoned?.status).toBe("candidate");
     expect(normal?.status).toBe("active");
+  });
+
+  it("writes sanitized evidence cards and explains preferences through them", async () => {
+    const root = await tempProject();
+    const secret = ["card", "secret"].join("-");
+    await appendEvent(root, {
+      sessionId: "cards",
+      eventType: "user-prompt-submit",
+      source: { adapter: "test" },
+      normalized: { text: `Always run parser tests before final answer. TOKEN=${secret}` }
+    });
+    await import("../src/signals/extract.js").then((mod) => mod.extractSignals(root, new Date("2026-06-25T00:01:00.000Z")));
+    const graph = await updatePreferenceGraph(root, new Date("2026-06-25T00:02:00.000Z"));
+    const node = graph.graph.nodes.find((candidate) => candidate.statement.includes("run parser tests"))!;
+    expect(node.evidence[0]?.cardIds.length).toBeGreaterThan(0);
+
+    const explained = await explainPreferenceWithEvidence(root, node.id);
+    expect(explained?.cards.length).toBeGreaterThan(0);
+    expect(JSON.stringify(explained)).not.toContain(secret);
+    expect(explained?.cards[0]?.privacy.rawIncluded).toBe(false);
+    expect(explained?.cards[0]?.privacy.redacted).toBe(true);
+
+    const queue = await buildReviewQueue(root);
+    const markdown = await readFile(queue.markdownPath, "utf8");
+    expect(markdown).toContain("Evidence cards:");
+  });
+
+  it("records calibration from review outcomes", async () => {
+    const root = await tempProject();
+    await appendEvent(root, {
+      sessionId: "calibration",
+      eventType: "user-prompt-submit",
+      source: { adapter: "test" },
+      normalized: { text: "Always run focused test before final answer." }
+    });
+    await appendEvent(root, {
+      sessionId: "calibration",
+      eventType: "user-prompt-submit",
+      source: { adapter: "test" },
+      normalized: { text: "Always update API docs after endpoint changes." }
+    });
+    await import("../src/signals/extract.js").then((mod) => mod.extractSignals(root, new Date("2026-06-25T00:01:00.000Z")));
+    const graph = await updatePreferenceGraph(root, new Date("2026-06-25T00:02:00.000Z"));
+    const testing = graph.graph.nodes.find((node) => node.category === "testing")!;
+    const api = graph.graph.nodes.find((node) => node.category === "api")!;
+    await applyPreferenceReview(root, { activate: [testing.id], reject: [api.id] }, new Date("2026-06-25T00:03:00.000Z"));
+    const calibration = await readCalibrationReport(root);
+    expect(calibration.categories.testing.accepted).toBe(1);
+    expect(calibration.categories.api.rejected).toBe(1);
+    expect(calibration.extractors["explicit-preference"].accepted).toBe(1);
+    expect(calibration.extractors["explicit-preference"].rejected).toBe(1);
+    const explained = await explainAdaptiveStatus(root);
+    expect(explained.calibration?.categories.testing.reliability).toBeGreaterThan(0.5);
   });
 });
 

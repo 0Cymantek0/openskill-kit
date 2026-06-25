@@ -136,7 +136,10 @@ function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], cand
   lines.push("## Graph Candidates", "");
   if (!candidates.length) lines.push("No graph candidates.", "");
   for (const node of candidates.sort((a, b) => a.category.localeCompare(b.category) || b.confidence - a.confidence)) {
-    lines.push(`### ${node.id}`, "", `- Status: ${node.status}`, `- Category: ${node.category}`, `- Confidence: ${node.confidence}`, `- Scope: ${node.scope.level}${node.scope.paths.length ? ` (${node.scope.paths.join(", ")})` : ""}`, `- Statement: ${node.statement}`, `- Evidence: ${node.evidence.map((item) => item.signalId).join(", ")}`, "");
+    const cardIds = node.evidence.flatMap((item) => item.cardIds ?? []);
+    lines.push(`### ${node.id}`, "", `- Status: ${node.status}`, `- Category: ${node.category}`, `- Confidence: ${node.confidence}`, `- Scope: ${node.scope.level}${node.scope.paths.length ? ` (${node.scope.paths.join(", ")})` : ""}`, `- Statement: ${node.statement}`, `- Evidence: ${node.evidence.map((item) => item.signalId).join(", ")}`);
+    if (cardIds.length) lines.push(`- Evidence cards: ${cardIds.join(", ")}`);
+    lines.push("");
   }
   return `${lines.join("\n")}\n`;
 }

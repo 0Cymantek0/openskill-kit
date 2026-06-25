@@ -12,6 +12,7 @@ import {
   draftSkill,
   evaluateSkill,
   explainPreference,
+  explainPreferenceWithEvidence,
   exportProjectBehaviorPack,
   extractSignals,
   evolveSkill,
@@ -27,6 +28,7 @@ import {
   buildReviewQueue,
   proposeSemanticPreference,
   readPreferenceGraph,
+  readCalibrationReport,
   readRegistry,
   retrieveRelevantPreferences,
   diffProjectBehaviorPacks,
@@ -202,6 +204,20 @@ export function createOpenSkillMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "osk_get_preference_evidence",
+    {
+      title: "OpenSkillKit Preference Evidence",
+      description: "Return one preference with sanitized evidence cards.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, id: z.string().min(1) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, id }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await explainPreferenceWithEvidence(root, id), root);
+    }
+  );
+
+  server.registerTool(
     "osk_propose_preference",
     {
       title: "OpenSkillKit Propose Preference",
@@ -348,6 +364,25 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await validateMemoryIntegrity(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_calibration_report",
+    {
+      title: "OpenSkillKit Calibration Report",
+      description: "Return review-outcome reliability by category and extractor.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await readCalibrationReport(root).catch(() => ({
+        schemaVersion: "openskill-kit.calibration.v1",
+        updatedAt: new Date(0).toISOString(),
+        categories: {},
+        extractors: {}
+      })), root);
     }
   );
 
