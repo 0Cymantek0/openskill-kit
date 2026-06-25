@@ -414,7 +414,11 @@ export function createOpenSkillMcpServer(): McpServer {
         schemaVersion: "openskill-kit.calibration.v1",
         updatedAt: new Date(0).toISOString(),
         categories: {},
-        extractors: {}
+        extractors: {},
+        scopes: {},
+        evidenceKinds: {},
+        privacyClasses: {},
+        evalOutcomes: {}
       })), root);
     }
   );
