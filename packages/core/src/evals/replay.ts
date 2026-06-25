@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { BehaviorEvalReportSchema, BehaviorEvalScenarioSchema, type BehaviorEvalScenario } from "./schema.js";
 import { retrieveRelevantPreferences } from "../preferences/retrieval.js";
+import { recordEvalCalibrationOutcome } from "../preferences/calibration.js";
 
 export interface RunBehaviorEvalOptions {
   projectRoot: string;
@@ -36,6 +37,12 @@ export async function runBehaviorEval(options: RunBehaviorEvalOptions) {
   await fs.mkdir(runDir, { recursive: true });
   await fs.writeFile(json, JSON.stringify(report, null, 2), "utf8");
   await fs.writeFile(markdown, renderMarkdown(report), "utf8");
+  await recordEvalCalibrationOutcome(root, {
+    suite: "behavior-replay",
+    status: report.status,
+    scenarioCount: report.scenarioCount,
+    passCount: report.passCount
+  }, options.now ?? new Date());
   return report;
 }
 

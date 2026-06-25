@@ -42,8 +42,11 @@ locked active behavior.
 ## Calibration
 
 Review-outcome reliability model. Activating or locking candidates increases
-category/extractor reliability; rejecting or demoting lowers it. Future graph
-updates use this reliability to downweight weak signal sources.
+category, extractor, scope, evidence kind, and privacy-class reliability;
+rejecting or demoting lowers those dimensions. Behavior eval runs also record
+pass/fail and pass-rate outcomes. Future graph updates use the populated
+dimensions to downweight weak signal sources without inventing reliability for
+dimensions that have no history yet.
 
 ## Extractor Registry
 

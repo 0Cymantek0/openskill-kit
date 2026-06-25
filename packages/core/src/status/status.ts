@@ -28,6 +28,10 @@ export interface AdaptiveStatusExplanation {
     path: string;
     categories: CalibrationReport["categories"];
     extractors: CalibrationReport["extractors"];
+    scopes: CalibrationReport["scopes"];
+    evidenceKinds: CalibrationReport["evidenceKinds"];
+    privacyClasses: CalibrationReport["privacyClasses"];
+    evalOutcomes: CalibrationReport["evalOutcomes"];
   };
 }
 
@@ -72,14 +76,22 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   if (status.candidateCount > 0) nextActions.push("Run review --queue, then accept or reject candidates.");
   if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
   if (status.activePreferenceCount === 0 && status.candidateCount === 0 && status.signalCount > 0) nextActions.push("Wait for stronger evidence or propose a semantic preference.");
-  if (calibration) nextActions.push(`Calibration loaded: ${Object.keys(calibration.categories).length} categor${Object.keys(calibration.categories).length === 1 ? "y" : "ies"}, ${Object.keys(calibration.extractors).length} extractor(s).`);
+  if (calibration) nextActions.push(`Calibration loaded: ${Object.keys(calibration.categories).length} categor${Object.keys(calibration.categories).length === 1 ? "y" : "ies"}, ${Object.keys(calibration.extractors).length} extractor(s), ${Object.keys(calibration.evalOutcomes).length} eval outcome(s).`);
   if (nextActions.length === 0) nextActions.push("Behavior layer current; keep collecting high-value events.");
   return {
     schemaVersion: "openskill-kit.status-explain.v1",
     status,
     nextActions,
     stale,
-    calibration: calibration ? { path: calibrationPath, categories: calibration.categories, extractors: calibration.extractors } : undefined
+    calibration: calibration ? {
+      path: calibrationPath,
+      categories: calibration.categories,
+      extractors: calibration.extractors,
+      scopes: calibration.scopes,
+      evidenceKinds: calibration.evidenceKinds,
+      privacyClasses: calibration.privacyClasses,
+      evalOutcomes: calibration.evalOutcomes
+    } : undefined
   };
 }
 

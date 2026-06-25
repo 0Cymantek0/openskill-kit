@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { BehaviorEvalReportSchema, type BehaviorEvalScenario } from "./schema.js";
 import { loadBehaviorEvalScenarios, runBehaviorEval, type RunBehaviorEvalOptions } from "./replay.js";
+import { recordEvalCalibrationOutcome } from "../preferences/calibration.js";
 
 export interface BehaviorCompareReport {
   schemaVersion: "openskill-kit.eval-compare.v1";
@@ -69,6 +70,12 @@ export async function runBehaviorCompareEval(options: RunBehaviorEvalOptions): P
   await fs.mkdir(runDir, { recursive: true });
   await fs.writeFile(report.artifacts.json, JSON.stringify(report, null, 2), "utf8");
   await fs.writeFile(report.artifacts.markdown, renderCompareMarkdown(report), "utf8");
+  await recordEvalCalibrationOutcome(root, {
+    suite: "agent-ab",
+    status: report.improvement < 0 ? "regressed" : report.improvement > 0 ? "improved" : report.status,
+    scenarioCount: report.scenarioCount,
+    passCount: report.openskillKit.passCount
+  }, now);
   return report;
 }
 

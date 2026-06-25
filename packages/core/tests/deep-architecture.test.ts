@@ -13,6 +13,7 @@ import {
   readEvidenceCards,
   readCalibrationReport,
   readPreferenceGraph,
+  runBehaviorEval,
   installInstructionManifests,
   uninstallInstructionManifests,
   redactValue,
@@ -173,8 +174,26 @@ describe("deep architecture hardening", () => {
     expect(calibration.categories.api.rejected).toBe(1);
     expect(calibration.extractors["explicit-preference"].accepted).toBe(1);
     expect(calibration.extractors["explicit-preference"].rejected).toBe(1);
+    expect(calibration.scopes["level:project"].accepted).toBe(1);
+    expect(calibration.scopes["level:project"].rejected).toBe(1);
+    expect(calibration.evidenceKinds["user-correction"].accepted).toBe(1);
+    expect(calibration.evidenceKinds["user-correction"].rejected).toBe(1);
+    expect(calibration.privacyClasses["project-private"].accepted).toBe(1);
     const explained = await explainAdaptiveStatus(root);
     expect(explained.calibration?.categories.testing.reliability).toBeGreaterThan(0.5);
+    expect(explained.calibration?.evidenceKinds["user-correction"].reliability).toBe(0.5);
+  });
+
+  it("records behavior eval outcomes into calibration", async () => {
+    const root = await tempProject();
+    const node = pref("eval", "Prefer focused tests before final answer", "testing", []);
+    await writeGraph(root, [node]);
+    await compileBehaviorLayer(root);
+    const report = await runBehaviorEval({ projectRoot: root, now: new Date("2026-06-25T00:05:00.000Z") });
+    expect(report.status).toBe("pass");
+    const calibration = await readCalibrationReport(root);
+    expect(calibration.evalOutcomes["behavior-replay:pass"].accepted).toBe(1);
+    expect(calibration.evalOutcomes["behavior-replay:pass-rate"].accepted).toBe(report.passCount);
   });
 
   it("writes v2 preference metadata and migrates v1 nodes on read", async () => {
