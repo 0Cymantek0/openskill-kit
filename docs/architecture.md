@@ -45,6 +45,8 @@ init
   compiled/
   installs/
   evals/
+  compact/
+  archive/
   reports/
 ```
 
@@ -87,6 +89,7 @@ The compiler writes:
 - `preferences/active/*.md`
 - `sessions/summaries/*.json`
 - `runtime/last-run.json`
+- `compact/summary.json`
 
 Output is deterministic: stable headings, stable sorting, and no timestamp in
 generated skill text.
@@ -114,6 +117,12 @@ generated skill text.
 - `osk_agent_doctor`
 - `osk_install_agent_hooks`
 - `osk_run_lifecycle_once`
+- `osk_explain_status`
+- `osk_run_full_doctor`
+- `osk_compact_state`
+- `osk_prune_state`
+- `osk_archive_state`
+- `osk_reset_state`
 
 Legacy drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.
@@ -124,6 +133,18 @@ remain available for compatibility.
 retrieves relevant preferences for each task, simulates a behavior-aware plan,
 checks command policy and forbidden behavior, and reports adherence, retrieval
 precision, and privacy leak rate.
+
+## Maintenance
+
+`openskill-kit status --explain` reports what adaptive state exists, whether
+compiled artifacts are stale, and what to run next. `doctor --full` checks base
+environment plus adaptive config, compiled hooks, MCP config, registry, and pack
+health.
+
+`compact` writes a small project summary from event and graph state. `prune`
+plans or removes old eval runs. `archive` plans or moves private event, signal,
+review, and runtime state under `.openskill-kit/archive/`. `reset` plans or
+removes selected adaptive state scopes and requires `--yes` before writing.
 
 ## Legacy Scaffold Path
 

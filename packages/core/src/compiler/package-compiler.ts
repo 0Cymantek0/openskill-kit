@@ -34,6 +34,7 @@ export async function compileBehaviorLayer(projectRoot: string): Promise<Compile
       server: "openskill-kit-mcp",
       tools: [
         "osk_bootstrap_session",
+        "osk_explain_status",
         "osk_get_context_pack",
         "osk_get_relevant_preferences",
         "osk_record_event",
@@ -51,7 +52,12 @@ export async function compileBehaviorLayer(projectRoot: string): Promise<Compile
         "osk_run_behavior_eval",
         "osk_agent_doctor",
         "osk_install_agent_hooks",
-        "osk_run_lifecycle_once"
+        "osk_run_lifecycle_once",
+        "osk_run_full_doctor",
+        "osk_reset_state",
+        "osk_prune_state",
+        "osk_archive_state",
+        "osk_compact_state"
       ],
       contextPack: path.relative(root, contextPack.contextPackPath).replace(/\\/g, "/")
     });

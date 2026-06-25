@@ -35,6 +35,8 @@ const init = await runJson(["init", "--json"]);
 if (init.config?.schemaVersion !== "openskill-kit.config.v1") {
   throw new Error("adaptive init failed");
 }
+const fullDoctorInitial = await runJson(["doctor", "--full", "--json"]);
+if (fullDoctorInitial.status === "fail") throw new Error("full doctor failed");
 const smokeSecret = ["smoke", "secret"].join("-");
 const observed = await runJson(["observe", "--type", "user-prompt-submit", "--text", `Always run npm test before final response. TOKEN=${smokeSecret}`, "--json"]);
 if (!observed.event?.id || JSON.stringify(observed).includes(smokeSecret)) {
@@ -72,6 +74,14 @@ if (agentHooksPlan.status !== "planned") throw new Error("agent hooks dry-run fa
 const agentHooks = await runJson(["agent", "install-hooks", "--target", "project", "--yes", "--json"]);
 if (agentHooks.status !== "installed") throw new Error("agent hooks install failed");
 await stat(path.join(root, ".agents", "hooks", "openskill-kit.json"));
+const explainedStatus = await runJson(["status", "--explain", "--json"]);
+if (!explainedStatus.nextActions?.length) throw new Error("status explain failed");
+const compacted = await runJson(["compact", "--json"]);
+if (compacted.status !== "done") throw new Error("compact failed");
+const prunePlan = await runJson(["prune", "--keep-runs", "1", "--json"]);
+if (prunePlan.status !== "planned") throw new Error("prune plan failed");
+const resetPlan = await runJson(["reset", "--scope", "runtime", "--json"]);
+if (resetPlan.status !== "planned") throw new Error("reset plan failed");
 const adaptiveInstall = await runJson(["install", "--target", "agents-project", "--yes", "--json"]);
 if (adaptiveInstall.status !== "installed") throw new Error("adaptive compiled skill install failed");
 await stat(path.join(root, ".agents", "skills", "project-behavior", "SKILL.md"));

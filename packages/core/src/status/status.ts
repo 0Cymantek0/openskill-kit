@@ -18,6 +18,13 @@ export interface AdaptiveStatus {
   };
 }
 
+export interface AdaptiveStatusExplanation {
+  schemaVersion: "openskill-kit.status-explain.v1";
+  status: AdaptiveStatus;
+  nextActions: string[];
+  stale: boolean;
+}
+
 export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveStatus> {
   const root = path.resolve(projectRoot);
   const config = await readProjectConfig(root).catch(() => undefined);
@@ -42,6 +49,25 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
   };
 }
 
+export async function explainAdaptiveStatus(projectRoot: string): Promise<AdaptiveStatusExplanation> {
+  const root = path.resolve(projectRoot);
+  const status = await getAdaptiveStatus(root);
+  const graphFile = path.join(root, ".openskill-kit", "preferences", "graph.json");
+  const contextFile = path.join(root, ".openskill-kit", "compiled", "context-pack.md");
+  const graphMtime = await mtime(graphFile);
+  const contextMtime = await mtime(contextFile);
+  const stale = Boolean(graphMtime && contextMtime && graphMtime > contextMtime);
+  const nextActions: string[] = [];
+  if (!status.initialized) nextActions.push("Run init to create project state.");
+  if (status.eventCount === 0) nextActions.push("Record lifecycle events with observe or installed hooks.");
+  if (status.signalCount === 0 && status.eventCount > 0) nextActions.push("Run learn or daemon to extract signals.");
+  if (status.candidateCount > 0) nextActions.push("Run review --queue, then accept or reject candidates.");
+  if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
+  if (status.activePreferenceCount === 0 && status.candidateCount === 0 && status.signalCount > 0) nextActions.push("Wait for stronger evidence or propose a semantic preference.");
+  if (nextActions.length === 0) nextActions.push("Behavior layer current; keep collecting high-value events.");
+  return { schemaVersion: "openskill-kit.status-explain.v1", status, nextActions, stale };
+}
+
 async function readJson(file: string): Promise<unknown> {
   return JSON.parse(await fs.readFile(file, "utf8"));
 }
@@ -58,4 +84,8 @@ async function exists(file: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function mtime(file: string): Promise<number | undefined> {
+  return fs.stat(file).then((stat) => stat.mtimeMs).catch(() => undefined);
 }

@@ -14,6 +14,7 @@ import {
   exportProjectBehaviorPack,
   extractSignals,
   evolveSkill,
+  explainAdaptiveStatus,
   getAdaptiveStatus,
   installAgentHooks,
   initAdaptiveProject,
@@ -30,7 +31,12 @@ import {
   runAgentDoctor,
   runBehaviorEval,
   runDoctor,
+  runFullDoctor,
   runLifecycleOnce,
+  resetProjectState,
+  pruneProjectState,
+  archiveProjectState,
+  compactProjectState,
   scanSkillPath,
   signProjectBehaviorPack,
   updatePreferenceGraph,
@@ -69,6 +75,20 @@ export function createOpenSkillMcpServer(): McpServer {
       const root = resolveProjectRoot(projectRoot);
       const result = init ? await initAdaptiveProject({ projectRoot: root, projectName }) : await getAdaptiveStatus(root);
       return toolResult(result, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_explain_status",
+    {
+      title: "OpenSkillKit Explain Status",
+      description: "Explain current adaptive state and next actions.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await explainAdaptiveStatus(root), root);
     }
   );
 
@@ -354,6 +374,76 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, maxEvents, compileSafe }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runLifecycleOnce({ projectRoot: root, maxEvents, compileSafe }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_reset_state",
+    {
+      title: "OpenSkillKit Reset State",
+      description: "Plan or reset selected local adaptive state.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, scopes: z.array(z.enum(["events", "signals", "reviews", "runtime", "compiled", "installs"])).default(["events", "signals", "reviews", "runtime"]), yes: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false }
+    },
+    async ({ projectRoot, scopes, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await resetProjectState(root, scopes, { yes }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_prune_state",
+    {
+      title: "OpenSkillKit Prune State",
+      description: "Plan or prune old local run artifacts.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, keepRuns: z.number().int().min(0).max(1000).default(5), yes: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false }
+    },
+    async ({ projectRoot, keepRuns, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await pruneProjectState(root, { keepRuns, yes }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_archive_state",
+    {
+      title: "OpenSkillKit Archive State",
+      description: "Plan or archive private event, signal, review, and runtime state.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, yes: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false }
+    },
+    async ({ projectRoot, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await archiveProjectState(root, { yes }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_compact_state",
+    {
+      title: "OpenSkillKit Compact State",
+      description: "Write compact project state summary.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await compactProjectState(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_run_full_doctor",
+    {
+      title: "OpenSkillKit Full Doctor",
+      description: "Check environment plus adaptive config, hooks, MCP config, registry, pack, and graph freshness.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runFullDoctor(root), root);
     }
   );
 

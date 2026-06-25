@@ -12,6 +12,7 @@ import {
   exportProjectBehaviorPack,
   extractSignals,
   evolveSkill,
+  explainAdaptiveStatus,
   getAdaptiveStatus,
   installAgentHooks,
   initAdaptiveProject,
@@ -27,6 +28,11 @@ import {
   readRegistry,
   runBehaviorEval,
   runDoctor,
+  runFullDoctor,
+  resetProjectState,
+  pruneProjectState,
+  archiveProjectState,
+  compactProjectState,
   scanSkillPath,
   signProjectBehaviorPack,
   diffProjectBehaviorPacks,
@@ -62,17 +68,24 @@ program.command("init")
 
 program.command("status")
   .description("Show Adaptive Skill Graph status")
+  .option("--explain", "Explain what system knows and next actions")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (options.explain === true) {
+      const explained = await explainAdaptiveStatus(process.cwd());
+      output(options.json, explained, explained.nextActions.join("\n"));
+      return;
+    }
     const status = await getAdaptiveStatus(process.cwd());
     output(options.json, status, `Initialized: ${status.initialized}\nEvents: ${status.eventCount}\nSignals: ${status.signalCount}\nActive preferences: ${status.activePreferenceCount}\nCandidates: ${status.candidateCount}`);
   });
 
 program.command("doctor")
   .description("Check local environment and install targets")
+  .option("--full", "Check adaptive config, hooks, MCP config, pack, registry, and stale graph state")
   .option("--json", "Print JSON")
   .action(async (options) => {
-    const report = await runDoctor(process.cwd());
+    const report = options.full === true ? await runFullDoctor(process.cwd()) : await runDoctor(process.cwd());
     output(options.json, report, `Doctor ${report.status}: ${report.checks.length} checks`);
     process.exitCode = report.status === "fail" ? 1 : 0;
   });
@@ -342,6 +355,44 @@ program.command("watch")
   .action(async (options) => {
     const result = await runLifecycleOnce({ projectRoot: process.cwd(), maxEvents: options.maxEvents, compileSafe: options.compileSafe === true });
     output(options.json, result, `Lifecycle run: ${result.processedEventCount} event(s), ${result.highValueEvents.length} high-value event(s), ${result.graph.candidateCount} candidate(s)`);
+  });
+
+program.command("reset")
+  .description("Reset selected local adaptive state")
+  .option("--scope <scope>", "events|signals|reviews|runtime|compiled|installs", collectOption, [])
+  .option("--yes", "Apply reset")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const scopes = options.scope.length ? options.scope : ["events", "signals", "reviews", "runtime"];
+    const result = await resetProjectState(process.cwd(), scopes, { yes: options.yes === true });
+    output(options.json, result, result.messages.join("\n"));
+  });
+
+program.command("prune")
+  .description("Prune old local run artifacts")
+  .option("--keep-runs <number>", "Newest eval runs to keep", parseIntegerOption, 5)
+  .option("--yes", "Apply prune")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await pruneProjectState(process.cwd(), { keepRuns: options.keepRuns, yes: options.yes === true });
+    output(options.json, result, result.messages.join("\n"));
+  });
+
+program.command("archive")
+  .description("Archive private event/signal/review/runtime state")
+  .option("--yes", "Apply archive")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await archiveProjectState(process.cwd(), { yes: options.yes === true });
+    output(options.json, result, result.messages.join("\n"));
+  });
+
+program.command("compact")
+  .description("Write compact project state summary")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await compactProjectState(process.cwd());
+    output(options.json, result, result.messages.join("\n"));
   });
 
 program.command("evolve")

@@ -25,7 +25,9 @@ npx openskill-kit daemon
 npx openskill-kit agent doctor
 npx openskill-kit agent install-hooks --target project --yes
 npx openskill-kit install --target agents-project --yes
-npx openskill-kit status
+npx openskill-kit status --explain
+npx openskill-kit doctor --full
+npx openskill-kit compact
 ```
 
 This creates `.openskill-kit/`, records a redacted event, learns candidate
@@ -66,12 +68,18 @@ openskill-kit agent doctor
 openskill-kit agent install-hooks --target project --yes
 openskill-kit install --target agents-project --yes
 openskill-kit eval
+openskill-kit status --explain
+openskill-kit doctor --full
+openskill-kit compact
 openskill-kit pack
 openskill-kit sign-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit verify-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit inspect-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit diff-pack <old-pack-path> <new-pack-path>
 openskill-kit import-pack <pack-path> --dry-run
+openskill-kit prune --keep-runs 5
+openskill-kit archive
+openskill-kit reset --scope runtime
 openskill-kit doctor
 ```
 
@@ -123,6 +131,12 @@ Key tools:
 - `osk_agent_doctor`
 - `osk_install_agent_hooks`
 - `osk_run_lifecycle_once`
+- `osk_explain_status`
+- `osk_run_full_doctor`
+- `osk_compact_state`
+- `osk_prune_state`
+- `osk_archive_state`
+- `osk_reset_state`
 
 Legacy skill drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.

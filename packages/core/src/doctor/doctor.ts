@@ -4,6 +4,9 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createLocalSandboxPolicy } from "../sandbox/policy.js";
+import { explainAdaptiveStatus } from "../status/status.js";
+import { readRegistry } from "../registry/registry.js";
+import { verifyProjectBehaviorPack } from "../sync/bundle.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -33,6 +36,50 @@ export async function runDoctor(projectRoot: string, homeDir = os.homedir()): Pr
   checks.push(optionalSecretCheck("MODEL_PROVIDER_API_KEY"));
   const status = checks.some((check) => check.status === "fail") ? "fail" : checks.some((check) => check.status === "warn") ? "warn" : "pass";
   return { status, checks };
+}
+
+export async function runFullDoctor(projectRoot: string, homeDir = os.homedir()): Promise<DoctorReport> {
+  const root = path.resolve(projectRoot);
+  const base = await runDoctor(root, homeDir);
+  const checks = [...base.checks];
+  const status = await explainAdaptiveStatus(root);
+  checks.push({
+    name: "Adaptive initialized",
+    status: status.status.initialized ? "pass" : "fail",
+    message: status.status.initialized ? "Initialized" : "Missing .openskill-kit/config.json"
+  });
+  checks.push({
+    name: "Compiled context pack",
+    status: status.status.compiled.contextPack ? "pass" : "warn",
+    message: status.status.compiled.contextPack ? "Found" : "Run compile after activating preferences"
+  });
+  checks.push({
+    name: "Compiled project behavior skill",
+    status: status.status.compiled.projectBehaviorSkill ? "pass" : "warn",
+    message: status.status.compiled.projectBehaviorSkill ? "Found" : "Run compile before install"
+  });
+  checks.push({
+    name: "Graph freshness",
+    status: status.stale ? "warn" : "pass",
+    message: status.stale ? "Compiled artifacts older than graph" : "Compiled artifacts current or not required"
+  });
+  checks.push(await fileCheck(path.join(root, ".openskill-kit", "compiled", "hooks", "hooks.json"), "Compiled hooks"));
+  checks.push(await fileCheck(path.join(root, ".openskill-kit", "compiled", "mcp", "server-config.json"), "Compiled MCP config"));
+  const registry = await readRegistry(root);
+  checks.push({
+    name: "Install registry",
+    status: registry.skills.length ? "pass" : "warn",
+    message: `${registry.skills.length} registry entr${registry.skills.length === 1 ? "y" : "ies"}`
+  });
+  const packPath = path.join(root, ".openskill-kit", "compiled", "project-behavior-pack");
+  if (await exists(path.join(packPath, "manifest.json"))) {
+    const pack = await verifyProjectBehaviorPack(packPath);
+    checks.push({ name: "Behavior pack", status: pack.status === "pass" ? "pass" : "fail", message: pack.issues.join("; ") || `Signature ${pack.signature.status}` });
+  } else {
+    checks.push({ name: "Behavior pack", status: "warn", message: "No exported pack" });
+  }
+  const finalStatus = checks.some((check) => check.status === "fail") ? "fail" : checks.some((check) => check.status === "warn") ? "warn" : "pass";
+  return { status: finalStatus, checks };
 }
 
 function checkNode(): DoctorCheck {
@@ -80,6 +127,20 @@ async function writableCheck(targetDir: string, name: string): Promise<DoctorChe
     return { name, status: "pass", message: "Writable" };
   } catch (error) {
     return { name, status: "fail", message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function fileCheck(file: string, name: string): Promise<DoctorCheck> {
+  return exists(file)
+    .then((found) => found ? { name, status: "pass" as const, message: "Found" } : { name, status: "warn" as const, message: "Missing" });
+}
+
+async function exists(target: string): Promise<boolean> {
+  try {
+    await fs.stat(target);
+    return true;
+  } catch {
+    return false;
   }
 }
 
