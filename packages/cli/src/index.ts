@@ -36,6 +36,7 @@ import {
   readEvidenceCards,
   runBehaviorEval,
   runBehaviorCompareEval,
+  runExternalAgentEval,
   runDoctor,
   runFullDoctor,
   resetProjectState,
@@ -404,13 +405,15 @@ sync.command("import")
   .option("--yes", "Apply import")
   .option("--review", "Write an import review artifact")
   .option("--trust-hooks", "Import hook files too")
+  .option("--max-changed-files <number>", "Block import if changed file count exceeds this number", parseIntegerOption)
   .option("--json", "Print JSON")
   .action(async (encryptedPath, options) => {
     const result = await importEncryptedProjectBehaviorPack(process.cwd(), encryptedPath, {
       passphrase: await resolvePassphrase(options),
       dryRun: options.yes !== true,
       trustHooks: options.trustHooks === true,
-      review: options.review === true
+      review: options.review === true,
+      maxChangedFiles: options.maxChangedFiles
     });
     output(options.json, result, `${result.status}: ${result.files.length} file(s)${result.reviewPath ? `\nReview: ${result.reviewPath}` : ""}`);
     process.exitCode = result.status === "blocked" ? 1 : 0;
@@ -463,9 +466,10 @@ program.command("import-pack")
   .option("--review", "Write an import review artifact")
   .option("--yes", "Apply import")
   .option("--trust-hooks", "Import hook files too")
+  .option("--max-changed-files <number>", "Block import if changed file count exceeds this number", parseIntegerOption)
   .option("--json", "Print JSON")
   .action(async (packPath, options) => {
-    const result = await importProjectBehaviorPack(process.cwd(), packPath, { dryRun: options.yes !== true, trustHooks: options.trustHooks === true, review: options.review === true });
+    const result = await importProjectBehaviorPack(process.cwd(), packPath, { dryRun: options.yes !== true, trustHooks: options.trustHooks === true, review: options.review === true, maxChangedFiles: options.maxChangedFiles });
     output(options.json, result, `${result.status}: ${result.files.length} file(s)${result.reviewPath ? `\nReview: ${result.reviewPath}` : ""}`);
     process.exitCode = result.status === "blocked" ? 1 : 0;
   });
@@ -476,9 +480,10 @@ program.command("apply-pack")
   .option("--yes", "Apply import")
   .option("--trust-hooks", "Import hook files too")
   .option("--review", "Write an import review artifact")
+  .option("--max-changed-files <number>", "Block import if changed file count exceeds this number", parseIntegerOption)
   .option("--json", "Print JSON")
   .action(async (packPath, options) => {
-    const result = await importProjectBehaviorPack(process.cwd(), packPath, { dryRun: options.yes !== true, trustHooks: options.trustHooks === true, review: options.review !== false });
+    const result = await importProjectBehaviorPack(process.cwd(), packPath, { dryRun: options.yes !== true, trustHooks: options.trustHooks === true, review: options.review !== false, maxChangedFiles: options.maxChangedFiles });
     output(options.json, result, `${result.status}: ${result.files.length} file(s)${result.reviewPath ? `\nReview: ${result.reviewPath}` : ""}`);
     process.exitCode = result.status === "blocked" ? 1 : 0;
   });
@@ -487,12 +492,27 @@ program.command("eval")
   .description("Run deterministic behavior adherence evals")
   .option("--scenarios <path>", "Scenario JSON file")
   .option("--compare-baseline", "Compare baseline replay against OpenSkillKit behavior")
-  .option("--mode <mode>", "replay|agent-ab", "replay")
+  .option("--mode <mode>", "replay|agent-ab|external-agent", "replay")
+  .option("--agent-command <path>", "External agent command for external-agent mode")
+  .option("--agent-arg <arg>", "External agent command argument; prompt path is appended", collectOption, [])
+  .option("--dry-run", "For external-agent mode, write prompts without executing")
   .option("--json", "Print JSON")
   .action(async (options) => {
     if (options.compareBaseline === true || options.mode === "agent-ab") {
       const result = await runBehaviorCompareEval({ projectRoot: process.cwd(), scenariosPath: options.scenarios });
       output(options.json, result, `Eval compare ${result.status}: improvement ${result.improvement}\nReport: ${result.artifacts.markdown}`);
+      process.exitCode = result.status === "fail" ? 1 : 0;
+      return;
+    }
+    if (options.mode === "external-agent") {
+      const result = await runExternalAgentEval({
+        projectRoot: process.cwd(),
+        scenariosPath: options.scenarios,
+        agentCommand: options.agentCommand,
+        agentArgs: options.agentArg,
+        dryRun: options.dryRun === true || !options.agentCommand
+      });
+      output(options.json, result, `External agent eval ${result.status}: ${result.mode}\nReport: ${result.artifacts.markdown}`);
       process.exitCode = result.status === "fail" ? 1 : 0;
       return;
     }

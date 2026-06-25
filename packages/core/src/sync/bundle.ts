@@ -135,7 +135,7 @@ export async function exportEncryptedProjectBehaviorPack(
 export async function importEncryptedProjectBehaviorPack(
   projectRoot: string,
   encryptedPathInput: string,
-  options: { passphrase: string; dryRun?: boolean; trustHooks?: boolean; review?: boolean }
+  options: { passphrase: string; dryRun?: boolean; trustHooks?: boolean; review?: boolean; maxChangedFiles?: number }
 ): Promise<ImportProjectBehaviorPackResult & { encryptedPath: string }> {
   if (!options.passphrase) throw new Error("Encrypted sync import requires a passphrase");
   const projectRootResolved = path.resolve(projectRoot);
@@ -160,7 +160,8 @@ export async function importEncryptedProjectBehaviorPack(
   const imported = await importProjectBehaviorPack(projectRootResolved, unpackRoot, {
     dryRun: options.dryRun,
     trustHooks: options.trustHooks,
-    review: options.review
+    review: options.review,
+    maxChangedFiles: options.maxChangedFiles
   });
   return { ...imported, encryptedPath };
 }
@@ -292,12 +293,12 @@ export interface ImportProjectBehaviorPackResult {
   status: "planned" | "imported" | "blocked";
   packPath: string;
   projectRoot: string;
-  files: Array<{ source: string; destination: string }>;
+  files: Array<{ source: string; destination: string; status: "added" | "changed" | "unchanged" }>;
   issues: string[];
   reviewPath?: string;
 }
 
-export async function importProjectBehaviorPack(projectRootInput: string, packPathInput: string, options: { dryRun?: boolean; trustHooks?: boolean; review?: boolean } = {}): Promise<ImportProjectBehaviorPackResult> {
+export async function importProjectBehaviorPack(projectRootInput: string, packPathInput: string, options: { dryRun?: boolean; trustHooks?: boolean; review?: boolean; maxChangedFiles?: number } = {}): Promise<ImportProjectBehaviorPackResult> {
   const projectRoot = path.resolve(projectRootInput);
   const packPath = path.resolve(packPathInput);
   return withFileLock(path.join(projectRoot, ".openskill-kit", ".import.lock"), async () => {
@@ -309,15 +310,27 @@ export async function importProjectBehaviorPack(projectRootInput: string, packPa
     const files = verification.files
       .filter((file) => options.trustHooks === true || !file.startsWith(".openskill-kit/compiled/hooks/"))
       .map((file) => ({ source: path.join(packPath, file), destination: path.join(projectRoot, file) }));
-    const reviewPath = options.review ? await writeImportReview(projectRoot, packPath, manifest, verification, files, options.trustHooks === true) : undefined;
-    if (options.dryRun !== false) {
-      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "planned", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"], reviewPath };
+    const plannedFiles = await Promise.all(files.map(async (file) => ({
+      ...file,
+      status: await fileImportStatus(file.source, file.destination)
+    })));
+    const changedCount = plannedFiles.filter((file) => file.status === "changed").length;
+    const gateIssues = [
+      ...(options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"]),
+      ...(typeof options.maxChangedFiles === "number" && changedCount > options.maxChangedFiles ? [`Changed file count ${changedCount} exceeds maxChangedFiles ${options.maxChangedFiles}`] : [])
+    ];
+    const reviewPath = options.review ? await writeImportReview(projectRoot, packPath, manifest, verification, plannedFiles, options.trustHooks === true) : undefined;
+    if (typeof options.maxChangedFiles === "number" && changedCount > options.maxChangedFiles) {
+      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "blocked", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath };
     }
-    for (const file of files) {
+    if (options.dryRun !== false) {
+      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "planned", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath };
+    }
+    for (const file of plannedFiles) {
       await fs.mkdir(path.dirname(file.destination), { recursive: true });
       await fs.copyFile(file.source, file.destination);
     }
-    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "imported", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"], reviewPath };
+    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "imported", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath };
   });
 }
 
@@ -326,7 +339,7 @@ async function writeImportReview(
   packPath: string,
   manifest: any,
   verification: VerifyProjectBehaviorPackResult,
-  files: Array<{ source: string; destination: string }>,
+  files: Array<{ source: string; destination: string; status: "added" | "changed" | "unchanged" }>,
   trustHooks: boolean
 ): Promise<string> {
   const id = createHash("sha256").update(`${packPath}:${JSON.stringify(manifest.hashes ?? {})}`).digest("hex").slice(0, 12);
@@ -350,11 +363,16 @@ async function writeImportReview(
     "",
     "## Files Planned",
     "",
-    ...(files.length ? files.map((file) => `- ${path.relative(projectRoot, file.destination).replace(/\\/g, "/")}`) : ["- none"]),
+    ...(files.length ? files.map((file) => `- ${file.status}: ${path.relative(projectRoot, file.destination).replace(/\\/g, "/")}`) : ["- none"]),
     ""
   ];
   await writeFileAtomic(reviewPath, lines.join("\n"));
   return reviewPath;
+}
+
+async function fileImportStatus(source: string, destination: string): Promise<"added" | "changed" | "unchanged"> {
+  if (!await exists(destination)) return "added";
+  return await sha256(source) === await sha256(destination) ? "unchanged" : "changed";
 }
 
 async function listFiles(root: string): Promise<string[]> {

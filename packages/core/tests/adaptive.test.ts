@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -105,6 +105,11 @@ describe("adaptive behavior layer", () => {
     expect(diff.changed).toHaveLength(0);
 
     const importRoot = await mkdtemp(path.join(os.tmpdir(), "osk-import-"));
+    await mkdir(path.join(importRoot, ".openskill-kit"), { recursive: true });
+    await writeFile(path.join(importRoot, ".openskill-kit", "config.json"), "{\"old\":true}\n", "utf8");
+    const blockedImport = await importProjectBehaviorPack(importRoot, pack.packPath, { maxChangedFiles: 0 });
+    expect(blockedImport.status).toBe("blocked");
+    expect(blockedImport.files.some((file) => file.status === "changed")).toBe(true);
     const importPlan = await importProjectBehaviorPack(importRoot, pack.packPath, { review: true });
     expect(importPlan.status).toBe("planned");
     expect(importPlan.issues).toContain("Hooks excluded until trustHooks is true");

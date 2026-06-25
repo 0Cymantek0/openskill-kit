@@ -85,6 +85,7 @@ openskill-kit agent install-hooks --target project --yes
 openskill-kit install --target agents-project --yes
 openskill-kit eval
 openskill-kit eval --compare-baseline
+openskill-kit eval --mode external-agent --dry-run
 openskill-kit status --explain
 openskill-kit doctor --full
 openskill-kit compact
@@ -96,6 +97,7 @@ openskill-kit verify-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit inspect-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit diff-pack <old-pack-path> <new-pack-path>
 openskill-kit import-pack <pack-path> --review --dry-run
+openskill-kit import-pack <pack-path> --review --max-changed-files 5
 openskill-kit apply-pack <pack-path> --yes
 openskill-kit prune --keep-runs 5
 openskill-kit archive
@@ -209,7 +211,8 @@ target-aware context/skill/manifest/hook/MCP/plugin compilation, standalone hook
 managed AGENTS/CLAUDE previews and installer, plugin output, MCP config
 generation, project skill install, Project Behavior Pack
 export/sign/verify/inspect/diff/review/apply, behavior evals, maintenance
-commands, CLI, MCP tools, tests, and smoke coverage.
+commands, import diff gates, external-agent eval prompt harness, CLI, MCP tools,
+tests, and smoke coverage.
 
 Compiled skills include the broad `project-behavior` skill plus scoped dynamic
 shards such as `project-testing`, `project-security`, and `project-architecture`

@@ -8,6 +8,7 @@ import {
   retrieveRelevantPreferences,
   runBehaviorCompareEval,
   runBehaviorEval,
+  runExternalAgentEval,
   type PreferenceGraph,
   type PreferenceNode
 } from "../src/index.js";
@@ -81,6 +82,10 @@ describe("preference retrieval and policy artifacts", () => {
     const compare = await runBehaviorCompareEval({ projectRoot: root, now: new Date("2026-06-25T00:00:01.000Z") });
     expect(compare.openskillKit.adherence).toBeGreaterThanOrEqual(compare.baseline.adherence);
     expect(compare.artifacts.markdown).toContain("behavior-compare.md");
+    const external = await runExternalAgentEval({ projectRoot: root, now: new Date("2026-06-25T00:00:02.000Z"), dryRun: true });
+    expect(external.status).toBe("planned");
+    expect(external.results[0]?.promptPath).toContain("external-agent");
+    await expect(stat(external.artifacts.markdown)).resolves.toBeTruthy();
   });
 });
 

@@ -71,6 +71,13 @@ OpenSkillKit-enabled retrieval and compiled command policy. It is not a live
 external-agent benchmark, but it gives a local scorecard for preference
 adherence before adding heavier A/B infrastructure.
 
+## External Agent Eval Harness
+
+Prompt harness that writes per-scenario task plus retrieved behavior prompts for
+an external agent. It runs in dry-run mode by default; when given an explicit
+agent command, it executes without a shell and scores output against expected and
+forbidden behavior text.
+
 ## Skill Facet
 
 A grouped domain of related preferences such as testing, security, frontend, or
@@ -105,6 +112,10 @@ deciding.
 
 Shareable, privacy-preserving bundle containing reviewed behavior artifacts and
 compiled agent-facing outputs.
+
+Imports produce add/change/unchanged file plans and can block when changed-file
+count exceeds a caller-supplied threshold. Hooks stay excluded unless explicitly
+trusted.
 
 ## Encrypted Sync Envelope
 
