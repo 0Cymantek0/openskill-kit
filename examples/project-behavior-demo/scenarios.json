@@ -1,0 +1,18 @@
+{
+  "scenarios": [
+    {
+      "schemaVersion": "openskill-kit.eval-scenario.v1",
+      "id": "parser-tokenizer-behavior",
+      "title": "Parser tokenizer scoped change",
+      "prompt": "Change parser token handling in src/parser/tokenizer.ts without broad rewrite.",
+      "paths": ["src/parser/tokenizer.ts"],
+      "expectedPreferenceText": [
+        "Prefer preserving user-edited patterns in src/parser/tokenizer.ts",
+        "Do not repeat rejected agent approach"
+      ],
+      "expectedPreferenceIds": [],
+      "expectedCommandText": ["npm test -- parser"],
+      "forbiddenBehaviorText": ["rewrite parser module broadly"]
+    }
+  ]
+}

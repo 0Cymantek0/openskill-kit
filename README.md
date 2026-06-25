@@ -157,13 +157,18 @@ remain available for compatibility.
 5. Commit the safe subset of `.openskill-kit/`.
 6. Export a Project Behavior Pack for contributors when needed.
 
+See [docs/release-checklist.md](docs/release-checklist.md) for publish checks
+and [examples/project-behavior-demo](examples/project-behavior-demo) for a
+static before/after behavior fixture.
+
 ## Current Boundary
 
 This release implements the production spine: adaptive config, event store,
-redaction, deterministic signal extraction, Preference Graph, Learning Review,
-context and skill compilation, standalone hook scripts, plugin output, MCP config
-generation, project skill install, Project Behavior Pack export/verify/import,
-behavior evals, CLI, MCP tools, tests, and smoke coverage.
+redaction, deterministic and proposal-based signal extraction, Preference Graph,
+Learning Review, task/path-aware retrieval, context and skill compilation,
+standalone hook scripts, plugin output, MCP config generation, project skill
+install, Project Behavior Pack export/sign/verify/inspect/diff/review/apply,
+behavior evals, maintenance commands, CLI, MCP tools, tests, and smoke coverage.
 
-Advanced AST extraction, hosted sync, signatures, and benchmark-grade
-downstream agent replay are roadmap items. They are not faked.
+Future depth should focus on richer scope inference, larger golden scenario
+packs, hosted sync, and calibration from accepted reviews and eval outcomes.
