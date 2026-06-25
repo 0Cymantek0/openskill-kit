@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createHash, generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, generateKeyPairSync, randomBytes, scryptSync, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
 import { readProjectConfig } from "../events/store.js";
 import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 
@@ -10,6 +10,15 @@ export interface ProjectBehaviorPackResult {
   packPath: string;
   manifestPath: string;
   files: string[];
+}
+
+export interface EncryptedProjectBehaviorPackResult {
+  schemaVersion: "openskill-kit.encrypted-project-pack.v1";
+  status: "exported";
+  encryptedPath: string;
+  sourcePackPath: string;
+  fileCount: number;
+  privacyStatement: string;
 }
 
 export async function exportProjectBehaviorPack(projectRoot: string): Promise<ProjectBehaviorPackResult> {
@@ -71,6 +80,89 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
     });
     return { schemaVersion: "openskill-kit.project-pack.v1", packPath: packRoot, manifestPath, files: [...copied, "manifest.json"].sort() };
   });
+}
+
+export async function exportEncryptedProjectBehaviorPack(
+  projectRoot: string,
+  options: { passphrase: string; outputPath?: string }
+): Promise<EncryptedProjectBehaviorPackResult> {
+  if (!options.passphrase) throw new Error("Encrypted sync export requires a passphrase");
+  const root = path.resolve(projectRoot);
+  const pack = await exportProjectBehaviorPack(root);
+  const verification = await verifyProjectBehaviorPack(pack.packPath);
+  if (verification.status !== "pass") throw new Error(`Cannot encrypt invalid behavior pack: ${verification.issues.join("; ")}`);
+  const files = await readPackPayload(pack.packPath, [...verification.files, "manifest.json"]);
+  const manifest = await readManifest(pack.packPath);
+  const plaintext = Buffer.from(JSON.stringify({
+    schemaVersion: "openskill-kit.sync-payload.v1",
+    createdAt: new Date().toISOString(),
+    privacyStatement: manifest.privacyStatement,
+    files
+  }), "utf8");
+  const salt = randomBytes(16);
+  const iv = randomBytes(12);
+  const key = scryptSync(options.passphrase, salt, 32);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const encryptedPath = path.resolve(options.outputPath ?? path.join(root, ".openskill-kit", "sync", "project-behavior-pack.enc.json"));
+  await writeJsonAtomic(encryptedPath, {
+    schemaVersion: "openskill-kit.encrypted-project-pack.v1",
+    algorithm: "aes-256-gcm",
+    kdf: "scrypt",
+    createdAt: new Date().toISOString(),
+    sourcePackHash: createHash("sha256").update(JSON.stringify(manifest.hashes ?? {})).digest("hex"),
+    privacy: {
+      rawEventsIncluded: false,
+      rawSignalsIncluded: false,
+      statement: manifest.privacyStatement
+    },
+    salt: salt.toString("base64"),
+    iv: iv.toString("base64"),
+    tag: tag.toString("base64"),
+    ciphertext: ciphertext.toString("base64")
+  });
+  return {
+    schemaVersion: "openskill-kit.encrypted-project-pack.v1",
+    status: "exported",
+    encryptedPath,
+    sourcePackPath: pack.packPath,
+    fileCount: verification.files.length + 1,
+    privacyStatement: manifest.privacyStatement
+  };
+}
+
+export async function importEncryptedProjectBehaviorPack(
+  projectRoot: string,
+  encryptedPathInput: string,
+  options: { passphrase: string; dryRun?: boolean; trustHooks?: boolean; review?: boolean }
+): Promise<ImportProjectBehaviorPackResult & { encryptedPath: string }> {
+  if (!options.passphrase) throw new Error("Encrypted sync import requires a passphrase");
+  const projectRootResolved = path.resolve(projectRoot);
+  const encryptedPath = path.resolve(encryptedPathInput);
+  const envelope = JSON.parse(await fs.readFile(encryptedPath, "utf8"));
+  if (envelope.schemaVersion !== "openskill-kit.encrypted-project-pack.v1") throw new Error("Invalid encrypted pack schema");
+  if (envelope.algorithm !== "aes-256-gcm" || envelope.kdf !== "scrypt") throw new Error("Unsupported encrypted pack algorithm");
+  const key = scryptSync(options.passphrase, Buffer.from(envelope.salt, "base64"), 32);
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(envelope.iv, "base64"));
+  decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
+  const plaintext = Buffer.concat([decipher.update(Buffer.from(envelope.ciphertext, "base64")), decipher.final()]);
+  const payload = JSON.parse(plaintext.toString("utf8")) as { schemaVersion: string; files: Record<string, string> };
+  if (payload.schemaVersion !== "openskill-kit.sync-payload.v1") throw new Error("Invalid encrypted sync payload");
+  const unpackRoot = path.join(os.tmpdir(), `openskill-kit-sync-${createHash("sha256").update(encryptedPath).digest("hex").slice(0, 12)}`);
+  await fs.rm(unpackRoot, { recursive: true, force: true });
+  for (const [rel, base64] of Object.entries(payload.files)) {
+    const normalized = normalizePackRel(rel);
+    const dest = path.join(unpackRoot, normalized);
+    await fs.mkdir(path.dirname(dest), { recursive: true });
+    await fs.writeFile(dest, Buffer.from(base64, "base64"));
+  }
+  const imported = await importProjectBehaviorPack(projectRootResolved, unpackRoot, {
+    dryRun: options.dryRun,
+    trustHooks: options.trustHooks,
+    review: options.review
+  });
+  return { ...imported, encryptedPath };
 }
 
 export interface VerifyProjectBehaviorPackResult {
@@ -289,6 +381,21 @@ async function exists(file: string): Promise<boolean> {
 
 async function readManifest(packPath: string): Promise<any> {
   return JSON.parse(await fs.readFile(path.join(packPath, "manifest.json"), "utf8"));
+}
+
+async function readPackPayload(packPath: string, files: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const rel of [...new Set(files)].sort()) {
+    const normalized = normalizePackRel(rel);
+    out[normalized] = (await fs.readFile(path.join(packPath, normalized))).toString("base64");
+  }
+  return out;
+}
+
+function normalizePackRel(rel: string): string {
+  const normalized = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalized || normalized.includes("..") || path.isAbsolute(normalized)) throw new Error(`Unsafe pack path: ${rel}`);
+  return normalized;
 }
 
 async function sha256(file: string): Promise<string> {

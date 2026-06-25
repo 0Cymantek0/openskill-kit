@@ -89,6 +89,8 @@ openskill-kit status --explain
 openskill-kit doctor --full
 openskill-kit compact
 openskill-kit pack
+openskill-kit sync export --passphrase-file .openskill-kit/sync.pass
+openskill-kit sync import .openskill-kit/sync/project-behavior-pack.enc.json --passphrase-file .openskill-kit/sync.pass --review
 openskill-kit sign-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit verify-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit inspect-pack .openskill-kit/compiled/project-behavior-pack
@@ -130,6 +132,8 @@ candidate batch.
 - Install writes receipts under `.openskill-kit/installs/`.
 - Project Behavior Packs exclude private events, raw signals, review drafts, and
   run outputs by default.
+- Encrypted sync envelopes wrap the already privacy-filtered pack with
+  AES-256-GCM and require an explicit passphrase or passphrase file.
 
 ## Agent Integration
 
@@ -200,7 +204,7 @@ redaction with config validation, deterministic and proposal-based signal
 extraction, Preference Graph, Evidence Cards, memory integrity checks, Learning
 Review, extractor registry, v2 preference metadata, calibration from review outcomes,
 scope/evidence/eval-aware calibration, progressive task/path-aware retrieval with
-budget traces,
+budget traces, encrypted privacy-safe sync envelopes,
 target-aware context/skill/manifest/hook/MCP/plugin compilation, standalone hook scripts,
 managed AGENTS/CLAUDE previews and installer, plugin output, MCP config
 generation, project skill install, Project Behavior Pack

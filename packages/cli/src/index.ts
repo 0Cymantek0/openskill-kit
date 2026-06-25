@@ -11,6 +11,7 @@ import {
   evaluateSkill,
   explainPreference,
   exportProjectBehaviorPack,
+  exportEncryptedProjectBehaviorPack,
   extractSignals,
   evolveSkill,
   explainAdaptiveStatus,
@@ -21,6 +22,7 @@ import {
   uninstallInstructionManifests,
   initAdaptiveProject,
   importProjectBehaviorPack,
+  importEncryptedProjectBehaviorPack,
   installSkill,
   inspectProjectBehaviorPack,
   loadSkillPackage,
@@ -377,6 +379,43 @@ program.command("pack")
     output(options.json, result, `Exported pack ${result.packPath}`);
   });
 
+const sync = program.command("sync")
+  .description("Export or import encrypted privacy-safe behavior packs");
+
+sync.command("export")
+  .description("Export an encrypted Project Behavior Pack envelope")
+  .option("--output <path>", "Encrypted output path")
+  .option("--passphrase <text>", "Encryption passphrase")
+  .option("--passphrase-file <path>", "Read encryption passphrase from file")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await exportEncryptedProjectBehaviorPack(process.cwd(), {
+      outputPath: options.output,
+      passphrase: await resolvePassphrase(options)
+    });
+    output(options.json, result, `Encrypted pack: ${result.encryptedPath}\nFiles: ${result.fileCount}`);
+  });
+
+sync.command("import")
+  .description("Decrypt and import a Project Behavior Pack envelope")
+  .argument("<encrypted-path>", "Encrypted pack JSON")
+  .option("--passphrase <text>", "Encryption passphrase")
+  .option("--passphrase-file <path>", "Read encryption passphrase from file")
+  .option("--yes", "Apply import")
+  .option("--review", "Write an import review artifact")
+  .option("--trust-hooks", "Import hook files too")
+  .option("--json", "Print JSON")
+  .action(async (encryptedPath, options) => {
+    const result = await importEncryptedProjectBehaviorPack(process.cwd(), encryptedPath, {
+      passphrase: await resolvePassphrase(options),
+      dryRun: options.yes !== true,
+      trustHooks: options.trustHooks === true,
+      review: options.review === true
+    });
+    output(options.json, result, `${result.status}: ${result.files.length} file(s)${result.reviewPath ? `\nReview: ${result.reviewPath}` : ""}`);
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
 program.command("verify-pack")
   .description("Verify a Project Behavior Pack manifest and hashes")
   .argument("<pack-path>", "Pack directory")
@@ -682,6 +721,15 @@ function parseFloatOption(value: string): number {
   const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed)) throw new Error(`Invalid number: ${value}`);
   return parsed;
+}
+
+async function resolvePassphrase(options: { passphrase?: string; passphraseFile?: string }): Promise<string> {
+  const value = options.passphraseFile
+    ? await fs.readFile(path.resolve(options.passphraseFile), "utf8").then((text) => text.trim())
+    : options.passphrase;
+  if (!value) throw new Error("Passphrase required. Use --passphrase-file or --passphrase.");
+  if (value.length < 8) throw new Error("Passphrase must be at least 8 characters.");
+  return value;
 }
 
 async function resolveSkillArg(value: string): Promise<string> {

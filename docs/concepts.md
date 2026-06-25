@@ -105,3 +105,10 @@ deciding.
 
 Shareable, privacy-preserving bundle containing reviewed behavior artifacts and
 compiled agent-facing outputs.
+
+## Encrypted Sync Envelope
+
+Opt-in encrypted JSON wrapper around a verified Project Behavior Pack. The
+payload excludes raw events, raw signals, private evidence blobs, review drafts,
+eval run output, and reports, then encrypts the remaining pack files with
+AES-256-GCM using a passphrase-derived key.

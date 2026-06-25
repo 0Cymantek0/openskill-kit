@@ -7,10 +7,12 @@ import {
   appendEvent,
   applyPreferenceReview,
   compileBehaviorLayer,
+  exportEncryptedProjectBehaviorPack,
   exportProjectBehaviorPack,
   extractSignals,
   getAdaptiveStatus,
   initAdaptiveProject,
+  importEncryptedProjectBehaviorPack,
   importProjectBehaviorPack,
   inspectProjectBehaviorPack,
   installSkill,
@@ -107,6 +109,16 @@ describe("adaptive behavior layer", () => {
     expect(importPlan.status).toBe("planned");
     expect(importPlan.issues).toContain("Hooks excluded until trustHooks is true");
     await expect(stat(importPlan.reviewPath!)).resolves.toBeTruthy();
+
+    const encrypted = await exportEncryptedProjectBehaviorPack(root, { passphrase: "test-passphrase" });
+    await expect(stat(encrypted.encryptedPath)).resolves.toBeTruthy();
+    const encryptedText = await readFile(encrypted.encryptedPath, "utf8");
+    expect(encryptedText).not.toContain(sentinelSecret);
+    await expect(importEncryptedProjectBehaviorPack(importRoot, encrypted.encryptedPath, { passphrase: "wrong-passphrase" })).rejects.toThrow();
+    const encryptedPlan = await importEncryptedProjectBehaviorPack(importRoot, encrypted.encryptedPath, { passphrase: "test-passphrase", review: true });
+    expect(encryptedPlan.status).toBe("planned");
+    expect(encryptedPlan.encryptedPath).toBe(encrypted.encryptedPath);
+
     const imported = await importProjectBehaviorPack(importRoot, pack.packPath, { dryRun: false, trustHooks: true });
     expect(imported.status).toBe("imported");
     await expect(stat(path.join(importRoot, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"))).resolves.toBeTruthy();
