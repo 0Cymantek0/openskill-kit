@@ -53,6 +53,7 @@ export function extractFromEvent(event: OpenSkillEvent, now = new Date()): Signa
       ? `Prefer preserving user-edited patterns in ${paths.slice(0, 3).join(", ")}`
       : "Prefer preserving user-edited project patterns";
     out.push(signalFromEvent(event, now, "edit-delta", categorize(`${paths.join(" ")} ${text}`), statement, "positive", 0.66, paths, summarizeText(text)));
+    out.push(...extractEditDeltaTaste(event, text, now));
   }
   return out;
 }
@@ -128,6 +129,82 @@ function extractTestOutcome(event: OpenSkillEvent, now: Date): Signal[] {
     undefined,
     command.command
   ));
+}
+
+function extractEditDeltaTaste(event: OpenSkillEvent, text: string, now: Date): Signal[] {
+  const normalized = event.normalized as Record<string, unknown>;
+  const diffText = [
+    normalized.diff,
+    normalized.diffSnippet,
+    normalized.patch,
+    normalized.patchSnippet,
+    normalized.before,
+    normalized.beforeSnippet,
+    normalized.after,
+    normalized.afterSnippet,
+    normalized.original,
+    normalized.updated,
+    text
+  ].filter((value): value is string => typeof value === "string").join("\n");
+  if (!diffText.trim()) return [];
+  const paths = event.files.map((file) => file.path);
+  const scope = paths.slice(0, 3).join(", ") || "edited files";
+  const signals: Signal[] = [];
+  if (looksLikeDependencyRemoval(diffText)) {
+    signals.push(signalFromEvent(
+      event,
+      now,
+      "edit-delta",
+      "architecture",
+      `Prefer dependency-light edits in ${scope}`,
+      "positive",
+      0.82,
+      paths,
+      summarizeText(diffText)
+    ));
+  }
+  if (looksLikeSecretLoggingRemoval(diffText)) {
+    signals.push(signalFromEvent(
+      event,
+      now,
+      "edit-delta",
+      "security",
+      `Do not log secrets or raw credentials in ${scope}`,
+      "negative",
+      0.86,
+      paths,
+      summarizeText(diffText)
+    ));
+  }
+  if (looksLikeFocusedTestAddition(diffText)) {
+    signals.push(signalFromEvent(
+      event,
+      now,
+      "edit-delta",
+      "testing",
+      `Prefer adding focused regression tests with edits in ${scope}`,
+      "positive",
+      0.78,
+      paths,
+      summarizeText(diffText)
+    ));
+  }
+  return signals;
+}
+
+function looksLikeDependencyRemoval(text: string): boolean {
+  const removedImport = /^-\s*(import\s+.+\s+from\s+['"][^.'"][^'"]+['"]|const\s+.+\s*=\s*require\(['"][^.'"][^'"]+['"]\))/m.test(text);
+  const removedPackageDep = /^-\s*"[^"]+"\s*:\s*"[^"]+"/m.test(text) && /dependencies|devDependencies|package\.json/i.test(text);
+  const addedNativeOrLocal = /^\+\s*(import\s+.+\s+from\s+['"][.][^'"]+['"]|const\s+.+\s*=\s*require\(['"][.][^'"]+['"]\)|function\s+|export\s+function|const\s+\w+\s*=)/m.test(text);
+  return (removedImport || removedPackageDep) && addedNativeOrLocal;
+}
+
+function looksLikeSecretLoggingRemoval(text: string): boolean {
+  return /^-\s*console\.(log|debug|info|warn|error)\(.{0,120}(token|secret|password|credential|authorization|api[_-]?key)/im.test(text);
+}
+
+function looksLikeFocusedTestAddition(text: string): boolean {
+  return /^\+\s*(it|test|describe)\(['"].{0,120}(regression|edge|parser|focused|specific|bug|fixture)/im.test(text);
 }
 
 function extractRepeatedCommandSignals(events: OpenSkillEvent[], now: Date): Signal[] {

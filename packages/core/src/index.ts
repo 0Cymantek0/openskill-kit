@@ -52,3 +52,4 @@ export * from "./sync/bundle.js";
 export * from "./storage/atomic.js";
 export * from "./evals/schema.js";
 export * from "./evals/replay.js";
+export * from "./evals/agent-ab.js";

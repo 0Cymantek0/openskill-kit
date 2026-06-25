@@ -6,6 +6,7 @@ import {
   compileBehaviorLayer,
   initAdaptiveProject,
   retrieveRelevantPreferences,
+  runBehaviorCompareEval,
   runBehaviorEval,
   type PreferenceGraph,
   type PreferenceNode
@@ -28,6 +29,10 @@ describe("preference retrieval and policy artifacts", () => {
     });
     expect(bundle.items[0]?.node.id).toBe("pref_parser-tests");
     expect(bundle.items[0]?.reasons.join(" ")).toContain("path:src/parser");
+    expect(bundle.items[0]?.reasons.join(" ")).toContain("task:testing");
+    expect(bundle.trace.inferred.languages).toContain("typescript");
+    expect(bundle.trace.includedIds).toContain("pref_parser-tests");
+    expect(bundle.trace.omitted.some((item) => item.reason === "over-limit")).toBe(true);
     expect(bundle.compactMarkdown).toContain("parser focused tests");
   });
 
@@ -52,6 +57,9 @@ describe("preference retrieval and policy artifacts", () => {
     expect(evalReport.status).toBe("pass");
     expect(evalReport.retrievalPrecision).toBe(1);
     expect(evalReport.results[0]?.checks.map((check) => check.name)).toEqual(expect.arrayContaining(["retrieval", "plan", "command-policy", "avoidance", "privacy"]));
+    const compare = await runBehaviorCompareEval({ projectRoot: root, now: new Date("2026-06-25T00:00:01.000Z") });
+    expect(compare.openskillKit.adherence).toBeGreaterThanOrEqual(compare.baseline.adherence);
+    expect(compare.artifacts.markdown).toContain("behavior-compare.md");
   });
 });
 

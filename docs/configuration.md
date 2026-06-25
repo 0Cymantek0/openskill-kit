@@ -36,6 +36,13 @@ openskill-kit compile --target project-rules
 skill, hooks, MCP metadata, and manifest files it needs. Target filtering is
 best used in CI or preview workflows where you want narrow artifact churn.
 
+## Retrieval budget
+
+`openskill-kit prefs` and the MCP preference tools return compact behavior plus
+a trace explaining inferred task type, language, included preferences, and
+omitted preferences. Use `--path` and category filters to keep agent context
+small and scoped to the current task.
+
 ## Redaction config
 
 `privacy.customRedactions` accepts JavaScript regular-expression source strings.

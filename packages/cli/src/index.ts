@@ -30,6 +30,7 @@ import {
   readRegistry,
   readCalibrationReport,
   runBehaviorEval,
+  runBehaviorCompareEval,
   runDoctor,
   runFullDoctor,
   resetProjectState,
@@ -421,8 +422,17 @@ program.command("apply-pack")
 program.command("eval")
   .description("Run deterministic behavior adherence evals")
   .option("--scenarios <path>", "Scenario JSON file")
+  .option("--compare-baseline", "Compare baseline replay against OpenSkillKit behavior")
+  .option("--mode <mode>", "replay|agent-ab", "replay")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (options.compareBaseline === true || options.mode === "agent-ab") {
+      const result = await runBehaviorCompareEval({ projectRoot: process.cwd(), scenariosPath: options.scenarios });
+      output(options.json, result, `Eval compare ${result.status}: improvement ${result.improvement}\nReport: ${result.artifacts.markdown}`);
+      process.exitCode = result.status === "fail" ? 1 : 0;
+      return;
+    }
+    if (options.mode !== "replay") throw new Error(`Invalid eval mode: ${options.mode}`);
     const result = await runBehaviorEval({ projectRoot: process.cwd(), scenariosPath: options.scenarios });
     output(options.json, result, `Eval ${result.status}: adherence ${result.adherence}\nReport: ${result.artifacts.markdown}`);
     process.exitCode = result.status === "fail" ? 1 : 0;

@@ -40,6 +40,19 @@ Review-outcome reliability model. Activating or locking candidates increases
 category/extractor reliability; rejecting or demoting lowers it. Future graph
 updates use this reliability to downweight weak signal sources.
 
+## Retrieval Trace
+
+Every preference retrieval includes inferred languages, task types, considered
+preference count, included IDs, and omitted reasons. This keeps dynamic behavior
+injection explainable and helps tune context budget without guessing.
+
+## Baseline Compare Eval
+
+Deterministic replay that compares a baseline prompt-only plan with the current
+OpenSkillKit-enabled retrieval and compiled command policy. It is not a live
+external-agent benchmark, but it gives a local scorecard for preference
+adherence before adding heavier A/B infrastructure.
+
 ## Skill Facet
 
 A grouped domain of related preferences such as testing, security, frontend, or

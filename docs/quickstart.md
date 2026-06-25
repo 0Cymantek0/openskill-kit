@@ -15,6 +15,7 @@ npx openskill-kit agent doctor
 npx openskill-kit agent install-hooks --target project --yes
 npx openskill-kit install --target agents-project --yes
 npx openskill-kit eval
+npx openskill-kit eval --compare-baseline
 npx openskill-kit explain <preference-id> --evidence
 npx openskill-kit calibration
 npx openskill-kit pack
@@ -41,6 +42,7 @@ Generated adaptive artifacts:
 - `.openskill-kit/compiled/plugin/`: attachable agent plugin bundle.
 - `.openskill-kit/compiled/project-behavior-pack/`: shareable reviewed behavior.
 - `.openskill-kit/sessions/summaries/`: session-level learning summaries.
+- `.openskill-kit/evals/runs/*/behavior-compare.md`: baseline vs OpenSkillKit replay scorecard.
 - `.agents/hooks/openskill-kit.json`: installed local hook adapter config.
 - `AGENTS.md`, `CLAUDE.md`, `.claude/rules/`: optional managed project manifests after `agent install-manifests --yes`.
 

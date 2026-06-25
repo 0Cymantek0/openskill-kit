@@ -154,6 +154,30 @@ describe("deep architecture hardening", () => {
     const explained = await explainAdaptiveStatus(root);
     expect(explained.calibration?.categories.testing.reliability).toBeGreaterThan(0.5);
   });
+
+  it("extracts specific taste from user edit deltas", async () => {
+    const root = await tempProject();
+    await appendEvent(root, {
+      sessionId: "edit-delta",
+      eventType: "user-edited",
+      source: { adapter: "test" },
+      files: [{ path: "src/parser/tokenizer.ts", action: "edit" }],
+      normalized: {
+        diff: [
+          "- import leftPad from 'left-pad';",
+          "- console.log('token', token);",
+          "+ export function padToken(value: string): string {",
+          "+   return value.padStart(2, '0');",
+          "+ }",
+          "+ it('parser regression keeps token width', () => {})"
+        ].join("\n")
+      }
+    });
+    const learned = await import("../src/signals/extract.js").then((mod) => mod.extractSignals(root, new Date("2026-06-25T00:01:00.000Z")));
+    expect(learned.signals.some((signal) => signal.statement.includes("dependency-light edits"))).toBe(true);
+    expect(learned.signals.some((signal) => signal.statement.includes("Do not log secrets"))).toBe(true);
+    expect(learned.signals.some((signal) => signal.statement.includes("focused regression tests"))).toBe(true);
+  });
 });
 
 async function tempProject(): Promise<string> {

@@ -34,6 +34,7 @@ import {
   diffProjectBehaviorPacks,
   runAgentDoctor,
   runBehaviorEval,
+  runBehaviorCompareEval,
   runDoctor,
   runFullDoctor,
   runLifecycleOnce,
@@ -481,6 +482,20 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, scenariosPath }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runBehaviorEval({ projectRoot: root, scenariosPath }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_run_agent_ab_eval",
+    {
+      title: "OpenSkillKit Agent A/B Eval Preview",
+      description: "Compare baseline replay against OpenSkillKit-enabled behavior for the same scenarios.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, scenariosPath: z.string().optional() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, scenariosPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runBehaviorCompareEval({ projectRoot: root, scenariosPath }), root);
     }
   );
 

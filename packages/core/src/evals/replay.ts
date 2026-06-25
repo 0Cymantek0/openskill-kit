@@ -11,7 +11,7 @@ export interface RunBehaviorEvalOptions {
 
 export async function runBehaviorEval(options: RunBehaviorEvalOptions) {
   const root = path.resolve(options.projectRoot);
-  const scenarios = await loadScenarios(root, options.scenariosPath);
+  const scenarios = await loadBehaviorEvalScenarios(root, options.scenariosPath);
   const corpus = await compiledCorpus(root);
   const commandPolicy = await fs.readFile(path.join(root, ".openskill-kit", "compiled", "behavior", "command-policy.md"), "utf8").catch(() => "");
   const results = await Promise.all(scenarios.map(async (scenario) => evaluateScenario(root, scenario, corpus, commandPolicy, options.now ?? new Date())));
@@ -90,7 +90,7 @@ function check(name: string, passed: boolean, details: string) {
   return { name, status: passed ? "pass" as const : "fail" as const, details };
 }
 
-async function loadScenarios(root: string, scenariosPath?: string): Promise<BehaviorEvalScenario[]> {
+export async function loadBehaviorEvalScenarios(root: string, scenariosPath?: string): Promise<BehaviorEvalScenario[]> {
   if (scenariosPath) {
     const parsed = JSON.parse(await fs.readFile(path.resolve(root, scenariosPath), "utf8"));
     const values = Array.isArray(parsed) ? parsed : parsed.scenarios;

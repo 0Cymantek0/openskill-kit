@@ -80,6 +80,7 @@ openskill-kit agent install-manifests --target project --yes
 openskill-kit agent install-hooks --target project --yes
 openskill-kit install --target agents-project --yes
 openskill-kit eval
+openskill-kit eval --compare-baseline
 openskill-kit status --explain
 openskill-kit doctor --full
 openskill-kit compact
@@ -155,6 +156,7 @@ Key tools:
 - `osk_diff_behavior_pack`
 - `osk_import_behavior_pack`
 - `osk_run_behavior_eval`
+- `osk_run_agent_ab_eval`
 - `osk_agent_doctor`
 - `osk_install_agent_hooks`
 - `osk_run_lifecycle_once`
@@ -193,5 +195,5 @@ generation, project skill install, Project Behavior Pack
 export/sign/verify/inspect/diff/review/apply, behavior evals, maintenance
 commands, CLI, MCP tools, tests, and smoke coverage.
 
-Future depth should focus on richer scope inference, larger golden scenario
-packs, hosted sync, review TUI, and real agent A/B evals.
+Future depth should focus on larger golden scenario packs, hosted sync, review
+TUI, and real external-agent A/B evals.
