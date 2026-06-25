@@ -7,6 +7,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
   appendEvent,
+  applyPreferenceReview,
   compileBehaviorLayer,
   draftSkill,
   evaluateSkill,
@@ -117,7 +118,7 @@ export function createOpenSkillMcpServer(): McpServer {
         projectRoot: projectRootSchema,
         query: z.string().optional(),
         paths: z.array(z.string()).default([]),
-        categories: z.array(z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "security", "workflow", "general"])).default([]),
+        categories: z.array(z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "api-design", "security", "workflow", "style", "dependency-policy", "review-policy", "command-policy", "documentation", "error-handling", "general"])).default([]),
         limit: z.number().int().min(1).max(50).default(12)
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
@@ -234,6 +235,50 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await buildReviewQueue(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_apply_review_actions",
+    {
+      title: "OpenSkillKit Apply Review Actions",
+      description: "Apply structured review decisions: activate, reject, lock, demote, promote, edit, merge, or split preferences.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        activate: z.array(z.string().min(1)).default([]),
+        reject: z.array(z.string().min(1)).default([]),
+        lock: z.array(z.string().min(1)).default([]),
+        demote: z.array(z.string().min(1)).default([]),
+        promote: z.array(z.string().min(1)).default([]),
+        promoteGlobal: z.array(z.string().min(1)).default([]),
+        activateAll: z.boolean().default(false),
+        edits: z.array(z.object({
+          id: z.string().min(1),
+          title: z.string().optional(),
+          statement: z.string().optional(),
+          category: z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "api-design", "security", "workflow", "style", "dependency-policy", "review-policy", "command-policy", "documentation", "error-handling", "general"]).optional(),
+          scope: z.object({
+            level: z.enum(["project", "path", "directory", "package", "language", "task", "user", "global"]),
+            paths: z.array(z.string()).default([])
+          }).optional(),
+          confidence: z.number().min(0).max(1).optional(),
+          polarity: z.enum(["positive", "negative", "neutral"]).optional()
+        })).default([]),
+        merges: z.array(z.object({
+          targetId: z.string().min(1),
+          sourceIds: z.array(z.string().min(1)).min(1),
+          statement: z.string().optional()
+        })).default([]),
+        splits: z.array(z.object({
+          id: z.string().min(1),
+          statements: z.array(z.string().min(8)).min(2)
+        })).default([])
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, ...options }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await applyPreferenceReview(root, options), root);
     }
   );
 

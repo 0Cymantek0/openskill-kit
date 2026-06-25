@@ -59,6 +59,11 @@ openskill-kit review --queue
 openskill-kit review
 openskill-kit review --activate <preference-id>
 openskill-kit review --reject <preference-id>
+openskill-kit review --edit <preference-id> --statement "Prefer focused tests before broad checks."
+openskill-kit review --merge-into <target-id> --merge-source <source-id>
+openskill-kit review --split <preference-id> --split-statement "Prefer focused tests first." --split-statement "Prefer full smoke before release."
+openskill-kit review --promote <preference-id>
+openskill-kit review --demote <preference-id>
 openskill-kit review --activate-all
 openskill-kit compile
 openskill-kit explain <preference-id>
@@ -118,6 +123,7 @@ Key tools:
 - `osk_record_event`
 - `osk_propose_preference`
 - `osk_get_review_queue`
+- `osk_apply_review_actions`
 - `osk_learn_from_session`
 - `osk_compile_behavior_layer`
 - `osk_explain_preference`

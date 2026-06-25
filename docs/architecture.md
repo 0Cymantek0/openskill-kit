@@ -104,6 +104,7 @@ generated skill text.
 - `osk_record_event`
 - `osk_propose_preference`
 - `osk_get_review_queue`
+- `osk_apply_review_actions`
 - `osk_learn_from_session`
 - `osk_compile_behavior_layer`
 - `osk_explain_preference`

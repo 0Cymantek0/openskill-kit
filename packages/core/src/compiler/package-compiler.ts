@@ -43,6 +43,7 @@ export async function compileBehaviorLayer(projectRoot: string): Promise<Compile
         "osk_explain_preference",
         "osk_propose_preference",
         "osk_get_review_queue",
+        "osk_apply_review_actions",
         "osk_export_behavior_pack",
         "osk_sign_behavior_pack",
         "osk_verify_behavior_pack",

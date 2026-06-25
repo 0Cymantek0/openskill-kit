@@ -176,6 +176,19 @@ program.command("review")
   .option("--activate <id>", "Activate preference id", collectOption, [])
   .option("--reject <id>", "Reject preference id", collectOption, [])
   .option("--lock <id>", "Lock preference id", collectOption, [])
+  .option("--demote <id>", "Move active or locked preference back to candidate", collectOption, [])
+  .option("--promote <id>", "Promote preference scope to user", collectOption, [])
+  .option("--promote-global <id>", "Promote preference scope to global when config allows", collectOption, [])
+  .option("--edit <id>", "Edit one preference id")
+  .option("--statement <text>", "Edited statement text")
+  .option("--category <category>", "Edited category")
+  .option("--scope <level>", "Edited scope level")
+  .option("--path <path>", "Edited scope path", collectOption, [])
+  .option("--confidence <number>", "Edited confidence 0..1", parseFloatOption)
+  .option("--merge-into <id>", "Merge sources into target preference id")
+  .option("--merge-source <id>", "Merged source preference id", collectOption, [])
+  .option("--split <id>", "Split one preference id into new candidate statements")
+  .option("--split-statement <text>", "Split child statement", collectOption, [])
   .option("--activate-all", "Activate all candidates")
   .option("--json", "Print JSON")
   .action(async (options) => {
@@ -188,7 +201,19 @@ program.command("review")
       activate: options.activate,
       reject: options.reject,
       lock: options.lock,
-      activateAll: options.activateAll === true
+      demote: options.demote,
+      promote: options.promote,
+      promoteGlobal: options.promoteGlobal,
+      activateAll: options.activateAll === true,
+      edits: options.edit ? [{
+        id: options.edit,
+        statement: options.statement,
+        category: options.category,
+        scope: options.scope ? { level: options.scope, paths: options.path } : undefined,
+        confidence: options.confidence
+      }] : undefined,
+      merges: options.mergeInto && options.mergeSource.length ? [{ targetId: options.mergeInto, sourceIds: options.mergeSource, statement: options.statement }] : undefined,
+      splits: options.split && options.splitStatement.length ? [{ id: options.split, statements: options.splitStatement }] : undefined
     });
     const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
     output(options.json, graph, pending.length ? pending.map((node) => `${node.id} ${node.status} ${node.statement}`).join("\n") : "No pending preferences");

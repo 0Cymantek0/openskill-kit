@@ -17,6 +17,40 @@ export interface UpdateGraphResult {
   candidateCount: number;
 }
 
+export interface PreferenceReviewEdit {
+  id: string;
+  title?: string;
+  statement?: string;
+  category?: PreferenceNode["category"];
+  scope?: PreferenceNode["scope"];
+  confidence?: number;
+  polarity?: PreferenceNode["polarity"];
+}
+
+export interface PreferenceReviewMerge {
+  targetId: string;
+  sourceIds: string[];
+  statement?: string;
+}
+
+export interface PreferenceReviewSplit {
+  id: string;
+  statements: string[];
+}
+
+export interface ApplyPreferenceReviewOptions {
+  activate?: string[];
+  reject?: string[];
+  activateAll?: boolean;
+  lock?: string[];
+  demote?: string[];
+  promote?: string[];
+  promoteGlobal?: string[];
+  edits?: PreferenceReviewEdit[];
+  merges?: PreferenceReviewMerge[];
+  splits?: PreferenceReviewSplit[];
+}
+
 export async function updatePreferenceGraph(projectRoot: string, now = new Date()): Promise<UpdateGraphResult> {
   const root = path.resolve(projectRoot);
   return withFileLock(path.join(root, ".openskill-kit", "preferences", ".graph.lock"), async () => {
@@ -72,7 +106,7 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
   });
 }
 
-export async function applyPreferenceReview(projectRoot: string, options: { activate?: string[]; reject?: string[]; activateAll?: boolean; lock?: string[] }, now = new Date()): Promise<PreferenceGraph> {
+export async function applyPreferenceReview(projectRoot: string, options: ApplyPreferenceReviewOptions, now = new Date()): Promise<PreferenceGraph> {
   const root = path.resolve(projectRoot);
   return withFileLock(path.join(root, ".openskill-kit", "preferences", ".graph.lock"), async () => {
     const config = await readProjectConfig(root);
@@ -80,13 +114,25 @@ export async function applyPreferenceReview(projectRoot: string, options: { acti
     const activate = new Set(options.activate ?? []);
     const reject = new Set(options.reject ?? []);
     const lock = new Set(options.lock ?? []);
-    const nodes = graph.nodes.map((node) => {
-      if (reject.has(node.id)) return { ...node, status: "rejected" as const, updatedAt: now.toISOString() };
-      if (lock.has(node.id)) return { ...node, status: "locked" as const, updatedAt: now.toISOString() };
-      if (activate.has(node.id)) return { ...node, status: "active" as const, updatedAt: now.toISOString() };
-      if (options.activateAll && node.status === "candidate") return { ...node, status: "active" as const, updatedAt: now.toISOString() };
-      return node;
+    const demote = new Set(options.demote ?? []);
+    const promote = new Set(options.promote ?? []);
+    const promoteGlobal = new Set(options.promoteGlobal ?? []);
+    if (promote.size > 0 && !config.scopes.user) throw new Error("User-scope promotion disabled by config");
+    if (promoteGlobal.size > 0 && config.scopes.globalPromotion === "off") throw new Error("Global promotion disabled by config");
+    let nodes = graph.nodes.map((node) => {
+      let next = node;
+      if (reject.has(node.id)) next = { ...next, status: "rejected" as const };
+      else if (lock.has(node.id)) next = { ...next, status: "locked" as const };
+      else if (activate.has(node.id)) next = { ...next, status: "active" as const };
+      else if (demote.has(node.id)) next = { ...next, status: "candidate" as const };
+      else if (options.activateAll && node.status === "candidate") next = { ...next, status: "active" as const };
+      if (promote.has(node.id)) next = { ...next, scope: { ...next.scope, level: "user" as const } };
+      if (promoteGlobal.has(node.id)) next = { ...next, scope: { ...next.scope, level: "global" as const } };
+      return next === node ? node : { ...next, updatedAt: now.toISOString() };
     });
+    nodes = applyReviewEdits(nodes, options.edits ?? [], now);
+    nodes = applyReviewMerges(nodes, options.merges ?? [], now);
+    nodes = applyReviewSplits(nodes, options.splits ?? [], now);
     const next = PreferenceGraphSchema.parse({ ...graph, nodes, conflicts: detectConflicts(nodes.filter((node) => node.status === "active" || node.status === "candidate" || node.status === "conflict")), updatedAt: now.toISOString() });
     await writeJsonAtomic(graphFile(root), next);
     await writeJsonAtomic(pendingFile(root), next.nodes.filter((node) => node.status === "candidate" || node.status === "conflict"));
@@ -147,6 +193,79 @@ function dominantPolarity(signals: Signal[]): Signal["polarity"] {
 
 function titleFromStatement(statement: string): string {
   return statement.replace(/^Prefer\s+/i, "").replace(/^Do not\s+/i, "Avoid ").slice(0, 72);
+}
+
+function applyReviewEdits(nodes: PreferenceNode[], edits: PreferenceReviewEdit[], now: Date): PreferenceNode[] {
+  if (!edits.length) return nodes;
+  const byId = new Map(edits.map((edit) => [edit.id, edit]));
+  return nodes.map((node) => {
+    const edit = byId.get(node.id);
+    if (!edit) return node;
+    return PreferenceNodeSchema.parse({
+      ...node,
+      title: edit.title ?? (edit.statement ? titleFromStatement(edit.statement) : node.title),
+      statement: edit.statement ?? node.statement,
+      category: edit.category ?? node.category,
+      scope: edit.scope ?? node.scope,
+      confidence: edit.confidence ?? node.confidence,
+      polarity: edit.polarity ?? node.polarity,
+      updatedAt: now.toISOString()
+    });
+  });
+}
+
+function applyReviewMerges(nodes: PreferenceNode[], merges: PreferenceReviewMerge[], now: Date): PreferenceNode[] {
+  let next = nodes;
+  for (const merge of merges) {
+    const sourceIds = new Set(merge.sourceIds.filter((id) => id !== merge.targetId));
+    const target = next.find((node) => node.id === merge.targetId);
+    const sources = next.filter((node) => sourceIds.has(node.id));
+    if (!target || sources.length === 0) continue;
+    const mergedEvidence = dedupeEvidence([...target.evidence, ...sources.flatMap((node) => node.evidence)]);
+    next = next.map((node) => {
+      if (node.id === target.id) {
+        return PreferenceNodeSchema.parse({
+          ...node,
+          statement: merge.statement ?? node.statement,
+          title: merge.statement ? titleFromStatement(merge.statement) : node.title,
+          evidence: mergedEvidence,
+          confidence: Math.max(node.confidence, ...sources.map((source) => source.confidence)),
+          updatedAt: now.toISOString()
+        });
+      }
+      if (sourceIds.has(node.id)) return { ...node, status: "rejected" as const, updatedAt: now.toISOString() };
+      return node;
+    });
+  }
+  return next;
+}
+
+function applyReviewSplits(nodes: PreferenceNode[], splits: PreferenceReviewSplit[], now: Date): PreferenceNode[] {
+  let next = nodes;
+  for (const split of splits) {
+    const original = next.find((node) => node.id === split.id);
+    if (!original || split.statements.length < 2) continue;
+    const children = split.statements.map((statement) => PreferenceNodeSchema.parse({
+      ...original,
+      id: `pref_${shortHash(`${original.category}:${statement.toLowerCase()}`)}`,
+      title: titleFromStatement(statement),
+      statement,
+      status: "candidate" as const,
+      confidence: Math.max(0, Math.round((original.confidence * 0.92) * 1000) / 1000),
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString()
+    }));
+    const existingIds = new Set(next.map((node) => node.id));
+    next = next.map((node) => node.id === original.id ? { ...node, status: "rejected" as const, updatedAt: now.toISOString() } : node);
+    next.push(...children.filter((child) => !existingIds.has(child.id)));
+  }
+  return next;
+}
+
+function dedupeEvidence(evidence: PreferenceNode["evidence"]): PreferenceNode["evidence"] {
+  const seen = new Map<string, PreferenceNode["evidence"][number]>();
+  for (const item of evidence) seen.set(`${item.signalId}:${item.eventIds.join(",")}`, item);
+  return [...seen.values()];
 }
 
 function graphFile(root: string): string {
