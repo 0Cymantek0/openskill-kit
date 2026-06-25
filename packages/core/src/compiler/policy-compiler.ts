@@ -51,7 +51,7 @@ function renderCommandPolicy(nodes: PreferenceNode[]): string {
 }
 
 function renderReviewChecklist(nodes: PreferenceNode[]): string {
-  const checklistNodes = nodes.filter((node) => ["security", "testing", "workflow", "api"].includes(node.category) || node.polarity === "negative");
+  const checklistNodes = nodes.filter((node) => ["security", "testing", "workflow", "api", "api-design", "command-policy", "review-policy"].includes(node.category) || node.polarity === "negative");
   const lines = ["# Review Checklist", ""];
   if (checklistNodes.length === 0) lines.push("No active review checklist items yet.", "");
   for (const node of checklistNodes.sort(sortNodes)) lines.push(`- [ ] ${node.statement} (confidence ${node.confidence})`);

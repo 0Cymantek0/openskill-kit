@@ -26,6 +26,7 @@ export async function extractSignals(projectRoot: string, now = new Date()): Pro
   const signals: Signal[] = [];
   const learnableEvents = config.learning.highValueOnly ? events.filter((event) => classifyHighValueEvent(event).reasons.length > 0) : events;
   for (const event of learnableEvents) signals.push(...extractFromEvent(event, now));
+  signals.push(...extractRepeatedCommandSignals(learnableEvents, now));
   signals.push(...await readSemanticProposalSignals(root));
   signals.push(...await extractRepoPatternSignals(root, config.projectId, now));
   const deduped = dedupeSignals(signals);
@@ -42,10 +43,16 @@ export function extractFromEvent(event: OpenSkillEvent, now = new Date()): Signa
   if (event.eventType === "post-tool-use" || event.eventType === "pre-tool-use") out.push(...extractToolChoice(event, now));
   if (event.eventType === "test-result") out.push(...extractTestOutcome(event, now));
   if (event.eventType === "user-accepted") out.push(signalFromEvent(event, now, "acceptance", "workflow", "User accepted agent output", "positive", 0.64));
-  if (event.eventType === "user-rejected") out.push(signalFromEvent(event, now, "rejection", "workflow", "User rejected agent output", "negative", 0.72));
+  if (event.eventType === "user-rejected") {
+    const rejected = summarizeText(text);
+    out.push(signalFromEvent(event, now, "rejection", "workflow", rejected ? `Do not repeat rejected agent approach: ${rejected}` : "Do not repeat rejected agent approach", "negative", 0.78));
+  }
   if (event.eventType === "user-edited" || event.eventType === "file-changed") {
     const paths = event.files.map((file) => file.path);
-    out.push(signalFromEvent(event, now, "edit-delta", categorize(paths.join(" ")), `User edited ${paths.slice(0, 3).join(", ") || "project files"}`, "neutral", 0.58, paths));
+    const statement = paths.length
+      ? `Prefer preserving user-edited patterns in ${paths.slice(0, 3).join(", ")}`
+      : "Prefer preserving user-edited project patterns";
+    out.push(signalFromEvent(event, now, "edit-delta", categorize(`${paths.join(" ")} ${text}`), statement, "positive", 0.66, paths, summarizeText(text)));
   }
   return out;
 }
@@ -121,6 +128,34 @@ function extractTestOutcome(event: OpenSkillEvent, now: Date): Signal[] {
     undefined,
     command.command
   ));
+}
+
+function extractRepeatedCommandSignals(events: OpenSkillEvent[], now: Date): Signal[] {
+  const groups = new Map<string, Array<{ event: OpenSkillEvent; command: OpenSkillEvent["commands"][number] }>>();
+  for (const event of events) {
+    if (event.eventType !== "post-tool-use" && event.eventType !== "test-result") continue;
+    for (const command of event.commands) {
+      if (command.status !== "pass") continue;
+      const key = [command.command, ...command.args].join(" ").trim();
+      if (!key) continue;
+      groups.set(key, [...(groups.get(key) ?? []), { event, command }]);
+    }
+  }
+  return [...groups.entries()]
+    .filter(([, items]) => items.length >= 2)
+    .map(([commandText, items]) => SignalSchema.parse({
+      schemaVersion: "openskill-kit.signal.v1",
+      id: `sig_${shortHash(`repeated-command:${commandText}:${items.map((item) => item.event.id).join(",")}`)}`,
+      eventIds: items.map((item) => item.event.id),
+      extractedAt: now.toISOString(),
+      kind: "tool-choice",
+      category: "command-policy",
+      scope: { level: "project", paths: [] },
+      statement: `Prefer repeated successful command: ${commandText}`,
+      polarity: "positive",
+      weight: Math.min(0.9, 0.55 + items.length * 0.08),
+      evidence: items.map((item) => ({ eventId: item.event.id, command: commandText }))
+    }));
 }
 
 async function extractRepoPatternSignals(root: string, projectId: string, now: Date): Promise<Signal[]> {
@@ -212,6 +247,11 @@ function categorize(text: string): Signal["category"] {
 
 function cleanStatement(value: string): string {
   return value.replace(/\s+/g, " ").trim().replace(/^to\s+/i, "");
+}
+
+function summarizeText(value: string): string | undefined {
+  const cleaned = cleanStatement(value);
+  return cleaned ? cleaned.slice(0, 140) : undefined;
 }
 
 function dedupeSignals(signals: Signal[]): Signal[] {
