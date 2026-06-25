@@ -13,11 +13,12 @@ export const SignalSchema = z.object({
     "tool-choice",
     "test-outcome",
     "review-feedback",
+    "semantic-proposal",
     "repo-pattern"
   ]),
-  category: z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "security", "workflow", "general"]).default("general"),
+  category: z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "security", "workflow", "style", "dependency-policy", "review-policy", "command-policy", "documentation", "error-handling", "general"]).default("general"),
   scope: z.object({
-    level: z.enum(["project", "path", "user"]),
+    level: z.enum(["project", "path", "directory", "package", "language", "task", "user", "global"]),
     paths: z.array(z.string()).default([])
   }),
   statement: z.string().min(1),

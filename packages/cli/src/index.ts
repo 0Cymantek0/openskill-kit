@@ -19,6 +19,8 @@ import {
   installSkill,
   inspectProjectBehaviorPack,
   loadSkillPackage,
+  buildReviewQueue,
+  proposeSemanticPreference,
   retrieveRelevantPreferences,
   runAgentDoctor,
   runLifecycleOnce,
@@ -157,12 +159,18 @@ program.command("learn")
 
 program.command("review")
   .description("Review or apply candidate preferences")
+  .option("--queue", "Write rich review queue artifacts")
   .option("--activate <id>", "Activate preference id", collectOption, [])
   .option("--reject <id>", "Reject preference id", collectOption, [])
   .option("--lock <id>", "Lock preference id", collectOption, [])
   .option("--activate-all", "Activate all candidates")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (options.queue === true) {
+      const queue = await buildReviewQueue(process.cwd());
+      output(options.json, queue, `Review queue: ${queue.candidateCount} candidate(s), ${queue.proposals.length} proposal(s)\n${queue.markdownPath}`);
+      return;
+    }
     const graph = await applyPreferenceReview(process.cwd(), {
       activate: options.activate,
       reject: options.reject,
@@ -171,6 +179,36 @@ program.command("review")
     });
     const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
     output(options.json, graph, pending.length ? pending.map((node) => `${node.id} ${node.status} ${node.statement}`).join("\n") : "No pending preferences");
+  });
+
+program.command("propose")
+  .description("Submit a structured semantic preference proposal")
+  .requiredOption("--session <id>", "Source session id")
+  .requiredOption("--statement <text>", "Preference statement")
+  .requiredOption("--category <category>", "Preference category")
+  .option("--scope <level>", "Scope level", "project")
+  .option("--path <path>", "Scoped path", collectOption, [])
+  .requiredOption("--evidence-event <id>", "Evidence event id", collectOption, [])
+  .option("--evidence-quote <text>", "Evidence quote")
+  .option("--counter-event <id>", "Counterevidence event id", collectOption, [])
+  .option("--confidence <number>", "Confidence 0..1", parseFloatOption, 0.7)
+  .option("--risk <risk>", "low|medium|high", "medium")
+  .option("--target <target>", "Suggested compile target", collectOption, [])
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await proposeSemanticPreference(process.cwd(), {
+      schemaVersion: "openskill-kit.semantic-proposal.v1",
+      sessionId: options.session,
+      statement: options.statement,
+      category: options.category,
+      scope: { level: options.scope, paths: options.path },
+      evidence: options.evidenceEvent.map((eventId: string) => ({ eventId, quote: options.evidenceQuote })),
+      counterevidence: options.counterEvent.map((eventId: string) => ({ eventId })),
+      confidence: options.confidence,
+      risk: options.risk,
+      suggestedCompileTargets: options.target.length ? options.target : undefined
+    });
+    output(options.json, result, `Proposed ${result.proposal.id}\nSignal: ${result.signal.id}`);
   });
 
 program.command("compile")
@@ -443,6 +481,12 @@ function collectOption(value: string, previous: string[]): string[] {
 
 function parseIntegerOption(value: string): number {
   const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) throw new Error(`Invalid number: ${value}`);
+  return parsed;
+}
+
+function parseFloatOption(value: string): number {
+  const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed)) throw new Error(`Invalid number: ${value}`);
   return parsed;
 }

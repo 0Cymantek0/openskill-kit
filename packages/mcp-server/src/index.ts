@@ -21,6 +21,8 @@ import {
   installSkill,
   inspectProjectBehaviorPack,
   loadSkillPackage,
+  buildReviewQueue,
+  proposeSemanticPreference,
   readPreferenceGraph,
   readRegistry,
   retrieveRelevantPreferences,
@@ -170,6 +172,48 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, id }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await explainPreference(root, id), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_propose_preference",
+    {
+      title: "OpenSkillKit Propose Preference",
+      description: "Submit a structured semantic preference proposal from a host agent session.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        sessionId: z.string().min(1),
+        statement: z.string().min(8),
+        category: z.enum(["tooling", "architecture", "testing", "frontend", "backend", "api", "security", "workflow", "style", "dependency-policy", "review-policy", "command-policy", "documentation", "error-handling", "general"]),
+        scope: z.object({
+          level: z.enum(["project", "path", "directory", "package", "language", "task", "user", "global"]),
+          paths: z.array(z.string()).default([])
+        }),
+        evidence: z.array(z.object({ eventId: z.string().min(1), quote: z.string().optional(), file: z.string().optional(), command: z.string().optional() })).min(1),
+        counterevidence: z.array(z.object({ eventId: z.string().min(1), quote: z.string().optional(), reason: z.string().optional() })).default([]),
+        confidence: z.number().min(0).max(1),
+        risk: z.enum(["low", "medium", "high"]).default("medium"),
+        suggestedCompileTargets: z.array(z.enum(["context-pack", "agent-skills", "hooks", "mcp-resources", "project-rules", "plugin", "command-policy", "review-checklist", "path-map"])).default(["context-pack", "agent-skills"])
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, ...proposal }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await proposeSemanticPreference(root, { schemaVersion: "openskill-kit.semantic-proposal.v1", ...proposal }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_review_queue",
+    {
+      title: "OpenSkillKit Review Queue",
+      description: "Write and return rich learning review queue artifacts.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await buildReviewQueue(root), root);
     }
   );
 

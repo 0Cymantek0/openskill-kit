@@ -64,6 +64,11 @@ using weighted evidence with time decay. Conflicts are detected when opposing
 statements overlap in same category. Learning Review can activate, reject, or
 lock nodes.
 
+Host agents can submit semantic proposals through a strict JSON schema with
+statement, category, scope, evidence, counterevidence, confidence, risk, and
+suggested compile targets. Proposals are redacted, stored as review artifacts,
+and converted into proposal signals for the same Preference Graph pipeline.
+
 ## Compiler
 
 The compiler writes:
@@ -94,6 +99,8 @@ generated skill text.
 - `osk_get_context_pack`
 - `osk_get_relevant_preferences`
 - `osk_record_event`
+- `osk_propose_preference`
+- `osk_get_review_queue`
 - `osk_learn_from_session`
 - `osk_compile_behavior_layer`
 - `osk_explain_preference`

@@ -32,6 +32,7 @@ export * from "./preferences/conflict.js";
 export * from "./preferences/graph.js";
 export * from "./preferences/render.js";
 export * from "./preferences/retrieval.js";
+export * from "./preferences/proposals.js";
 export * from "./compiler/context-pack.js";
 export * from "./compiler/skill-compiler.js";
 export * from "./compiler/hook-compiler.js";

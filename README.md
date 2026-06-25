@@ -51,7 +51,9 @@ Preference Nodes stay reviewable as normal project files.
 openskill-kit init
 openskill-kit status
 openskill-kit observe --type user-prompt-submit --text "Always prefer focused tests first."
+openskill-kit propose --session <session-id> --statement "Prefer parser modules stay dependency-light" --category architecture --evidence-event <event-id>
 openskill-kit learn
+openskill-kit review --queue
 openskill-kit review
 openskill-kit review --activate <preference-id>
 openskill-kit review --reject <preference-id>
@@ -106,6 +108,8 @@ Key tools:
 - `osk_get_context_pack`
 - `osk_get_relevant_preferences`
 - `osk_record_event`
+- `osk_propose_preference`
+- `osk_get_review_queue`
 - `osk_learn_from_session`
 - `osk_compile_behavior_layer`
 - `osk_explain_preference`

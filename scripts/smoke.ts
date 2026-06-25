@@ -40,10 +40,17 @@ const observed = await runJson(["observe", "--type", "user-prompt-submit", "--te
 if (!observed.event?.id || JSON.stringify(observed).includes(smokeSecret)) {
   throw new Error("observe failed or leaked secret");
 }
+const proposed = await runJson(["propose", "--session", "smoke-session", "--statement", "Prefer parser modules stay dependency-light", "--category", "architecture", "--scope", "directory", "--path", "src/parser", "--evidence-event", observed.event.id, "--confidence", "0.91", "--risk", "medium", "--target", "path-map", "--json"]);
+if (!proposed.proposal?.id || proposed.signal?.kind !== "semantic-proposal") throw new Error("semantic proposal failed");
 const learnedAdaptive = await runJson(["learn", "--json"]);
 if (!learnedAdaptive.signals?.signals?.some((signal: { statement: string }) => signal.statement.includes("run npm test"))) {
   throw new Error("adaptive learn did not extract explicit preference");
 }
+if (!learnedAdaptive.signals?.signals?.some((signal: { kind: string; statement: string }) => signal.kind === "semantic-proposal" && signal.statement.includes("dependency-light"))) {
+  throw new Error("adaptive learn did not include semantic proposal");
+}
+const reviewQueue = await runJson(["review", "--queue", "--json"]);
+if (!reviewQueue.proposals?.length || !reviewQueue.markdownPath) throw new Error("review queue failed");
 const reviewedAdaptive = await runJson(["review", "--activate-all", "--json"]);
 if (!reviewedAdaptive.nodes?.some((node: { status: string }) => node.status === "active")) {
   throw new Error("adaptive review did not activate preferences");

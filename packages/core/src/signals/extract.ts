@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { collectRepoContext } from "../context/collector.js";
 import { readEvents, readProjectConfig } from "../events/store.js";
 import type { OpenSkillEvent } from "../events/schema.js";
+import { readSemanticProposalSignals } from "../preferences/proposals.js";
 import { SignalSchema, type Signal } from "./schema.js";
 
 export interface LearnSignalsResult {
@@ -25,6 +26,7 @@ export async function extractSignals(projectRoot: string, now = new Date()): Pro
   const signals: Signal[] = [];
   const learnableEvents = config.learning.highValueOnly ? events.filter((event) => classifyHighValueEvent(event).reasons.length > 0) : events;
   for (const event of learnableEvents) signals.push(...extractFromEvent(event, now));
+  signals.push(...await readSemanticProposalSignals(root));
   signals.push(...await extractRepoPatternSignals(root, config.projectId, now));
   const deduped = dedupeSignals(signals);
   const signalsPath = path.join(root, ".openskill-kit", "signals", "normalized.jsonl");
