@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { SignalSchema } from "../signals/schema.js";
-import { PreferenceStatuses } from "../schema/constants.js";
+import { CompileTargets, PreferenceStatuses } from "../schema/constants.js";
 
 export const PreferenceNodeSchema = z.object({
-  schemaVersion: z.literal("openskill-kit.preference-node.v1"),
+  schemaVersion: z.enum(["openskill-kit.preference-node.v1", "openskill-kit.preference-node.v2"]),
   id: z.string().min(1),
   title: z.string().min(1),
   statement: z.string().min(1),
@@ -20,6 +20,19 @@ export const PreferenceNodeSchema = z.object({
     quote: z.string().optional(),
     command: z.string().optional()
   })).default([]),
+  strength: z.enum(["must", "should", "may", "must-not"]).optional(),
+  exceptions: z.array(z.string()).optional(),
+  privacy: z.object({
+    class: z.enum(["project-private", "user-private", "global-private", "shareable"]),
+    rationale: z.string().min(1)
+  }).optional(),
+  compileTargets: z.array(z.enum(CompileTargets)).optional(),
+  lifecycle: z.object({
+    state: z.enum(["candidate", "active", "deprecated"]),
+    reviewedAt: z.string().datetime().optional(),
+    promotedAt: z.string().datetime().optional(),
+    expiresAt: z.string().datetime().optional()
+  }).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 });

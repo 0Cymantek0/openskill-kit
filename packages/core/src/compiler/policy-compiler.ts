@@ -24,14 +24,16 @@ export async function compilePolicyArtifacts(projectRoot: string): Promise<Compi
 }
 
 function renderPathMap(nodes: PreferenceNode[]) {
-  const paths: Record<string, Array<{ id: string; statement: string; category: string; confidence: number }>> = {};
+  const paths: Record<string, Array<{ id: string; statement: string; category: string; confidence: number; strength?: string; privacyClass?: string }>> = {};
   for (const node of nodes) {
     for (const scopePath of node.scope.paths) {
       paths[scopePath] = [...(paths[scopePath] ?? []), {
         id: node.id,
         statement: node.statement,
         category: node.category,
-        confidence: node.confidence
+        confidence: node.confidence,
+        strength: node.strength,
+        privacyClass: node.privacy?.class
       }];
     }
   }

@@ -9,7 +9,7 @@ export async function renderPreferenceGraphMarkdown(projectRoot: string, graph: 
   if (active.length === 0) lines.push("No active preferences yet.", "");
   for (const [category, nodes] of byCategory) {
     lines.push(`### ${titleCase(category)}`, "");
-    for (const node of nodes) lines.push(`- ${node.statement} (confidence ${node.confidence})`);
+    for (const node of nodes) lines.push(`- ${node.statement} (confidence ${node.confidence}${node.strength ? `, ${node.strength}` : ""})`);
     lines.push("");
   }
   if (graph.conflicts.length) {
@@ -36,7 +36,7 @@ async function writeActiveFacetFiles(projectRoot: string, groups: Map<string, Pr
   const dir = path.join(projectRoot, ".openskill-kit", "preferences", "active");
   const index = ["# Active Behavior Layer", ""];
   for (const [category, nodes] of groups) {
-    const body = [`# ${titleCase(category)} Preferences`, "", ...nodes.map((node) => `- ${node.statement} (confidence ${node.confidence})`), ""].join("\n");
+    const body = [`# ${titleCase(category)} Preferences`, "", ...nodes.map((node) => `- ${node.statement} (confidence ${node.confidence}${node.strength ? `, ${node.strength}` : ""})`), ""].join("\n");
     await writeFileAtomic(path.join(dir, `${category}.md`), body);
     index.push(`- [${titleCase(category)}](${category}.md): ${nodes.length}`);
   }

@@ -67,7 +67,7 @@ function renderShardSkill(skillName: string, category: string, nodes: Preference
 function renderShardReference(category: string, nodes: PreferenceNode[]): string {
   const lines = [`# ${titleCase(category)} Preferences`, ""];
   for (const node of nodes.sort(sortNodes)) {
-    lines.push(`## ${node.title}`, "", `- ID: ${node.id}`, `- Scope: ${scopeLabel(node)}`, `- Confidence: ${node.confidence}`, `- Statement: ${node.statement}`, `- Evidence cards: ${node.evidence.flatMap((item) => item.cardIds ?? []).join(", ") || "none"}`, "");
+    lines.push(`## ${node.title}`, "", `- ID: ${node.id}`, `- Scope: ${scopeLabel(node)}`, `- Confidence: ${node.confidence}`, `- Strength: ${node.strength ?? "should"}`, `- Statement: ${node.statement}`, `- Compile targets: ${node.compileTargets?.join(", ") || "context-pack, agent-skills"}`, `- Evidence cards: ${node.evidence.flatMap((item) => item.cardIds ?? []).join(", ") || "none"}`, "");
   }
   return lines.join("\n");
 }

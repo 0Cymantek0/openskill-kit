@@ -67,6 +67,9 @@ function renderReference(nodes: PreferenceNode[]): string {
   for (const node of nodes.sort((a, b) => a.category.localeCompare(b.category) || b.confidence - a.confidence || a.title.localeCompare(b.title))) {
     lines.push(`## ${node.title}`, "", `- Category: ${node.category}`, `- Status: ${node.status}`, `- Confidence: ${node.confidence}`, `- Statement: ${node.statement}`);
     if (node.scope.paths.length) lines.push(`- Paths: ${node.scope.paths.join(", ")}`);
+    if (node.strength) lines.push(`- Strength: ${node.strength}`);
+    if (node.privacy) lines.push(`- Privacy: ${node.privacy.class} (${node.privacy.rationale})`);
+    if (node.compileTargets?.length) lines.push(`- Compile targets: ${node.compileTargets.join(", ")}`);
     lines.push(`- Evidence: ${node.evidence.map((item) => item.signalId).join(", ")}`, "");
   }
   return lines.join("\n");

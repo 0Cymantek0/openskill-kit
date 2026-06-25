@@ -78,7 +78,7 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
         ? existingNode.status
         : confidence >= config.learning.minConfidenceToApply && config.learning.mode === "auto-apply-safe" ? "active" : "candidate";
       const node = PreferenceNodeSchema.parse({
-        schemaVersion: "openskill-kit.preference-node.v1",
+        schemaVersion: "openskill-kit.preference-node.v2",
         id,
         title: titleFromStatement(group[0]?.statement ?? "Preference"),
         statement: group[0]?.statement ?? "Preference",
@@ -95,6 +95,15 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
           quote: signal.evidence[0]?.quote,
           command: signal.evidence[0]?.command
         })),
+        strength: inferStrength(group[0]?.statement ?? "Preference", dominantPolarity(group), desiredStatus),
+        exceptions: existingNode?.exceptions ?? [],
+        privacy: inferPrivacy(mergeScopes(group)),
+        compileTargets: inferCompileTargets(group[0]?.category ?? "general", mergeScopes(group), dominantPolarity(group)),
+        lifecycle: {
+          state: desiredStatus === "active" || desiredStatus === "locked" ? "active" : desiredStatus === "rejected" ? "deprecated" : "candidate",
+          reviewedAt: existingNode?.lifecycle?.reviewedAt,
+          promotedAt: existingNode?.lifecycle?.promotedAt
+        },
         createdAt: existingNode?.createdAt ?? now.toISOString(),
         updatedAt: now.toISOString()
       });
@@ -141,7 +150,7 @@ export async function applyPreferenceReview(projectRoot: string, options: ApplyP
       else if (options.activateAll && node.status === "candidate") next = { ...next, status: "active" as const };
       if (promote.has(node.id)) next = { ...next, scope: { ...next.scope, level: "user" as const } };
       if (promoteGlobal.has(node.id)) next = { ...next, scope: { ...next.scope, level: "global" as const } };
-      return next === node ? node : { ...next, updatedAt: now.toISOString() };
+      return next === node ? node : withReviewMetadata(next, node, now);
     });
     nodes = applyReviewEdits(nodes, options.edits ?? [], now);
     nodes = applyReviewMerges(nodes, options.merges ?? [], now);
@@ -152,6 +161,25 @@ export async function applyPreferenceReview(projectRoot: string, options: ApplyP
     await writeJsonAtomic(graphFile(root), next);
     await writeJsonAtomic(pendingFile(root), next.nodes.filter((node) => node.status === "candidate" || node.status === "conflict"));
     return next;
+  });
+}
+
+function withReviewMetadata(next: PreferenceNode, previous: PreferenceNode, now: Date): PreferenceNode {
+  const reviewed = next.status !== previous.status || next.status === "active" || next.status === "locked" || next.status === "rejected";
+  const promoted = next.scope.level !== previous.scope.level && (next.scope.level === "user" || next.scope.level === "global");
+  return PreferenceNodeSchema.parse({
+    ...next,
+    schemaVersion: "openskill-kit.preference-node.v2",
+    strength: inferStrength(next.statement, next.polarity, next.status),
+    privacy: inferPrivacy(next.scope),
+    compileTargets: inferCompileTargets(next.category, next.scope, next.polarity),
+    lifecycle: {
+      ...next.lifecycle,
+      state: next.status === "active" || next.status === "locked" ? "active" : next.status === "rejected" ? "deprecated" : "candidate",
+      reviewedAt: reviewed ? now.toISOString() : next.lifecycle?.reviewedAt,
+      promotedAt: promoted ? now.toISOString() : next.lifecycle?.promotedAt
+    },
+    updatedAt: now.toISOString()
   });
 }
 
@@ -254,12 +282,16 @@ function applyReviewEdits(nodes: PreferenceNode[], edits: PreferenceReviewEdit[]
     if (!edit) return node;
     return PreferenceNodeSchema.parse({
       ...node,
+      schemaVersion: "openskill-kit.preference-node.v2",
       title: edit.title ?? (edit.statement ? titleFromStatement(edit.statement) : node.title),
       statement: edit.statement ?? node.statement,
       category: edit.category ?? node.category,
       scope: edit.scope ?? node.scope,
       confidence: edit.confidence ?? node.confidence,
       polarity: edit.polarity ?? node.polarity,
+      strength: inferStrength(edit.statement ?? node.statement, edit.polarity ?? node.polarity, node.status),
+      privacy: inferPrivacy(edit.scope ?? node.scope),
+      compileTargets: inferCompileTargets(edit.category ?? node.category, edit.scope ?? node.scope, edit.polarity ?? node.polarity),
       updatedAt: now.toISOString()
     });
   });
@@ -277,6 +309,7 @@ function applyReviewMerges(nodes: PreferenceNode[], merges: PreferenceReviewMerg
       if (node.id === target.id) {
         return PreferenceNodeSchema.parse({
           ...node,
+          schemaVersion: "openskill-kit.preference-node.v2",
           statement: merge.statement ?? node.statement,
           title: merge.statement ? titleFromStatement(merge.statement) : node.title,
           evidence: mergedEvidence,
@@ -298,6 +331,7 @@ function applyReviewSplits(nodes: PreferenceNode[], splits: PreferenceReviewSpli
     if (!original || split.statements.length < 2) continue;
     const children = split.statements.map((statement) => PreferenceNodeSchema.parse({
       ...original,
+      schemaVersion: "openskill-kit.preference-node.v2",
       id: `pref_${shortHash(`${original.category}:${statement.toLowerCase()}`)}`,
       title: titleFromStatement(statement),
       statement,
@@ -311,6 +345,27 @@ function applyReviewSplits(nodes: PreferenceNode[], splits: PreferenceReviewSpli
     next.push(...children.filter((child) => !existingIds.has(child.id)));
   }
   return next;
+}
+
+function inferStrength(statement: string, polarity: PreferenceNode["polarity"], status: PreferenceNode["status"]): PreferenceNode["strength"] {
+  const lower = statement.toLowerCase();
+  if (polarity === "negative" || lower.startsWith("do not") || lower.startsWith("never")) return "must-not";
+  if (status === "locked" || /\b(always|must|required)\b/.test(lower)) return "must";
+  return "should";
+}
+
+function inferPrivacy(scope: PreferenceNode["scope"]): PreferenceNode["privacy"] {
+  if (scope.level === "global") return { class: "global-private", rationale: "Global preference requires explicit review before sharing." };
+  if (scope.level === "user") return { class: "user-private", rationale: "User preference should stay private unless exported intentionally." };
+  return { class: "project-private", rationale: "Project behavior can include local conventions and evidence references." };
+}
+
+function inferCompileTargets(category: PreferenceNode["category"], scope: PreferenceNode["scope"], polarity: PreferenceNode["polarity"]): PreferenceNode["compileTargets"] {
+  const targets = new Set<NonNullable<PreferenceNode["compileTargets"]>[number]>(["context-pack", "agent-skills", "mcp-resources"]);
+  if (scope.paths.length) targets.add("project-rules");
+  if (["testing", "tooling", "command-policy"].includes(category)) targets.add("hooks");
+  if (["testing", "security", "workflow", "api", "api-design", "command-policy", "review-policy"].includes(category) || polarity === "negative") targets.add("project-rules");
+  return [...targets].sort();
 }
 
 function dedupeEvidence(evidence: PreferenceNode["evidence"]): PreferenceNode["evidence"] {

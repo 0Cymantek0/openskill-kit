@@ -39,7 +39,8 @@ export function renderContextPack(projectName: string, nodes: PreferenceNode[]):
     lines.push(`## ${titleCase(category)}`, "");
     for (const node of categoryNodes) {
       const scope = node.scope.paths.length ? ` Paths: ${node.scope.paths.slice(0, 5).join(", ")}.` : "";
-      lines.push(`- ${node.statement}.${scope} Confidence: ${node.confidence}.`);
+      const strength = node.strength ? ` Strength: ${node.strength}.` : "";
+      lines.push(`- ${node.statement}.${scope} Confidence: ${node.confidence}.${strength}`);
     }
     lines.push("");
   }

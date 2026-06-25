@@ -11,6 +11,7 @@ import {
   explainAdaptiveStatus,
   initAdaptiveProject,
   readCalibrationReport,
+  readPreferenceGraph,
   installInstructionManifests,
   uninstallInstructionManifests,
   redactValue,
@@ -169,6 +170,30 @@ describe("deep architecture hardening", () => {
     expect(calibration.extractors["explicit-preference"].rejected).toBe(1);
     const explained = await explainAdaptiveStatus(root);
     expect(explained.calibration?.categories.testing.reliability).toBeGreaterThan(0.5);
+  });
+
+  it("writes v2 preference metadata and migrates v1 nodes on read", async () => {
+    const root = await tempProject();
+    await appendEvent(root, {
+      sessionId: "v2",
+      eventType: "user-prompt-submit",
+      source: { adapter: "test" },
+      files: [{ path: "src/parser/index.ts", action: "edit" }],
+      normalized: { text: "Always keep parser modules dependency-light." }
+    });
+    await import("../src/signals/extract.js").then((mod) => mod.extractSignals(root, new Date("2026-06-25T00:01:00.000Z")));
+    const graph = await updatePreferenceGraph(root, new Date("2026-06-25T00:02:00.000Z"));
+    const node = graph.graph.nodes.find((candidate) => candidate.statement.includes("dependency-light"))!;
+    expect(node.schemaVersion).toBe("openskill-kit.preference-node.v2");
+    expect(node.strength).toBe("should");
+    expect(node.privacy?.class).toBe("project-private");
+    expect(node.compileTargets).toEqual(expect.arrayContaining(["context-pack", "agent-skills", "mcp-resources", "project-rules"]));
+    expect(node.lifecycle?.state).toBe("candidate");
+
+    await writeGraph(root, [pref("legacy", "Prefer legacy preference", "workflow", [])]);
+    const migrated = await readPreferenceGraph(root);
+    expect(migrated.nodes[0]?.schemaVersion).toBe("openskill-kit.preference-node.v2");
+    expect(migrated.nodes[0]?.compileTargets).toEqual(expect.arrayContaining(["context-pack", "agent-skills"]));
   });
 
   it("extracts specific taste from user edit deltas", async () => {

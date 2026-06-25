@@ -21,6 +21,10 @@ One learned rule, habit, or workflow. Each node has confidence, scope, status,
 category, and evidence. Evidence links to sanitized Evidence Cards rather than
 raw prompts or raw diffs.
 
+New nodes carry v2 metadata: strength (`must`, `should`, `may`, `must-not`),
+exceptions, privacy class, compile target rationale, and lifecycle state. Older
+v1 nodes migrate on read so existing graphs keep working.
+
 ## Evidence Card
 
 Small JSON proof object under `.openskill-kit/evidence/cards/`. A card records
