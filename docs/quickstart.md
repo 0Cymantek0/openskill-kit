@@ -10,6 +10,7 @@ npx openskill-kit review --activate-all
 npx openskill-kit compile
 npx openskill-kit agent install-manifests --target project --dry-run
 npx openskill-kit agent install-manifests --target project --yes
+npx openskill-kit agent uninstall-manifests --target project --dry-run
 npx openskill-kit daemon
 npx openskill-kit agent doctor
 npx openskill-kit agent install-hooks --target project --yes

@@ -18,17 +18,24 @@ export interface CompileInstructionManifestsResult {
 
 export interface InstallInstructionManifestsResult {
   schemaVersion: "openskill-kit.instruction-manifest-install.v1";
-  status: "planned" | "installed" | "blocked";
+  status: "planned" | "installed" | "uninstalled" | "blocked";
   target: "project";
   dryRun: boolean;
   files: Array<{
     source: string;
     destination: string;
-    action: "create" | "update" | "unchanged";
+    action: "create" | "update" | "delete" | "unchanged";
     preview?: string;
+    diff?: string;
   }>;
   receiptPath?: string;
   messages: string[];
+}
+
+type ManifestPlanFile = InstallInstructionManifestsResult["files"][number];
+interface InstructionManifestReceipt {
+  schemaVersion: string;
+  files?: Array<{ destination?: string; action?: string }>;
 }
 
 export async function compileInstructionManifests(projectRoot: string): Promise<CompileInstructionManifestsResult> {
@@ -115,7 +122,63 @@ export async function installInstructionManifests(
   };
 }
 
-async function planManagedBlockInstall(source: string, destination: string): Promise<InstallInstructionManifestsResult["files"][number]> {
+export async function uninstallInstructionManifests(
+  projectRoot: string,
+  options: { target?: "project"; dryRun?: boolean; yes?: boolean } = {}
+): Promise<InstallInstructionManifestsResult> {
+  const root = path.resolve(projectRoot);
+  const target = options.target ?? "project";
+  if (target !== "project") {
+    return {
+      schemaVersion: "openskill-kit.instruction-manifest-install.v1",
+      status: "blocked",
+      target,
+      dryRun: options.dryRun !== false,
+      files: [],
+      messages: [`Unsupported manifest target: ${target}`]
+    };
+  }
+  const planned = await planManifestUninstall(root);
+  const dryRun = options.dryRun !== false || options.yes !== true;
+  if (dryRun) {
+    return {
+      schemaVersion: "openskill-kit.instruction-manifest-install.v1",
+      status: "planned",
+      target,
+      dryRun: true,
+      files: planned,
+      messages: planned.map((file) => `${file.action} ${path.relative(root, file.destination).replace(/\\/g, "/")}`)
+    };
+  }
+  for (const file of planned) {
+    assertInsideRoot(root, file.destination);
+    if (file.action === "delete") await fs.rm(file.destination, { force: true });
+    else if (file.preview !== undefined) await writeFileAtomic(file.destination, file.preview);
+  }
+  await removeEmptyRuleDir(path.join(root, ".claude", "rules"));
+  const receiptPath = path.join(root, ".openskill-kit", "installs", `instruction-manifests-uninstall-${Date.now()}.json`);
+  await writeJsonAtomic(receiptPath, {
+    schemaVersion: "openskill-kit.instruction-manifest-uninstall-receipt.v1",
+    uninstalledAt: new Date().toISOString(),
+    target,
+    rollbackOf: await latestManifestReceipt(root),
+    files: planned.map((file) => ({
+      destination: path.relative(root, file.destination).replace(/\\/g, "/"),
+      action: file.action
+    }))
+  });
+  return {
+    schemaVersion: "openskill-kit.instruction-manifest-install.v1",
+    status: "uninstalled",
+    target,
+    dryRun: false,
+    files: planned,
+    receiptPath,
+    messages: planned.map((file) => `${file.action} ${path.relative(root, file.destination).replace(/\\/g, "/")}`)
+  };
+}
+
+async function planManagedBlockInstall(source: string, destination: string): Promise<ManifestPlanFile> {
   const block = (await fs.readFile(source, "utf8")).trimEnd();
   const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
   const next = mergeManagedBlock(existing, block);
@@ -123,7 +186,8 @@ async function planManagedBlockInstall(source: string, destination: string): Pro
     source,
     destination,
     action: existing === undefined ? "create" : existing === next ? "unchanged" : "update",
-    preview: next
+    preview: next,
+    diff: unifiedDiff(destination, existing ?? "", next)
   };
 }
 
@@ -136,9 +200,42 @@ async function planDirectoryInstall(sourceDir: string, destinationDir: string): 
     return {
       source,
       destination,
-      action: existing === undefined ? "create" as const : existing === sourceText ? "unchanged" as const : "update" as const
+      action: existing === undefined ? "create" as const : existing === sourceText ? "unchanged" as const : "update" as const,
+      diff: unifiedDiff(destination, existing ?? "", sourceText)
     };
   }));
+}
+
+async function planManifestUninstall(root: string): Promise<ManifestPlanFile[]> {
+  const ruleFiles = await installedRuleDestinations(root);
+  const plans: ManifestPlanFile[] = [
+    await planManagedBlockRemoval(path.join(root, "AGENTS.md")),
+    await planManagedBlockRemoval(path.join(root, "CLAUDE.md")),
+    ...await Promise.all(ruleFiles.map(async (destination) => {
+      assertInsideRoot(root, destination);
+      const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
+      return {
+        source: destination,
+        destination,
+        action: existing === undefined ? "unchanged" as const : "delete" as const,
+        preview: undefined,
+        diff: unifiedDiff(destination, existing ?? "", "")
+      };
+    }))
+  ];
+  return plans.filter((file) => file.action !== "unchanged" || file.diff);
+}
+
+async function planManagedBlockRemoval(destination: string): Promise<ManifestPlanFile> {
+  const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
+  const next = removeManagedBlock(existing);
+  return {
+    source: destination,
+    destination,
+    action: existing === undefined || existing === next ? "unchanged" : "update",
+    preview: next,
+    diff: unifiedDiff(destination, existing ?? "", next ?? "")
+  };
 }
 
 function mergeManagedBlock(existing: string | undefined, managedBlock: string): string {
@@ -151,6 +248,61 @@ function mergeManagedBlock(existing: string | undefined, managedBlock: string): 
     return `${existing.slice(0, start)}${block}${existing.slice(afterEnd).replace(/^\r?\n/, "")}`;
   }
   return existing.endsWith("\n") ? `${existing}\n${block}` : `${existing}\n\n${block}`;
+}
+
+function removeManagedBlock(existing: string | undefined): string | undefined {
+  if (existing === undefined) return undefined;
+  const start = existing.indexOf(MANAGED_BLOCK_START);
+  const end = existing.indexOf(MANAGED_BLOCK_END);
+  if (start < 0 || end <= start) return existing;
+  const afterEnd = end + MANAGED_BLOCK_END.length;
+  const before = existing.slice(0, start).replace(/\s+$/, "\n");
+  const after = existing.slice(afterEnd).replace(/^\s+/, "");
+  const next = `${before}${after}`;
+  return next.trim().length ? (next.endsWith("\n") ? next : `${next}\n`) : "";
+}
+
+async function installedRuleDestinations(root: string): Promise<string[]> {
+  const fromReceipt: Array<{ destination?: string; action?: string }> = await latestManifestReceipt(root).then((receipt) => receipt?.files ?? []).catch(() => []);
+  const receiptRules = fromReceipt
+    .map((file: { destination?: string }) => file.destination)
+    .filter((value: unknown): value is string => typeof value === "string" && value.startsWith(".claude/rules/"))
+    .map((rel) => path.join(root, rel));
+  if (receiptRules.length) return [...new Set(receiptRules)].sort();
+  const compiledRules = await listFiles(path.join(root, ".openskill-kit", "compiled", "manifests", "claude-rules"));
+  return compiledRules.map((file) => path.join(root, ".claude", "rules", path.basename(file))).sort();
+}
+
+async function latestManifestReceipt(root: string): Promise<InstructionManifestReceipt | undefined> {
+  const dir = path.join(root, ".openskill-kit", "installs");
+  const files = await fs.readdir(dir).catch(() => []);
+  const receipts = files
+    .filter((file) => /^instruction-manifests-\d+\.json$/.test(file))
+    .sort()
+    .reverse();
+  const latest = receipts[0];
+  if (!latest) return undefined;
+  return JSON.parse(await fs.readFile(path.join(dir, latest), "utf8")) as InstructionManifestReceipt;
+}
+
+async function removeEmptyRuleDir(dir: string): Promise<void> {
+  const entries = await fs.readdir(dir).catch(() => []);
+  if (entries.length === 0) await fs.rmdir(dir).catch(() => undefined);
+}
+
+function unifiedDiff(file: string, before: string, after: string): string {
+  if (before === after) return "";
+  const beforeLines = before.split(/\r?\n/);
+  const afterLines = after.split(/\r?\n/);
+  const out = [`--- ${file}`, `+++ ${file}`];
+  for (const line of beforeLines) if (line.length) out.push(`-${line}`);
+  for (const line of afterLines) if (line.length) out.push(`+${line}`);
+  return out.join("\n");
+}
+
+function assertInsideRoot(root: string, target: string): void {
+  const relative = path.relative(root, path.resolve(target));
+  if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`Refusing to write outside project root: ${target}`);
 }
 
 function renderAgentsManifest(nodes: PreferenceNode[]): string {

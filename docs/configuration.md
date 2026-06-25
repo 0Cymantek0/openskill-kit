@@ -58,11 +58,15 @@ after review:
 ```bash
 openskill-kit agent install-manifests --target project --dry-run
 openskill-kit agent install-manifests --target project --yes
+openskill-kit agent uninstall-manifests --target project --dry-run
+openskill-kit agent uninstall-manifests --target project --yes
 ```
 
 The installer updates only the OpenSkillKit managed block in `AGENTS.md` and
 `CLAUDE.md`. User-authored content outside that block is preserved. Path-scoped
-Claude rules are written under `.claude/rules/`.
+Claude rules are written under `.claude/rules/`. Dry runs include per-file
+diffs. Installs and uninstalls write receipts under `.openskill-kit/installs/`;
+uninstall removes only managed blocks and generated rule files.
 
 ## MCP
 

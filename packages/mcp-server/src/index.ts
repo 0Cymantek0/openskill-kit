@@ -20,6 +20,7 @@ import {
   getAdaptiveStatus,
   installAgentHooks,
   installInstructionManifests,
+  uninstallInstructionManifests,
   initAdaptiveProject,
   importProjectBehaviorPack,
   installSkill,
@@ -351,6 +352,34 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, yes }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await installInstructionManifests(root, { dryRun: yes !== true, yes }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_preview_manifest_uninstall",
+    {
+      title: "OpenSkillKit Preview Manifest Uninstall",
+      description: "Preview removing managed AGENTS.md, CLAUDE.md, and generated path rules.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await uninstallInstructionManifests(root, { dryRun: true }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_apply_manifest_uninstall",
+    {
+      title: "OpenSkillKit Apply Manifest Uninstall",
+      description: "Remove managed AGENTS.md, CLAUDE.md, and generated path rules when yes is true.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, yes: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await uninstallInstructionManifests(root, { dryRun: yes !== true, yes }), root);
     }
   );
 

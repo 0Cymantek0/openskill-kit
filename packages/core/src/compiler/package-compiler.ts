@@ -86,6 +86,8 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
       "osk_get_behavior_manifest",
       "osk_preview_manifest_install",
       "osk_apply_manifest_install",
+      "osk_preview_manifest_uninstall",
+      "osk_apply_manifest_uninstall",
       "osk_validate_memory_candidate",
       "osk_get_calibration_report",
       "osk_export_behavior_pack",

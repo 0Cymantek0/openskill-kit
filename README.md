@@ -22,6 +22,7 @@ npx openskill-kit learn
 npx openskill-kit review --activate-all
 npx openskill-kit compile
 npx openskill-kit agent install-manifests --target project --dry-run
+npx openskill-kit agent uninstall-manifests --target project --dry-run
 npx openskill-kit daemon
 npx openskill-kit agent doctor
 npx openskill-kit agent install-hooks --target project --yes
@@ -77,6 +78,8 @@ openskill-kit daemon
 openskill-kit agent doctor
 openskill-kit agent install-manifests --target project --dry-run
 openskill-kit agent install-manifests --target project --yes
+openskill-kit agent uninstall-manifests --target project --dry-run
+openskill-kit agent uninstall-manifests --target project --yes
 openskill-kit agent install-hooks --target project --yes
 openskill-kit install --target agents-project --yes
 openskill-kit eval
@@ -118,7 +121,7 @@ openskill-kit evaluate .openskill-kit/runs/<run-id>/candidate/<skill>
   before compile.
 - Generated skills and hooks are scanned before install.
 - Managed AGENTS/CLAUDE install preserves user-authored content outside the
-  OpenSkillKit block.
+  OpenSkillKit block and supports dry-run diffs plus managed uninstall.
 - Install writes receipts under `.openskill-kit/installs/`.
 - Project Behavior Packs exclude private events, raw signals, review drafts, and
   run outputs by default.
@@ -147,6 +150,8 @@ Key tools:
 - `osk_get_behavior_manifest`
 - `osk_preview_manifest_install`
 - `osk_apply_manifest_install`
+- `osk_preview_manifest_uninstall`
+- `osk_apply_manifest_uninstall`
 - `osk_validate_memory_candidate`
 - `osk_get_calibration_report`
 - `osk_export_behavior_pack`

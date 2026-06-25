@@ -17,6 +17,7 @@ import {
   explainPreferenceWithEvidence,
   installAgentHooks,
   installInstructionManifests,
+  uninstallInstructionManifests,
   initAdaptiveProject,
   importProjectBehaviorPack,
   installSkill,
@@ -133,6 +134,22 @@ agent.command("install-manifests")
   .option("--json", "Print JSON")
   .action(async (options) => {
     const result = await installInstructionManifests(process.cwd(), {
+      target: parseManifestTarget(options.target),
+      dryRun: options.dryRun === true,
+      yes: options.yes === true
+    });
+    output(options.json, result, result.messages.join("\n"));
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+agent.command("uninstall-manifests")
+  .description("Remove managed AGENTS.md, CLAUDE.md, and generated path-scoped rules")
+  .option("--target <target>", "project", "project")
+  .option("--dry-run", "Plan without writing")
+  .option("--yes", "Non-interactive approval")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await uninstallInstructionManifests(process.cwd(), {
       target: parseManifestTarget(options.target),
       dryRun: options.dryRun === true,
       yes: options.yes === true

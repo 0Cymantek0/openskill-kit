@@ -12,6 +12,7 @@ import {
   initAdaptiveProject,
   readCalibrationReport,
   installInstructionManifests,
+  uninstallInstructionManifests,
   redactValue,
   updatePreferenceGraph,
   validateRedactionConfig,
@@ -45,15 +46,30 @@ describe("deep architecture hardening", () => {
 
     const preview = await installInstructionManifests(root, { dryRun: true });
     expect(preview.status).toBe("planned");
+    expect(preview.files.find((file) => file.destination.endsWith("AGENTS.md"))?.diff).toContain("+<!-- BEGIN MANAGED BY OPENSKILL-KIT -->");
     expect(await readFile(path.join(root, "AGENTS.md"), "utf8")).toContain("Keep this line.");
 
     const installed = await installInstructionManifests(root, { dryRun: false, yes: true });
     expect(installed.status).toBe("installed");
+    await expect(stat(installed.receiptPath!)).resolves.toBeTruthy();
     const agents = await readFile(path.join(root, "AGENTS.md"), "utf8");
     expect(agents).toContain("Keep this line.");
     expect(agents).toContain("BEGIN MANAGED BY OPENSKILL-KIT");
     expect(agents).toContain("parser modules stay dependency-light");
     await expect(stat(path.join(root, ".claude", "rules", "src-parser.md"))).resolves.toBeTruthy();
+
+    const uninstallPreview = await uninstallInstructionManifests(root, { dryRun: true });
+    expect(uninstallPreview.status).toBe("planned");
+    expect(uninstallPreview.files.find((file) => file.destination.endsWith("AGENTS.md"))?.diff).toContain("-<!-- BEGIN MANAGED BY OPENSKILL-KIT -->");
+    expect(await readFile(path.join(root, "AGENTS.md"), "utf8")).toContain("BEGIN MANAGED BY OPENSKILL-KIT");
+
+    const uninstalled = await uninstallInstructionManifests(root, { dryRun: false, yes: true });
+    expect(uninstalled.status).toBe("uninstalled");
+    await expect(stat(uninstalled.receiptPath!)).resolves.toBeTruthy();
+    const afterUninstall = await readFile(path.join(root, "AGENTS.md"), "utf8");
+    expect(afterUninstall).toContain("Keep this line.");
+    expect(afterUninstall).not.toContain("BEGIN MANAGED BY OPENSKILL-KIT");
+    await expect(stat(path.join(root, ".claude", "rules", "src-parser.md"))).rejects.toThrow();
   });
 
   it("validates custom redactions and ignores invalid regexes during event capture", async () => {
