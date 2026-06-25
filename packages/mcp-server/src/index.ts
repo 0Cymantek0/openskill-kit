@@ -14,6 +14,7 @@ import {
   explainPreference,
   explainPreferenceWithEvidence,
   exportProjectBehaviorPack,
+  exportEncryptedProjectBehaviorPack,
   extractSignals,
   evolveSkill,
   explainAdaptiveStatus,
@@ -23,6 +24,7 @@ import {
   uninstallInstructionManifests,
   initAdaptiveProject,
   importProjectBehaviorPack,
+  importEncryptedProjectBehaviorPack,
   installSkill,
   inspectProjectBehaviorPack,
   loadSkillPackage,
@@ -36,6 +38,7 @@ import {
   runAgentDoctor,
   runBehaviorEval,
   runBehaviorCompareEval,
+  runExternalAgentEval,
   runDoctor,
   runFullDoctor,
   runLifecycleOnce,
@@ -431,6 +434,20 @@ export function createOpenSkillMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "osk_export_encrypted_behavior_pack",
+    {
+      title: "OpenSkillKit Export Encrypted Behavior Pack",
+      description: "Export an encrypted privacy-safe Project Behavior Pack envelope.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, passphrase: z.string().min(8), outputPath: z.string().optional() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, passphrase, outputPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await exportEncryptedProjectBehaviorPack(root, { passphrase, outputPath: outputPath ? resolvePath(outputPath, root) : undefined }), root);
+    }
+  );
+
+  server.registerTool(
     "osk_verify_behavior_pack",
     {
       title: "OpenSkillKit Verify Behavior Pack",
@@ -491,12 +508,26 @@ export function createOpenSkillMcpServer(): McpServer {
     {
       title: "OpenSkillKit Import Behavior Pack",
       description: "Plan or import a verified Project Behavior Pack. Hooks require explicit trust.",
-      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1), dryRun: z.boolean().default(true), trustHooks: z.boolean().default(false), review: z.boolean().default(false) }),
+      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1), dryRun: z.boolean().default(true), trustHooks: z.boolean().default(false), review: z.boolean().default(false), maxChangedFiles: z.number().int().min(0).optional() }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, packPath, dryRun, trustHooks, review }) => {
+    async ({ projectRoot, packPath, dryRun, trustHooks, review, maxChangedFiles }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await importProjectBehaviorPack(root, resolvePath(packPath, root), { dryRun, trustHooks, review }), root);
+      return toolResult(await importProjectBehaviorPack(root, resolvePath(packPath, root), { dryRun, trustHooks, review, maxChangedFiles }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_import_encrypted_behavior_pack",
+    {
+      title: "OpenSkillKit Import Encrypted Behavior Pack",
+      description: "Decrypt and plan or import an encrypted Project Behavior Pack envelope.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, encryptedPath: z.string().min(1), passphrase: z.string().min(8), dryRun: z.boolean().default(true), trustHooks: z.boolean().default(false), review: z.boolean().default(false), maxChangedFiles: z.number().int().min(0).optional() }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, encryptedPath, passphrase, dryRun, trustHooks, review, maxChangedFiles }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await importEncryptedProjectBehaviorPack(root, resolvePath(encryptedPath, root), { passphrase, dryRun, trustHooks, review, maxChangedFiles }), root);
     }
   );
 
@@ -525,6 +556,27 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, scenariosPath }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runBehaviorCompareEval({ projectRoot: root, scenariosPath }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_run_external_agent_eval",
+    {
+      title: "OpenSkillKit External Agent Eval",
+      description: "Write external-agent eval prompts or execute an explicit agent command without a shell.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        scenariosPath: z.string().optional(),
+        agentCommand: z.string().optional(),
+        agentArgs: z.array(z.string()).default([]),
+        dryRun: z.boolean().default(true),
+        timeoutMs: z.number().int().min(1000).max(300000).default(30000)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, scenariosPath, agentCommand, agentArgs, dryRun, timeoutMs }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runExternalAgentEval({ projectRoot: root, scenariosPath, agentCommand, agentArgs, dryRun, timeoutMs }), root);
     }
   );
 
