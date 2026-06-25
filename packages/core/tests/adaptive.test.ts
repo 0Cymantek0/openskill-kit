@@ -84,6 +84,11 @@ describe("adaptive behavior layer", () => {
     const pack = await exportProjectBehaviorPack(root);
     await expect(stat(pack.manifestPath)).resolves.toBeTruthy();
     expect(pack.files).not.toContain(".openskill-kit/events/2026-06.jsonl");
+    const manifest = JSON.parse(await readFile(pack.manifestPath, "utf8"));
+    expect(manifest.project.name).toBe("adaptive-fixture");
+    expect(manifest.compatibility.configSchema).toBe("openskill-kit.config.v1");
+    expect(manifest.generatedArtifacts.some((artifact: { type: string }) => artifact.type === "skill")).toBe(true);
+    expect(manifest.privacyStatement).toContain("excludes raw events");
     const signed = await signProjectBehaviorPack(pack.packPath, path.join(root, ".openskill-kit", "keys"));
     expect(signed.keyId).toHaveLength(16);
     const packVerify = await verifyProjectBehaviorPack(pack.packPath);
@@ -96,9 +101,10 @@ describe("adaptive behavior layer", () => {
     expect(diff.changed).toHaveLength(0);
 
     const importRoot = await mkdtemp(path.join(os.tmpdir(), "osk-import-"));
-    const importPlan = await importProjectBehaviorPack(importRoot, pack.packPath);
+    const importPlan = await importProjectBehaviorPack(importRoot, pack.packPath, { review: true });
     expect(importPlan.status).toBe("planned");
     expect(importPlan.issues).toContain("Hooks excluded until trustHooks is true");
+    await expect(stat(importPlan.reviewPath!)).resolves.toBeTruthy();
     const imported = await importProjectBehaviorPack(importRoot, pack.packPath, { dryRun: false, trustHooks: true });
     expect(imported.status).toBe("imported");
     await expect(stat(path.join(importRoot, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"))).resolves.toBeTruthy();

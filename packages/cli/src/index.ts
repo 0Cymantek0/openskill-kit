@@ -337,12 +337,26 @@ program.command("import-pack")
   .description("Import a Project Behavior Pack")
   .argument("<pack-path>", "Pack directory")
   .option("--dry-run", "Plan without writing", true)
+  .option("--review", "Write an import review artifact")
   .option("--yes", "Apply import")
   .option("--trust-hooks", "Import hook files too")
   .option("--json", "Print JSON")
   .action(async (packPath, options) => {
-    const result = await importProjectBehaviorPack(process.cwd(), packPath, { dryRun: options.yes !== true, trustHooks: options.trustHooks === true });
-    output(options.json, result, `${result.status}: ${result.files.length} file(s)`);
+    const result = await importProjectBehaviorPack(process.cwd(), packPath, { dryRun: options.yes !== true, trustHooks: options.trustHooks === true, review: options.review === true });
+    output(options.json, result, `${result.status}: ${result.files.length} file(s)${result.reviewPath ? `\nReview: ${result.reviewPath}` : ""}`);
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+program.command("apply-pack")
+  .description("Apply a verified Project Behavior Pack when --yes is supplied")
+  .argument("<pack-path>", "Pack directory")
+  .option("--yes", "Apply import")
+  .option("--trust-hooks", "Import hook files too")
+  .option("--review", "Write an import review artifact")
+  .option("--json", "Print JSON")
+  .action(async (packPath, options) => {
+    const result = await importProjectBehaviorPack(process.cwd(), packPath, { dryRun: options.yes !== true, trustHooks: options.trustHooks === true, review: options.review !== false });
+    output(options.json, result, `${result.status}: ${result.files.length} file(s)${result.reviewPath ? `\nReview: ${result.reviewPath}` : ""}`);
     process.exitCode = result.status === "blocked" ? 1 : 0;
   });
 

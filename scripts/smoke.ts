@@ -98,11 +98,16 @@ if (packDiff.changed?.length !== 0 || packDiff.added?.length !== 0 || packDiff.r
 const behaviorEval = await runJson(["eval", "--json"]);
 if (behaviorEval.status !== "pass" || behaviorEval.adherence !== 1) throw new Error("behavior eval failed");
 const importRoot = await mkdtemp(path.join(os.tmpdir(), "openskill-kit-import-"));
-const importedPlan = await execFileAsync(process.execPath, [cli, "import-pack", path.join(root, pack.packPath), "--json"], {
+const importedPlan = await execFileAsync(process.execPath, [cli, "import-pack", path.join(root, pack.packPath), "--review", "--json"], {
   cwd: importRoot,
   maxBuffer: 10 * 1024 * 1024
 }).then(({ stdout }) => JSON.parse(stdout));
-if (importedPlan.status !== "planned" || !importedPlan.issues?.length) throw new Error("pack import dry-run failed");
+if (importedPlan.status !== "planned" || !importedPlan.issues?.length || !importedPlan.reviewPath) throw new Error("pack import dry-run failed");
+const appliedPack = await execFileAsync(process.execPath, [cli, "apply-pack", path.join(root, pack.packPath), "--yes", "--json"], {
+  cwd: importRoot,
+  maxBuffer: 10 * 1024 * 1024
+}).then(({ stdout }) => JSON.parse(stdout));
+if (appliedPack.status !== "imported") throw new Error("pack apply failed");
 
 const draft = await runJson(["draft", "smoke test skill", "--no-llm", "--json"]);
 if (!draft.skillDir || !draft.evidenceLedgerPath || !draft.verifierPackPath) {

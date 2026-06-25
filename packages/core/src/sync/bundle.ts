@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
+import { readProjectConfig } from "../events/store.js";
 import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 
 export interface ProjectBehaviorPackResult {
@@ -40,11 +41,32 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
     const copied = await listFiles(packRoot);
     const hashes = Object.fromEntries(await Promise.all(copied.map(async (file) => [file, await sha256(path.join(packRoot, file))])));
     const manifestPath = path.join(packRoot, "manifest.json");
+    const config = await readProjectConfig(root);
+    const source = await readSourceMetadata(root);
     await writeJsonAtomic(manifestPath, {
       schemaVersion: "openskill-kit.project-pack.v1",
+      manifestVersion: 1,
       createdAt: new Date().toISOString(),
+      project: {
+        id: config.projectId,
+        name: config.projectName,
+        createdAt: config.createdAt
+      },
+      compatibility: {
+        minVersion: "0.1.0",
+        configSchema: config.schemaVersion,
+        preferenceSchema: "openskill-kit.preference-graph.v1"
+      },
+      source,
+      trust: {
+        level: "local-export",
+        hooksTrustedByDefault: false,
+        importRequiresReview: true
+      },
       includes: ["preferences", "skills", "hooks", "mcp"],
       privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
+      privacyStatement: "Pack excludes raw events, raw signals, private evidence blobs, review drafts, eval run output, reports, raw prompts, raw diffs, and secret-like local state.",
+      generatedArtifacts: copied.map((file) => ({ file, type: artifactType(file) })),
       files: copied,
       hashes
     });
@@ -181,12 +203,14 @@ export interface ImportProjectBehaviorPackResult {
   projectRoot: string;
   files: Array<{ source: string; destination: string }>;
   issues: string[];
+  reviewPath?: string;
 }
 
-export async function importProjectBehaviorPack(projectRootInput: string, packPathInput: string, options: { dryRun?: boolean; trustHooks?: boolean } = {}): Promise<ImportProjectBehaviorPackResult> {
+export async function importProjectBehaviorPack(projectRootInput: string, packPathInput: string, options: { dryRun?: boolean; trustHooks?: boolean; review?: boolean } = {}): Promise<ImportProjectBehaviorPackResult> {
   const projectRoot = path.resolve(projectRootInput);
   const packPath = path.resolve(packPathInput);
   return withFileLock(path.join(projectRoot, ".openskill-kit", ".import.lock"), async () => {
+    const manifest = await readManifest(packPath);
     const verification = await verifyProjectBehaviorPack(packPath);
     if (verification.status === "fail") {
       return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "blocked", packPath, projectRoot, files: [], issues: verification.issues };
@@ -194,15 +218,52 @@ export async function importProjectBehaviorPack(projectRootInput: string, packPa
     const files = verification.files
       .filter((file) => options.trustHooks === true || !file.startsWith(".openskill-kit/compiled/hooks/"))
       .map((file) => ({ source: path.join(packPath, file), destination: path.join(projectRoot, file) }));
+    const reviewPath = options.review ? await writeImportReview(projectRoot, packPath, manifest, verification, files, options.trustHooks === true) : undefined;
     if (options.dryRun !== false) {
-      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "planned", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"] };
+      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "planned", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"], reviewPath };
     }
     for (const file of files) {
       await fs.mkdir(path.dirname(file.destination), { recursive: true });
       await fs.copyFile(file.source, file.destination);
     }
-    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "imported", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"] };
+    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "imported", packPath, projectRoot, files, issues: options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"], reviewPath };
   });
+}
+
+async function writeImportReview(
+  projectRoot: string,
+  packPath: string,
+  manifest: any,
+  verification: VerifyProjectBehaviorPackResult,
+  files: Array<{ source: string; destination: string }>,
+  trustHooks: boolean
+): Promise<string> {
+  const id = createHash("sha256").update(`${packPath}:${JSON.stringify(manifest.hashes ?? {})}`).digest("hex").slice(0, 12);
+  const reviewPath = path.join(projectRoot, ".openskill-kit", "reviews", "imports", `import-${id}.md`);
+  const lines = [
+    "# Project Behavior Pack Import Review",
+    "",
+    `Pack: ${packPath}`,
+    `Status: ${verification.status}`,
+    `Project: ${manifest.project?.name ?? "unknown"} (${manifest.project?.id ?? "unknown"})`,
+    `Signature: ${verification.signature.status}${verification.signature.keyId ? ` (${verification.signature.keyId})` : ""}`,
+    `Trust hooks: ${trustHooks}`,
+    "",
+    "## Privacy",
+    "",
+    manifest.privacyStatement ?? "No privacy statement in manifest.",
+    "",
+    "## Issues",
+    "",
+    ...(verification.issues.length ? verification.issues.map((issue) => `- ${issue}`) : ["- none"]),
+    "",
+    "## Files Planned",
+    "",
+    ...(files.length ? files.map((file) => `- ${path.relative(projectRoot, file.destination).replace(/\\/g, "/")}`) : ["- none"]),
+    ""
+  ];
+  await writeFileAtomic(reviewPath, lines.join("\n"));
+  return reviewPath;
 }
 
 async function listFiles(root: string): Promise<string[]> {
@@ -233,6 +294,32 @@ async function readManifest(packPath: string): Promise<any> {
 
 async function sha256(file: string): Promise<string> {
   return createHash("sha256").update(await fs.readFile(file)).digest("hex");
+}
+
+async function readSourceMetadata(root: string): Promise<Record<string, unknown>> {
+  const head = await fs.readFile(path.join(root, ".git", "HEAD"), "utf8").catch(() => "");
+  const refMatch = /^ref:\s+(.+)$/m.exec(head);
+  const ref = refMatch?.[1];
+  const commit = ref
+    ? await fs.readFile(path.join(root, ".git", ref), "utf8").then((value) => value.trim()).catch(() => undefined)
+    : head.trim() || undefined;
+  return {
+    rootName: path.basename(root),
+    git: {
+      branch: ref ? path.basename(ref) : undefined,
+      commit
+    }
+  };
+}
+
+function artifactType(file: string): string {
+  if (file.includes("/compiled/skills/")) return "skill";
+  if (file.includes("/compiled/hooks/")) return "hook";
+  if (file.includes("/compiled/mcp/")) return "mcp";
+  if (file.includes("/compiled/behavior/")) return "policy";
+  if (file.includes("/preferences/")) return "preference";
+  if (file.endsWith("config.json") || file.endsWith("project.json")) return "metadata";
+  return "artifact";
 }
 
 async function ensureSigningKeys(keyDir: string): Promise<{ privateKey: string; publicKey: string; publicKeyPath: string }> {

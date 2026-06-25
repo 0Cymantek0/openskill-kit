@@ -357,12 +357,12 @@ export function createOpenSkillMcpServer(): McpServer {
     {
       title: "OpenSkillKit Import Behavior Pack",
       description: "Plan or import a verified Project Behavior Pack. Hooks require explicit trust.",
-      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1), dryRun: z.boolean().default(true), trustHooks: z.boolean().default(false) }),
+      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1), dryRun: z.boolean().default(true), trustHooks: z.boolean().default(false), review: z.boolean().default(false) }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, packPath, dryRun, trustHooks }) => {
+    async ({ projectRoot, packPath, dryRun, trustHooks, review }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await importProjectBehaviorPack(root, resolvePath(packPath, root), { dryRun, trustHooks }), root);
+      return toolResult(await importProjectBehaviorPack(root, resolvePath(packPath, root), { dryRun, trustHooks, review }), root);
     }
   );
 

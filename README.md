@@ -81,7 +81,8 @@ openskill-kit sign-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit verify-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit inspect-pack .openskill-kit/compiled/project-behavior-pack
 openskill-kit diff-pack <old-pack-path> <new-pack-path>
-openskill-kit import-pack <pack-path> --dry-run
+openskill-kit import-pack <pack-path> --review --dry-run
+openskill-kit apply-pack <pack-path> --yes
 openskill-kit prune --keep-runs 5
 openskill-kit archive
 openskill-kit reset --scope runtime

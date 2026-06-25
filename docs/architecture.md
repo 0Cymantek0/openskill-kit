@@ -160,3 +160,8 @@ Generated or imported skills are untrusted until scanned and verified. Install
 blocks verifier errors, fixture failures, and high or critical safety findings
 unless caller explicitly allows risk. Receipts record target, source,
 destination, verifier status, and safety score.
+
+Project Behavior Packs include project identity, schema compatibility, source
+metadata, generated artifact inventory, trust metadata, privacy statement, file
+hashes, and optional embedded signing public key. Import can write a review
+artifact before apply, and hooks stay excluded unless explicitly trusted.
