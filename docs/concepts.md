@@ -29,7 +29,8 @@ v1 nodes migrate on read so existing graphs keep working.
 
 Small JSON proof object under `.openskill-kit/evidence/cards/`. A card records
 which signal/event supports a preference, optional redacted quote, file, command,
-scope, and privacy metadata. It never includes raw private prompts.
+scope, source event IDs, evidence kind, privacy class, hash, and redaction
+metadata. It never includes raw private prompts.
 
 ## Memory Integrity
 
@@ -43,6 +44,13 @@ locked active behavior.
 Review-outcome reliability model. Activating or locking candidates increases
 category/extractor reliability; rejecting or demoting lowers it. Future graph
 updates use this reliability to downweight weak signal sources.
+
+## Extractor Registry
+
+Signal extraction runs through named extractors, including explicit preference,
+rejection/correction, accepted output, edit delta, review comment, command
+habit, test outcome, repo pattern, semantic proposal, and contradiction
+extractors. Named extractors let calibration identify which source is reliable.
 
 ## Retrieval Trace
 

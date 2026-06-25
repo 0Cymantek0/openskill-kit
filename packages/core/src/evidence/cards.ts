@@ -13,6 +13,8 @@ export const EvidenceCardSchema = z.object({
   id: z.string().min(1),
   signalId: z.string().min(1),
   eventId: z.string().min(1),
+  sourceEventIds: z.array(z.string().min(1)).default([]),
+  kind: z.string().min(1),
   sourceType: z.enum(["event", "repo-pattern", "semantic-proposal", "unknown"]),
   category: z.string().min(1),
   scope: z.object({
@@ -22,9 +24,14 @@ export const EvidenceCardSchema = z.object({
   statement: z.string().min(1),
   summary: z.string().min(1),
   quote: z.string().optional(),
+  paths: z.array(z.string()).default([]),
+  commands: z.array(z.string()).default([]),
   file: z.string().optional(),
   command: z.string().optional(),
+  privacyClass: z.enum(["project-private", "user-private", "global-private", "shareable"]).default("project-private"),
+  hash: z.string().min(1),
   capturedAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
   privacy: z.object({
     rawIncluded: z.literal(false),
     redacted: z.boolean(),
@@ -72,15 +79,22 @@ export async function writeEvidenceCardsForSignals(
         id,
         signalId: signal.id,
         eventId: evidence.eventId,
+        sourceEventIds: signal.eventIds,
+        kind: evidenceKind(signal),
         sourceType: sourceType(signal, evidence.eventId, eventIds),
         category: signal.category,
         scope: signal.scope,
         statement: signal.statement,
         summary: summarize(signal, evidence.eventId),
         quote: typeof redactedQuote.value === "string" ? redactedQuote.value : undefined,
+        paths: [...new Set([...(signal.scope.paths ?? []), evidence.file].filter((value): value is string => typeof value === "string"))].sort(),
+        commands: evidence.command ? [evidence.command] : [],
         file: evidence.file,
         command: evidence.command,
+        privacyClass: privacyClass(signal),
+        hash: `sha256:${shortHash(`${signal.id}:${evidence.eventId}:${signal.statement}:${redactedQuote.value ?? ""}`)}`,
         capturedAt: now.toISOString(),
+        createdAt: now.toISOString(),
         privacy: {
           rawIncluded: false,
           redacted: redactedQuote.redacted,
@@ -131,6 +145,21 @@ function sourceType(signal: Signal, eventId: string, eventIds: Set<string>): Evi
   if (signal.kind === "repo-pattern" || eventId.startsWith("repo_")) return "repo-pattern";
   if (signal.kind === "semantic-proposal") return "semantic-proposal";
   return "unknown";
+}
+
+function evidenceKind(signal: Signal): string {
+  if (signal.kind === "explicit-preference") return "user-correction";
+  if (signal.kind === "review-feedback") return "review-comment";
+  if (signal.kind === "acceptance") return "accepted-output";
+  if (signal.kind === "rejection") return "rejected-output";
+  if (signal.kind === "tool-choice") return "command-choice";
+  return signal.kind;
+}
+
+function privacyClass(signal: Signal): EvidenceCard["privacyClass"] {
+  if (signal.scope.level === "global") return "global-private";
+  if (signal.scope.level === "user") return "user-private";
+  return "project-private";
 }
 
 function summarize(signal: Signal, eventId: string): string {

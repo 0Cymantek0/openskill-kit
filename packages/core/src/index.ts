@@ -27,6 +27,7 @@ export * from "./events/redaction.js";
 export * from "./events/store.js";
 export * from "./signals/schema.js";
 export * from "./signals/extract.js";
+export * from "./signals/extractors/index.js";
 export * from "./preferences/schema.js";
 export * from "./preferences/migrations.js";
 export * from "./preferences/confidence.js";

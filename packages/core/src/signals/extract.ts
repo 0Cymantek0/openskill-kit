@@ -6,6 +6,7 @@ import { readEvents, readProjectConfig } from "../events/store.js";
 import type { OpenSkillEvent } from "../events/schema.js";
 import { readSemanticProposalSignals } from "../preferences/proposals.js";
 import { SignalSchema, type Signal } from "./schema.js";
+import { runEventExtractors } from "./extractors/index.js";
 
 export interface LearnSignalsResult {
   schemaVersion: "openskill-kit.learn.v1";
@@ -37,25 +38,7 @@ export async function extractSignals(projectRoot: string, now = new Date()): Pro
 }
 
 export function extractFromEvent(event: OpenSkillEvent, now = new Date()): Signal[] {
-  const out: Signal[] = [];
-  const text = eventText(event);
-  if (text) out.push(...extractExplicitPreferences(event, text, now));
-  if (event.eventType === "post-tool-use" || event.eventType === "pre-tool-use") out.push(...extractToolChoice(event, now));
-  if (event.eventType === "test-result") out.push(...extractTestOutcome(event, now));
-  if (event.eventType === "user-accepted") out.push(signalFromEvent(event, now, "acceptance", "workflow", "User accepted agent output", "positive", 0.64));
-  if (event.eventType === "user-rejected") {
-    const rejected = summarizeText(text);
-    out.push(signalFromEvent(event, now, "rejection", "workflow", rejected ? `Do not repeat rejected agent approach: ${rejected}` : "Do not repeat rejected agent approach", "negative", 0.78));
-  }
-  if (event.eventType === "user-edited" || event.eventType === "file-changed") {
-    const paths = event.files.map((file) => file.path);
-    const statement = paths.length
-      ? `Prefer preserving user-edited patterns in ${paths.slice(0, 3).join(", ")}`
-      : "Prefer preserving user-edited project patterns";
-    out.push(signalFromEvent(event, now, "edit-delta", categorize(`${paths.join(" ")} ${text}`), statement, "positive", 0.66, paths, summarizeText(text)));
-    out.push(...extractEditDeltaTaste(event, text, now));
-  }
-  return out;
+  return runEventExtractors(event, now);
 }
 
 export interface HighValueEventClassification {

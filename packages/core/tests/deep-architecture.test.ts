@@ -10,6 +10,7 @@ import {
   explainPreferenceWithEvidence,
   explainAdaptiveStatus,
   initAdaptiveProject,
+  readEvidenceCards,
   readCalibrationReport,
   readPreferenceGraph,
   installInstructionManifests,
@@ -138,6 +139,10 @@ describe("deep architecture hardening", () => {
     expect(JSON.stringify(explained)).not.toContain(secret);
     expect(explained?.cards[0]?.privacy.rawIncluded).toBe(false);
     expect(explained?.cards[0]?.privacy.redacted).toBe(true);
+    expect(explained?.cards[0]?.sourceEventIds).toContain(node.evidence[0]?.eventIds[0]);
+    expect(explained?.cards[0]?.kind).toBe("user-correction");
+    expect(explained?.cards[0]?.privacyClass).toBe("project-private");
+    expect(explained?.cards[0]?.hash).toMatch(/^sha256:/);
 
     const queue = await buildReviewQueue(root);
     const markdown = await readFile(queue.markdownPath, "utf8");
@@ -218,6 +223,31 @@ describe("deep architecture hardening", () => {
     expect(learned.signals.some((signal) => signal.statement.includes("dependency-light edits"))).toBe(true);
     expect(learned.signals.some((signal) => signal.statement.includes("Do not log secrets"))).toBe(true);
     expect(learned.signals.some((signal) => signal.statement.includes("focused regression tests"))).toBe(true);
+  });
+
+  it("extracts review-comment and contradiction signals through registry", async () => {
+    const root = await tempProject();
+    await appendEvent(root, {
+      sessionId: "review",
+      eventType: "review-comment",
+      source: { adapter: "test" },
+      files: [{ path: "src/auth.ts", action: "edit" }],
+      normalized: { text: "Reviewer says security block: never log authorization tokens." }
+    });
+    await appendEvent(root, {
+      sessionId: "review",
+      eventType: "user-prompt-submit",
+      source: { adapter: "test" },
+      normalized: { text: "Previous instruction was wrong; changed my mind, use the smaller API boundary instead." }
+    });
+    const learned = await import("../src/signals/extract.js").then((mod) => mod.extractSignals(root, new Date("2026-06-25T00:01:00.000Z")));
+    expect(learned.signals.some((signal) => signal.kind === "review-feedback" && signal.statement.includes("review feedback"))).toBe(true);
+    expect(learned.signals.some((signal) => signal.statement.includes("superseded"))).toBe(true);
+    const graph = await updatePreferenceGraph(root, new Date("2026-06-25T00:02:00.000Z"));
+    const reviewNode = graph.graph.nodes.find((node) => node.category === "security")!;
+    const cards = await readEvidenceCards(root, reviewNode.evidence.flatMap((item) => item.cardIds ?? []));
+    expect(cards[0]?.kind).toBe("review-comment");
+    expect(cards[0]?.paths).toContain("src/auth.ts");
   });
 });
 
