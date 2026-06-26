@@ -111,7 +111,7 @@ program.command("status")
       return;
     }
     const status = await getAdaptiveStatus(process.cwd());
-    output(options.json, status, `Initialized: ${status.initialized}\nEvents: ${status.eventCount}\nSignals: ${status.signalCount}\nActive preferences: ${status.activePreferenceCount}\nStaged preferences: ${status.stagedPreferenceCount}\nPending review: ${status.candidateCount}`);
+    output(options.json, status, `Initialized: ${status.initialized}\nEvents: ${status.eventCount}\nSignals: ${status.signalCount}\nActive preferences: ${status.activePreferenceCount}\nStaged preferences: ${status.stagedPreferenceCount}\nActive workflows: ${status.activeWorkflowCount}\nStaged workflows: ${status.stagedWorkflowCount}\nPending review: ${status.pendingReviewCount}`);
   });
 
 program.command("doctor")

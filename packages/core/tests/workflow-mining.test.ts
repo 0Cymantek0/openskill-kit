@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   appendEvent,
   buildReviewQueue,
+  getAdaptiveStatus,
   initAdaptiveProject,
   mineWorkflowGraph,
   readWorkflowGraph,
@@ -40,6 +41,9 @@ describe("Workflow Graph mining", () => {
     expect(queue.candidateCount).toBe(1);
     expect(queue.workflowCandidates[0]?.id).toBe(result.updated[0]?.id);
     expect(await readFile(queue.markdownPath, "utf8")).toContain("## Workflow Candidates");
+    const status = await getAdaptiveStatus(root);
+    expect(status.workflowCandidateCount).toBe(1);
+    expect(status.pendingReviewCount).toBe(1);
   });
 
   it("stages high-confidence workflow candidates only when auto-stage is enabled", async () => {

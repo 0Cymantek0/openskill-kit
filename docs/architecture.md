@@ -137,6 +137,8 @@ map artifacts include active workflow sequences.
 The Learning Review Queue now includes workflow candidates beside preference
 candidates, and the terminal review screen shows workflow candidates as
 read-only previews until workflow-specific review actions are added.
+`status` reports active/staged workflow counts and total pending review items so
+operators do not miss workflow candidates waiting for review.
 
 ## Compiler
 
