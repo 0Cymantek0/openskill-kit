@@ -134,6 +134,9 @@ The current compiler already consumes only `active` and `locked` workflows:
 `project-behavior` gets an `active-workflows.md` reference, `project-workflows`
 is emitted as a focused skill shard, and command policy/review checklist/path
 map artifacts include active workflow sequences.
+The Learning Review Queue now includes workflow candidates beside preference
+candidates, and the terminal review screen shows workflow candidates as
+read-only previews until workflow-specific review actions are added.
 
 ## Compiler
 

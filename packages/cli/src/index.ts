@@ -1113,7 +1113,7 @@ async function runReviewTui(projectRoot: string): Promise<{ schemaVersion: "open
     while (true) {
       const queue = await buildReviewQueue(projectRoot);
       const candidates = queue.candidates;
-      printReviewScreen(candidates);
+      printReviewScreen(candidates, queue.workflowCandidates);
       const answer = (await rl.question("review> ")).trim();
       if (answer === "q" || answer === "quit" || answer === "exit") break;
       if (answer === "w" || answer === "write") {
@@ -1166,12 +1166,12 @@ async function runReviewTui(projectRoot: string): Promise<{ schemaVersion: "open
   return { schemaVersion: "openskill-kit.review-tui.v1", reviewed, messages: messages.length ? messages : ["Review TUI closed without changes"] };
 }
 
-function printReviewScreen(candidates: Array<{ id: string; status: string; category: string; confidence: number; statement: string; scope: { level: string; paths: string[] } }>): void {
+function printReviewScreen(candidates: Array<{ id: string; status: string; category: string; confidence: number; statement: string; scope: { level: string; paths: string[] } }>, workflowCandidates: Array<{ id: string; status: string; name: string; confidence: number; trigger: { paths: string[]; commands: string[] } }> = []): void {
   console.clear();
   console.log("OpenSkillKit Review");
   console.log("===================");
-  if (!candidates.length) {
-    console.log("No candidate or conflict preferences.");
+  if (!candidates.length && !workflowCandidates.length) {
+    console.log("No candidate or conflict preferences/workflows.");
     console.log("q quit");
     return;
   }
@@ -1179,6 +1179,15 @@ function printReviewScreen(candidates: Array<{ id: string; status: string; categ
     const scope = node.scope.paths.length ? `${node.scope.level}:${node.scope.paths.join(",")}` : node.scope.level;
     console.log(`${index + 1}. [${node.status}] ${node.category} ${node.confidence} ${scope}`);
     console.log(`   ${node.statement}`);
+  }
+  if (workflowCandidates.length) {
+    console.log("");
+    console.log("Workflow candidates (read-only preview):");
+    for (const [index, workflow] of workflowCandidates.entries()) {
+      const scope = workflow.trigger.paths.length ? workflow.trigger.paths.join(",") : "project";
+      console.log(`w${index + 1}. [${workflow.status}] ${workflow.confidence} ${scope}`);
+      console.log(`   ${workflow.name}: ${workflow.trigger.commands.join(" -> ") || "no commands"}`);
+    }
   }
   console.log("");
   console.log("a N activate | r N reject | l N lock | d N demote | e N evidence | p N preview | c calibration | w write queue | q quit | ? help");
@@ -1193,6 +1202,7 @@ function printReviewHelp(): void {
   console.log("  e 1  show sanitized evidence cards for pending item 1");
   console.log("  p 1  show compile/privacy preview for pending item 1");
   console.log("  c    show calibration reliability dashboard");
+  console.log("  wN   workflow candidates are shown as read-only preview entries");
   console.log("  w    write review queue artifacts and exit");
   console.log("  q    quit");
 }

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   appendEvent,
+  buildReviewQueue,
   initAdaptiveProject,
   mineWorkflowGraph,
   readWorkflowGraph,
@@ -34,6 +35,11 @@ describe("Workflow Graph mining", () => {
     const graph = await readWorkflowGraph(root, result.graph.projectId, new Date("2026-06-27T03:01:00.000Z"));
     expect(graph.nodes[0]?.id).toBe(result.updated[0]?.id);
     expect(renderWorkflowGraph(graph)).toContain("npm test -> npm run typecheck");
+    const queue = await buildReviewQueue(root);
+    expect(queue.workflowCandidateCount).toBe(1);
+    expect(queue.candidateCount).toBe(1);
+    expect(queue.workflowCandidates[0]?.id).toBe(result.updated[0]?.id);
+    expect(await readFile(queue.markdownPath, "utf8")).toContain("## Workflow Candidates");
   });
 
   it("stages high-confidence workflow candidates only when auto-stage is enabled", async () => {

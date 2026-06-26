@@ -8,6 +8,8 @@ import { SuggestedCompileTargets } from "../schema/constants.js";
 import { readEvidenceCards, type EvidenceCard } from "../evidence/cards.js";
 import { SignalSchema, type Signal } from "../signals/schema.js";
 import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
+import { readWorkflowGraph } from "../workflows/store.js";
+import type { WorkflowNode } from "../workflows/schema.js";
 import { readPreferenceGraph } from "./graph.js";
 import type { PreferenceNode } from "./schema.js";
 
@@ -54,8 +56,10 @@ export interface ReviewQueueResult {
   queuePath: string;
   markdownPath: string;
   candidateCount: number;
+  workflowCandidateCount: number;
   proposals: SemanticPreferenceProposal[];
   candidates: PreferenceNode[];
+  workflowCandidates: WorkflowNode[];
   evidenceCards: EvidenceCard[];
 }
 
@@ -97,16 +101,19 @@ export async function readSemanticProposalSignals(projectRoot: string): Promise<
 
 export async function buildReviewQueue(projectRoot: string): Promise<ReviewQueueResult> {
   const root = path.resolve(projectRoot);
+  const config = await readProjectConfig(root);
   const graph = await readPreferenceGraph(root);
   const candidates = graph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict");
+  const workflowGraph = await readWorkflowGraph(root, config.projectId, new Date());
+  const workflowCandidates = workflowGraph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict");
   const proposals = await readSemanticProposals(root);
   const evidenceCards = await readEvidenceCards(root, candidates.flatMap((node) => node.evidence.flatMap((item) => item.cardIds ?? [])));
   const queuePath = path.join(root, ".openskill-kit", "reviews", "queue.json");
   const markdownPath = path.join(root, ".openskill-kit", "reviews", "queue.md");
-  const queue = { schemaVersion: "openskill-kit.review-queue.v1", generatedAt: new Date().toISOString(), proposals, candidates, evidenceCards };
+  const queue = { schemaVersion: "openskill-kit.review-queue.v1", generatedAt: new Date().toISOString(), proposals, candidates, workflowCandidates, evidenceCards };
   await writeJsonAtomic(queuePath, queue);
-  await writeFileAtomic(markdownPath, renderReviewQueueMarkdown(proposals, candidates, evidenceCards));
-  return { schemaVersion: "openskill-kit.review-queue.v1", queuePath, markdownPath, candidateCount: candidates.length, proposals, candidates, evidenceCards };
+  await writeFileAtomic(markdownPath, renderReviewQueueMarkdown(proposals, candidates, workflowCandidates, evidenceCards));
+  return { schemaVersion: "openskill-kit.review-queue.v1", queuePath, markdownPath, candidateCount: candidates.length + workflowCandidates.length, workflowCandidateCount: workflowCandidates.length, proposals, candidates, workflowCandidates, evidenceCards };
 }
 
 function proposalSignal(proposal: SemanticPreferenceProposal, now: Date): Signal {
@@ -126,7 +133,7 @@ function proposalSignal(proposal: SemanticPreferenceProposal, now: Date): Signal
   });
 }
 
-function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], candidates: PreferenceNode[], evidenceCards: EvidenceCard[]): string {
+function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], candidates: PreferenceNode[], workflowCandidates: WorkflowNode[], evidenceCards: EvidenceCard[]): string {
   const cardsById = new Map(evidenceCards.map((card) => [card.id, card]));
   const lines = ["# Learning Review Queue", ""];
   lines.push("## Semantic Proposals", "");
@@ -153,6 +160,13 @@ function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], cand
     }
     if (node.privacy) lines.push(`- Privacy: ${node.privacy.class} (${node.privacy.rationale})`);
     if (node.compileTargets?.length) lines.push(`- Compile targets: ${node.compileTargets.join(", ")}`);
+    lines.push("");
+  }
+  lines.push("## Workflow Candidates", "");
+  if (!workflowCandidates.length) lines.push("No workflow candidates.", "");
+  for (const workflow of workflowCandidates.sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name))) {
+    lines.push(`### ${workflow.id}`, "", `- Status: ${workflow.status}`, `- Confidence: ${workflow.confidence}`, `- Occurrences: ${workflow.occurrenceCount}`, `- Paths: ${workflow.trigger.paths.join(", ") || "project"}`, `- Commands: ${workflow.trigger.commands.join(" -> ") || "none"}`, `- Compile targets: ${workflow.compileTargets.join(", ")}`, `- Description: ${workflow.description}`, "");
+    for (const step of workflow.steps) lines.push(`- ${step.kind}: ${step.instruction}${step.command ? ` (${step.command})` : ""}`);
     lines.push("");
   }
   return `${lines.join("\n")}\n`;

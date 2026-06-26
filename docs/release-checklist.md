@@ -15,6 +15,7 @@ Manual audit:
 - Fresh project flow works: `init -> detect -> observe -> learn -> review -> compile -> install -> eval -> pack -> sign -> verify -> import-pack --review`.
 - `doctor --full` has no unexpected failures.
 - `workflows mine` creates review-safe candidate/staged Workflow Graph nodes from repeated passing command/test event sequences without activating behavior.
+- Review queue artifacts and TUI preview include workflow candidates beside preference candidates.
 - `route`/MCP routing treats candidate workflows as review-gated project evidence and only active/locked workflows as local-only coverage.
 - `compile` includes only active/locked workflows in `project-workflows`, `active-workflows.md`, command policy, review checklist, and path map artifacts.
 - `openworld doctor` still clearly labels scaffolded and missing paper-level capabilities.
