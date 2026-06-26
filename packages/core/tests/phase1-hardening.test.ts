@@ -144,16 +144,19 @@ describe("phase 1 hardening", () => {
   it("fails pack verification for private paths, missing hashes, and tampering", async () => {
     const pack = await mkdtemp(path.join(os.tmpdir(), "osk-pack-bad-"));
     await mkdir(path.join(pack, ".openskill-kit", "events"), { recursive: true });
+    await mkdir(path.join(pack, ".openskill-kit", "interactions", "import-runs"), { recursive: true });
     await writeFile(path.join(pack, ".openskill-kit", "events", "2026-06.jsonl"), "{}", "utf8");
+    await writeFile(path.join(pack, ".openskill-kit", "interactions", "import-runs", "run.json"), "{}", "utf8");
     await writeJson(path.join(pack, "manifest.json"), {
       schemaVersion: "openskill-kit.project-pack.v1",
       privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
-      files: [".openskill-kit/events/2026-06.jsonl", "missing-hash.txt"],
-      hashes: { ".openskill-kit/events/2026-06.jsonl": "bad" }
+      files: [".openskill-kit/events/2026-06.jsonl", ".openskill-kit/interactions/import-runs/run.json", "missing-hash.txt"],
+      hashes: { ".openskill-kit/events/2026-06.jsonl": "bad", ".openskill-kit/interactions/import-runs/run.json": await sha256(path.join(pack, ".openskill-kit", "interactions", "import-runs", "run.json")) }
     });
     const result = await verifyProjectBehaviorPack(pack);
     expect(result.status).toBe("fail");
     expect(result.issues).toContain("Private path included: .openskill-kit/events/");
+    expect(result.issues).toContain("Private path included: .openskill-kit/interactions/");
     expect(result.issues).toContain("Hash mismatch for .openskill-kit/events/2026-06.jsonl");
     expect(result.issues).toContain("Missing hash for missing-hash.txt");
   });

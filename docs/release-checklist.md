@@ -31,7 +31,7 @@ Manual audit:
 - OpenWorld `report --write` collects sources, anchors, suites, verifier executions, EvolutionRuns, eval reports, and next actions in one task report.
 - OpenWorld `promote-review` creates only a semantic review proposal from passed runs and never activates behavior directly.
 - `status --explain` gives useful next action text.
-- Generated packs do not include private event, signal, review, eval-run, report, raw prompt, raw diff, or secret data.
+- Generated packs do not include private event, signal, interaction import-run, review, eval-run, report, raw prompt, raw diff, or secret data.
 - Imported hooks stay excluded unless `--trust-hooks` is explicit.
 - Docs and examples avoid external product comparisons.
 - `git diff --check` is clean.

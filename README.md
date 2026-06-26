@@ -188,8 +188,8 @@ compile/privacy preview, `wa/wr/wl/wd N` for workflow candidate decisions, and
 - Managed AGENTS/CLAUDE install preserves user-authored content outside the
   OpenSkillKit block and supports dry-run diffs plus managed uninstall.
 - Install writes receipts under `.openskill-kit/installs/`.
-- Project Behavior Packs exclude private events, raw signals, review drafts, and
-  run outputs by default.
+- Project Behavior Packs exclude private events, raw signals, interaction import
+  runs, review drafts, and run outputs by default.
 - Encrypted sync envelopes wrap the already privacy-filtered pack with
   AES-256-GCM and require an explicit passphrase or passphrase file.
 
