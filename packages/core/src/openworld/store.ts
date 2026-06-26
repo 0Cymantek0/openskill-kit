@@ -12,6 +12,7 @@ import {
   OpenWorldTrustCacheSchema,
   OpenWorldTaskSchema,
   SkillPlanSchema,
+  VirtualTestSuiteExecutionSchema,
   VirtualTestSuiteSchema,
   type AnchorCard,
   type OpenWorldEvolutionRun,
@@ -21,6 +22,7 @@ import {
   type OpenWorldTrustCache,
   type OpenWorldTask,
   type SkillPlan,
+  type VirtualTestSuiteExecution,
   type VirtualTestSuite
 } from "./schema.js";
 
@@ -99,6 +101,25 @@ export async function writeAnchorCard(projectRoot: string, anchor: AnchorCard): 
 export async function writeVirtualTestSuite(projectRoot: string, suite: VirtualTestSuite): Promise<string> {
   const parsed = VirtualTestSuiteSchema.parse(suite);
   return writeTaskArtifact(projectRoot, parsed.taskId, "verifiers", `${parsed.id}.json`, parsed);
+}
+
+export async function readVirtualTestSuite(projectRoot: string, taskId: string, suiteId: string): Promise<VirtualTestSuite> {
+  return VirtualTestSuiteSchema.parse(JSON.parse(await fs.readFile(taskArtifactPath(projectRoot, taskId, "verifiers", `${suiteId}.json`), "utf8")));
+}
+
+export async function writeVirtualTestSuiteExecution(projectRoot: string, execution: VirtualTestSuiteExecution): Promise<string> {
+  const parsed = VirtualTestSuiteExecutionSchema.parse(execution);
+  const filename = `${parsed.id}.json`;
+  const file = taskArtifactPath(projectRoot, parsed.taskId, "verifiers", parsed.suiteId, "results", filename);
+  await writeOpenWorldJson(projectRoot, file, parsed);
+  return file;
+}
+
+export async function writeOpenWorldTaskTextArtifact(projectRoot: string, taskId: string, parts: string[], content: string): Promise<string> {
+  const root = path.resolve(projectRoot);
+  const file = taskArtifactPath(root, taskId, ...parts);
+  await writeOpenWorldFile(root, file, content);
+  return file;
 }
 
 export async function writeSkillPlan(projectRoot: string, plan: SkillPlan): Promise<string> {

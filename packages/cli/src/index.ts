@@ -41,6 +41,7 @@ import {
   readOpenWorldTrustCache,
   readOpenWorldTask,
   routeBehavior,
+  runVirtualTestSuite,
   runOpenWorldPython,
   runOpenWorldDoctor,
   runAgentDoctor,
@@ -280,6 +281,23 @@ openworld.command("build-verifier")
     }));
     const result = await buildVirtualSuiteFromAnchors(process.cwd(), options.taskId, anchors);
     output(options.json, result, `OpenWorld virtual suite ${result.suite.id}\n${result.suitePath}`);
+  });
+
+openworld.command("run-verifier")
+  .description("Run an executable OpenWorld virtual verifier suite in the local sandbox")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--suite-id <id>", "Virtual test suite id")
+  .option("--split <split>", "visible|holdout|all", "visible")
+  .option("--timeout-ms <number>", "Per-case timeout", parseIntegerOption, 30000)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const split = parseVerifierSplit(options.split);
+    const result = await runVirtualTestSuite(process.cwd(), options.taskId, options.suiteId, {
+      split,
+      timeoutMs: options.timeoutMs
+    });
+    output(options.json, result, `OpenWorld verifier ${result.suiteId} ${result.split}: ${result.summary.pass} pass, ${result.summary.fail} fail, ${result.summary.blocked} blocked, ${result.summary.timeout} timeout, ${result.summary.skipped} skipped\n${result.resultPath ?? ""}`);
+    process.exitCode = result.summary.fail || result.summary.blocked || result.summary.timeout ? 1 : 0;
   });
 
 openworld.command("report")
@@ -981,6 +999,11 @@ function parseFloatOption(value: string): number {
   const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed)) throw new Error(`Invalid number: ${value}`);
   return parsed;
+}
+
+function parseVerifierSplit(value: string): "visible" | "holdout" | "all" {
+  if (value === "visible" || value === "holdout" || value === "all") return value;
+  throw new Error(`Invalid verifier split: ${value}. Expected visible, holdout, or all.`);
 }
 
 async function resolvePassphrase(options: { passphrase?: string; passphraseFile?: string }): Promise<string> {

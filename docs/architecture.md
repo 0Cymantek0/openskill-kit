@@ -196,6 +196,16 @@ and `.openskill-kit/openworld/trust-cache.json`. Source text is cached under the
 task's `sources/cache/` directory after leakage audit. Trust scores are
 explainable metadata, not proof of correctness.
 
+Virtual verifier generation creates executable Node verifier files under each
+task's `verifiers/<suite-id>/visible` and `verifiers/<suite-id>/holdout`
+directories, plus `manifest.json` and `traceability-map.json`. The generated
+cases check anchor/source linkage, source-cache presence, recorded content hash,
+quote traceability, and generic oracle-marker absence. Artifact text is leakage
+audited before any verifier script is written. `openworld run-verifier` executes
+ready Node cases through the local `execFile` sandbox with no shell expansion,
+network disabled in policy metadata, stripped environment, output caps, and a
+JSON execution record under `verifiers/<suite-id>/results/`.
+
 Target flow:
 
 ```text

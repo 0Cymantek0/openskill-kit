@@ -44,6 +44,7 @@ npx openskill-kit openworld fetch-source --task-id <owtask_id> --url https://doc
 npx openskill-kit openworld sources
 npx openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
+npx openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 npx openskill-kit openworld report --task-id <owtask_id>
 npx openskill-kit openworld doctor
 ```
@@ -66,10 +67,10 @@ OpenSkillKit stores raw lifecycle events in append-only JSONL only when privacy
 settings allow it. Secret-like content is redacted before storage. Signals and
 Preference Nodes stay reviewable as normal project files.
 
-The OpenWorld layer is currently a scaffold for task records, leakage audits,
-Anchor Cards, virtual verifier plans, Python engine entrypoints, and future
-evolution runs. It does not perform web retrieval, LLM generation, sandboxed
-refinement, or hidden-oracle benchmark evaluation yet.
+The OpenWorld layer now covers task records, leakage audits, source
+ingestion/cache, Anchor Cards, visible/holdout virtual verifier generation, and
+local sandbox execution of generated verifier scripts. It still does not perform
+LLM generation, bounded refinement, or hidden-oracle benchmark evaluation yet.
 
 ## Core Commands
 
@@ -120,6 +121,7 @@ openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.ex
 openskill-kit openworld sources
 openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
+openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 openskill-kit openworld report --task-id <owtask_id>
 openskill-kit openworld doctor
 openskill-kit compact
@@ -221,6 +223,7 @@ Key tools:
 - `osk_openworld_doctor`
 - `osk_openworld_ingest_source`
 - `osk_openworld_sources`
+- `osk_openworld_run_verifier`
 - `osk_compact_state`
 - `osk_prune_state`
 - `osk_archive_state`

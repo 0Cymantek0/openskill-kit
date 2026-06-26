@@ -48,6 +48,7 @@ import {
   runDoctor,
   runFullDoctor,
   runOpenWorldDoctor,
+  runVirtualTestSuite,
   runLifecycleOnce,
   resetProjectState,
   pruneProjectState,
@@ -811,6 +812,26 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult({ index: await readOpenWorldSourceIndex(root), trust: await readOpenWorldTrustCache(root) }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_run_verifier",
+    {
+      title: "OpenSkillKit OpenWorld Run Verifier",
+      description: "Run a generated OpenWorld visible or holdout virtual verifier suite in the local execFile sandbox.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        suiteId: z.string().min(1),
+        split: z.enum(["visible", "holdout", "all"]).default("visible"),
+        timeoutMs: z.number().int().min(1000).max(300000).default(30000)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, suiteId, split, timeoutMs }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runVirtualTestSuite(root, taskId, suiteId, { split, timeoutMs }), root);
     }
   );
 

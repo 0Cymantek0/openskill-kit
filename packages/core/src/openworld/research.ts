@@ -11,6 +11,7 @@ import {
   writeOpenWorldLeakageAudit,
   writeOpenWorldSource,
   writeOpenWorldSourceContent,
+  writeOpenWorldTaskTextArtifact,
   writeVirtualTestSuite
 } from "./store.js";
 import type { AnchorCard, OpenWorldLeakageAudit, OpenWorldSource, VirtualTestSuite } from "./schema.js";
@@ -164,37 +165,147 @@ export interface BuildVirtualSuiteResult {
   schemaVersion: "openskill-kit.openworld-virtual-suite-draft.v1";
   suite: VirtualTestSuite;
   suitePath: string;
+  manifestPath: string;
+  traceabilityMapPath: string;
+  caseFilePaths: string[];
+  audit: OpenWorldLeakageAudit;
+  auditPath: string;
 }
 
 export async function buildVirtualSuiteFromAnchors(projectRoot: string, taskId: string, anchors: AnchorCard[], now = new Date()): Promise<BuildVirtualSuiteResult> {
+  const root = path.resolve(projectRoot);
+  const task = await readOpenWorldTask(root, taskId);
+  if (!anchors.length) throw new Error("OpenWorld virtual suite requires at least one Anchor Card.");
+  const suiteId = `vts_${shortHash(`${taskId}:${anchors.map((anchor) => anchor.id).join(",")}`)}`;
+  const caseArtifacts: Array<{ split: "visible" | "holdout"; caseId: string; relativePath: string; content: string }> = [];
+  const cases = [];
+  const traceability: Array<Record<string, unknown>> = [];
+  const artifactInputs: Array<{ source: string; surface: "artifact"; value: string }> = [];
+  for (const [index, anchor] of anchors.entries()) {
+    if (anchor.taskId !== taskId) throw new Error(`Anchor ${anchor.id} belongs to task ${anchor.taskId}, not ${taskId}.`);
+    const split = index % 4 === 3 ? "holdout" as const : "visible" as const;
+    const caseId = `case_${shortHash(anchor.id)}`;
+    const source = await readOpenWorldSource(root, taskId, anchor.sourceId);
+    const scriptRelative = path.join(".openskill-kit", "openworld", "tasks", taskId, "verifiers", suiteId, split, `${caseId}.cjs`).replace(/\\/g, "/");
+    const script = renderNodeVerifierScript({ caseId, anchor, source });
+    artifactInputs.push({ source: scriptRelative, surface: "artifact", value: script });
+    caseArtifacts.push({ split, caseId, relativePath: scriptRelative, content: script });
+    cases.push({
+      id: caseId,
+      anchorIds: [anchor.id],
+      runner: "node" as const,
+      split,
+      name: `Verify anchor ${anchor.id}`,
+      description: anchor.claim,
+      file: scriptRelative,
+      command: ["node", scriptRelative],
+      assertions: [
+        "Anchor JSON exists and references the expected source.",
+        "Source JSON and cached text exist.",
+        "Cached source text matches the recorded content hash.",
+        "Anchor quote is traceable to cached source text when present.",
+        "Anchor artifact avoids generic hidden-oracle markers."
+      ],
+      expectedArtifacts: [scriptRelative],
+      status: "ready" as const
+    });
+    traceability.push({
+      caseId,
+      split,
+      anchorId: anchor.id,
+      sourceId: anchor.sourceId,
+      sourceUri: source.uri,
+      sourceHash: source.contentHash,
+      assertionCount: 5
+    });
+  }
+  const audit = auditOpenWorldLeakage([
+    ...anchors.map((anchor) => ({ source: anchor.id, surface: "artifact" as const, value: `${anchor.claim}\n${anchor.sourceQuote ?? ""}` })),
+    ...artifactInputs
+  ], task, now);
+  if (audit.status === "blocked") throw new Error(`OpenWorld virtual suite blocked by leakage audit: ${audit.findings.map((finding) => finding.id).join(", ")}`);
+  const auditPath = await writeOpenWorldLeakageAudit(root, audit);
+  const caseFilePaths: string[] = [];
+  for (const artifact of caseArtifacts) {
+    const scriptPath = await writeOpenWorldTaskTextArtifact(root, taskId, ["verifiers", suiteId, artifact.split, `${artifact.caseId}.cjs`], artifact.content);
+    caseFilePaths.push(scriptPath);
+  }
+  const traceabilityMapPath = await writeOpenWorldTaskTextArtifact(root, taskId, ["verifiers", suiteId, "traceability-map.json"], `${JSON.stringify({ schemaVersion: "openskill-kit.virtual-test-traceability.v1", suiteId, taskId, generatedAt: now.toISOString(), entries: traceability }, null, 2)}\n`);
+  const manifestPath = await writeOpenWorldTaskTextArtifact(root, taskId, ["verifiers", suiteId, "manifest.json"], `${JSON.stringify({ schemaVersion: "openskill-kit.virtual-test-manifest.v1", suiteId, taskId, generatedAt: now.toISOString(), visible: cases.filter((item) => item.split === "visible").map((item) => item.file), holdout: cases.filter((item) => item.split === "holdout").map((item) => item.file), traceabilityMap: path.relative(root, traceabilityMapPath).replace(/\\/g, "/"), leakageAuditId: audit.id }, null, 2)}\n`);
   const suite: VirtualTestSuite = {
     schemaVersion: "openskill-kit.virtual-test-suite.v1",
-    id: `vts_${shortHash(`${taskId}:${anchors.map((anchor) => anchor.id).join(",")}`)}`,
+    id: suiteId,
     taskId,
     createdAt: now.toISOString(),
     generatedFromAnchorIds: anchors.map((anchor) => anchor.id),
-    cases: anchors.map((anchor, index) => ({
-      id: `case_${shortHash(anchor.id)}`,
-      anchorIds: [anchor.id],
-      runner: "manual",
-      split: index % 4 === 3 ? "holdout" : "visible",
-      name: `Review anchor ${anchor.id}`,
-      description: anchor.claim,
-      command: [],
-      assertions: [
-        "Anchor claim is traceable to its source.",
-        "No hidden oracle or forbidden identifier appears in the claim."
-      ],
-      expectedArtifacts: [],
-      status: "draft"
-    }))
+    cases,
+    artifacts: {
+      manifestPath: path.relative(root, manifestPath).replace(/\\/g, "/"),
+      traceabilityMapPath: path.relative(root, traceabilityMapPath).replace(/\\/g, "/"),
+      visibleDir: path.join(".openskill-kit", "openworld", "tasks", taskId, "verifiers", suiteId, "visible").replace(/\\/g, "/"),
+      holdoutDir: path.join(".openskill-kit", "openworld", "tasks", taskId, "verifiers", suiteId, "holdout").replace(/\\/g, "/")
+    },
+    leakageAuditId: audit.id
   };
-  const suitePath = await writeVirtualTestSuite(projectRoot, suite);
-  return { schemaVersion: "openskill-kit.openworld-virtual-suite-draft.v1", suite, suitePath };
+  const suitePath = await writeVirtualTestSuite(root, suite);
+  return { schemaVersion: "openskill-kit.openworld-virtual-suite-draft.v1", suite, suitePath, manifestPath, traceabilityMapPath, caseFilePaths, audit, auditPath };
+}
+
+function renderNodeVerifierScript(input: { caseId: string; anchor: AnchorCard; source: OpenWorldSource }): string {
+  const anchorPath = path.join(".openskill-kit", "openworld", "tasks", input.anchor.taskId, "anchors", `${input.anchor.id}.json`).replace(/\\/g, "/");
+  const sourcePath = path.join(".openskill-kit", "openworld", "tasks", input.anchor.taskId, "sources", `${input.source.id}.json`).replace(/\\/g, "/");
+  const cachePath = (input.source.cachePath ?? input.source.contentPath ?? path.join(".openskill-kit", "openworld", "tasks", input.anchor.taskId, "sources", "cache", `${input.source.id}.txt`)).replace(/\\/g, "/");
+  return "#!/usr/bin/env node\n" + `const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+
+const root = process.cwd();
+const caseId = ${JSON.stringify(input.caseId)};
+const expectedAnchorId = ${JSON.stringify(input.anchor.id)};
+const expectedSourceId = ${JSON.stringify(input.source.id)};
+const anchorPath = path.join(root, ${JSON.stringify(anchorPath)});
+const sourcePath = path.join(root, ${JSON.stringify(sourcePath)});
+const cachePath = path.join(root, ${JSON.stringify(cachePath)});
+const failures = [];
+const checks = [];
+
+function check(name, pass, message) {
+  checks.push({ name, status: pass ? "pass" : "fail", message });
+  if (!pass) failures.push(message);
+}
+
+function readJson(file, label) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (error) {
+    failures.push(label + " missing or invalid: " + error.message);
+    return undefined;
+  }
+}
+
+const anchor = readJson(anchorPath, "anchor");
+const source = readJson(sourcePath, "source");
+const sourceText = fs.existsSync(cachePath) ? fs.readFileSync(cachePath, "utf8") : "";
+check("anchor-id", anchor && anchor.id === expectedAnchorId, "anchor id matches expected");
+check("source-id", source && source.id === expectedSourceId && anchor && anchor.sourceId === source.id, "anchor references expected source");
+check("source-cache", sourceText.length > 0, "source cache exists and is non-empty");
+if (source && source.contentHash && sourceText) {
+  const actual = crypto.createHash("sha256").update(sourceText).digest("hex");
+  check("source-hash", actual === source.contentHash, "source cache matches recorded content hash");
+}
+if (anchor && anchor.sourceQuote) {
+  check("quote-trace", sourceText.includes(anchor.sourceQuote), "anchor quote appears in source cache");
+}
+const markerText = [anchor?.claim || "", anchor?.sourceQuote || ""].join("\\n");
+check("oracle-marker", !/\\b(hidden[-_\\s]?tests?|oracle[-_\\s]?private|ground[-_\\s]?truth|target[-_\\s]?answer|reference[-_\\s]?solution)\\b/i.test(markerText), "anchor text avoids generic oracle markers");
+const result = { schemaVersion: "openskill-kit.virtual-test-case-result.v1", caseId, status: failures.length ? "fail" : "pass", checks, failures };
+console.log(JSON.stringify(result, null, 2));
+process.exit(failures.length ? 1 : 0);
+`;
 }
 
 function firstUsefulLine(content: string): string | undefined {
-  return content.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length >= 12 && !/^(```|---|#\s*$)/.test(line));
+  return content.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length >= 12 && !/^(?:\x60\x60\x60|---|#\s*$)/.test(line));
 }
 
 function cleanClaim(value: string): string {

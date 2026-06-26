@@ -119,6 +119,7 @@ export const VirtualTestCaseSchema = z.object({
   split: z.enum(["visible", "holdout"]),
   name: z.string().min(1),
   description: z.string().min(1),
+  file: z.string().optional(),
   command: z.array(z.string().min(1)).default([]),
   assertions: z.array(z.string().min(1)).default([]),
   expectedArtifacts: z.array(z.string().min(1)).default([]),
@@ -132,7 +133,42 @@ export const VirtualTestSuiteSchema = z.object({
   createdAt: z.string().datetime(),
   generatedFromAnchorIds: z.array(z.string().min(1)).default([]),
   cases: z.array(VirtualTestCaseSchema).default([]),
+  artifacts: z.object({
+    manifestPath: z.string().optional(),
+    traceabilityMapPath: z.string().optional(),
+    visibleDir: z.string().optional(),
+    holdoutDir: z.string().optional()
+  }).default({}),
   leakageAuditId: z.string().optional()
+});
+
+export const VirtualTestSuiteExecutionSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.virtual-test-execution.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  suiteId: z.string().min(1),
+  split: z.enum(["visible", "holdout", "all"]),
+  executedAt: z.string().datetime(),
+  results: z.array(z.object({
+    caseId: z.string().min(1),
+    split: z.enum(["visible", "holdout"]),
+    status: z.enum(["pass", "fail", "blocked", "timeout", "skipped"]),
+    command: z.string().optional(),
+    args: z.array(z.string()).default([]),
+    exitCode: z.number().nullable().optional(),
+    stdout: z.string().optional(),
+    stderr: z.string().optional(),
+    durationMs: z.number().int().min(0).default(0),
+    message: z.string().min(1)
+  })),
+  summary: z.object({
+    pass: z.number().int().min(0),
+    fail: z.number().int().min(0),
+    blocked: z.number().int().min(0),
+    timeout: z.number().int().min(0),
+    skipped: z.number().int().min(0)
+  }),
+  resultPath: z.string().optional()
 });
 
 export const SkillPlanSchema = z.object({
@@ -206,6 +242,7 @@ export type OpenWorldTrustCache = z.infer<typeof OpenWorldTrustCacheSchema>;
 export type AnchorCard = z.infer<typeof AnchorCardSchema>;
 export type VirtualTestCase = z.infer<typeof VirtualTestCaseSchema>;
 export type VirtualTestSuite = z.infer<typeof VirtualTestSuiteSchema>;
+export type VirtualTestSuiteExecution = z.infer<typeof VirtualTestSuiteExecutionSchema>;
 export type SkillPlan = z.infer<typeof SkillPlanSchema>;
 export type OpenWorldLeakageFinding = z.infer<typeof OpenWorldLeakageFindingSchema>;
 export type OpenWorldLeakageAudit = z.infer<typeof OpenWorldLeakageAuditSchema>;

@@ -67,4 +67,5 @@ export * from "./openworld/store.js";
 export * from "./openworld/render.js";
 export * from "./openworld/python-runner.js";
 export * from "./openworld/research.js";
+export * from "./openworld/verifier-runner.js";
 export * from "./openworld/doctor.js";
