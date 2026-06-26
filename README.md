@@ -122,6 +122,9 @@ openskill-kit eval --compare-baseline
 openskill-kit eval --mode external-agent --dry-run
 openskill-kit status --explain
 openskill-kit detect
+openskill-kit interactions import ./session-export.jsonl
+openskill-kit interactions import ./session-export.jsonl --adapter codex --yes
+openskill-kit interactions imports
 openskill-kit doctor --full
 openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
 openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
@@ -172,6 +175,8 @@ compile/privacy preview, `wa/wr/wl/wd N` for workflow candidate decisions, and
 - Local-only behavior is default.
 - Raw prompts and raw diffs are not stored unless enabled in config.
 - Secret-like values are redacted before event storage.
+- Interaction imports default to dry-run, write source-hash summaries, and do
+  not copy raw session exports into OpenSkillKit artifacts.
 - Invalid custom redaction regexes are reported by `doctor --full` and skipped
   during event capture.
 - Evidence Cards explain learned preferences without storing raw private prompts.
@@ -199,6 +204,8 @@ Key tools:
 - `osk_bootstrap_session`
 - `osk_detect_environment`
 - `osk_get_agent_surfaces`
+- `osk_import_interaction_source`
+- `osk_list_interaction_imports`
 - `osk_get_context_pack`
 - `osk_get_relevant_preferences`
 - `osk_route_behavior`

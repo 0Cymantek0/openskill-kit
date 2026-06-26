@@ -29,6 +29,7 @@ import {
   initAdaptiveProject,
   importProjectBehaviorPack,
   importEncryptedProjectBehaviorPack,
+  importInteractionSource,
   installSkill,
   inspectProjectBehaviorPack,
   loadSkillPackage,
@@ -42,6 +43,7 @@ import {
   readWorkflowGraph,
   renderWorkflowGraph,
   readCalibrationReport,
+  readInteractionImportRuns,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
   readRegistry,
@@ -158,6 +160,48 @@ export function createOpenSkillMcpServer(): McpServer {
       const lastScanPath = path.join(root, ".openskill-kit", "detection", "last-scan.json");
       const existing = await import("node:fs/promises").then((fs) => fs.readFile(lastScanPath, "utf8").then(JSON.parse).catch(() => undefined));
       return toolResult(existing ?? await detectAgentEnvironment(root, { includeUserSurfaces }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_import_interaction_source",
+    {
+      title: "OpenSkillKit Import Interaction Source",
+      description: "Preview or import a JSON/JSONL/text session export as redacted OpenSkillKit events. Dry-run is default unless yes is true.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        sourcePath: z.string().min(1),
+        adapter: z.string().min(1).default("manual-import"),
+        agentName: z.string().min(1).optional(),
+        maxEvents: z.number().int().min(1).max(1000).default(200),
+        allowDuplicate: z.boolean().default(false),
+        yes: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, sourcePath, adapter, agentName, maxEvents, allowDuplicate, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await importInteractionSource(root, sourcePath, {
+        adapter,
+        agentName,
+        maxEvents,
+        allowDuplicate,
+        dryRun: yes !== true
+      }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_list_interaction_imports",
+    {
+      title: "OpenSkillKit List Interaction Imports",
+      description: "List previous interaction import run summaries without raw source content.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult({ schemaVersion: "openskill-kit.interaction-import-runs.v1", runs: await readInteractionImportRuns(root) }, root);
     }
   );
 

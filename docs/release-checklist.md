@@ -14,6 +14,7 @@ Manual audit:
 
 - Fresh project flow works: `init -> detect -> observe -> learn -> review -> compile -> install -> eval -> pack -> sign -> verify -> import-pack --review`.
 - `doctor --full` has no unexpected failures.
+- `interactions import <file>` dry-runs by default, appends only with `--yes`, redacts imported snippets, and blocks duplicate source hashes unless explicitly allowed.
 - `workflows mine` creates review-safe candidate/staged Workflow Graph nodes from repeated passing command/test event sequences without activating behavior.
 - Review queue artifacts, TUI, CLI `review --workflow-activate <id>`, and MCP `osk_apply_review_actions.workflowActivate` can move workflow candidates through review decisions.
 - `status` reports workflow candidate and total pending-review counts.

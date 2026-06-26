@@ -80,6 +80,8 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
       "osk_explain_status",
       "osk_detect_environment",
       "osk_get_agent_surfaces",
+      "osk_import_interaction_source",
+      "osk_list_interaction_imports",
       "osk_get_context_pack",
       "osk_get_relevant_preferences",
       "osk_route_behavior",

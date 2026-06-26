@@ -40,6 +40,15 @@ home-directory Codex, Claude, and skill locations as metadata-only records.
 Detected user memories and override files are never written or imported
 silently.
 
+## Interaction imports
+
+`openskill-kit interactions import <file>` imports cross-agent session/export
+files only after preview. Dry-run is the default; use `--yes` to append parsed
+events. Import runs store source hashes, counts, warnings, and event-shape
+previews under `.openskill-kit/interactions/import-runs/`, not raw source logs.
+Duplicate source hashes are blocked on apply unless `--allow-duplicate` is
+explicit.
+
 `plugin` expands to its required local dependencies so the plugin bundle has the
 skill, hooks, MCP metadata, and manifest files it needs. Target filtering is
 best used in CI or preview workflows where you want narrow artifact churn.

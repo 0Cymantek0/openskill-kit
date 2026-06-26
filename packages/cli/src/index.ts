@@ -26,6 +26,7 @@ import {
   initOpenWorldTask,
   importProjectBehaviorPack,
   importEncryptedProjectBehaviorPack,
+  importInteractionSource,
   installSkill,
   inspectProjectBehaviorPack,
   loadSkillPackage,
@@ -55,6 +56,7 @@ import {
   runLifecycleOnce,
   readRegistry,
   readCalibrationReport,
+  readInteractionImportRuns,
   readEvidenceCards,
   runBehaviorEval,
   runBehaviorCompareEval,
@@ -866,6 +868,38 @@ program.command("watch")
   .action(async (options) => {
     const result = await runLifecycleOnce({ projectRoot: process.cwd(), maxEvents: options.maxEvents, compileSafe: options.compileSafe === true });
     output(options.json, result, `Lifecycle run: ${result.processedEventCount} event(s), ${result.highValueEvents.length} high-value event(s), ${result.graph.candidateCount} candidate(s)`);
+  });
+
+const interactions = program.command("interactions")
+  .description("Import privacy-safe cross-agent interaction evidence");
+
+interactions.command("import")
+  .description("Preview or import a session/export file into redacted OpenSkillKit events")
+  .argument("<source-path>", "JSON, JSONL, markdown, or text export file")
+  .option("--adapter <name>", "Source adapter name", "manual-import")
+  .option("--agent-name <name>", "Source agent name")
+  .option("--max-events <number>", "Maximum parsed events to append", parseIntegerOption, 200)
+  .option("--allow-duplicate", "Allow importing a source hash that was already imported")
+  .option("--yes", "Append parsed events; default is dry-run")
+  .option("--json", "Print JSON")
+  .action(async (sourcePath, options) => {
+    const result = await importInteractionSource(process.cwd(), sourcePath, {
+      adapter: options.adapter,
+      agentName: options.agentName,
+      maxEvents: options.maxEvents,
+      allowDuplicate: options.allowDuplicate === true,
+      dryRun: options.yes !== true
+    });
+    output(options.json, result, `${result.status}: parsed ${result.parsedEventCount}, appended ${result.appendedEventCount}\nReport: ${result.artifacts.markdownPath}`);
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+interactions.command("imports")
+  .description("List interaction import runs")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const runs = await readInteractionImportRuns(process.cwd());
+    output(options.json, { schemaVersion: "openskill-kit.interaction-import-runs.v1", runs }, runs.length ? runs.map((run) => `${run.id} ${run.status} parsed=${run.parsedEventCount} appended=${run.appendedEventCount} ${run.source.adapter}`).join("\n") : "No interaction imports");
   });
 
 const workflows = program.command("workflows")

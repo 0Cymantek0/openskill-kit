@@ -181,9 +181,19 @@ block metadata, and confidence. User/global surfaces are opt-in through
 `--include-user-surfaces` and remain metadata-only by default. Raw session logs
 and agent memories are never imported silently.
 
+## Interaction Imports
+
+`openskill-kit interactions import <file>` previews JSON, JSONL, markdown, or
+plain-text session exports as sanitized event candidates. It defaults to
+dry-run, records only source hash/metadata plus event shape previews under
+`.openskill-kit/interactions/import-runs/`, blocks duplicate source hashes on
+apply, and never copies raw export text into OpenSkillKit artifacts. Applying
+with `--yes` appends redacted events through the same event store used by hooks
+and MCP.
+
 ## MCP Runtime
 
-`openskill-kit-mcp` exposes adaptive tools for bootstrap, status, context packs, preference retrieval, event recording, proposal submission, review actions, learning, compilation, preference explanation, behavior packs, encrypted sync, evals, doctor checks, lifecycle runs, and maintenance operations.
+`openskill-kit-mcp` exposes adaptive tools for bootstrap, status, context packs, interaction import, preference retrieval, event recording, proposal submission, review actions, learning, compilation, preference explanation, behavior packs, encrypted sync, evals, doctor checks, lifecycle runs, and maintenance operations.
 
 MCP results are sanitized before output so project and home paths do not leak unnecessarily.
 
