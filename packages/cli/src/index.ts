@@ -21,6 +21,7 @@ import {
   installInstructionManifests,
   uninstallInstructionManifests,
   initAdaptiveProject,
+  initOpenWorldTask,
   importProjectBehaviorPack,
   importEncryptedProjectBehaviorPack,
   installSkill,
@@ -29,6 +30,10 @@ import {
   buildReviewQueue,
   proposeSemanticPreference,
   retrieveRelevantPreferences,
+  auditOpenWorldLeakage,
+  renderOpenWorldTaskReport,
+  readOpenWorldTask,
+  runOpenWorldPython,
   runAgentDoctor,
   runLifecycleOnce,
   readRegistry,
@@ -48,6 +53,7 @@ import {
   diffProjectBehaviorPacks,
   uninstallSkill,
   updatePreferenceGraph,
+  writeOpenWorldLeakageAudit,
   verifyProjectBehaviorPack,
   verifySkill,
   CompileTargets,
@@ -100,6 +106,95 @@ program.command("doctor")
     const report = options.full === true ? await runFullDoctor(process.cwd()) : await runDoctor(process.cwd());
     output(options.json, report, `Doctor ${report.status}: ${report.checks.length} checks`);
     process.exitCode = report.status === "fail" ? 1 : 0;
+  });
+
+const openworld = program.command("openworld")
+  .description("Manage local-only OpenWorld evolution scaffold artifacts");
+
+openworld.command("init-task")
+  .description("Create an OpenWorld task record under .openskill-kit/openworld")
+  .requiredOption("--title <title>", "Task title")
+  .requiredOption("--prompt <prompt>", "Task prompt")
+  .option("--task-type <type>", "Task type", "general")
+  .option("--language <language>", "Task language", collectOption, [])
+  .option("--path <path>", "Relevant project path", collectOption, [])
+  .option("--forbidden-identifier <value>", "Hidden oracle or benchmark identifier to block", collectOption, [])
+  .option("--forbidden-path <path>", "Hidden oracle path to block", collectOption, [])
+  .option("--allow-web", "Mark future web retrieval as allowed")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await initOpenWorldTask(process.cwd(), {
+      title: options.title,
+      prompt: options.prompt,
+      taskType: options.taskType,
+      languages: options.language,
+      paths: options.path,
+      forbiddenIdentifiers: options.forbiddenIdentifier,
+      forbiddenPaths: options.forbiddenPath,
+      allowWeb: options.allowWeb === true
+    });
+    output(options.json, result, `OpenWorld task ${result.task.id}\n${result.taskPath}`);
+  });
+
+openworld.command("leakage-check")
+  .description("Scan OpenWorld queries, paths, or content for hidden-oracle leakage")
+  .option("--task-id <id>", "Task id", "manual")
+  .option("--query <query>", "Query text to scan", collectOption, [])
+  .option("--content <content>", "Content text to scan", collectOption, [])
+  .option("--path <path>", "Path text to scan", collectOption, [])
+  .option("--forbidden-identifier <value>", "Identifier to block", collectOption, [])
+  .option("--forbidden-path <path>", "Path to block", collectOption, [])
+  .option("--write", "Write audit artifact")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const task = {
+      id: options.taskId,
+      forbiddenIdentifiers: options.forbiddenIdentifier,
+      forbiddenPaths: options.forbiddenPath
+    };
+    const inputs = [
+      ...options.query.map((value: string, index: number) => ({ source: `query-${index + 1}`, surface: "query" as const, value })),
+      ...options.content.map((value: string, index: number) => ({ source: `content-${index + 1}`, surface: "content" as const, value })),
+      ...options.path.map((value: string, index: number) => ({ source: `path-${index + 1}`, surface: "path" as const, value }))
+    ];
+    const audit = auditOpenWorldLeakage(inputs, task);
+    const auditPath = options.write === true ? await writeOpenWorldLeakageAudit(process.cwd(), audit) : undefined;
+    output(options.json, { audit, auditPath }, `${audit.status}: ${audit.findings.length} finding(s)${auditPath ? `\n${auditPath}` : ""}`);
+    process.exitCode = audit.status === "blocked" ? 1 : 0;
+  });
+
+openworld.command("plan")
+  .description("Run Python OpenWorld scaffold planning with leakage enforcement")
+  .requiredOption("--title <title>", "Task title")
+  .requiredOption("--prompt <prompt>", "Task prompt")
+  .option("--task-type <type>", "Task type", "general")
+  .option("--allow-web", "Mark future web retrieval as allowed")
+  .option("--forbidden-identifier <value>", "Identifier to block", collectOption, [])
+  .option("--forbidden-path <path>", "Path to block", collectOption, [])
+  .option("--timeout-ms <number>", "Python timeout", parseIntegerOption, 30000)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const args = [
+      "plan-task",
+      "--title", options.title,
+      "--prompt", options.prompt,
+      "--task-type", options.taskType,
+      ...(options.allowWeb === true ? ["--allow-web"] : []),
+      ...flatRepeat("--forbidden-identifier", options.forbiddenIdentifier),
+      ...flatRepeat("--forbidden-path", options.forbiddenPath)
+    ];
+    const result = await runOpenWorldPython({ projectRoot: process.cwd(), args, timeoutMs: options.timeoutMs });
+    output(options.json, result.result, "OpenWorld plan written");
+  });
+
+openworld.command("report")
+  .description("Render a Markdown report for an OpenWorld task")
+  .requiredOption("--task-id <id>", "Task id")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const task = await readOpenWorldTask(process.cwd(), options.taskId);
+    const markdown = renderOpenWorldTaskReport({ task });
+    output(options.json, { task, markdown }, markdown);
   });
 
 const agent = program.command("agent")
@@ -729,6 +824,10 @@ function parseCompileTarget(value: string): CompileTarget {
 
 function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function flatRepeat(flag: string, values: string[]): string[] {
+  return values.flatMap((value) => [flag, value]);
 }
 
 function parseIntegerOption(value: string): number {

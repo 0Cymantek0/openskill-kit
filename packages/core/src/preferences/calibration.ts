@@ -45,9 +45,9 @@ export async function recordCalibrationOutcomes(
       report.scopes[scopeKey] = increment(report.scopes[scopeKey], outcome);
     }
     const nodeCards = await readEvidenceCards(root, node.evidence.flatMap((item) => item.cardIds ?? []));
-    const extractors = new Set(node.evidence.map((item) => {
+    const extractors = new Set(node.evidence.flatMap((item) => {
       const signal = signalsById.get(item.signalId);
-      return signal?.extractorId ?? signal?.kind;
+      return signal ? [signal.extractorId, signal.kind].filter(Boolean) : [];
     }).filter((value): value is string => Boolean(value)));
     for (const extractor of extractors.size ? extractors : ["unknown"]) {
       report.extractors[extractor] = increment(report.extractors[extractor], outcome);

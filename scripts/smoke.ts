@@ -37,6 +37,11 @@ if (init.config?.schemaVersion !== "openskill-kit.config.v1") {
 }
 const fullDoctorInitial = await runJson(["doctor", "--full", "--json"]);
 if (fullDoctorInitial.status === "fail") throw new Error("full doctor failed");
+const openworldPlan = await runJson(["openworld", "plan", "--title", "Smoke OpenWorld", "--prompt", "Build local anchors only.", "--forbidden-identifier", "hidden-smoke-case", "--json"]);
+if (openworldPlan.task?.schemaVersion !== "openskill-kit.openworld-task.v1" || openworldPlan.audit?.status !== "pass") {
+  throw new Error("openworld plan failed");
+}
+await stat(path.join(root, ".openskill-kit", "openworld", "tasks", openworldPlan.task.id, "task.json"));
 const smokeSecret = ["smoke", "secret"].join("-");
 const observed = await runJson(["observe", "--type", "user-prompt-submit", "--text", `Always run npm test before final response. TOKEN=${smokeSecret}`, "--json"]);
 if (!observed.event?.id || JSON.stringify(observed).includes(smokeSecret)) {

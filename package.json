@@ -20,6 +20,7 @@
     "dist/**/*",
     "docs/",
     "examples/",
+    "python/",
     "packages/*/dist/**/*",
     "packages/*/package.json",
     "packages/agent-plugin-bundle/.mcp.json",

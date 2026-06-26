@@ -32,6 +32,15 @@ npx openskill-kit doctor --full
 npx openskill-kit compact
 ```
 
+OpenWorld scaffold commands are local-only and not benchmark-proven yet:
+
+```bash
+npx openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
+npx openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
+npx openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
+npx openskill-kit openworld report --task-id <owtask_id>
+```
+
 This creates `.openskill-kit/`, records a redacted event, learns candidate
 preferences, activates them through Learning Review, compiles a Context Pack and
 `project-behavior` skill, then installs that skill into the project agent skill
@@ -49,6 +58,11 @@ events -> signals -> Preference Kernel -> Behavior Profile
 OpenSkillKit stores raw lifecycle events in append-only JSONL only when privacy
 settings allow it. Secret-like content is redacted before storage. Signals and
 Preference Nodes stay reviewable as normal project files.
+
+The OpenWorld layer is currently a scaffold for task records, leakage audits,
+Anchor Cards, virtual verifier plans, Python engine entrypoints, and future
+evolution runs. It does not perform web retrieval, LLM generation, sandboxed
+refinement, or hidden-oracle benchmark evaluation yet.
 
 ## Core Commands
 
@@ -88,6 +102,10 @@ openskill-kit eval --compare-baseline
 openskill-kit eval --mode external-agent --dry-run
 openskill-kit status --explain
 openskill-kit doctor --full
+openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
+openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
+openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
+openskill-kit openworld report --task-id <owtask_id>
 openskill-kit compact
 openskill-kit pack
 openskill-kit sync export --passphrase-file .openskill-kit/sync.pass
