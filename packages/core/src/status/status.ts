@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readCalibrationReport, type CalibrationReport } from "../preferences/calibration.js";
 import { readProjectConfig } from "../events/store.js";
+import { readInteractionImportRuns } from "../interactions/importer.js";
 
 export interface AdaptiveStatus {
   schemaVersion: "openskill-kit.status.v1";
@@ -17,6 +18,9 @@ export interface AdaptiveStatus {
   activeWorkflowCount: number;
   stagedWorkflowCount: number;
   workflowCandidateCount: number;
+  interactionImportCount: number;
+  importedInteractionEventCount: number;
+  blockedInteractionImportCount: number;
   pendingReviewCount: number;
   compiled: {
     contextPack: boolean;
@@ -51,6 +55,7 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
   const preferenceCandidates = Array.isArray(candidates) ? candidates.length : 0;
   const signalCount = await countJsonl(path.join(root, ".openskill-kit", "signals", "normalized.jsonl"));
   const eventIndex = await readJson(path.join(root, ".openskill-kit", "events", "index.json")).catch(() => undefined) as { eventCount?: number } | undefined;
+  const interactionImports = await readInteractionImportRuns(root).catch(() => []);
   return {
     schemaVersion: "openskill-kit.status.v1",
     initialized: Boolean(config),
@@ -65,6 +70,9 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
     activeWorkflowCount: workflowGraph?.nodes?.filter((node) => node.status === "active" || node.status === "locked").length ?? 0,
     stagedWorkflowCount: workflowGraph?.nodes?.filter((node) => node.status === "staged").length ?? 0,
     workflowCandidateCount: workflowCandidates,
+    interactionImportCount: interactionImports.length,
+    importedInteractionEventCount: interactionImports.reduce((sum, run) => sum + run.appendedEventCount, 0),
+    blockedInteractionImportCount: interactionImports.filter((run) => run.status === "blocked").length,
     pendingReviewCount: preferenceCandidates + workflowCandidates,
     compiled: {
       contextPack: await exists(path.join(root, ".openskill-kit", "compiled", "context-pack.md")),
@@ -88,6 +96,7 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   if (!status.initialized) nextActions.push("Run init to create project state.");
   if (status.eventCount === 0) nextActions.push("Record lifecycle events with observe or installed hooks.");
   if (status.signalCount === 0 && status.eventCount > 0) nextActions.push("Run learn or daemon to extract signals.");
+  if (status.blockedInteractionImportCount > 0) nextActions.push("Inspect interactions imports; at least one import was blocked.");
   if (status.pendingReviewCount > 0) nextActions.push("Run review --queue, then accept or reject candidates and staged previews.");
   if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
   if (status.activePreferenceCount === 0 && status.pendingReviewCount === 0 && status.signalCount > 0) nextActions.push("Wait for stronger evidence or propose a semantic preference.");

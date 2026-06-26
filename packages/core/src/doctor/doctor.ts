@@ -77,6 +77,13 @@ export async function runFullDoctor(projectRoot: string, homeDir = os.homedir())
     status: status.stale ? "warn" : "pass",
     message: status.stale ? "Compiled artifacts older than graph" : "Compiled artifacts current or not required"
   });
+  checks.push({
+    name: "Interaction imports",
+    status: status.status.blockedInteractionImportCount > 0 ? "warn" : "pass",
+    message: status.status.interactionImportCount
+      ? `${status.status.interactionImportCount} run(s), ${status.status.importedInteractionEventCount} imported event(s), ${status.status.blockedInteractionImportCount} blocked`
+      : "No interaction import runs"
+  });
   checks.push(await fileCheck(path.join(root, ".openskill-kit", "compiled", "hooks", "hooks.json"), "Compiled hooks"));
   checks.push(await fileCheck(path.join(root, ".openskill-kit", "compiled", "mcp", "server-config.json"), "Compiled MCP config"));
   const registry = await readRegistry(root);

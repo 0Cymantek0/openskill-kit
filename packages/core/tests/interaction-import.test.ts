@@ -4,10 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import {
   extractSignals,
+  getAdaptiveStatus,
   importInteractionSource,
   initAdaptiveProject,
   readEvents,
   readInteractionImportRuns,
+  runFullDoctor,
   updatePreferenceGraph
 } from "../src/index.js";
 
@@ -59,6 +61,14 @@ describe("interaction import", () => {
     expect(duplicate.messages.join(" ")).toContain("already imported");
     const runs = await readInteractionImportRuns(root);
     expect(runs.some((run) => run.status === "imported" && run.source.adapter === "codex")).toBe(true);
+    const status = await getAdaptiveStatus(root);
+    expect(status.interactionImportCount).toBeGreaterThanOrEqual(3);
+    expect(status.importedInteractionEventCount).toBe(2);
+    expect(status.blockedInteractionImportCount).toBeGreaterThanOrEqual(1);
+    const doctor = await runFullDoctor(root);
+    const importCheck = doctor.checks.find((check) => check.name === "Interaction imports");
+    expect(importCheck?.status).toBe("warn");
+    expect(importCheck?.message).toContain("blocked");
   });
 
   it("extracts useful events from plain text exports conservatively", async () => {

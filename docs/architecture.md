@@ -189,7 +189,8 @@ dry-run, records only source hash/metadata plus event shape previews under
 `.openskill-kit/interactions/import-runs/`, blocks duplicate source hashes on
 apply, and never copies raw export text into OpenSkillKit artifacts. Applying
 with `--yes` appends redacted events through the same event store used by hooks
-and MCP.
+and MCP. `status --json` reports import-run, imported-event, and blocked-import
+counts, while `doctor --full` warns when any interaction import is blocked.
 
 ## MCP Runtime
 
