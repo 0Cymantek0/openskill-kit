@@ -32,7 +32,7 @@ export const ScopeLevels = [
 
 export type ScopeLevel = typeof ScopeLevels[number];
 
-export const PreferenceStatuses = ["candidate", "active", "rejected", "locked", "conflict"] as const;
+export const PreferenceStatuses = ["candidate", "staged", "active", "rejected", "locked", "conflict"] as const;
 export type PreferenceStatus = typeof PreferenceStatuses[number];
 
 export const PreferencePolarities = ["positive", "negative", "neutral"] as const;

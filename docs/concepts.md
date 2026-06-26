@@ -97,6 +97,14 @@ Compact markdown summary of active project behavior for agent sessions.
 
 Reviewed preferences currently applied to agent behavior and compiled outputs.
 
+## Staged Preferences
+
+High-confidence candidates created by `learning.mode=auto-stage`. Staged
+preferences appear in the review queue and in
+`.openskill-kit/compiled/previews/staged-context-pack.md` when you run
+`openskill-kit compile --include-staged-preview`, but they do not affect active
+agent behavior until accepted or locked.
+
 ## Learning Review
 
 Manual review step where candidate preferences are activated, rejected, or

@@ -5,6 +5,7 @@ import { compileInstructionManifests } from "./instruction-compiler.js";
 import { compileAgentPlugin } from "./plugin-compiler.js";
 import { compilePolicyArtifacts } from "./policy-compiler.js";
 import { compileBehaviorSkills } from "./skill-compiler.js";
+import { compileStagedPreview } from "./staged-preview.js";
 import { readProjectConfig } from "../events/store.js";
 import { CompileTargets, normalizeCompileTargets, type CompileTarget } from "../schema/constants.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
@@ -25,10 +26,12 @@ export interface CompileBehaviorLayerResult {
   policyArtifactPaths: string[];
   graphMarkdownPath?: string;
   integrityReportPath: string;
+  stagedPreviewPath?: string;
 }
 
 export interface CompileBehaviorLayerOptions {
   targets?: CompileTarget[];
+  includeStagedPreview?: boolean;
 }
 
 export async function compileBehaviorLayer(projectRoot: string, options: CompileBehaviorLayerOptions = {}): Promise<CompileBehaviorLayerResult> {
@@ -48,6 +51,7 @@ export async function compileBehaviorLayer(projectRoot: string, options: Compile
     const manifests = targetSet.has("project-rules") ? await compileInstructionManifests(root) : undefined;
     const mcpConfigPath = targetSet.has("mcp-resources") ? await compileMcpConfig(root, contextPack?.contextPackPath) : undefined;
     const plugin = targetSet.has("plugin") ? await compileAgentPlugin(root) : undefined;
+    const stagedPreview = options.includeStagedPreview === true ? await compileStagedPreview(root) : undefined;
     return {
       schemaVersion: "openskill-kit.compile.v1",
       compiledTargets: [...targetSet].sort(),
@@ -60,7 +64,8 @@ export async function compileBehaviorLayer(projectRoot: string, options: Compile
       pluginManifestPath: plugin?.manifestPath,
       policyArtifactPaths: policy ? [policy.pathMapPath, policy.commandPolicyPath, policy.reviewChecklistPath] : [],
       graphMarkdownPath,
-      integrityReportPath
+      integrityReportPath,
+      stagedPreviewPath: stagedPreview?.previewPath
     };
   });
 }

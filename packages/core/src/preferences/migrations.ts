@@ -21,7 +21,7 @@ function upgradeNode(input: unknown): unknown {
     privacy: node.privacy ?? inferPrivacy(node),
     compileTargets: node.compileTargets ?? inferCompileTargets(node),
     lifecycle: node.lifecycle ?? {
-      state: node.status === "active" || node.status === "locked" ? "active" : node.status === "rejected" ? "deprecated" : "candidate",
+      state: node.status === "active" || node.status === "locked" ? "active" : node.status === "staged" ? "staged" : node.status === "rejected" ? "deprecated" : "candidate",
       reviewedAt: node.status === "active" || node.status === "locked" || node.status === "rejected" ? node.updatedAt : undefined,
       promotedAt: node.scope?.level === "user" || node.scope?.level === "global" ? node.updatedAt : undefined
     }

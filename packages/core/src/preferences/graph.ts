@@ -74,9 +74,11 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
       const id = `pref_${shortHash(`${group[0]?.category}:${group[0]?.statement.toLowerCase()}`)}`;
       const existingNode = byId.get(id);
       const confidence = scoreConfidence(group, config.learning.decayHalfLifeDays, now);
-      const desiredStatus = existingNode?.status && existingNode.status !== "candidate"
+      const desiredStatus = existingNode?.status && existingNode.status !== "candidate" && existingNode.status !== "staged"
         ? existingNode.status
-        : confidence >= config.learning.minConfidenceToApply && config.learning.mode === "auto-apply-safe" ? "active" : "candidate";
+        : confidence >= config.learning.minConfidenceToApply && config.learning.mode === "auto-apply-safe" ? "active"
+          : confidence >= config.learning.minConfidenceToApply && config.learning.mode === "auto-stage" ? "staged"
+            : "candidate";
       const node = PreferenceNodeSchema.parse({
         schemaVersion: "openskill-kit.preference-node.v2",
         id,
@@ -100,7 +102,7 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
         privacy: inferPrivacy(mergeScopes(group)),
         compileTargets: inferCompileTargets(group[0]?.category ?? "general", mergeScopes(group), dominantPolarity(group)),
         lifecycle: {
-          state: desiredStatus === "active" || desiredStatus === "locked" ? "active" : desiredStatus === "rejected" ? "deprecated" : "candidate",
+          state: desiredStatus === "active" || desiredStatus === "locked" ? "active" : desiredStatus === "staged" ? "staged" : desiredStatus === "rejected" ? "deprecated" : "candidate",
           reviewedAt: existingNode?.lifecycle?.reviewedAt,
           promotedAt: existingNode?.lifecycle?.promotedAt
         },
@@ -111,18 +113,18 @@ export async function updatePreferenceGraph(projectRoot: string, now = new Date(
       nextNodes.push(integrityIssues.length ? { ...node, status: "candidate" } : node);
     }
     const merged = mergeLockedAndRejected(existing.nodes, nextNodes);
-    const conflicts = detectConflicts(merged.filter((node) => node.status === "active" || node.status === "candidate"));
+    const conflicts = detectConflicts(merged.filter((node) => node.status === "active" || node.status === "candidate" || node.status === "staged"));
     const graph = PreferenceGraphSchema.parse({
       schemaVersion: "openskill-kit.preference-graph.v1",
       projectId: config.projectId,
-      nodes: merged.map((node) => conflicts.some((conflict) => conflict.nodeIds.includes(node.id)) && node.status === "candidate" ? { ...node, status: "conflict" } : node),
+      nodes: merged.map((node) => conflicts.some((conflict) => conflict.nodeIds.includes(node.id)) && (node.status === "candidate" || node.status === "staged") ? { ...node, status: "conflict" } : node),
       conflicts,
       updatedAt: now.toISOString()
     });
     const graphPath = graphFile(root);
     const candidatesPath = pendingFile(root);
     await writeJsonAtomic(graphPath, graph);
-    const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
+    const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict");
     await writeJsonAtomic(candidatesPath, pending);
     return { schemaVersion: "openskill-kit.graph-update.v1", graphPath, candidatesPath, graph, candidateCount: pending.length };
   });
@@ -147,7 +149,7 @@ export async function applyPreferenceReview(projectRoot: string, options: ApplyP
       else if (lock.has(node.id)) next = { ...next, status: "locked" as const };
       else if (activate.has(node.id)) next = { ...next, status: "active" as const };
       else if (demote.has(node.id)) next = { ...next, status: "candidate" as const };
-      else if (options.activateAll && node.status === "candidate") next = { ...next, status: "active" as const };
+      else if (options.activateAll && (node.status === "candidate" || node.status === "staged")) next = { ...next, status: "active" as const };
       if (promote.has(node.id)) next = { ...next, scope: { ...next.scope, level: "user" as const } };
       if (promoteGlobal.has(node.id)) next = { ...next, scope: { ...next.scope, level: "global" as const } };
       return next === node ? node : withReviewMetadata(next, node, now);
@@ -155,11 +157,11 @@ export async function applyPreferenceReview(projectRoot: string, options: ApplyP
     nodes = applyReviewEdits(nodes, options.edits ?? [], now);
     nodes = applyReviewMerges(nodes, options.merges ?? [], now);
     nodes = applyReviewSplits(nodes, options.splits ?? [], now);
-    const next = PreferenceGraphSchema.parse({ ...graph, nodes, conflicts: detectConflicts(nodes.filter((node) => node.status === "active" || node.status === "candidate" || node.status === "conflict")), updatedAt: now.toISOString() });
+    const next = PreferenceGraphSchema.parse({ ...graph, nodes, conflicts: detectConflicts(nodes.filter((node) => node.status === "active" || node.status === "candidate" || node.status === "staged" || node.status === "conflict")), updatedAt: now.toISOString() });
     const outcomes = collectCalibrationOutcomes(graph.nodes, next.nodes, options);
     if (outcomes.length) await recordCalibrationOutcomes(root, outcomes, now);
     await writeJsonAtomic(graphFile(root), next);
-    await writeJsonAtomic(pendingFile(root), next.nodes.filter((node) => node.status === "candidate" || node.status === "conflict"));
+    await writeJsonAtomic(pendingFile(root), next.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict"));
     return next;
   });
 }
@@ -175,7 +177,7 @@ function withReviewMetadata(next: PreferenceNode, previous: PreferenceNode, now:
     compileTargets: inferCompileTargets(next.category, next.scope, next.polarity),
     lifecycle: {
       ...next.lifecycle,
-      state: next.status === "active" || next.status === "locked" ? "active" : next.status === "rejected" ? "deprecated" : "candidate",
+      state: next.status === "active" || next.status === "locked" ? "active" : next.status === "staged" ? "staged" : next.status === "rejected" ? "deprecated" : "candidate",
       reviewedAt: reviewed ? now.toISOString() : next.lifecycle?.reviewedAt,
       promotedAt: promoted ? now.toISOString() : next.lifecycle?.promotedAt
     },
@@ -199,7 +201,7 @@ function collectCalibrationOutcomes(previous: PreferenceNode[], next: Preference
       continue;
     }
     const before = previousById.get(node.id);
-    if (options.activateAll && before?.status === "candidate" && node.status === "active") out.push({ node, outcome: "accepted" });
+    if (options.activateAll && (before?.status === "candidate" || before?.status === "staged") && node.status === "active") out.push({ node, outcome: "accepted" });
     if (before && before.status !== "rejected" && node.status === "rejected") out.push({ node, outcome: "rejected" });
   }
   const seen = new Set<string>();
@@ -255,7 +257,7 @@ function mergeLockedAndRejected(existing: PreferenceNode[], next: PreferenceNode
   const nextIds = new Set(next.map((node) => node.id));
   return [
     ...next,
-    ...existing.filter((node) => !nextIds.has(node.id) && (node.status === "locked" || node.status === "rejected" || node.status === "active"))
+    ...existing.filter((node) => !nextIds.has(node.id) && (node.status === "locked" || node.status === "rejected" || node.status === "active" || node.status === "staged"))
   ].sort((a, b) => a.category.localeCompare(b.category) || b.confidence - a.confidence || a.title.localeCompare(b.title));
 }
 

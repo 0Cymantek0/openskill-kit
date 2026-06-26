@@ -9,6 +9,7 @@ npx openskill-kit learn
 npx openskill-kit review --activate-all
 npx openskill-kit review --tui
 npx openskill-kit compile
+npx openskill-kit compile --include-staged-preview
 npx openskill-kit agent install-manifests --target project --dry-run
 npx openskill-kit agent install-manifests --target project --yes
 npx openskill-kit agent uninstall-manifests --target project --dry-run
@@ -34,6 +35,8 @@ Generated adaptive artifacts:
 - `.openskill-kit/preferences/integrity-report.json`: memory integrity checks for compiled behavior.
 - `.openskill-kit/preferences/active/`: Active Behavior Layer.
 - `.openskill-kit/compiled/context-pack.md`: compact agent context.
+- `.openskill-kit/compiled/previews/staged-context-pack.md`: review-only staged
+  behavior preview when requested.
 - `.openskill-kit/compiled/skills/project-behavior/`: installable Agent Skill.
 - `.openskill-kit/compiled/skills/project-*/`: scoped dynamic skill shards for active categories.
 - `.openskill-kit/compiled/manifests/`: managed AGENTS.md, CLAUDE.md, and path rule previews.

@@ -88,6 +88,7 @@ openskill-kit review --demote <preference-id>
 openskill-kit review --activate-all
 openskill-kit compile
 openskill-kit compile --target context-pack
+openskill-kit compile --include-staged-preview
 openskill-kit explain <preference-id>
 openskill-kit explain <preference-id> --evidence
 openskill-kit calibration

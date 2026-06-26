@@ -98,7 +98,7 @@ program.command("status")
       return;
     }
     const status = await getAdaptiveStatus(process.cwd());
-    output(options.json, status, `Initialized: ${status.initialized}\nEvents: ${status.eventCount}\nSignals: ${status.signalCount}\nActive preferences: ${status.activePreferenceCount}\nCandidates: ${status.candidateCount}`);
+    output(options.json, status, `Initialized: ${status.initialized}\nEvents: ${status.eventCount}\nSignals: ${status.signalCount}\nActive preferences: ${status.activePreferenceCount}\nStaged preferences: ${status.stagedPreferenceCount}\nPending review: ${status.candidateCount}`);
   });
 
 program.command("doctor")
@@ -344,7 +344,7 @@ program.command("learn")
     }
     const signals = await extractSignals(process.cwd());
     const graph = await updatePreferenceGraph(process.cwd());
-    output(options.json, { signals, graph }, `Learned ${signals.signalCount} signal(s)\nCandidates: ${graph.candidateCount}`);
+    output(options.json, { signals, graph }, `Learned ${signals.signalCount} signal(s)\nPending review: ${graph.candidateCount}`);
   });
 
 program.command("review")
@@ -398,7 +398,7 @@ program.command("review")
       merges: options.mergeInto && options.mergeSource.length ? [{ targetId: options.mergeInto, sourceIds: options.mergeSource, statement: options.statement }] : undefined,
       splits: options.split && options.splitStatement.length ? [{ id: options.split, statements: options.splitStatement }] : undefined
     });
-    const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
+    const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict");
     output(options.json, graph, pending.length ? pending.map((node) => `${node.id} ${node.status} ${node.statement}`).join("\n") : "No pending preferences");
   });
 
@@ -435,15 +435,17 @@ program.command("propose")
 program.command("compile")
   .description("Compile active preferences into context pack, skill, hooks, and MCP config")
   .option("--target <target>", "Compile one target; repeat for several", collectOption, [])
+  .option("--include-staged-preview", "Also write review-only staged preference preview")
   .option("--json", "Print JSON")
   .action(async (options) => {
     const targets = options.target.length ? options.target.map(parseCompileTarget) : undefined;
-    const result = await compileBehaviorLayer(process.cwd(), { targets });
+    const result = await compileBehaviorLayer(process.cwd(), { targets, includeStagedPreview: options.includeStagedPreview === true });
     output(options.json, result, [
       `Compiled behavior layer: ${result.compiledTargets.join(", ")}`,
       result.contextPackPath ? `Context: ${result.contextPackPath}` : undefined,
       result.skillPaths.length ? `Skill: ${result.skillPaths.join(", ")}` : undefined,
-      result.manifestPaths.length ? `Manifests: ${result.manifestPaths.join(", ")}` : undefined
+      result.manifestPaths.length ? `Manifests: ${result.manifestPaths.join(", ")}` : undefined,
+      result.stagedPreviewPath ? `Staged preview: ${result.stagedPreviewPath}` : undefined
     ].filter(Boolean).join("\n"));
   });
 
@@ -986,12 +988,12 @@ function printReviewScreen(candidates: Array<{ id: string; status: string; categ
 
 function printReviewHelp(): void {
   console.log("Commands:");
-  console.log("  a 1  activate candidate 1");
-  console.log("  r 1  reject candidate 1");
-  console.log("  l 1  lock candidate 1");
-  console.log("  d 1  demote candidate 1");
-  console.log("  e 1  show sanitized evidence cards for candidate 1");
-  console.log("  p 1  show compile/privacy preview for candidate 1");
+  console.log("  a 1  activate pending item 1");
+  console.log("  r 1  reject pending item 1");
+  console.log("  l 1  lock pending item 1");
+  console.log("  d 1  demote pending item 1");
+  console.log("  e 1  show sanitized evidence cards for pending item 1");
+  console.log("  p 1  show compile/privacy preview for pending item 1");
   console.log("  c    show calibration reliability dashboard");
   console.log("  w    write review queue artifacts and exit");
   console.log("  q    quit");

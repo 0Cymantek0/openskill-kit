@@ -6,13 +6,16 @@ import path from "node:path";
 import {
   appendEvent,
   applyPreferenceReview,
+  compileBehaviorLayer,
   detectConflicts,
+  extractSignals,
   getAdaptiveStatus,
   importProjectBehaviorPack,
   initAdaptiveProject,
   migrateProjectConfig,
   redactValue,
   scoreConfidence,
+  updatePreferenceGraph,
   verifyProjectBehaviorPack,
   type PreferenceGraph,
   type PreferenceNode
@@ -32,10 +35,38 @@ describe("phase 1 hardening", () => {
     expect(status.activePreferenceCount).toBe(2);
   });
 
+  it("auto-stages safe preferences and keeps them out of active compiled behavior", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    await writeJson(configPath, {
+      ...config,
+      learning: { ...config.learning, mode: "auto-stage", minConfidenceToApply: 0.35 }
+    });
+    await appendEvent(root, {
+      sessionId: "auto-stage",
+      eventType: "user-prompt-submit",
+      source: { adapter: "test" },
+      normalized: { text: "Always run focused regression tests before final answer." }
+    });
+    await extractSignals(root, new Date("2026-06-25T00:01:00.000Z"));
+    const graph = await updatePreferenceGraph(root, new Date("2026-06-25T00:02:00.000Z"));
+    const staged = graph.graph.nodes.find((node) => node.statement.includes("focused regression tests"));
+    expect(staged?.status).toBe("staged");
+
+    const compiled = await compileBehaviorLayer(root, { targets: ["context-pack"], includeStagedPreview: true });
+    const context = await readFile(compiled.contextPackPath!, "utf8");
+    expect(context).not.toContain("focused regression tests");
+    expect(compiled.stagedPreviewPath).toBeTruthy();
+    const preview = await readFile(compiled.stagedPreviewPath!, "utf8");
+    expect(preview).toContain("focused regression tests");
+  });
+
   it("applies review transitions without silently activating conflicts", async () => {
     const root = await tempProject();
     await writeJson(path.join(root, ".openskill-kit", "preferences", "graph.json"), graph([
       pref("candidate-one", "candidate"),
+      pref("staged-one", "staged"),
       pref("conflict-one", "conflict"),
       pref("reject-one", "candidate"),
       pref("lock-one", "candidate")
@@ -43,6 +74,7 @@ describe("phase 1 hardening", () => {
 
     const reviewed = await applyPreferenceReview(root, { activateAll: true, reject: ["pref_reject-one"], lock: ["pref_lock-one"] }, new Date("2026-06-25T00:00:00.000Z"));
     expect(reviewed.nodes.find((node) => node.id === "pref_candidate-one")?.status).toBe("active");
+    expect(reviewed.nodes.find((node) => node.id === "pref_staged-one")?.status).toBe("active");
     expect(reviewed.nodes.find((node) => node.id === "pref_conflict-one")?.status).toBe("conflict");
     expect(reviewed.nodes.find((node) => node.id === "pref_reject-one")?.status).toBe("rejected");
     expect(reviewed.nodes.find((node) => node.id === "pref_lock-one")?.status).toBe("locked");

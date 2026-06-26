@@ -47,6 +47,7 @@ export * from "./compiler/plugin-compiler.js";
 export * from "./compiler/policy-compiler.js";
 export * from "./compiler/instruction-compiler.js";
 export * from "./compiler/package-compiler.js";
+export * from "./compiler/staged-preview.js";
 export * from "./lifecycle/init.js";
 export * from "./lifecycle/runner.js";
 export * from "./status/status.js";

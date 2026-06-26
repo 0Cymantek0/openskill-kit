@@ -12,6 +12,7 @@ export interface AdaptiveStatus {
   eventCount: number;
   signalCount: number;
   activePreferenceCount: number;
+  stagedPreferenceCount: number;
   candidateCount: number;
   compiled: {
     contextPack: boolean;
@@ -51,6 +52,7 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
     eventCount: eventIndex?.eventCount ?? 0,
     signalCount,
     activePreferenceCount: graph?.nodes?.filter((node) => node.status === "active" || node.status === "locked").length ?? 0,
+    stagedPreferenceCount: graph?.nodes?.filter((node) => node.status === "staged").length ?? 0,
     candidateCount: Array.isArray(candidates) ? candidates.length : 0,
     compiled: {
       contextPack: await exists(path.join(root, ".openskill-kit", "compiled", "context-pack.md")),
@@ -73,7 +75,7 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   if (!status.initialized) nextActions.push("Run init to create project state.");
   if (status.eventCount === 0) nextActions.push("Record lifecycle events with observe or installed hooks.");
   if (status.signalCount === 0 && status.eventCount > 0) nextActions.push("Run learn or daemon to extract signals.");
-  if (status.candidateCount > 0) nextActions.push("Run review --queue, then accept or reject candidates.");
+  if (status.candidateCount > 0) nextActions.push("Run review --queue, then accept or reject candidates and staged previews.");
   if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
   if (status.activePreferenceCount === 0 && status.candidateCount === 0 && status.signalCount > 0) nextActions.push("Wait for stronger evidence or propose a semantic preference.");
   if (calibration) nextActions.push(`Calibration loaded: ${Object.keys(calibration.categories).length} categor${Object.keys(calibration.categories).length === 1 ? "y" : "ies"}, ${Object.keys(calibration.extractors).length} extractor(s), ${Object.keys(calibration.evalOutcomes).length} eval outcome(s).`);

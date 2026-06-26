@@ -98,7 +98,7 @@ export async function readSemanticProposalSignals(projectRoot: string): Promise<
 export async function buildReviewQueue(projectRoot: string): Promise<ReviewQueueResult> {
   const root = path.resolve(projectRoot);
   const graph = await readPreferenceGraph(root);
-  const candidates = graph.nodes.filter((node) => node.status === "candidate" || node.status === "conflict");
+  const candidates = graph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict");
   const proposals = await readSemanticProposals(root);
   const evidenceCards = await readEvidenceCards(root, candidates.flatMap((node) => node.evidence.flatMap((item) => item.cardIds ?? [])));
   const queuePath = path.join(root, ".openskill-kit", "reviews", "queue.json");

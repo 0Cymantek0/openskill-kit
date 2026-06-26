@@ -28,7 +28,7 @@ export const PreferenceNodeSchema = z.object({
   }).optional(),
   compileTargets: z.array(z.enum(CompileTargets)).optional(),
   lifecycle: z.object({
-    state: z.enum(["candidate", "active", "deprecated"]),
+    state: z.enum(["candidate", "staged", "active", "deprecated"]),
     reviewedAt: z.string().datetime().optional(),
     promotedAt: z.string().datetime().optional(),
     expiresAt: z.string().datetime().optional()
