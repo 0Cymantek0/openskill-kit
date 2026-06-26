@@ -187,8 +187,14 @@ The OpenWorld plane is added beside the TypeScript control plane. It must stay l
 
 `openskill-kit openworld doctor` reports what is real today: task records,
 leakage checks, local source ingestion, and Anchor Cards are available; web
-retrieval, built-in LLM skill generation, sandboxed refinement, and
-hidden-oracle benchmark proof remain missing.
+retrieval is available only for explicit URLs on tasks created with
+`--allow-web`; autonomous query planning/search, built-in LLM skill generation,
+sandboxed refinement, and hidden-oracle benchmark proof remain missing.
+
+OpenWorld source ingestion now updates `.openskill-kit/openworld/source-index.json`
+and `.openskill-kit/openworld/trust-cache.json`. Source text is cached under the
+task's `sources/cache/` directory after leakage audit. Trust scores are
+explainable metadata, not proof of correctness.
 
 Target flow:
 

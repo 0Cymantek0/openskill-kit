@@ -40,6 +40,8 @@ npx openskill-kit openworld init-task --title "Verifier-first skill" --prompt "B
 npx openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
 npx openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
 npx openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
+npx openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
+npx openskill-kit openworld sources
 npx openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
 npx openskill-kit openworld report --task-id <owtask_id>
@@ -114,6 +116,8 @@ openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build
 openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
 openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
 openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
+openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
+openskill-kit openworld sources
 openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
 openskill-kit openworld report --task-id <owtask_id>
@@ -215,6 +219,8 @@ Key tools:
 - `osk_explain_status`
 - `osk_run_full_doctor`
 - `osk_openworld_doctor`
+- `osk_openworld_ingest_source`
+- `osk_openworld_sources`
 - `osk_compact_state`
 - `osk_prune_state`
 - `osk_archive_state`

@@ -20,6 +20,8 @@ import {
   evolveSkill,
   explainAdaptiveStatus,
   getAdaptiveStatus,
+  ingestLocalOpenWorldSource,
+  ingestWebOpenWorldSource,
   installAgentHooks,
   installInstructionManifests,
   uninstallInstructionManifests,
@@ -33,6 +35,8 @@ import {
   proposeSemanticPreference,
   readPreferenceGraph,
   readCalibrationReport,
+  readOpenWorldSourceIndex,
+  readOpenWorldTrustCache,
   readRegistry,
   retrieveRelevantPreferences,
   routeBehavior,
@@ -769,6 +773,44 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runOpenWorldDoctor(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_ingest_source",
+    {
+      title: "OpenSkillKit OpenWorld Ingest Source",
+      description: "Ingest a project-local file or explicit web source for an OpenWorld task with leakage and trust gates.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        file: z.string().min(1).optional(),
+        url: z.string().url().optional(),
+        title: z.string().optional(),
+        content: z.string().optional()
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, file, url, title, content }) => {
+      const root = resolveProjectRoot(projectRoot);
+      if (file && url) throw new Error("Pass file or url, not both.");
+      if (file) return toolResult(await ingestLocalOpenWorldSource(root, taskId, file), root);
+      if (url) return toolResult(await ingestWebOpenWorldSource(root, taskId, { url, title, content }), root);
+      throw new Error("file or url required.");
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_sources",
+    {
+      title: "OpenSkillKit OpenWorld Sources",
+      description: "Return OpenWorld source index and trust cache.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult({ index: await readOpenWorldSourceIndex(root), trust: await readOpenWorldTrustCache(root) }, root);
     }
   );
 

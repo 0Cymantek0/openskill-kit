@@ -53,6 +53,8 @@ Generated adaptive artifacts:
 - `.openskill-kit/sessions/summaries/`: session-level learning summaries.
 - `.openskill-kit/evals/runs/*/behavior-compare.md`: baseline vs OpenSkillKit replay scorecard.
 - `.openskill-kit/retrieval/route-plans/`: behavior routing traces for local/project/OpenWorld decisions.
+- `.openskill-kit/openworld/source-index.json`: leakage-audited OpenWorld source registry.
+- `.openskill-kit/openworld/trust-cache.json`: trust metadata for project-local and explicit web sources.
 - `.agents/hooks/openskill-kit.json`: installed local hook adapter config.
 - `AGENTS.md`, `CLAUDE.md`, `.claude/rules/`: optional managed project manifests after `agent install-manifests --yes`.
 

@@ -35,7 +35,10 @@ import {
   buildVirtualSuiteFromAnchors,
   draftAnchorFromOpenWorldSource,
   ingestLocalOpenWorldSource,
+  ingestWebOpenWorldSource,
   renderOpenWorldTaskReport,
+  readOpenWorldSourceIndex,
+  readOpenWorldTrustCache,
   readOpenWorldTask,
   routeBehavior,
   runOpenWorldPython,
@@ -220,6 +223,38 @@ openworld.command("research")
   .action(async (options) => {
     const result = await ingestLocalOpenWorldSource(process.cwd(), options.taskId, options.file);
     output(options.json, result, `OpenWorld source ${result.source.id}\n${result.sourcePath}`);
+  });
+
+openworld.command("fetch-source")
+  .description("Fetch or register an explicit web source for an OpenWorld task")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--url <url>", "HTTP(S) source URL")
+  .option("--title <title>", "Source title")
+  .option("--content-file <path>", "Use local text content instead of network fetch")
+  .option("--timeout-ms <number>", "Fetch timeout", parseIntegerOption, 12000)
+  .option("--max-bytes <number>", "Maximum fetched text size", parseIntegerOption, 1000000)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const content = options.contentFile ? await fs.readFile(path.resolve(options.contentFile), "utf8") : undefined;
+    const result = await ingestWebOpenWorldSource(process.cwd(), options.taskId, {
+      url: options.url,
+      title: options.title,
+      content,
+      timeoutMs: options.timeoutMs,
+      maxBytes: options.maxBytes
+    });
+    output(options.json, result, `OpenWorld source ${result.source.id}\n${result.sourcePath}`);
+  });
+
+openworld.command("sources")
+  .description("List OpenWorld source index and trust cache")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const index = await readOpenWorldSourceIndex(process.cwd());
+    const trust = await readOpenWorldTrustCache(process.cwd());
+    output(options.json, { index, trust }, index.entries.length
+      ? index.entries.map((entry) => `${entry.sourceId} ${entry.kind} trust=${entry.trustScore} ${entry.uri}`).join("\n")
+      : "No OpenWorld sources indexed");
   });
 
 openworld.command("anchors")

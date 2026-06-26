@@ -114,6 +114,8 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
       "osk_run_lifecycle_once",
       "osk_run_full_doctor",
       "osk_openworld_doctor",
+      "osk_openworld_ingest_source",
+      "osk_openworld_sources",
       "osk_reset_state",
       "osk_prune_state",
       "osk_archive_state",

@@ -31,29 +31,94 @@ export async function ingestLocalOpenWorldSource(projectRoot: string, taskId: st
   if (!(absolute === root || absolute.startsWith(`${root}${path.sep}`))) throw new Error(`Local source must stay under project root: ${filePath}`);
   const content = await fs.readFile(absolute, "utf8");
   const relative = path.relative(root, absolute).replace(/\\/g, "/");
-  const audit = auditOpenWorldLeakage([
-    { source: relative, surface: "path", value: relative },
-    { source: relative, surface: "content", value: content }
-  ], task, now);
-  if (audit.status === "blocked") throw new Error(`OpenWorld local source blocked by leakage audit: ${audit.findings.map((finding) => finding.id).join(", ")}`);
   const sourceId = `src_${shortHash(`${taskId}:${relative}:${sha256(content)}`)}`;
-  const contentPath = path.join(".openskill-kit", "openworld", "tasks", taskId, "sources", `${sourceId}.content.txt`).replace(/\\/g, "/");
-  const source = makeOpenWorldSource({
-    id: sourceId,
+  return registerOpenWorldSource(root, {
     taskId,
+    id: sourceId,
     kind: relative.startsWith("docs/") || relative.endsWith(".md") ? "local-doc" : "project-file",
     uri: relative,
     title: path.basename(relative),
     content,
-    retrievedAt: now,
-    contentPath,
+    now,
     trust: { authority: 0.7, freshness: 0.8, independence: 0.4, rationale: "Project-local source, leakage-audited before caching." },
     privacyClass: "project-private",
-    usableFor: ["skill", "virtual-test", "report"],
+    usableFor: ["skill", "virtual-test", "report"]
+  });
+}
+
+export interface IngestWebSourceOptions {
+  url: string;
+  title?: string;
+  content?: string;
+  timeoutMs?: number;
+  maxBytes?: number;
+  now?: Date;
+}
+
+export async function ingestWebOpenWorldSource(projectRoot: string, taskId: string, options: IngestWebSourceOptions): Promise<IngestLocalSourceResult> {
+  const root = path.resolve(projectRoot);
+  const task = await readOpenWorldTask(root, taskId);
+  if (!task.allowWeb) throw new Error("OpenWorld web source ingestion blocked: task allowWeb is false");
+  const url = new URL(options.url);
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error(`Unsupported OpenWorld source URL protocol: ${url.protocol}`);
+  const content = options.content ?? await fetchText(url, options.timeoutMs ?? 12000, options.maxBytes ?? 1_000_000);
+  const sourceId = `src_${shortHash(`${taskId}:${url.toString()}:${sha256(content)}`)}`;
+  return registerOpenWorldSource(root, {
+    taskId,
+    id: sourceId,
+    kind: classifyWebSource(url),
+    uri: url.toString(),
+    title: options.title ?? url.hostname,
+    content,
+    now: options.now ?? new Date(),
+    locator: { url: url.toString() },
+    trust: trustForWebSource(url),
+    privacyClass: "openworld-public",
+    usableFor: ["skill", "virtual-test", "report"]
+  });
+}
+
+async function registerOpenWorldSource(
+  root: string,
+  input: {
+    taskId: string;
+    id: string;
+    kind: OpenWorldSource["kind"];
+    uri: string;
+    title?: string;
+    content: string;
+    now: Date;
+    locator?: OpenWorldSource["locator"];
+    trust: OpenWorldSource["trust"];
+    privacyClass: OpenWorldSource["privacyClass"];
+    usableFor: OpenWorldSource["usableFor"];
+  }
+): Promise<IngestLocalSourceResult> {
+  const task = await readOpenWorldTask(root, input.taskId);
+  const audit = auditOpenWorldLeakage([
+    { source: input.uri, surface: input.uri.startsWith("http") ? "query" : "path", value: input.uri },
+    { source: input.uri, surface: "content", value: input.content }
+  ], task, input.now);
+  if (audit.status === "blocked") throw new Error(`OpenWorld source blocked by leakage audit: ${audit.findings.map((finding) => finding.id).join(", ")}`);
+  const cachePath = path.join(".openskill-kit", "openworld", "tasks", input.taskId, "sources", "cache", `${input.id}.txt`).replace(/\\/g, "/");
+  const source = makeOpenWorldSource({
+    id: input.id,
+    taskId: input.taskId,
+    kind: input.kind,
+    uri: input.uri,
+    locator: input.locator ?? {},
+    title: input.title,
+    content: input.content,
+    retrievedAt: input.now,
+    contentPath: cachePath,
+    cachePath,
+    trust: input.trust,
+    privacyClass: input.privacyClass,
+    usableFor: input.usableFor,
     leakageAuditId: audit.id
   });
   const auditPath = await writeOpenWorldLeakageAudit(root, audit);
-  const writtenContentPath = await writeOpenWorldSourceContent(root, taskId, sourceId, content);
+  const writtenContentPath = await writeOpenWorldSourceContent(root, input.taskId, input.id, input.content);
   const sourcePath = await writeOpenWorldSource(root, source);
   return { schemaVersion: "openskill-kit.openworld-local-source.v1", source, sourcePath, contentPath: writtenContentPath, audit, auditPath };
 }
@@ -134,6 +199,40 @@ function firstUsefulLine(content: string): string | undefined {
 
 function cleanClaim(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 500);
+}
+
+async function fetchText(url: URL, timeoutMs: number, maxBytes: number): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal, redirect: "follow" });
+    if (!response.ok) throw new Error(`Fetch failed ${response.status} ${response.statusText}`);
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType && !/(text|json|xml|markdown|html|javascript|typescript)/i.test(contentType)) {
+      throw new Error(`Unsupported content type for OpenWorld text source: ${contentType}`);
+    }
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > maxBytes) throw new Error(`OpenWorld source too large: ${Buffer.byteLength(text, "utf8")} bytes > ${maxBytes}`);
+    return text;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function classifyWebSource(url: URL): OpenWorldSource["kind"] {
+  const host = url.hostname.toLowerCase();
+  if (host === "arxiv.org" || host.endsWith(".arxiv.org")) return "paper";
+  if (host === "github.com" || host.endsWith(".github.com")) return "repository";
+  if (/\b(docs|developer|dev|api)\b/.test(host) || /\/docs?\//i.test(url.pathname)) return "official-docs";
+  return "web";
+}
+
+function trustForWebSource(url: URL): OpenWorldSource["trust"] {
+  const kind = classifyWebSource(url);
+  if (kind === "official-docs") return { authority: 0.86, freshness: 0.68, independence: 0.78, rationale: "Explicit web source appears to be official documentation." };
+  if (kind === "repository") return { authority: 0.78, freshness: 0.7, independence: 0.72, rationale: "Explicit web source is repository-hosted." };
+  if (kind === "paper") return { authority: 0.82, freshness: 0.58, independence: 0.8, rationale: "Explicit web source is a paper or preprint." };
+  return { authority: 0.48, freshness: 0.5, independence: 0.55, rationale: "General web source; lower authority until reviewed." };
 }
 
 function sha256(value: string): string {

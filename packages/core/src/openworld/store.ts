@@ -8,6 +8,8 @@ import {
   OpenWorldEvolutionRunSchema,
   OpenWorldLeakageAuditSchema,
   OpenWorldSourceSchema,
+  OpenWorldSourceIndexSchema,
+  OpenWorldTrustCacheSchema,
   OpenWorldTaskSchema,
   SkillPlanSchema,
   VirtualTestSuiteSchema,
@@ -15,6 +17,8 @@ import {
   type OpenWorldEvolutionRun,
   type OpenWorldLeakageAudit,
   type OpenWorldSource,
+  type OpenWorldSourceIndex,
+  type OpenWorldTrustCache,
   type OpenWorldTask,
   type SkillPlan,
   type VirtualTestSuite
@@ -62,18 +66,25 @@ export async function initOpenWorldTask(projectRoot: string, input: InitOpenWorl
 
 export async function writeOpenWorldSource(projectRoot: string, source: OpenWorldSource): Promise<string> {
   const parsed = OpenWorldSourceSchema.parse(source);
-  return writeTaskArtifact(projectRoot, parsed.taskId, "sources", `${parsed.id}.json`, parsed);
+  const sourcePath = await writeTaskArtifact(projectRoot, parsed.taskId, "sources", `${parsed.id}.json`, parsed);
+  await updateOpenWorldSourceIndex(projectRoot, parsed);
+  await updateOpenWorldTrustCache(projectRoot, parsed);
+  return sourcePath;
 }
 
 export async function writeOpenWorldSourceContent(projectRoot: string, taskId: string, sourceId: string, content: string): Promise<string> {
   const root = path.resolve(projectRoot);
-  const file = taskArtifactPath(root, taskId, "sources", `${sourceId}.content.txt`);
+  const file = taskArtifactPath(root, taskId, "sources", "cache", `${sourceId}.txt`);
   await writeOpenWorldFile(root, file, content);
   return file;
 }
 
 export async function readOpenWorldSourceContent(projectRoot: string, taskId: string, sourceId: string): Promise<string> {
-  return fs.readFile(taskArtifactPath(projectRoot, taskId, "sources", `${sourceId}.content.txt`), "utf8");
+  const source = await readOpenWorldSource(projectRoot, taskId, sourceId).catch(() => undefined);
+  const root = path.resolve(projectRoot);
+  const sourcePath = source?.cachePath ?? source?.contentPath;
+  if (sourcePath) return fs.readFile(path.isAbsolute(sourcePath) ? sourcePath : path.join(root, sourcePath), "utf8");
+  return fs.readFile(taskArtifactPath(projectRoot, taskId, "sources", "cache", `${sourceId}.txt`), "utf8");
 }
 
 export async function readOpenWorldSource(projectRoot: string, taskId: string, sourceId: string): Promise<OpenWorldSource> {
@@ -113,13 +124,96 @@ export async function readOpenWorldTask(projectRoot: string, taskId: string): Pr
   return OpenWorldTaskSchema.parse(JSON.parse(await fs.readFile(taskArtifactPath(projectRoot, taskId, "task.json"), "utf8")));
 }
 
+export async function readOpenWorldSourceIndex(projectRoot: string): Promise<OpenWorldSourceIndex> {
+  const file = path.join(path.resolve(projectRoot), ".openskill-kit", "openworld", "source-index.json");
+  return fs.readFile(file, "utf8")
+    .then((text) => OpenWorldSourceIndexSchema.parse(JSON.parse(text)))
+    .catch(() => OpenWorldSourceIndexSchema.parse({ schemaVersion: "openskill-kit.openworld-source-index.v1", updatedAt: new Date(0).toISOString(), entries: [] }));
+}
+
+export async function readOpenWorldTrustCache(projectRoot: string): Promise<OpenWorldTrustCache> {
+  const file = path.join(path.resolve(projectRoot), ".openskill-kit", "openworld", "trust-cache.json");
+  return fs.readFile(file, "utf8")
+    .then((text) => OpenWorldTrustCacheSchema.parse(JSON.parse(text)))
+    .catch(() => OpenWorldTrustCacheSchema.parse({ schemaVersion: "openskill-kit.openworld-trust-cache.v1", updatedAt: new Date(0).toISOString(), entries: {} }));
+}
+
 export function makeOpenWorldSource(input: Omit<OpenWorldSource, "schemaVersion" | "contentHash" | "retrievedAt"> & { content: string; retrievedAt?: Date }): OpenWorldSource {
+  const kind = input.kind;
+  const trust = scoreTrust(input.trust ?? { authority: 0.5, freshness: 0.5, independence: 0.5 });
   return OpenWorldSourceSchema.parse({
     ...input,
-    schemaVersion: "openskill-kit.openworld-source.v1",
+    schemaVersion: "openskill-kit.openworld-source.v2",
+    sourceType: input.sourceType ?? kind,
+    locator: input.locator ?? inferLocator(kind, input.uri),
     retrievedAt: (input.retrievedAt ?? new Date()).toISOString(),
-    contentHash: sha256(input.content)
+    contentHash: sha256(input.content),
+    cachePath: input.cachePath ?? input.contentPath,
+    trust
   });
+}
+
+async function updateOpenWorldSourceIndex(projectRoot: string, source: OpenWorldSource): Promise<void> {
+  const root = path.resolve(projectRoot);
+  const file = path.join(root, ".openskill-kit", "openworld", "source-index.json");
+  await withFileLock(path.join(root, ".openskill-kit", "openworld", ".source-index.lock"), async () => {
+    const current = await readOpenWorldSourceIndex(root);
+    const entries = current.entries.filter((entry) => entry.sourceId !== source.id);
+    entries.push({
+      sourceId: source.id,
+      taskId: source.taskId,
+      kind: source.kind,
+      uri: source.uri,
+      contentHash: source.contentHash,
+      contentPath: source.contentPath,
+      cachePath: source.cachePath,
+      retrievedAt: source.retrievedAt,
+      trustScore: source.trust.score ?? scoreTrust(source.trust).score ?? 0.5,
+      privacyClass: source.privacyClass,
+      leakageAuditId: source.leakageAuditId
+    });
+    await writeOpenWorldJson(root, file, OpenWorldSourceIndexSchema.parse({
+      schemaVersion: "openskill-kit.openworld-source-index.v1",
+      updatedAt: new Date().toISOString(),
+      entries: entries.sort((a, b) => b.trustScore - a.trustScore || a.uri.localeCompare(b.uri))
+    }));
+  });
+}
+
+async function updateOpenWorldTrustCache(projectRoot: string, source: OpenWorldSource): Promise<void> {
+  const root = path.resolve(projectRoot);
+  const file = path.join(root, ".openskill-kit", "openworld", "trust-cache.json");
+  await withFileLock(path.join(root, ".openskill-kit", "openworld", ".trust-cache.lock"), async () => {
+    const current = await readOpenWorldTrustCache(root);
+    const key = trustCacheKey(source);
+    current.entries[key] = {
+      key,
+      sourceType: source.kind,
+      locator: source.locator,
+      trust: source.trust,
+      assessedAt: new Date().toISOString()
+    };
+    await writeOpenWorldJson(root, file, OpenWorldTrustCacheSchema.parse({
+      schemaVersion: "openskill-kit.openworld-trust-cache.v1",
+      updatedAt: new Date().toISOString(),
+      entries: current.entries
+    }));
+  });
+}
+
+function scoreTrust(trust: OpenWorldSource["trust"]): OpenWorldSource["trust"] {
+  const score = Math.round((trust.authority * 0.45 + trust.freshness * 0.25 + trust.independence * 0.3) * 100) / 100;
+  return { ...trust, score };
+}
+
+function inferLocator(kind: OpenWorldSource["kind"], uri: string): OpenWorldSource["locator"] {
+  if (/^https?:\/\//i.test(uri)) return { url: uri };
+  if (kind === "project-file" || kind === "local-doc" || kind === "package-docs") return { path: uri };
+  return {};
+}
+
+function trustCacheKey(source: OpenWorldSource): string {
+  return sha256(`${source.kind}:${source.uri}:${JSON.stringify(source.locator)}`).slice(0, 24);
 }
 
 function writeTaskArtifact(projectRoot: string, taskId: string, subdir: string, filename: string, value: unknown): Promise<string> {
