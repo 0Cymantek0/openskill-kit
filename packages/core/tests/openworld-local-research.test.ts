@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -189,5 +190,43 @@ describe("OpenWorld local research", () => {
       content: "safe text",
       now: new Date("2026-06-26T01:04:00.000Z")
     })).rejects.toThrow(/blocked by leakage audit/);
+  });
+
+  it("fetches explicit web sources over HTTP with content-type and size guards", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-openworld-http-"));
+    const task = await initOpenWorldTask(root, {
+      title: "HTTP web",
+      prompt: "Fetch public docs.",
+      allowWeb: true,
+      now: new Date("2026-06-26T02:00:00.000Z")
+    });
+    const server = createServer((request, response) => {
+      if (request.url === "/sdk") {
+        response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        response.end("Official SDK docs describe deterministic retry behavior.\n");
+        return;
+      }
+      response.writeHead(404, { "content-type": "text/plain" });
+      response.end("missing");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server did not expose a port");
+      const source = await ingestWebOpenWorldSource(root, task.task.id, {
+        url: `http://127.0.0.1:${address.port}/sdk`,
+        maxBytes: 2_000,
+        now: new Date("2026-06-26T02:01:00.000Z")
+      });
+      expect(source.source.kind).toBe("web");
+      expect(await readOpenWorldSourceContent(root, task.task.id, source.source.id)).toContain("deterministic retry behavior");
+      await expect(ingestWebOpenWorldSource(root, task.task.id, {
+        url: `http://127.0.0.1:${address.port}/sdk`,
+        maxBytes: 10,
+        now: new Date("2026-06-26T02:02:00.000Z")
+      })).rejects.toThrow(/too large/);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 });
