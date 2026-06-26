@@ -33,6 +33,7 @@ import {
   loadSkillPackage,
   buildReviewQueue,
   buildOpenWorldEvalReport,
+  buildOpenWorldTaskReport,
   proposeSemanticPreference,
   readPreferenceGraph,
   readCalibrationReport,
@@ -872,6 +873,24 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, runId }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await buildOpenWorldEvalReport(root, runId), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_task_report",
+    {
+      title: "OpenSkillKit OpenWorld Task Report",
+      description: "Collect sources, anchors, verifier suites, runs, eval reports, and next actions for one OpenWorld task.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        write: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, taskId, write }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await buildOpenWorldTaskReport(root, taskId, { write }), root);
     }
   );
 

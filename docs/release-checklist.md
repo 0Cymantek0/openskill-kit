@@ -20,6 +20,7 @@ Manual audit:
 - OpenWorld `run-verifier --split visible` executes generated cases through the sandbox runner and writes a result JSON.
 - OpenWorld `refine` writes an EvolutionRun, stops early on actionable visible failures, and runs holdout only after visible pass.
 - OpenWorld `eval-report` labels proof level as artifact-verifier and says hidden-oracle proof is false.
+- OpenWorld `report --write` collects sources, anchors, suites, verifier executions, EvolutionRuns, eval reports, and next actions in one task report.
 - OpenWorld `promote-review` creates only a semantic review proposal from passed runs and never activates behavior directly.
 - `status --explain` gives useful next action text.
 - Generated packs do not include private event, signal, review, eval-run, report, raw prompt, raw diff, or secret data.

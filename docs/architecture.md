@@ -220,6 +220,14 @@ references, wall-clock cost, and explicit limitations. The proof level is
 `artifact-verifier` unless a future hidden-oracle harness supplies independent
 benchmark evidence.
 
+`openworld report --write` collects the task, source registry entries, Anchor
+Cards, verifier suites, verifier executions, skill plans, leakage audits,
+EvolutionRuns, eval reports, and inferred next actions into
+`openworld/tasks/<task-id>/reports/task-report.md`. This gives operators and
+host agents one auditable status surface instead of requiring manual directory
+inspection. It still reports artifact-verifier evidence only and never promotes
+behavior.
+
 `openworld promote-review` is intentionally not promotion to active behavior. It
 requires a passed `EvolutionRun`, re-audits the proposed statement and anchors,
 records a local evidence event, and writes a semantic proposal into the normal

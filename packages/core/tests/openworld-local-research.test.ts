@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   buildVirtualSuiteFromAnchors,
   buildOpenWorldEvalReport,
+  buildOpenWorldTaskReport,
   buildReviewQueue,
   draftAnchorFromOpenWorldSource,
   ingestLocalOpenWorldSource,
@@ -83,6 +84,17 @@ describe("OpenWorld local research", () => {
     expect(report.report.metrics.visiblePassRate).toBe(1);
     expect(report.report.metrics.holdoutPassRate).toBe(1);
     expect(await readFile(report.markdownPath, "utf8")).toContain("Hidden-oracle proof: no");
+    const taskReport = await buildOpenWorldTaskReport(root, task.task.id, { write: true });
+    expect(taskReport.markdownPath).toContain("task-report.md");
+    expect(taskReport.sources).toHaveLength(1);
+    expect(taskReport.anchors).toHaveLength(4);
+    expect(taskReport.suites).toHaveLength(1);
+    expect(taskReport.executions.length).toBeGreaterThan(0);
+    expect(taskReport.runs.some((run) => run.id === refined.id)).toBe(true);
+    expect(taskReport.evalReports.some((evalReport) => evalReport.runId === refined.id)).toBe(true);
+    expect(taskReport.markdown).toContain("## Next Actions");
+    expect(taskReport.markdown).toContain(`promote-review --run-id ${refined.id}`);
+    expect(await readFile(taskReport.markdownPath ?? "", "utf8")).toContain("## Sources");
     const plannedPromotion = await promoteOpenWorldRunToReview(root, refined.id, {
       dryRun: true,
       now: new Date("2026-06-26T01:04:49.000Z")

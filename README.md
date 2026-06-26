@@ -234,6 +234,7 @@ Key tools:
 - `osk_openworld_run_verifier`
 - `osk_openworld_refine`
 - `osk_openworld_eval_report`
+- `osk_openworld_task_report`
 - `osk_openworld_promote_review`
 - `osk_compact_state`
 - `osk_prune_state`

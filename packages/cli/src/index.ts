@@ -37,10 +37,9 @@ import {
   draftAnchorFromOpenWorldSource,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
-  renderOpenWorldTaskReport,
+  buildOpenWorldTaskReport,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
-  readOpenWorldTask,
   promoteOpenWorldRunToReview,
   routeBehavior,
   runOpenWorldRefinement,
@@ -346,13 +345,13 @@ openworld.command("promote-review")
   });
 
 openworld.command("report")
-  .description("Render a Markdown report for an OpenWorld task")
+  .description("Render a Markdown report for an OpenWorld task with collected artifacts")
   .requiredOption("--task-id <id>", "Task id")
+  .option("--write", "Write report to the task reports directory")
   .option("--json", "Print JSON")
   .action(async (options) => {
-    const task = await readOpenWorldTask(process.cwd(), options.taskId);
-    const markdown = renderOpenWorldTaskReport({ task });
-    output(options.json, { task, markdown }, markdown);
+    const result = await buildOpenWorldTaskReport(process.cwd(), options.taskId, { write: options.write === true });
+    output(options.json, result, options.write === true && result.markdownPath ? `OpenWorld task report written\n${result.markdownPath}` : result.markdown);
   });
 
 openworld.command("doctor")
