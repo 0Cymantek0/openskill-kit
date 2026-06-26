@@ -226,6 +226,8 @@ Key tools:
 - `osk_agent_doctor`
 - `osk_install_agent_hooks`
 - `osk_run_lifecycle_once`
+- `osk_mine_workflows`
+- `osk_get_workflow_graph`
 - `osk_explain_status`
 - `osk_run_full_doctor`
 - `osk_openworld_doctor`

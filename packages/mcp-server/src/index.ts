@@ -35,7 +35,11 @@ import {
   buildOpenWorldEvalReport,
   buildOpenWorldTaskReport,
   proposeSemanticPreference,
+  mineWorkflowGraph,
   readPreferenceGraph,
+  readProjectConfig,
+  readWorkflowGraph,
+  renderWorkflowGraph,
   readCalibrationReport,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
@@ -694,6 +698,40 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, maxEvents, compileSafe }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runLifecycleOnce({ projectRoot: root, maxEvents, compileSafe }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_mine_workflows",
+    {
+      title: "OpenSkillKit Mine Workflows",
+      description: "Mine repeated project command/test sequences into review-safe Workflow Graph candidates.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        minOccurrences: z.number().int().min(2).max(20).default(2),
+        maxSequenceLength: z.number().int().min(2).max(12).default(6)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, minOccurrences, maxSequenceLength }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await mineWorkflowGraph({ projectRoot: root, minOccurrences, maxSequenceLength }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_workflow_graph",
+    {
+      title: "OpenSkillKit Workflow Graph",
+      description: "Return current Workflow Graph and Markdown summary.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const config = await readProjectConfig(root);
+      const graph = await readWorkflowGraph(root, config.projectId, new Date());
+      return toolResult({ graph, markdown: renderWorkflowGraph(graph) }, root);
     }
   );
 

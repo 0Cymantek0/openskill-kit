@@ -46,6 +46,10 @@ import {
   runVirtualTestSuite,
   runOpenWorldPython,
   runOpenWorldDoctor,
+  mineWorkflowGraph,
+  readProjectConfig,
+  readWorkflowGraph,
+  renderWorkflowGraph,
   runAgentDoctor,
   runLifecycleOnce,
   readRegistry,
@@ -844,6 +848,32 @@ program.command("watch")
   .action(async (options) => {
     const result = await runLifecycleOnce({ projectRoot: process.cwd(), maxEvents: options.maxEvents, compileSafe: options.compileSafe === true });
     output(options.json, result, `Lifecycle run: ${result.processedEventCount} event(s), ${result.highValueEvents.length} high-value event(s), ${result.graph.candidateCount} candidate(s)`);
+  });
+
+const workflows = program.command("workflows")
+  .description("Inspect review-safe Workflow Graph candidates");
+
+workflows.command("mine")
+  .description("Mine repeated command/test sequences into workflow candidates")
+  .option("--min-occurrences <number>", "Minimum repeated sessions before candidate", parseIntegerOption, 2)
+  .option("--max-sequence-length <number>", "Maximum commands per workflow sequence", parseIntegerOption, 6)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await mineWorkflowGraph({
+      projectRoot: process.cwd(),
+      minOccurrences: options.minOccurrences,
+      maxSequenceLength: options.maxSequenceLength
+    });
+    output(options.json, result, result.messages.join("\n"));
+  });
+
+workflows.command("list")
+  .description("Render the current Workflow Graph")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const config = await readProjectConfig(process.cwd());
+    const graph = await readWorkflowGraph(process.cwd(), config.projectId, new Date());
+    output(options.json, graph, renderWorkflowGraph(graph));
   });
 
 program.command("reset")

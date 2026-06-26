@@ -119,6 +119,15 @@ chooses among `local-only`, `project-evidence`, `review-needed`, and
 `openworld-research`. Decisions include risk, novelty, local coverage, gates,
 conflicts, and whether OpenWorld must build leakage-audited verifier evidence.
 
+## Workflow Graph
+
+`openskill-kit workflows mine` reads redacted local events and mines repeated
+passing command/test sequences across sessions into `.openskill-kit/workflows/graph.json`.
+Nodes remain `candidate` by default, or `staged` only under `auto-stage` when
+confidence is high enough. `workflows list` and MCP `osk_get_workflow_graph`
+render the current graph so reviewers can inspect the repeatable sequence before
+any future compiler turns it into skills, command policy, or review checklists.
+
 ## Compiler
 
 The compiler writes deterministic artifacts:

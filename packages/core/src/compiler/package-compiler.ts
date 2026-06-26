@@ -112,6 +112,8 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
       "osk_agent_doctor",
       "osk_install_agent_hooks",
       "osk_run_lifecycle_once",
+      "osk_mine_workflows",
+      "osk_get_workflow_graph",
       "osk_run_full_doctor",
       "osk_openworld_doctor",
       "osk_openworld_ingest_source",
