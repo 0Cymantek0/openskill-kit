@@ -130,6 +130,10 @@ Nodes remain `candidate` by default, or `staged` only under `auto-stage` when
 confidence is high enough. `workflows list` and MCP `osk_get_workflow_graph`
 render the current graph so reviewers can inspect the repeatable sequence before
 any future compiler turns it into skills, command policy, or review checklists.
+The current compiler already consumes only `active` and `locked` workflows:
+`project-behavior` gets an `active-workflows.md` reference, `project-workflows`
+is emitted as a focused skill shard, and command policy/review checklist/path
+map artifacts include active workflow sequences.
 
 ## Compiler
 

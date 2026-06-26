@@ -10,7 +10,9 @@ import {
   runBehaviorEval,
   runExternalAgentEval,
   type PreferenceGraph,
-  type PreferenceNode
+  type PreferenceNode,
+  type WorkflowGraph,
+  type WorkflowNode
 } from "../src/index.js";
 
 describe("preference retrieval and policy artifacts", () => {
@@ -59,6 +61,7 @@ describe("preference retrieval and policy artifacts", () => {
       pref("path-style", "Prefer parser modules stay dependency-light", "architecture", ["src/parser"]),
       pref("security", "Do not expose secrets in logs", "security", [])
     ]);
+    await writeWorkflowGraph(root, [workflow("parser-flow", "Parser verification workflow", ["src/parser"], ["npm test", "npm run typecheck"])]);
     const compiled = await compileBehaviorLayer(root);
     const [pathMapPath, commandPolicyPath, reviewChecklistPath] = compiled.policyArtifactPaths;
     await expect(stat(pathMapPath!)).resolves.toBeTruthy();
@@ -68,12 +71,18 @@ describe("preference retrieval and policy artifacts", () => {
     expect(await readFile(reviewChecklistPath!, "utf8")).toContain("Do not expose secrets");
     expect(compiled.skillPaths.some((skillPath) => skillPath.endsWith(`${path.sep}project-testing`))).toBe(true);
     expect(compiled.skillPaths.some((skillPath) => skillPath.endsWith(`${path.sep}project-architecture`))).toBe(true);
+    expect(compiled.skillPaths.some((skillPath) => skillPath.endsWith(`${path.sep}project-workflows`))).toBe(true);
     await expect(stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-testing", "SKILL.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-workflows", "SKILL.md"))).resolves.toBeTruthy();
     await expect(stat(path.join(root, ".openskill-kit", "compiled", "plugin", "skills", "project-testing", "SKILL.md"))).resolves.toBeTruthy();
+    expect(await readFile(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "references", "active-workflows.md"), "utf8")).toContain("Parser verification workflow");
     const pluginManifest = JSON.parse(await readFile(path.join(root, ".openskill-kit", "compiled", "plugin", "plugin.json"), "utf8"));
     expect(pluginManifest.skills).toEqual(expect.arrayContaining(["skills/project-behavior", "skills/project-testing"]));
     const pathMap = JSON.parse(await readFile(pathMapPath!, "utf8"));
     expect(pathMap.paths["src/parser"][0].id).toBe("pref_path-style");
+    expect(pathMap.workflows["src/parser"][0].id).toBe("wf_parser-flow");
+    expect(await readFile(commandPolicyPath!, "utf8")).toContain("npm test -> npm run typecheck");
+    expect(await readFile(reviewChecklistPath!, "utf8")).toContain("Follow active workflow Parser verification workflow");
 
     const evalReport = await runBehaviorEval({ projectRoot: root, now: new Date("2026-06-25T00:00:00.000Z") });
     expect(evalReport.status).toBe("pass");
@@ -108,6 +117,19 @@ async function writeGraph(root: string, nodes: PreferenceNode[]): Promise<void> 
   await writeFile(file, `${JSON.stringify(graph, null, 2)}\n`, "utf8");
 }
 
+async function writeWorkflowGraph(root: string, nodes: WorkflowNode[]): Promise<void> {
+  const graph: WorkflowGraph = {
+    schemaVersion: "openskill-kit.workflow-graph.v1",
+    projectId: "retrieval",
+    nodes,
+    conflicts: [],
+    updatedAt: "2026-06-25T00:00:00.000Z"
+  };
+  const file = path.join(root, ".openskill-kit", "workflows", "graph.json");
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(graph, null, 2)}\n`, "utf8");
+}
+
 function pref(id: string, statement: string, category: PreferenceNode["category"], paths: string[]): PreferenceNode {
   return {
     schemaVersion: "openskill-kit.preference-node.v1",
@@ -122,5 +144,45 @@ function pref(id: string, statement: string, category: PreferenceNode["category"
     evidence: [{ signalId: `sig_${id}`, eventIds: [`evt_${id}`], weight: 0.8 }],
     createdAt: "2026-06-25T00:00:00.000Z",
     updatedAt: "2026-06-25T00:00:00.000Z"
+  };
+}
+
+function workflow(id: string, name: string, paths: string[], commands: string[]): WorkflowNode {
+  return {
+    schemaVersion: "openskill-kit.workflow-node.v1",
+    id: `wf_${id}`,
+    name,
+    description: `Reviewed workflow for ${paths.join(", ")}`,
+    trigger: {
+      paths,
+      taskTypes: ["testing"],
+      commands,
+      naturalLanguagePatterns: []
+    },
+    steps: commands.map((command, index) => ({
+      id: `step-${index + 1}`,
+      instruction: `Run ${command}`,
+      kind: "command",
+      command,
+      optional: false
+    })),
+    evidenceCardIds: [],
+    preferenceNodeIds: [],
+    anchorCardIds: [],
+    occurrenceCount: 3,
+    confidence: 0.88,
+    status: "active",
+    compileTargets: ["skill", "command-policy", "review-checklist"],
+    privacy: {
+      class: "project-private",
+      rationale: "Reviewed workflow test fixture."
+    },
+    lifecycle: {
+      createdAt: "2026-06-25T00:00:00.000Z",
+      updatedAt: "2026-06-25T00:00:00.000Z",
+      reviewedAt: "2026-06-25T00:00:00.000Z",
+      promotedAt: "2026-06-25T00:00:00.000Z"
+    },
+    sourceSignalIds: ["evt_parser_flow"]
   };
 }
