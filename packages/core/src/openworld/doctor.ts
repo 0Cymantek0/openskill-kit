@@ -30,6 +30,7 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "Virtual verifier suite", status: "available", message: "Visible/holdout verifier manifests, traceability maps, executable Node cases, and sandbox execution records are supported." },
     { name: "Bounded verifier refinement", status: "available", message: "Visible verifier rounds stop early on pass or actionable failure; holdout runs only after visible success and writes an EvolutionRun." },
     { name: "OpenWorld eval reports", status: "available", message: "EvolutionRun metrics can be rendered with explicit artifact-verifier proof level and hidden-oracle limitations." },
+    { name: "Review-only promotion bridge", status: "available", message: "Passed OpenWorld runs can create semantic review proposals without activating behavior." },
     { name: "Autonomous web search", status: "missing", message: "No autonomous query planning or web/doc/repo search engine is implemented." },
     { name: "LLM skill generation", status: "missing", message: "No built-in model generation loop is implemented." },
     { name: "Skill-generating refinement", status: "missing", message: "No containerized iterative candidate skill generation and repair loop is implemented." },

@@ -220,6 +220,12 @@ references, wall-clock cost, and explicit limitations. The proof level is
 `artifact-verifier` unless a future hidden-oracle harness supplies independent
 benchmark evidence.
 
+`openworld promote-review` is intentionally not promotion to active behavior. It
+requires a passed `EvolutionRun`, re-audits the proposed statement and anchors,
+records a local evidence event, and writes a semantic proposal into the normal
+Learning Review Queue. Review, integrity, calibration, and explicit activation
+still control any compiled behavior.
+
 Target flow:
 
 ```text

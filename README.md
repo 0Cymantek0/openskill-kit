@@ -47,6 +47,7 @@ npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <an
 npx openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 npx openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id>
 npx openskill-kit openworld eval-report --run-id <owrun_id>
+npx openskill-kit openworld promote-review --run-id <owrun_id> --dry-run
 npx openskill-kit openworld report --task-id <owtask_id>
 npx openskill-kit openworld doctor
 ```
@@ -72,8 +73,9 @@ Preference Nodes stay reviewable as normal project files.
 The OpenWorld layer now covers task records, leakage audits, source
 ingestion/cache, Anchor Cards, visible/holdout virtual verifier generation,
 local sandbox execution of generated verifier scripts, and bounded verifier
-refinement/eval report records. It still does not perform LLM skill generation,
-containerized candidate-skill repair, or hidden-oracle benchmark evaluation yet.
+refinement/eval report records, and review-only promotion proposals. It still
+does not perform LLM skill generation, containerized candidate-skill repair, or
+hidden-oracle benchmark evaluation yet.
 
 ## Core Commands
 
@@ -127,6 +129,7 @@ openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor
 openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id>
 openskill-kit openworld eval-report --run-id <owrun_id>
+openskill-kit openworld promote-review --run-id <owrun_id>
 openskill-kit openworld report --task-id <owtask_id>
 openskill-kit openworld doctor
 openskill-kit compact
@@ -231,6 +234,7 @@ Key tools:
 - `osk_openworld_run_verifier`
 - `osk_openworld_refine`
 - `osk_openworld_eval_report`
+- `osk_openworld_promote_review`
 - `osk_compact_state`
 - `osk_prune_state`
 - `osk_archive_state`

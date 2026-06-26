@@ -39,6 +39,7 @@ import {
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
   readRegistry,
+  promoteOpenWorldRunToReview,
   retrieveRelevantPreferences,
   routeBehavior,
   diffProjectBehaviorPacks,
@@ -871,6 +872,26 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, runId }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await buildOpenWorldEvalReport(root, runId), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_promote_review",
+    {
+      title: "OpenSkillKit OpenWorld Promote To Review",
+      description: "Create a review-only semantic preference proposal from a passed OpenWorld run. Does not activate behavior.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        runId: z.string().min(1),
+        statement: z.string().min(8).optional(),
+        category: z.enum(PreferenceCategories).optional(),
+        dryRun: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, runId, statement, category, dryRun }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await promoteOpenWorldRunToReview(root, runId, { statement, category, dryRun }), root);
     }
   );
 

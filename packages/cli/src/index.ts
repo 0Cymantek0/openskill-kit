@@ -41,6 +41,7 @@ import {
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
   readOpenWorldTask,
+  promoteOpenWorldRunToReview,
   routeBehavior,
   runOpenWorldRefinement,
   runVirtualTestSuite,
@@ -326,6 +327,22 @@ openworld.command("eval-report")
     const result = await buildOpenWorldEvalReport(process.cwd(), options.runId);
     output(options.json, result, `OpenWorld eval ${result.report.status}: ${result.report.proofLevel}\n${result.reportPath}\n${result.markdownPath}`);
     process.exitCode = result.report.status === "fail" ? 1 : 0;
+  });
+
+openworld.command("promote-review")
+  .description("Create a review-only preference proposal from a passed OpenWorld run")
+  .requiredOption("--run-id <id>", "OpenWorld evolution run id")
+  .option("--statement <text>", "Override generated proposal statement")
+  .option("--category <category>", "Override proposal category")
+  .option("--dry-run", "Plan without writing event/proposal")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await promoteOpenWorldRunToReview(process.cwd(), options.runId, {
+      statement: options.statement,
+      category: options.category,
+      dryRun: options.dryRun === true
+    });
+    output(options.json, result, result.messages.join("\n"));
   });
 
 openworld.command("report")

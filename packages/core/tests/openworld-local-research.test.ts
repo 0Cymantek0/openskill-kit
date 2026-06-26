@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   buildVirtualSuiteFromAnchors,
   buildOpenWorldEvalReport,
+  buildReviewQueue,
   draftAnchorFromOpenWorldSource,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
@@ -12,6 +13,7 @@ import {
   readOpenWorldSourceContent,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
+  promoteOpenWorldRunToReview,
   runOpenWorldRefinement,
   runVirtualTestSuite
 } from "../src/index.js";
@@ -81,6 +83,20 @@ describe("OpenWorld local research", () => {
     expect(report.report.metrics.visiblePassRate).toBe(1);
     expect(report.report.metrics.holdoutPassRate).toBe(1);
     expect(await readFile(report.markdownPath, "utf8")).toContain("Hidden-oracle proof: no");
+    const plannedPromotion = await promoteOpenWorldRunToReview(root, refined.id, {
+      dryRun: true,
+      now: new Date("2026-06-26T01:04:49.000Z")
+    });
+    expect(plannedPromotion.status).toBe("planned");
+    await expect(stat(path.join(root, ".openskill-kit", "reviews"))).rejects.toThrow();
+    const promotion = await promoteOpenWorldRunToReview(root, refined.id, {
+      now: new Date("2026-06-26T01:04:50.000Z")
+    });
+    expect(promotion.status).toBe("proposed");
+    expect(promotion.proposal?.proposal.risk).toBe("medium");
+    expect(promotion.messages.join(" ")).toContain("No active behavior changed");
+    const queue = await buildReviewQueue(root);
+    expect(queue.proposals.some((proposal) => proposal.id === promotion.proposal?.proposal.id)).toBe(true);
 
     await writeFile(path.join(root, source.source.cachePath ?? ""), "Tampered cache text.\n", "utf8");
     const failed = await runVirtualTestSuite(root, task.task.id, suite.suite.id, {
@@ -93,6 +109,7 @@ describe("OpenWorld local research", () => {
     });
     expect(failedRefinement.status).toBe("failed");
     expect(failedRefinement.rounds[0]?.failureType).toBe("source-conflict");
+    await expect(promoteOpenWorldRunToReview(root, failedRefinement.id)).rejects.toThrow(/only passed runs/);
   });
 
   it("blocks local sources that mention forbidden oracle paths", async () => {
