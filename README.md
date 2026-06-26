@@ -96,6 +96,11 @@ openskill-kit review --split <preference-id> --split-statement "Prefer focused t
 openskill-kit review --promote <preference-id>
 openskill-kit review --demote <preference-id>
 openskill-kit review --activate-all
+openskill-kit review --workflow-activate <workflow-id>
+openskill-kit review --workflow-reject <workflow-id>
+openskill-kit review --workflow-lock <workflow-id>
+openskill-kit review --workflow-demote <workflow-id>
+openskill-kit review --workflow-activate-all
 openskill-kit compile
 openskill-kit compile --target context-pack
 openskill-kit compile --include-staged-preview
@@ -159,8 +164,8 @@ openskill-kit evaluate .openskill-kit/runs/<run-id>/candidate/<skill>
 ```
 
 `review --tui` supports `e N` for sanitized evidence cards, `p N` for
-compile/privacy preview, and `c` for calibration reliability while reviewing a
-candidate batch.
+compile/privacy preview, `wa/wr/wl/wd N` for workflow candidate decisions, and
+`c` for calibration reliability while reviewing a candidate batch.
 
 ## Safety And Privacy
 
@@ -200,7 +205,7 @@ Key tools:
 - `osk_record_event`
 - `osk_propose_preference`
 - `osk_get_review_queue`
-- `osk_apply_review_actions`
+- `osk_apply_review_actions` (preferences plus workflowActivate/workflowReject/workflowLock/workflowDemote)
 - `osk_learn_from_session`
 - `osk_compile_behavior_layer`
 - `osk_explain_preference`

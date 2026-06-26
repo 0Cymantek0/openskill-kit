@@ -6,6 +6,7 @@ import { createInterface } from "node:readline/promises";
 import {
   appendEvent,
   applyPreferenceReview,
+  applyWorkflowReview,
   compileBehaviorLayer,
   detectAgentEnvironment,
   draftSkill,
@@ -510,6 +511,11 @@ program.command("review")
   .option("--split <id>", "Split one preference id into new candidate statements")
   .option("--split-statement <text>", "Split child statement", collectOption, [])
   .option("--activate-all", "Activate all candidates")
+  .option("--workflow-activate <id>", "Activate workflow candidate id", collectOption, [])
+  .option("--workflow-reject <id>", "Reject workflow candidate id", collectOption, [])
+  .option("--workflow-lock <id>", "Lock workflow candidate id", collectOption, [])
+  .option("--workflow-demote <id>", "Move active or locked workflow back to candidate", collectOption, [])
+  .option("--workflow-activate-all", "Activate all workflow candidates")
   .option("--json", "Print JSON")
   .action(async (options) => {
     if (options.tui === true) {
@@ -540,8 +546,20 @@ program.command("review")
       merges: options.mergeInto && options.mergeSource.length ? [{ targetId: options.mergeInto, sourceIds: options.mergeSource, statement: options.statement }] : undefined,
       splits: options.split && options.splitStatement.length ? [{ id: options.split, statements: options.splitStatement }] : undefined
     });
+    const workflowReview = options.workflowActivate.length || options.workflowReject.length || options.workflowLock.length || options.workflowDemote.length || options.workflowActivateAll === true
+      ? await applyWorkflowReview(process.cwd(), {
+        activate: options.workflowActivate,
+        reject: options.workflowReject,
+        lock: options.workflowLock,
+        demote: options.workflowDemote,
+        activateAll: options.workflowActivateAll === true
+      })
+      : undefined;
     const pending = graph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict");
-    output(options.json, graph, pending.length ? pending.map((node) => `${node.id} ${node.status} ${node.statement}`).join("\n") : "No pending preferences");
+    output(options.json, workflowReview ? { preferences: graph, workflows: workflowReview } : graph, [
+      pending.length ? pending.map((node) => `${node.id} ${node.status} ${node.statement}`).join("\n") : "No pending preferences",
+      workflowReview ? `Workflow review updated ${workflowReview.reviewedCount} node(s)` : undefined
+    ].filter(Boolean).join("\n"));
   });
 
 program.command("propose")
@@ -1113,7 +1131,8 @@ async function runReviewTui(projectRoot: string): Promise<{ schemaVersion: "open
     while (true) {
       const queue = await buildReviewQueue(projectRoot);
       const candidates = queue.candidates;
-      printReviewScreen(candidates, queue.workflowCandidates);
+      const workflowCandidates = queue.workflowCandidates;
+      printReviewScreen(candidates, workflowCandidates);
       const answer = (await rl.question("review> ")).trim();
       if (answer === "q" || answer === "quit" || answer === "exit") break;
       if (answer === "w" || answer === "write") {
@@ -1140,9 +1159,27 @@ async function runReviewTui(projectRoot: string): Promise<{ schemaVersion: "open
         else await printEvidencePreview(projectRoot, node);
         continue;
       }
+      const workflowMatch = /^(wa|workflow-activate|wr|workflow-reject|wl|workflow-lock|wd|workflow-demote)\s+(\d+)$/i.exec(answer);
+      if (workflowMatch) {
+        const index = Number.parseInt(workflowMatch[2]!, 10) - 1;
+        const workflow = workflowCandidates[index];
+        if (!workflow) {
+          console.log(`No workflow candidate w${index + 1}`);
+          continue;
+        }
+        const command = workflowMatch[1]!.toLowerCase();
+        const action = command === "wa" || command === "workflow-activate" ? { activate: [workflow.id] }
+          : command === "wr" || command === "workflow-reject" ? { reject: [workflow.id] }
+            : command === "wl" || command === "workflow-lock" ? { lock: [workflow.id] }
+              : { demote: [workflow.id] };
+        await applyWorkflowReview(projectRoot, action);
+        reviewed += 1;
+        messages.push(`workflow:${Object.keys(action)[0]} ${workflow.id}`);
+        continue;
+      }
       const match = /^(a|activate|r|reject|l|lock|d|demote)\s+(\d+)$/i.exec(answer);
       if (!match) {
-        console.log("Use: a 1, r 1, l 1, d 1, e 1, p 1, c, w, q, ?");
+        console.log("Use: a 1, r 1, l 1, d 1, e 1, p 1, wa 1, wr 1, wl 1, wd 1, c, w, q, ?");
         continue;
       }
       const index = Number.parseInt(match[2]!, 10) - 1;
@@ -1182,7 +1219,7 @@ function printReviewScreen(candidates: Array<{ id: string; status: string; categ
   }
   if (workflowCandidates.length) {
     console.log("");
-    console.log("Workflow candidates (read-only preview):");
+    console.log("Workflow candidates:");
     for (const [index, workflow] of workflowCandidates.entries()) {
       const scope = workflow.trigger.paths.length ? workflow.trigger.paths.join(",") : "project";
       console.log(`w${index + 1}. [${workflow.status}] ${workflow.confidence} ${scope}`);
@@ -1190,7 +1227,7 @@ function printReviewScreen(candidates: Array<{ id: string; status: string; categ
     }
   }
   console.log("");
-  console.log("a N activate | r N reject | l N lock | d N demote | e N evidence | p N preview | c calibration | w write queue | q quit | ? help");
+  console.log("a N/r N/l N/d N preference | wa/wr/wl/wd N workflow | e N evidence | p N preview | c calibration | w write queue | q quit | ? help");
 }
 
 function printReviewHelp(): void {
@@ -1201,8 +1238,11 @@ function printReviewHelp(): void {
   console.log("  d 1  demote pending item 1");
   console.log("  e 1  show sanitized evidence cards for pending item 1");
   console.log("  p 1  show compile/privacy preview for pending item 1");
+  console.log("  wa 1 activate workflow candidate w1");
+  console.log("  wr 1 reject workflow candidate w1");
+  console.log("  wl 1 lock workflow candidate w1");
+  console.log("  wd 1 demote workflow candidate w1");
   console.log("  c    show calibration reliability dashboard");
-  console.log("  wN   workflow candidates are shown as read-only preview entries");
   console.log("  w    write review queue artifacts and exit");
   console.log("  q    quit");
 }

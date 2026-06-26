@@ -8,6 +8,7 @@ import { z } from "zod";
 import {
   appendEvent,
   applyPreferenceReview,
+  applyWorkflowReview,
   compileBehaviorLayer,
   detectAgentEnvironment,
   draftSkill,
@@ -343,7 +344,7 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_apply_review_actions",
     {
       title: "OpenSkillKit Apply Review Actions",
-      description: "Apply structured review decisions: activate, reject, lock, demote, promote, edit, merge, or split preferences.",
+      description: "Apply structured review decisions for preferences and workflow candidates.",
       inputSchema: z.object({
         projectRoot: projectRootSchema,
         activate: z.array(z.string().min(1)).default([]),
@@ -353,6 +354,11 @@ export function createOpenSkillMcpServer(): McpServer {
         promote: z.array(z.string().min(1)).default([]),
         promoteGlobal: z.array(z.string().min(1)).default([]),
         activateAll: z.boolean().default(false),
+        workflowActivate: z.array(z.string().min(1)).default([]),
+        workflowReject: z.array(z.string().min(1)).default([]),
+        workflowLock: z.array(z.string().min(1)).default([]),
+        workflowDemote: z.array(z.string().min(1)).default([]),
+        workflowActivateAll: z.boolean().default(false),
         edits: z.array(z.object({
           id: z.string().min(1),
           title: z.string().optional(),
@@ -377,9 +383,24 @@ export function createOpenSkillMcpServer(): McpServer {
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, ...options }) => {
+    async ({ projectRoot, workflowActivate, workflowReject, workflowLock, workflowDemote, workflowActivateAll, ...options }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await applyPreferenceReview(root, options), root);
+      const preferences = await applyPreferenceReview(root, options);
+      const hasWorkflowAction = workflowActivate.length > 0
+        || workflowReject.length > 0
+        || workflowLock.length > 0
+        || workflowDemote.length > 0
+        || workflowActivateAll;
+      const workflows = hasWorkflowAction
+        ? await applyWorkflowReview(root, {
+          activate: workflowActivate,
+          reject: workflowReject,
+          lock: workflowLock,
+          demote: workflowDemote,
+          activateAll: workflowActivateAll
+        })
+        : undefined;
+      return toolResult(workflows ? { preferences, workflows } : preferences, root);
     }
   );
 

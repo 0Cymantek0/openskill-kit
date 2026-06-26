@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import {
   appendEvent,
+  applyWorkflowReview,
   buildReviewQueue,
+  compileBehaviorLayer,
   getAdaptiveStatus,
   initAdaptiveProject,
   mineWorkflowGraph,
@@ -44,6 +46,17 @@ describe("Workflow Graph mining", () => {
     const status = await getAdaptiveStatus(root);
     expect(status.workflowCandidateCount).toBe(1);
     expect(status.pendingReviewCount).toBe(1);
+
+    const review = await applyWorkflowReview(root, { activate: [result.updated[0]!.id] }, new Date("2026-06-27T03:02:00.000Z"));
+    expect(review.reviewedCount).toBe(1);
+    expect(review.graph.nodes.find((node) => node.id === result.updated[0]!.id)?.status).toBe("active");
+    const queueAfterReview = await buildReviewQueue(root);
+    expect(queueAfterReview.workflowCandidateCount).toBe(0);
+    const statusAfterReview = await getAdaptiveStatus(root);
+    expect(statusAfterReview.activeWorkflowCount).toBe(1);
+    expect(statusAfterReview.pendingReviewCount).toBe(0);
+    const compiled = await compileBehaviorLayer(root);
+    expect(compiled.skillPaths.some((skillPath) => skillPath.endsWith(`${path.sep}project-workflows`))).toBe(true);
   });
 
   it("stages high-confidence workflow candidates only when auto-stage is enabled", async () => {

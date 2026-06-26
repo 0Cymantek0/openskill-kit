@@ -45,6 +45,7 @@ export * from "./routing/router.js";
 export * from "./workflows/schema.js";
 export * from "./workflows/store.js";
 export * from "./workflows/miner.js";
+export * from "./workflows/review.js";
 export * from "./schema/constants.js";
 export * from "./compiler/context-pack.js";
 export * from "./compiler/skill-compiler.js";
