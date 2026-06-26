@@ -117,6 +117,7 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
       "osk_openworld_ingest_source",
       "osk_openworld_sources",
       "osk_openworld_run_verifier",
+      "osk_openworld_refine",
       "osk_reset_state",
       "osk_prune_state",
       "osk_archive_state",

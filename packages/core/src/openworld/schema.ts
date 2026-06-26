@@ -221,8 +221,18 @@ export const OpenWorldEvolutionRunSchema = z.object({
     index: z.number().int().min(0),
     status: z.enum(["planned", "passed", "failed", "blocked"]),
     verifierSuiteId: z.string().optional(),
+    verifierExecutionId: z.string().optional(),
+    verifierResultPath: z.string().optional(),
+    split: z.enum(["visible", "holdout", "all"]).optional(),
     skillPlanId: z.string().optional(),
-    failureType: z.enum(["missing-knowledge", "verifier-bug", "skill-failure", "sandbox-error", "leakage", "unknown"]).optional(),
+    failureType: z.enum(["missing-knowledge", "verifier-bug", "source-conflict", "skill-failure", "sandbox-error", "leakage", "overfit-risk", "unknown"]).optional(),
+    summary: z.object({
+      pass: z.number().int().min(0),
+      fail: z.number().int().min(0),
+      blocked: z.number().int().min(0),
+      timeout: z.number().int().min(0),
+      skipped: z.number().int().min(0)
+    }).optional(),
     notes: z.array(z.string().min(1)).default([])
   })).default([]),
   sourceIds: z.array(z.string().min(1)).default([]),

@@ -11,6 +11,7 @@ import {
   readOpenWorldSourceContent,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
+  runOpenWorldRefinement,
   runVirtualTestSuite
 } from "../src/index.js";
 
@@ -67,12 +68,24 @@ describe("OpenWorld local research", () => {
     expect(execution.summary).toMatchObject({ pass: 4, fail: 0, blocked: 0, timeout: 0, skipped: 0 });
     expect(execution.resultPath).toContain("/results/");
 
+    const refined = await runOpenWorldRefinement(root, task.task.id, suite.suite.id, {
+      now: new Date("2026-06-26T01:04:30.000Z")
+    });
+    expect(refined.status).toBe("passed");
+    expect(refined.rounds.map((round) => round.split)).toEqual(["visible", "holdout"]);
+    expect(refined.sourceIds).toContain(source.source.id);
+
     await writeFile(path.join(root, source.source.cachePath ?? ""), "Tampered cache text.\n", "utf8");
     const failed = await runVirtualTestSuite(root, task.task.id, suite.suite.id, {
       split: "visible",
       now: new Date("2026-06-26T01:05:00.000Z")
     });
     expect(failed.summary.fail).toBeGreaterThan(0);
+    const failedRefinement = await runOpenWorldRefinement(root, task.task.id, suite.suite.id, {
+      now: new Date("2026-06-26T01:06:00.000Z")
+    });
+    expect(failedRefinement.status).toBe("failed");
+    expect(failedRefinement.rounds[0]?.failureType).toBe("source-conflict");
   });
 
   it("blocks local sources that mention forbidden oracle paths", async () => {

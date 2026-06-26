@@ -28,9 +28,10 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "Source index and trust cache", status: "available", message: "OpenWorld source metadata, content hashes, cache paths, and trust scores are recorded." },
     { name: "Anchor Cards", status: "available", message: "Anchor Cards can be drafted from local sources." },
     { name: "Virtual verifier suite", status: "available", message: "Visible/holdout verifier manifests, traceability maps, executable Node cases, and sandbox execution records are supported." },
+    { name: "Bounded verifier refinement", status: "available", message: "Visible verifier rounds stop early on pass or actionable failure; holdout runs only after visible success and writes an EvolutionRun." },
     { name: "Autonomous web search", status: "missing", message: "No autonomous query planning or web/doc/repo search engine is implemented." },
     { name: "LLM skill generation", status: "missing", message: "No built-in model generation loop is implemented." },
-    { name: "Sandboxed refinement", status: "missing", message: "No containerized iterative OpenSkill refinement loop is implemented." },
+    { name: "Skill-generating refinement", status: "missing", message: "No containerized iterative candidate skill generation and repair loop is implemented." },
     { name: "Hidden-oracle benchmark proof", status: "missing", message: "Existing evals do not prove hidden-oracle benchmark improvement." }
   ];
   return {

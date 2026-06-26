@@ -206,6 +206,14 @@ ready Node cases through the local `execFile` sandbox with no shell expansion,
 network disabled in policy metadata, stripped environment, output caps, and a
 JSON execution record under `verifiers/<suite-id>/results/`.
 
+`openworld refine` is the first bounded refinement controller. It runs visible
+verifiers up to three rounds by default, retries sandbox failures once, stops
+early on pass or actionable non-transient failure, and runs holdout only after a
+visible pass. It writes an OpenWorld `EvolutionRun` with failure taxonomy,
+verifier result links, pass/fail summaries, source/anchor/suite references, and
+cost metadata. This is verifier-driven control flow, not full candidate-skill
+generation or automatic skill repair yet.
+
 Target flow:
 
 ```text

@@ -41,6 +41,7 @@ import {
   readOpenWorldTrustCache,
   readOpenWorldTask,
   routeBehavior,
+  runOpenWorldRefinement,
   runVirtualTestSuite,
   runOpenWorldPython,
   runOpenWorldDoctor,
@@ -298,6 +299,22 @@ openworld.command("run-verifier")
     });
     output(options.json, result, `OpenWorld verifier ${result.suiteId} ${result.split}: ${result.summary.pass} pass, ${result.summary.fail} fail, ${result.summary.blocked} blocked, ${result.summary.timeout} timeout, ${result.summary.skipped} skipped\n${result.resultPath ?? ""}`);
     process.exitCode = result.summary.fail || result.summary.blocked || result.summary.timeout ? 1 : 0;
+  });
+
+openworld.command("refine")
+  .description("Run bounded OpenWorld visible refinement and final holdout check")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--suite-id <id>", "Virtual test suite id")
+  .option("--max-rounds <number>", "Maximum visible refinement rounds", parseIntegerOption, 3)
+  .option("--timeout-ms <number>", "Per-case timeout", parseIntegerOption, 30000)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await runOpenWorldRefinement(process.cwd(), options.taskId, options.suiteId, {
+      maxRounds: options.maxRounds,
+      timeoutMs: options.timeoutMs
+    });
+    output(options.json, result, `OpenWorld refinement ${result.status}: ${result.rounds.length} round(s)\n${path.join(".openskill-kit", "evolution", "runs", result.id, "run.json")}`);
+    process.exitCode = result.status === "passed" ? 0 : 1;
   });
 
 openworld.command("report")

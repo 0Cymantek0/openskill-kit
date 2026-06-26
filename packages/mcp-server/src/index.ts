@@ -48,6 +48,7 @@ import {
   runDoctor,
   runFullDoctor,
   runOpenWorldDoctor,
+  runOpenWorldRefinement,
   runVirtualTestSuite,
   runLifecycleOnce,
   resetProjectState,
@@ -832,6 +833,26 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, taskId, suiteId, split, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runVirtualTestSuite(root, taskId, suiteId, { split, timeoutMs }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_refine",
+    {
+      title: "OpenSkillKit OpenWorld Refine",
+      description: "Run bounded visible verifier refinement and a final holdout check, then write an OpenWorld EvolutionRun.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        suiteId: z.string().min(1),
+        maxRounds: z.number().int().min(1).max(5).default(3),
+        timeoutMs: z.number().int().min(1000).max(300000).default(30000)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, suiteId, maxRounds, timeoutMs }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runOpenWorldRefinement(root, taskId, suiteId, { maxRounds, timeoutMs }), root);
     }
   );
 
