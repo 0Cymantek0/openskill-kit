@@ -25,7 +25,7 @@ interface SurfaceSpec {
   notes?: string[];
 }
 
-const SKIP_DIRS = new Set([".git", "node_modules", "dist", "coverage", "tmp"]);
+const SKIP_DIRS = new Set([".git", ".openskill-kit", "node_modules", "dist", "coverage", "tmp"]);
 
 export async function detectAgentEnvironment(projectRootInput: string, options: DetectAgentEnvironmentOptions = {}): Promise<AgentEnvironmentDetectionReport> {
   const projectRoot = path.resolve(projectRootInput);
@@ -82,6 +82,7 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
   specs.push(...(await skillSpecs(projectRoot, ".agents/skills", "project")));
   specs.push(...(await skillSpecs(projectRoot, ".claude/skills", "project")));
   specs.push(...(await skillSpecs(projectRoot, ".codex/skills", "project")));
+  specs.push(...(await interactionExportSpecs(projectRoot)));
   specs.push(directory(projectRoot, ".openskill-kit/compiled/skills", "openskill-kit", "skill-directory", "generated-only", "low"));
   return specs;
 }
@@ -135,6 +136,29 @@ async function skillSpecs(projectRoot: string, relativeDir: string, scope: Agent
     confidence: 0.9,
     notes: ["Skill manifest detected; third-party skills are not modified in place."]
   }));
+}
+
+async function interactionExportSpecs(projectRoot: string): Promise<SurfaceSpec[]> {
+  const files = await listFiles(projectRoot);
+  return files
+    .filter((file) => {
+      const relative = path.relative(projectRoot, file).replace(/\\/g, "/");
+      if (relative.startsWith(".openskill-kit/")) return false;
+      if (/^\.codex-log\/.+\.(?:jsonl?|txt|md)$/i.test(relative)) return true;
+      return /(?:^|\/)(?:session|conversation|transcript|chat|codex-session)[-_].+\.(?:jsonl?|txt|md)$/i.test(relative);
+    })
+    .slice(0, 40)
+    .map((file) => ({
+      adapter: file.includes(`${path.sep}.codex-log${path.sep}`) ? "codex" as const : "other" as const,
+      surfaceType: "interaction-export" as const,
+      scope: "project" as const,
+      target: file,
+      readPolicy: "explicit-import" as const,
+      writePolicy: "never" as const,
+      privacyRisk: "high" as const,
+      confidence: 0.74,
+      notes: ["Possible session/export file; preview with interactions import before appending redacted events."]
+    }));
 }
 
 async function surfaceFromSpec(projectRoot: string, spec: SurfaceSpec, detectedAt: string, options: DetectAgentEnvironmentOptions): Promise<AgentSurface | undefined> {
@@ -294,4 +318,3 @@ async function countChildren(dir: string): Promise<number> {
 function shortHash(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
 }
-

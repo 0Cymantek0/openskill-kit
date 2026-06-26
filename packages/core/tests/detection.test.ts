@@ -21,6 +21,8 @@ describe("agent environment detection", () => {
     await writeText(root, ".cursor/rules/frontend.mdc", "Cursor rule\n");
     await writeText(root, ".agents/skills/review/SKILL.md", "---\nname: review\n---\n");
     await writeText(root, ".agents/hooks/openskill-kit.json", "{}\n");
+    await writeText(root, "session-codex.jsonl", "{\"role\":\"user\",\"content\":\"Prefer tests\"}\n");
+    await writeText(root, ".codex-log/session-2026.jsonl", "{\"event\":\"user-prompt-submit\"}\n");
 
     const report = await detectAgentEnvironment(root, { now: new Date("2026-06-26T00:01:00.000Z") });
     expect(report.summary.total).toBeGreaterThanOrEqual(8);
@@ -28,6 +30,9 @@ describe("agent environment detection", () => {
     expect(report.surfaces.some((surface) => surface.relativePath === "packages/api/AGENTS.md" && surface.writePolicy === "preview-only")).toBe(true);
     expect(report.surfaces.some((surface) => surface.adapter === "mcp" && surface.surfaceType === "mcp-config")).toBe(true);
     expect(report.surfaces.some((surface) => surface.adapter === "skills" && surface.surfaceType === "skill")).toBe(true);
+    const interactionExports = report.surfaces.filter((surface) => surface.surfaceType === "interaction-export");
+    expect(interactionExports).toHaveLength(2);
+    expect(interactionExports.every((surface) => surface.readPolicy === "explicit-import" && surface.writePolicy === "never" && surface.privacyRisk === "high")).toBe(true);
     expect(report.summary.previewOnly).toBeGreaterThan(0);
     await stat(report.artifacts.surfacesPath!);
     await stat(report.artifacts.lastScanPath!);
@@ -61,4 +66,3 @@ async function writeText(root: string, relative: string, content: string): Promi
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, content, "utf8");
 }
-

@@ -38,7 +38,8 @@ openskill-kit compile --target project-rules
 `.openskill-kit/detection/`. Add `--include-user-surfaces` to include
 home-directory Codex, Claude, and skill locations as metadata-only records.
 Detected user memories and override files are never written or imported
-silently.
+silently. Project session/export candidates are reported with `explicit-import`
+read policy so operators can preview them through `interactions import`.
 
 ## Interaction imports
 

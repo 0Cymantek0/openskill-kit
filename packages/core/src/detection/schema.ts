@@ -15,6 +15,7 @@ export const AgentSurfaceSchema = z.object({
     "skill-directory",
     "hook-config",
     "memory-store",
+    "interaction-export",
     "compiled-artifact",
     "unknown"
   ]),
@@ -64,4 +65,3 @@ export const AgentEnvironmentDetectionReportSchema = z.object({
 });
 
 export type AgentEnvironmentDetectionReport = z.infer<typeof AgentEnvironmentDetectionReportSchema>;
-

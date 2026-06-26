@@ -176,10 +176,11 @@ corrupt markers or a mismatched hash.
 `.openskill-kit/detection/last-scan.json`, and
 `.openskill-kit/detection/reports/environment.md`. The detector reports project
 instruction files, Claude/Cursor rules, MCP configs, skills, hooks, and
-OpenSkillKit compiled artifacts with read/write policy, privacy risk, managed
+possible session/export files with read/write policy, privacy risk, managed
 block metadata, and confidence. User/global surfaces are opt-in through
 `--include-user-surfaces` and remain metadata-only by default. Raw session logs
-and agent memories are never imported silently.
+and agent memories are never imported silently; detected session exports use
+`explicit-import` read policy and point operators to `interactions import`.
 
 ## Interaction Imports
 
