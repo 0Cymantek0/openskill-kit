@@ -26,6 +26,19 @@ export const BehaviorRoutePlanSchema = z.object({
     omittedCount: z.number().int().min(0),
     compactMarkdown: z.string()
   }),
+  workflows: z.object({
+    consideredCount: z.number().int().min(0),
+    matchedCount: z.number().int().min(0),
+    activeMatchedCount: z.number().int().min(0),
+    reviewMatchedCount: z.number().int().min(0),
+    compactMarkdown: z.string()
+  }).default({
+    consideredCount: 0,
+    matchedCount: 0,
+    activeMatchedCount: 0,
+    reviewMatchedCount: 0,
+    compactMarkdown: ""
+  }),
   conflicts: z.array(z.object({
     id: z.string(),
     nodeIds: z.array(z.string()),
@@ -41,4 +54,3 @@ export const BehaviorRoutePlanSchema = z.object({
 });
 
 export type BehaviorRoutePlan = z.infer<typeof BehaviorRoutePlanSchema>;
-

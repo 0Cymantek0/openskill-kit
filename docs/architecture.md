@@ -118,6 +118,9 @@ The route planner writes `.openskill-kit/retrieval/route-plans/*.json` and
 chooses among `local-only`, `project-evidence`, `review-needed`, and
 `openworld-research`. Decisions include risk, novelty, local coverage, gates,
 conflicts, and whether OpenWorld must build leakage-audited verifier evidence.
+It also reads the Workflow Graph: active/locked workflow matches can support a
+`local-only` route, while candidate/staged workflow matches count only as
+review-gated `project-evidence`.
 
 ## Workflow Graph
 

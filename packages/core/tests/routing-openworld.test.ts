@@ -3,7 +3,9 @@ import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  appendEvent,
   initAdaptiveProject,
+  mineWorkflowGraph,
   routeBehavior,
   runOpenWorldDoctor,
   type PreferenceGraph,
@@ -38,6 +40,28 @@ describe("behavior routing and OpenWorld capability truth", () => {
     expect(novel.decision).toBe("openworld-research");
     expect(novel.gates).toEqual(expect.arrayContaining(["leakage", "sandbox", "review"]));
     expect(novel.openWorld.requireVerifier).toBe(true);
+  });
+
+  it("uses Workflow Graph candidates as review-gated project evidence", async () => {
+    const root = await tempProject();
+    await recordWorkflowSession(root, "session-a", "2026-06-26T01:00:00.000Z");
+    await recordWorkflowSession(root, "session-b", "2026-06-26T02:00:00.000Z");
+    await mineWorkflowGraph({ projectRoot: root, now: new Date("2026-06-26T03:00:00.000Z") });
+
+    const routed = await routeBehavior({
+      projectRoot: root,
+      query: "parser tests and typecheck",
+      paths: ["src/parser/tokenizer.ts"],
+      commands: ["npm test", "npm run typecheck"],
+      now: new Date("2026-06-26T03:01:00.000Z")
+    });
+
+    expect(routed.decision).toBe("project-evidence");
+    expect(routed.gates).toContain("review");
+    expect(routed.workflows.matchedCount).toBe(1);
+    expect(routed.workflows.reviewMatchedCount).toBe(1);
+    expect(routed.openWorld.recommended).toBe(false);
+    expect(routed.reasons.join(" ")).toContain("Workflow Graph candidates");
   });
 
   it("reports OpenWorld scaffold boundaries without overclaiming paper-level capability", async () => {
@@ -86,4 +110,25 @@ function pref(id: string, status: PreferenceNode["status"], statement: string, c
 async function writeJson(file: string, value: unknown): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+async function recordWorkflowSession(root: string, sessionId: string, start: string): Promise<void> {
+  const first = new Date(start);
+  const second = new Date(first.getTime() + 60_000);
+  await appendEvent(root, {
+    sessionId,
+    timestamp: first.toISOString(),
+    eventType: "post-tool-use",
+    source: { adapter: "test" },
+    files: [{ path: "src/parser/tokenizer.ts", action: "edit" }],
+    commands: [{ command: "npm", args: ["test"], status: "pass", exitCode: 0 }]
+  });
+  await appendEvent(root, {
+    sessionId,
+    timestamp: second.toISOString(),
+    eventType: "post-tool-use",
+    source: { adapter: "test" },
+    files: [{ path: "src/parser/tokenizer.ts", action: "edit" }],
+    commands: [{ command: "npm", args: ["run", "typecheck"], status: "pass", exitCode: 0 }]
+  });
 }
