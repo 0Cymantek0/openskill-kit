@@ -214,6 +214,12 @@ verifier result links, pass/fail summaries, source/anchor/suite references, and
 cost metadata. This is verifier-driven control flow, not full candidate-skill
 generation or automatic skill repair yet.
 
+`openworld eval-report` turns an `EvolutionRun` into JSON and Markdown metrics:
+visible/holdout pass rates, overfit risk, leakage audit count, run/result
+references, wall-clock cost, and explicit limitations. The proof level is
+`artifact-verifier` unless a future hidden-oracle harness supplies independent
+benchmark evidence.
+
 Target flow:
 
 ```text

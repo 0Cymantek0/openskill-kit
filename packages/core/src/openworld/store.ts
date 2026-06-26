@@ -141,6 +141,12 @@ export async function writeOpenWorldEvolutionRun(projectRoot: string, run: OpenW
   return file;
 }
 
+export async function readOpenWorldEvolutionRun(projectRoot: string, runId: string): Promise<OpenWorldEvolutionRun> {
+  const root = path.resolve(projectRoot);
+  const file = path.join(root, ".openskill-kit", "evolution", "runs", runId, "run.json");
+  return OpenWorldEvolutionRunSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+}
+
 export async function readOpenWorldTask(projectRoot: string, taskId: string): Promise<OpenWorldTask> {
   return OpenWorldTaskSchema.parse(JSON.parse(await fs.readFile(taskArtifactPath(projectRoot, taskId, "task.json"), "utf8")));
 }

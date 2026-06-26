@@ -32,6 +32,7 @@ import {
   inspectProjectBehaviorPack,
   loadSkillPackage,
   buildReviewQueue,
+  buildOpenWorldEvalReport,
   proposeSemanticPreference,
   readPreferenceGraph,
   readCalibrationReport,
@@ -853,6 +854,23 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, taskId, suiteId, maxRounds, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runOpenWorldRefinement(root, taskId, suiteId, { maxRounds, timeoutMs }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_eval_report",
+    {
+      title: "OpenSkillKit OpenWorld Eval Report",
+      description: "Write a leakage-aware OpenWorld eval report for an EvolutionRun without claiming hidden-oracle proof.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        runId: z.string().min(1)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, runId }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await buildOpenWorldEvalReport(root, runId), root);
     }
   );
 

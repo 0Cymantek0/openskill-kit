@@ -245,6 +245,33 @@ export const OpenWorldEvolutionRunSchema = z.object({
   }).default({ wallClockMs: 0, estimatedTokens: 0 })
 });
 
+export const OpenWorldEvalReportSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.openworld-eval-report.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  runId: z.string().min(1),
+  suiteIds: z.array(z.string().min(1)).default([]),
+  generatedAt: z.string().datetime(),
+  status: z.enum(["pass", "warn", "fail"]),
+  proofLevel: z.enum(["artifact-verifier", "hidden-oracle", "not-proof"]),
+  hiddenOracleProof: z.boolean().default(false),
+  metrics: z.object({
+    visiblePassRate: z.number().min(0).max(1),
+    holdoutPassRate: z.number().min(0).max(1),
+    roundCount: z.number().int().min(0),
+    overfitRisk: z.boolean(),
+    leakageAuditCount: z.number().int().min(0),
+    wallClockMs: z.number().int().min(0)
+  }),
+  references: z.object({
+    runPath: z.string().optional(),
+    verifierResultPaths: z.array(z.string().min(1)).default([]),
+    sourceIds: z.array(z.string().min(1)).default([]),
+    anchorIds: z.array(z.string().min(1)).default([])
+  }),
+  limitations: z.array(z.string().min(1)).default([])
+});
+
 export type OpenWorldTask = z.infer<typeof OpenWorldTaskSchema>;
 export type OpenWorldSource = z.infer<typeof OpenWorldSourceSchema>;
 export type OpenWorldSourceIndex = z.infer<typeof OpenWorldSourceIndexSchema>;
@@ -257,3 +284,4 @@ export type SkillPlan = z.infer<typeof SkillPlanSchema>;
 export type OpenWorldLeakageFinding = z.infer<typeof OpenWorldLeakageFindingSchema>;
 export type OpenWorldLeakageAudit = z.infer<typeof OpenWorldLeakageAuditSchema>;
 export type OpenWorldEvolutionRun = z.infer<typeof OpenWorldEvolutionRunSchema>;
+export type OpenWorldEvalReport = z.infer<typeof OpenWorldEvalReportSchema>;

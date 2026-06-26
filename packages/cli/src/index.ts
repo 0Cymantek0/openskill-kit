@@ -29,6 +29,7 @@ import {
   inspectProjectBehaviorPack,
   loadSkillPackage,
   buildReviewQueue,
+  buildOpenWorldEvalReport,
   proposeSemanticPreference,
   retrieveRelevantPreferences,
   auditOpenWorldLeakage,
@@ -315,6 +316,16 @@ openworld.command("refine")
     });
     output(options.json, result, `OpenWorld refinement ${result.status}: ${result.rounds.length} round(s)\n${path.join(".openskill-kit", "evolution", "runs", result.id, "run.json")}`);
     process.exitCode = result.status === "passed" ? 0 : 1;
+  });
+
+openworld.command("eval-report")
+  .description("Write an OpenWorld evaluation report for an EvolutionRun")
+  .requiredOption("--run-id <id>", "OpenWorld evolution run id")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await buildOpenWorldEvalReport(process.cwd(), options.runId);
+    output(options.json, result, `OpenWorld eval ${result.report.status}: ${result.report.proofLevel}\n${result.reportPath}\n${result.markdownPath}`);
+    process.exitCode = result.report.status === "fail" ? 1 : 0;
   });
 
 openworld.command("report")

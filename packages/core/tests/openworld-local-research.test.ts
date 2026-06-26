@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildVirtualSuiteFromAnchors,
+  buildOpenWorldEvalReport,
   draftAnchorFromOpenWorldSource,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
@@ -74,6 +75,12 @@ describe("OpenWorld local research", () => {
     expect(refined.status).toBe("passed");
     expect(refined.rounds.map((round) => round.split)).toEqual(["visible", "holdout"]);
     expect(refined.sourceIds).toContain(source.source.id);
+    const report = await buildOpenWorldEvalReport(root, refined.id, new Date("2026-06-26T01:04:45.000Z"));
+    expect(report.report.proofLevel).toBe("artifact-verifier");
+    expect(report.report.hiddenOracleProof).toBe(false);
+    expect(report.report.metrics.visiblePassRate).toBe(1);
+    expect(report.report.metrics.holdoutPassRate).toBe(1);
+    expect(await readFile(report.markdownPath, "utf8")).toContain("Hidden-oracle proof: no");
 
     await writeFile(path.join(root, source.source.cachePath ?? ""), "Tampered cache text.\n", "utf8");
     const failed = await runVirtualTestSuite(root, task.task.id, suite.suite.id, {
