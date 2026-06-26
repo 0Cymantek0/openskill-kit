@@ -114,6 +114,11 @@ This keeps future confidence and retrieval decisions grounded in what reviewers 
 
 Progressive retrieval ranks active preferences for the current task and path context. It emits scored items, reasons, retrieval level, inferred languages/task types/path roots, budget usage, and omitted-item traces. This prevents the agent context from becoming a flat dump of all memory.
 
+The route planner writes `.openskill-kit/retrieval/route-plans/*.json` and
+chooses among `local-only`, `project-evidence`, `review-needed`, and
+`openworld-research`. Decisions include risk, novelty, local coverage, gates,
+conflicts, and whether OpenWorld must build leakage-audited verifier evidence.
+
 ## Compiler
 
 The compiler writes deterministic artifacts:
@@ -138,7 +143,10 @@ The compiler writes deterministic artifacts:
 - `runtime/last-run.json`
 - `compact/summary.json`
 
-Managed `AGENTS.md` / `CLAUDE.md` installation preserves content outside the OpenSkillKit block and supports dry-run install/uninstall.
+Managed `AGENTS.md` / `CLAUDE.md` installation preserves content outside the
+OpenSkillKit block and supports dry-run install/uninstall. Managed blocks carry
+a body SHA-256 metadata line; install blocks if an existing managed block has
+corrupt markers or a mismatched hash.
 
 ## Agent Environment Detection
 
@@ -176,6 +184,11 @@ They measure adherence, retrieval precision, command policy behavior, forbidden 
 ## Open-World Evolution Plane
 
 The OpenWorld plane is added beside the TypeScript control plane. It must stay local-only and scaffold/MVP until real benchmarks exist.
+
+`openskill-kit openworld doctor` reports what is real today: task records,
+leakage checks, local source ingestion, and Anchor Cards are available; web
+retrieval, built-in LLM skill generation, sandboxed refinement, and
+hidden-oracle benchmark proof remain missing.
 
 Target flow:
 

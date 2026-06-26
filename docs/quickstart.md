@@ -21,6 +21,7 @@ npx openskill-kit install --target agents-project --yes
 npx openskill-kit eval
 npx openskill-kit eval --compare-baseline
 npx openskill-kit explain <preference-id> --evidence
+npx openskill-kit route --query "parser test change" --path src/parser/tokenizer.ts
 npx openskill-kit calibration
 npx openskill-kit pack
 npx openskill-kit status --json
@@ -51,6 +52,7 @@ Generated adaptive artifacts:
 - `.openskill-kit/compiled/project-behavior-pack/`: shareable reviewed behavior.
 - `.openskill-kit/sessions/summaries/`: session-level learning summaries.
 - `.openskill-kit/evals/runs/*/behavior-compare.md`: baseline vs OpenSkillKit replay scorecard.
+- `.openskill-kit/retrieval/route-plans/`: behavior routing traces for local/project/OpenWorld decisions.
 - `.agents/hooks/openskill-kit.json`: installed local hook adapter config.
 - `AGENTS.md`, `CLAUDE.md`, `.claude/rules/`: optional managed project manifests after `agent install-manifests --yes`.
 

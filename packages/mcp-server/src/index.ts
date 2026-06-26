@@ -35,6 +35,7 @@ import {
   readCalibrationReport,
   readRegistry,
   retrieveRelevantPreferences,
+  routeBehavior,
   diffProjectBehaviorPacks,
   runAgentDoctor,
   runBehaviorEval,
@@ -42,6 +43,7 @@ import {
   runExternalAgentEval,
   runDoctor,
   runFullDoctor,
+  runOpenWorldDoctor,
   runLifecycleOnce,
   resetProjectState,
   pruneProjectState,
@@ -179,6 +181,26 @@ export function createOpenSkillMcpServer(): McpServer {
       const root = resolveProjectRoot(projectRoot);
       const bundle = await retrieveRelevantPreferences({ projectRoot: root, query, paths, categories, limit });
       return toolResult({ ...bundle, nodes: bundle.items.map((item) => item.node) }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_route_behavior",
+    {
+      title: "OpenSkillKit Route Behavior",
+      description: "Plan whether a task should use local behavior, project evidence, review, or OpenWorld research.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        query: z.string().optional(),
+        paths: z.array(z.string()).default([]),
+        changedFiles: z.array(z.string()).default([]),
+        commands: z.array(z.string()).default([])
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, query, paths, changedFiles, commands }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await routeBehavior({ projectRoot: root, query, paths, changedFiles, commands }), root);
     }
   );
 
@@ -733,6 +755,20 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runFullDoctor(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_doctor",
+    {
+      title: "OpenSkillKit OpenWorld Doctor",
+      description: "Explain which OpenWorld capabilities are real today and which remain scaffolded or missing.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runOpenWorldDoctor(root), root);
     }
   );
 

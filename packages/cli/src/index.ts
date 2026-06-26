@@ -37,7 +37,9 @@ import {
   ingestLocalOpenWorldSource,
   renderOpenWorldTaskReport,
   readOpenWorldTask,
+  routeBehavior,
   runOpenWorldPython,
+  runOpenWorldDoctor,
   runAgentDoctor,
   runLifecycleOnce,
   readRegistry,
@@ -253,6 +255,18 @@ openworld.command("report")
     const task = await readOpenWorldTask(process.cwd(), options.taskId);
     const markdown = renderOpenWorldTaskReport({ task });
     output(options.json, { task, markdown }, markdown);
+  });
+
+openworld.command("doctor")
+  .description("Explain current OpenWorld scaffold capabilities and missing paper-level pieces")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const report = await runOpenWorldDoctor(process.cwd());
+    output(options.json, report, [
+      `OpenWorld doctor ${report.status}: ${report.capabilities.length} capabilities`,
+      ...report.capabilities.map((capability) => `${capability.status}: ${capability.name}`)
+    ].join("\n"));
+    process.exitCode = report.status === "fail" ? 1 : 0;
   });
 
 const agent = program.command("agent")
@@ -514,6 +528,31 @@ program.command("prefs")
       limit: options.limit
     });
     output(options.json, result, result.compactMarkdown);
+  });
+
+program.command("route")
+  .description("Plan whether a task should use local behavior, project evidence, review, or OpenWorld research")
+  .option("--query <text>", "Task or question text")
+  .option("--path <path>", "Relevant path", collectOption, [])
+  .option("--changed-file <path>", "Changed file", collectOption, [])
+  .option("--command <command>", "Relevant command", collectOption, [])
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const plan = await routeBehavior({
+      projectRoot: process.cwd(),
+      query: options.query,
+      paths: options.path,
+      changedFiles: options.changedFile,
+      commands: options.command
+    });
+    output(options.json, plan, [
+      `Route: ${plan.decision}`,
+      `Risk: ${plan.risk.level}`,
+      `Local coverage: ${plan.localCoverage}`,
+      `Novelty: ${plan.novelty.score}`,
+      `Trace: ${plan.tracePath}`,
+      ...plan.reasons
+    ].join("\n"));
   });
 
 program.command("calibration")

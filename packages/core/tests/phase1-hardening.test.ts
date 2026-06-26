@@ -7,11 +7,13 @@ import {
   appendEvent,
   applyPreferenceReview,
   compileBehaviorLayer,
+  compileInstructionManifests,
   detectConflicts,
   extractSignals,
   getAdaptiveStatus,
   importProjectBehaviorPack,
   initAdaptiveProject,
+  installInstructionManifests,
   migrateProjectConfig,
   redactValue,
   scoreConfidence,
@@ -33,6 +35,23 @@ describe("phase 1 hardening", () => {
     ]));
     const status = await getAdaptiveStatus(root);
     expect(status.activePreferenceCount).toBe(2);
+  });
+
+  it("blocks install when an existing managed instruction block is corrupted", async () => {
+    const root = await tempProject();
+    await writeJson(path.join(root, ".openskill-kit", "preferences", "graph.json"), graph([
+      pref("active-managed", "active", "Prefer focused tests before final answer", "positive", "testing")
+    ]));
+    await compileInstructionManifests(root);
+    const first = await installInstructionManifests(root, { yes: true, dryRun: false });
+    expect(first.status).toBe("installed");
+    const agentsPath = path.join(root, "AGENTS.md");
+    const installed = await readFile(agentsPath, "utf8");
+    await writeFile(agentsPath, installed.replace("Prefer focused tests", "Prefer skipped tests"), "utf8");
+
+    const blocked = await installInstructionManifests(root, { yes: true, dryRun: false });
+    expect(blocked.status).toBe("blocked");
+    expect(blocked.messages.join("\n")).toContain("hash mismatch");
   });
 
   it("auto-stages safe preferences and keeps them out of active compiled behavior", async () => {

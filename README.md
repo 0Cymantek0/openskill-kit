@@ -43,6 +43,7 @@ npx openskill-kit openworld research --task-id <owtask_id> --file docs/architect
 npx openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
 npx openskill-kit openworld report --task-id <owtask_id>
+npx openskill-kit openworld doctor
 ```
 
 This creates `.openskill-kit/`, records a redacted event, learns candidate
@@ -94,6 +95,7 @@ openskill-kit explain <preference-id>
 openskill-kit explain <preference-id> --evidence
 openskill-kit calibration
 openskill-kit prefs --query "parser test change" --path src/parser/tokenizer.ts
+openskill-kit route --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit daemon
 openskill-kit agent doctor
 openskill-kit agent install-manifests --target project --dry-run
@@ -115,6 +117,7 @@ openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.
 openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
 openskill-kit openworld report --task-id <owtask_id>
+openskill-kit openworld doctor
 openskill-kit compact
 openskill-kit pack
 openskill-kit sync export --passphrase-file .openskill-kit/sync.pass
@@ -179,6 +182,7 @@ Key tools:
 - `osk_get_agent_surfaces`
 - `osk_get_context_pack`
 - `osk_get_relevant_preferences`
+- `osk_route_behavior`
 - `osk_record_event`
 - `osk_propose_preference`
 - `osk_get_review_queue`
@@ -210,6 +214,7 @@ Key tools:
 - `osk_run_lifecycle_once`
 - `osk_explain_status`
 - `osk_run_full_doctor`
+- `osk_openworld_doctor`
 - `osk_compact_state`
 - `osk_prune_state`
 - `osk_archive_state`
