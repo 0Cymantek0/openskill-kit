@@ -6,6 +6,7 @@ export const SignalSchema = z.object({
   id: z.string().min(1),
   eventIds: z.array(z.string()).min(1),
   extractedAt: z.string().datetime(),
+  extractorId: z.string().min(1).optional(),
   kind: z.enum(SignalKinds),
   category: z.enum(PreferenceCategories).default("general"),
   scope: z.object({

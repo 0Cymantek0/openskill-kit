@@ -28,7 +28,9 @@ export const eventExtractors: SignalExtractor[] = [
 ];
 
 export function runEventExtractors(event: OpenSkillEvent, now = new Date()): Signal[] {
-  return eventExtractors.flatMap((extractor) => extractor.extract(event, { now }));
+  return eventExtractors.flatMap((extractor) =>
+    extractor.extract(event, { now }).map((signal) => SignalSchema.parse({ ...signal, extractorId: signal.extractorId ?? extractor.id }))
+  );
 }
 
 function extractExplicitPreferences(event: OpenSkillEvent, context: ExtractorContext): Signal[] {

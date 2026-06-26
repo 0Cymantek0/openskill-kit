@@ -1,12 +1,17 @@
 # Architecture
 
-OpenSkillKit separates the adaptive project behavior engine from agent-facing
-adapters.
+OpenSkillKit has two layers:
+
+- **Adaptive Behavior Plane**: local-first project memory, review, retrieval, and agent-facing compilation.
+- **Open-World Evolution Plane**: planned scaffold for anchor-based skill evolution, virtual verification, leakage barriers, and benchmark reporting.
+
+The Adaptive Behavior Plane is production-facing today. The Open-World Evolution Plane is an MVP scaffold target until hidden-oracle benchmarks prove real agent improvement.
 
 ```text
 packages/core
-  config, event store, redaction, signals, Preference Graph, compiler,
-  safety scanner, verifier, registry, installer, legacy scaffold engine
+  config, events, redaction, signals, evidence cards, Preference Graph,
+  integrity, calibration, retrieval, compilers, sync, evals, maintenance,
+  OpenWorld schemas/control-plane helpers
 packages/cli
   command-line interface over core
 packages/mcp-server
@@ -15,6 +20,8 @@ packages/local-adapter-plugin
   compatibility adapter package
 packages/agent-plugin-bundle
   compatibility plugin bundle
+python/openskillkit_evolution
+  OpenWorld evolution engine skeleton and future sandbox/retrieval/verifier code
 ```
 
 ## Adaptive Data Flow
@@ -24,11 +31,14 @@ init
   -> .openskill-kit/config.json
   -> observe lifecycle events
   -> redact and append JSONL
-  -> extract normalized signals
+  -> extract normalized signals through extractor registry
+  -> write Evidence Cards
   -> update Preference Graph
-  -> Learning Review
+  -> validate memory integrity
+  -> calibrate from review/eval outcomes
+  -> retrieve relevant active behavior with budget traces
   -> compile Active Behavior Layer
-  -> install skill / expose MCP / export Project Behavior Pack
+  -> install manifests/skills/hooks or expose MCP/pack/sync artifacts
 ```
 
 ## Project State
@@ -41,47 +51,84 @@ init
   sessions/
   runtime/
   signals/
+  evidence/
   preferences/
+  reviews/
   compiled/
   installs/
   evals/
   compact/
   archive/
   reports/
+  packs/
+  sync/
+  openworld/
+  evolution/
 ```
 
-Private data defaults to ignored files. Shareable behavior lives in active
-preferences, compiled context, compiled skills, and reviewed pack output.
+Private data defaults to ignored files. Shareable behavior must pass review, integrity, privacy filtering, and pack verification before export.
 
 ## Event Store
 
-Events are append-only JSONL. Redaction runs before storage. Raw prompts and raw
-diffs are omitted unless config opts in. The index records counts per monthly
-file so status does not need to scan every event.
+Events are append-only JSONL. Redaction runs before storage. Raw prompts and raw diffs are omitted unless config opts in. The event index records counts per monthly file so status does not need to scan all events.
+
+## Signal Extraction
+
+`packages/core/src/signals/extract.ts` is the orchestration layer. Event-specific extraction lives in `signals/extractors/`, and each emitted signal can carry `extractorId` metadata. Calibration keys prefer `extractorId` when present, then fall back to signal kind for legacy signals.
+
+Signals may come from:
+
+- event extractors
+- repeated successful command detection
+- semantic preference proposals
+- repository pattern collection
+
+## Evidence Cards
+
+Evidence Cards are sanitized proof objects for learned behavior. They contain the source event IDs, kind, category, scope, statement, redacted quote or command evidence, privacy class, hash, and redaction metadata. Raw private event data is not copied into cards by default.
+
+Evidence Cards answer: "Why did this preference exist?"
+
+OpenWorld Anchor Cards will answer: "What external or project-local fact can independently support a skill or verifier?"
 
 ## Preference Kernel
 
-Signals become Preference Nodes. Confidence is deterministic and explainable,
-using weighted evidence with time decay. Conflicts are detected when opposing
-statements overlap in same category. Learning Review can activate, reject, or
-lock nodes.
+Signals become Preference Nodes. Confidence is deterministic and explainable, using weighted evidence, time decay, conflict state, and calibration. Conflicts are detected when opposing statements overlap in the same category. Review can activate, reject, lock, demote, edit, merge, split, or promote nodes.
 
-Host agents can submit semantic proposals through a strict JSON schema with
-statement, category, scope, evidence, counterevidence, confidence, risk, and
-suggested compile targets. Proposals are redacted, stored as review artifacts,
-and converted into proposal signals for the same Preference Graph pipeline.
+Memory Integrity blocks unsafe learned behavior before activation or compilation. It checks missing evidence, missing sources, secret-like content, prompt-injection markers, hidden-behavior instructions, destructive command preferences, risky global promotions, and conflicts with locked active behavior.
+
+## Calibration
+
+Calibration records reliability buckets from review outcomes and eval outcomes:
+
+- category
+- extractor
+- scope
+- evidence kind
+- privacy class
+- eval outcome
+
+This keeps future confidence and retrieval decisions grounded in what reviewers and evals accepted or rejected.
+
+## Retrieval
+
+Progressive retrieval ranks active preferences for the current task and path context. It emits scored items, reasons, retrieval level, inferred languages/task types/path roots, budget usage, and omitted-item traces. This prevents the agent context from becoming a flat dump of all memory.
 
 ## Compiler
 
-The compiler writes:
+The compiler writes deterministic artifacts:
 
 - `compiled/context-pack.md`
 - `compiled/skills/project-behavior/SKILL.md`
 - `compiled/skills/project-behavior/references/active-preferences.md`
+- category-specific dynamic skill shards
 - `compiled/hooks/hooks.json`
 - `compiled/hooks/scripts/*.cjs`
 - `compiled/mcp/server-config.json`
 - `compiled/plugin/plugin.json`
+- `compiled/manifests/AGENTS.md`
+- `compiled/manifests/CLAUDE.md`
+- `.claude/rules/*`
 - `compiled/behavior/path-map.json`
 - `compiled/behavior/command-policy.md`
 - `compiled/behavior/review-checklist.md`
@@ -91,77 +138,77 @@ The compiler writes:
 - `runtime/last-run.json`
 - `compact/summary.json`
 
-Output is deterministic: stable headings, stable sorting, and no timestamp in
-generated skill text.
+Managed `AGENTS.md` / `CLAUDE.md` installation preserves content outside the OpenSkillKit block and supports dry-run install/uninstall.
 
 ## MCP Runtime
 
-`openskill-kit-mcp` exposes adaptive tools:
+`openskill-kit-mcp` exposes adaptive tools for bootstrap, status, context packs, preference retrieval, event recording, proposal submission, review actions, learning, compilation, preference explanation, behavior packs, encrypted sync, evals, doctor checks, lifecycle runs, and maintenance operations.
 
-- `osk_bootstrap_session`
-- `osk_get_context_pack`
-- `osk_get_relevant_preferences`
-- `osk_record_event`
-- `osk_propose_preference`
-- `osk_get_review_queue`
-- `osk_apply_review_actions`
-- `osk_learn_from_session`
-- `osk_compile_behavior_layer`
-- `osk_explain_preference`
-- `osk_export_behavior_pack`
-- `osk_sign_behavior_pack`
-- `osk_verify_behavior_pack`
-- `osk_inspect_behavior_pack`
-- `osk_diff_behavior_pack`
-- `osk_import_behavior_pack`
-- `osk_run_behavior_eval`
-- `osk_agent_doctor`
-- `osk_install_agent_hooks`
-- `osk_run_lifecycle_once`
-- `osk_explain_status`
-- `osk_run_full_doctor`
-- `osk_compact_state`
-- `osk_prune_state`
-- `osk_archive_state`
-- `osk_reset_state`
+MCP results are sanitized before output so project and home paths do not leak unnecessarily.
 
-Legacy drafting, audit, test, evaluation, install, list, and inspect tools
-remain available for compatibility.
+## Behavior Packs And Sync
+
+Project Behavior Packs include project identity, schema compatibility, source metadata, generated artifact inventory, trust metadata, privacy statement, file hashes, and optional signing metadata. Import can write review artifacts before apply, block broad diffs, and exclude hooks unless `trustHooks` is explicit.
+
+Encrypted sync wraps privacy-filtered behavior packs. Raw event logs and private runtime state stay local by default.
 
 ## Behavior Evals
 
-`openskill-kit eval` builds scenarios from active preferences or a scenario file,
-retrieves relevant preferences for each task, simulates a behavior-aware plan,
-checks command policy and forbidden behavior, and reports adherence, retrieval
-precision, and privacy leak rate.
+Current eval tracks are useful but not paper-level proof:
 
-## Maintenance
+- replay behavior eval
+- baseline compare eval
+- external-agent prompt/command harness
 
-`openskill-kit status --explain` reports what adaptive state exists, whether
-compiled artifacts are stale, and what to run next. `doctor --full` checks base
-environment plus adaptive config, compiled hooks, MCP config, registry, and pack
-health.
+They measure adherence, retrieval precision, command policy behavior, forbidden behavior, privacy leak rate, and baseline deltas. They do not yet prove hidden-oracle benchmark improvement.
 
-`compact` writes a small project summary from event and graph state. `prune`
-plans or removes old eval runs. `archive` plans or moves private event, signal,
-review, and runtime state under `.openskill-kit/archive/`. `reset` plans or
-removes selected adaptive state scopes and requires `--yes` before writing.
+## Open-World Evolution Plane
 
-## Legacy Scaffold Path
+The OpenWorld plane is added beside the TypeScript control plane. It must stay local-only and scaffold/MVP until real benchmarks exist.
 
-`draft`, topic-based `learn`, and `evolve` remain deterministic local
-scaffolding commands. They still write run reports, evidence ledgers, leakage
-audits, verifier packs, candidate skill packages, and evaluation artifacts. This
-path is useful for manual skill creation but is no longer the main product loop.
+Target flow:
+
+```text
+task prompt
+  -> leakage barrier and forbidden identifiers
+  -> source retrieval/cache
+  -> Anchor Cards
+  -> Skill Plan
+  -> VirtualTestSuite
+  -> candidate skill generation
+  -> sandboxed verifier runs
+  -> bounded refinement
+  -> LeakageAudit
+  -> EvolutionRun report
+  -> reviewed promotion into Adaptive Behavior Plane
+```
+
+Required guarantees:
+
+- no network by default
+- no hidden oracle strings in queries, sources, anchors, skills, reports, or logs
+- all artifacts under `.openskill-kit/openworld` or `.openskill-kit/evolution`
+- visible and holdout virtual tests separated
+- hidden oracle files never mounted into generation contexts
+- benchmark claims blocked until reproducible hidden-oracle runs exist
+
+Python is the right first engine for retrieval, pytest/Vitest orchestration, sandbox adapters, and report generation. TypeScript remains the stable product/control plane.
 
 ## Safety Gates
 
-Generated or imported skills are untrusted until scanned and verified. Install
-blocks verifier errors, fixture failures, and high or critical safety findings
-unless caller explicitly allows risk. Receipts record target, source,
-destination, verifier status, and safety score.
+Generated or imported skills are untrusted until scanned and verified. Install blocks verifier errors, fixture failures, and high or critical safety findings unless the caller explicitly allows risk.
 
-Project Behavior Packs include project identity, schema compatibility, source
-metadata, generated artifact inventory, trust metadata, privacy statement, file
-hashes, and optional embedded signing public key. Import can write a review
-artifact before apply, and hooks stay excluded unless explicitly trusted.
+OpenWorld artifacts add more gates:
+
+- forbidden identifier and path scanner
+- query sanitizer
+- source/cache audit
+- anchor leakage audit
+- verifier leakage audit
+- final report leakage audit
+
+`oracle-private` data must never be serialized into skills, sources, anchors, or logs.
+
+## Legacy Scaffold Path
+
+`draft`, topic-based `learn`, and `evolve` remain deterministic local scaffolding commands. They write run reports, evidence ledgers, leakage audits, verifier packs, candidate skill packages, and evaluation artifacts. This path is useful for manual skill creation but is not the OpenWorld paper-style evolution loop.

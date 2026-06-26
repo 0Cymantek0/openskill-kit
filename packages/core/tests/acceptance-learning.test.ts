@@ -44,6 +44,12 @@ describe("acceptance learning scenarios", () => {
     expect(signals.signals.some((signal) => signal.polarity === "negative" && signal.statement.startsWith("Do not repeat rejected"))).toBe(true);
     expect(signals.signals.some((signal) => signal.kind === "edit-delta" && signal.scope.paths.includes("src/parser/tokenizer.ts"))).toBe(true);
     expect(signals.signals.some((signal) => signal.category === "command-policy" && signal.statement.includes("npm test -- parser"))).toBe(true);
+    expect(signals.signals.map((signal) => signal.extractorId).filter(Boolean)).toEqual(expect.arrayContaining([
+      "rejection-correction-v2",
+      "user-edit-diff-v2",
+      "repeated-command-v1",
+      "repo-pattern-v1"
+    ]));
 
     const graph = await updatePreferenceGraph(root, new Date("2026-06-25T03:02:00.000Z"));
     expect(graph.graph.nodes.some((node) => node.polarity === "negative" && node.status === "candidate")).toBe(true);

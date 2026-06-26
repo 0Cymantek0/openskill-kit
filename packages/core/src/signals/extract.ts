@@ -15,11 +15,6 @@ export interface LearnSignalsResult {
   signals: Signal[];
 }
 
-const explicitPatterns = [
-  /\b(always|prefer|use|keep|make sure to|default to)\s+(.{8,220}?)(?:[.!?\n]|$)/gi,
-  /\b(never|avoid|do not|don't|stop)\s+(.{8,220}?)(?:[.!?\n]|$)/gi
-];
-
 export async function extractSignals(projectRoot: string, now = new Date()): Promise<LearnSignalsResult> {
   const root = path.resolve(projectRoot);
   const config = await readProjectConfig(root);
@@ -61,133 +56,12 @@ export function classifyHighValueEvent(event: OpenSkillEvent): HighValueEventCla
   return { eventId: event.id, sessionId: event.sessionId, eventType: event.eventType, reasons: [...new Set(reasons)].sort() };
 }
 
-function extractExplicitPreferences(event: OpenSkillEvent, text: string, now: Date): Signal[] {
-  const signals: Signal[] = [];
-  for (const pattern of explicitPatterns) {
-    for (const match of text.matchAll(pattern)) {
-      const verb = (match[1] ?? "").toLowerCase();
-      const body = cleanStatement(match[2] ?? "");
-      if (body.length < 8) continue;
-      const negative = ["never", "avoid", "do not", "don't", "stop"].includes(verb);
-      const statement = `${negative ? "Do not" : "Prefer"} ${body}`;
-      signals.push(signalFromEvent(event, now, "explicit-preference", categorize(statement), statement, negative ? "negative" : "positive", negative ? 0.88 : 0.82, event.files.map((file) => file.path), text.slice(Math.max(0, match.index ?? 0), Math.min(text.length, (match.index ?? 0) + 260))));
-    }
-  }
-  return signals;
-}
-
 function hasExplicitPreference(text: string): boolean {
   if (!text) return false;
   return [
     /\b(always|prefer|use|keep|make sure to|default to)\s+.{8,220}?(?:[.!?\n]|$)/i,
     /\b(never|avoid|do not|don't|stop)\s+.{8,220}?(?:[.!?\n]|$)/i
   ].some((pattern) => pattern.test(text));
-}
-
-function extractToolChoice(event: OpenSkillEvent, now: Date): Signal[] {
-  return event.commands.map((command) => signalFromEvent(
-    event,
-    now,
-    "tool-choice",
-    "tooling",
-    `Use command recipe: ${[command.command, ...command.args].join(" ").trim()}`,
-    command.status === "fail" || command.status === "blocked" ? "negative" : "positive",
-    command.status === "pass" ? 0.6 : 0.45,
-    [],
-    undefined,
-    command.command
-  ));
-}
-
-function extractTestOutcome(event: OpenSkillEvent, now: Date): Signal[] {
-  return event.commands.map((command) => signalFromEvent(
-    event,
-    now,
-    "test-outcome",
-    "testing",
-    `${command.status === "pass" ? "Verification passes with" : "Verification failed with"} ${[command.command, ...command.args].join(" ").trim()}`,
-    command.status === "pass" ? "positive" : "negative",
-    command.status === "pass" ? 0.56 : 0.66,
-    [],
-    undefined,
-    command.command
-  ));
-}
-
-function extractEditDeltaTaste(event: OpenSkillEvent, text: string, now: Date): Signal[] {
-  const normalized = event.normalized as Record<string, unknown>;
-  const diffText = [
-    normalized.diff,
-    normalized.diffSnippet,
-    normalized.patch,
-    normalized.patchSnippet,
-    normalized.before,
-    normalized.beforeSnippet,
-    normalized.after,
-    normalized.afterSnippet,
-    normalized.original,
-    normalized.updated,
-    text
-  ].filter((value): value is string => typeof value === "string").join("\n");
-  if (!diffText.trim()) return [];
-  const paths = event.files.map((file) => file.path);
-  const scope = paths.slice(0, 3).join(", ") || "edited files";
-  const signals: Signal[] = [];
-  if (looksLikeDependencyRemoval(diffText)) {
-    signals.push(signalFromEvent(
-      event,
-      now,
-      "edit-delta",
-      "architecture",
-      `Prefer dependency-light edits in ${scope}`,
-      "positive",
-      0.82,
-      paths,
-      summarizeText(diffText)
-    ));
-  }
-  if (looksLikeSecretLoggingRemoval(diffText)) {
-    signals.push(signalFromEvent(
-      event,
-      now,
-      "edit-delta",
-      "security",
-      `Do not log secrets or raw credentials in ${scope}`,
-      "negative",
-      0.86,
-      paths,
-      summarizeText(diffText)
-    ));
-  }
-  if (looksLikeFocusedTestAddition(diffText)) {
-    signals.push(signalFromEvent(
-      event,
-      now,
-      "edit-delta",
-      "testing",
-      `Prefer adding focused regression tests with edits in ${scope}`,
-      "positive",
-      0.78,
-      paths,
-      summarizeText(diffText)
-    ));
-  }
-  return signals;
-}
-
-function looksLikeDependencyRemoval(text: string): boolean {
-  const removedImport = /^-\s*(import\s+.+\s+from\s+['"][^.'"][^'"]+['"]|const\s+.+\s*=\s*require\(['"][^.'"][^'"]+['"]\))/m.test(text);
-  const removedPackageDep = /^-\s*"[^"]+"\s*:\s*"[^"]+"/m.test(text) && /dependencies|devDependencies|package\.json/i.test(text);
-  const addedNativeOrLocal = /^\+\s*(import\s+.+\s+from\s+['"][.][^'"]+['"]|const\s+.+\s*=\s*require\(['"][.][^'"]+['"]\)|function\s+|export\s+function|const\s+\w+\s*=)/m.test(text);
-  return (removedImport || removedPackageDep) && addedNativeOrLocal;
-}
-
-function looksLikeSecretLoggingRemoval(text: string): boolean {
-  return /^-\s*console\.(log|debug|info|warn|error)\(.{0,120}(token|secret|password|credential|authorization|api[_-]?key)/im.test(text);
-}
-
-function looksLikeFocusedTestAddition(text: string): boolean {
-  return /^\+\s*(it|test|describe)\(['"].{0,120}(regression|edge|parser|focused|specific|bug|fixture)/im.test(text);
 }
 
 function extractRepeatedCommandSignals(events: OpenSkillEvent[], now: Date): Signal[] {
@@ -208,6 +82,7 @@ function extractRepeatedCommandSignals(events: OpenSkillEvent[], now: Date): Sig
       id: `sig_${shortHash(`repeated-command:${commandText}:${items.map((item) => item.event.id).join(",")}`)}`,
       eventIds: items.map((item) => item.event.id),
       extractedAt: now.toISOString(),
+      extractorId: "repeated-command-v1",
       kind: "tool-choice",
       category: "command-policy",
       scope: { level: "project", paths: [] },
@@ -233,33 +108,6 @@ async function extractRepoPatternSignals(root: string, projectId: string, now: D
   return signals;
 }
 
-function signalFromEvent(
-  event: OpenSkillEvent,
-  now: Date,
-  kind: Signal["kind"],
-  category: Signal["category"],
-  statement: string,
-  polarity: Signal["polarity"],
-  weight: number,
-  paths: string[] = [],
-  quote?: string,
-  command?: string
-): Signal {
-  return SignalSchema.parse({
-    schemaVersion: "openskill-kit.signal.v1",
-    id: `sig_${shortHash(`${event.id}:${kind}:${statement}`)}`,
-    eventIds: [event.id],
-    extractedAt: now.toISOString(),
-    kind,
-    category,
-    scope: { level: paths.length ? "path" : "project", paths },
-    statement,
-    polarity,
-    weight,
-    evidence: [{ eventId: event.id, quote, command }]
-  });
-}
-
 function repoSignal(projectId: string, now: Date, category: Signal["category"], statement: string, weight: number): Signal {
   const eventId = `repo_${shortHash(`${projectId}:${statement}`)}`;
   return SignalSchema.parse({
@@ -267,6 +115,7 @@ function repoSignal(projectId: string, now: Date, category: Signal["category"], 
     id: `sig_${shortHash(`${eventId}:${statement}`)}`,
     eventIds: [eventId],
     extractedAt: now.toISOString(),
+    extractorId: "repo-pattern-v1",
     kind: "repo-pattern",
     category,
     scope: { level: "project", paths: [] },
@@ -290,28 +139,6 @@ function eventText(event: OpenSkillEvent): string {
     normalized.content,
     normalized.contentSnippet
   ].filter((value): value is string => typeof value === "string").join("\n");
-}
-
-function categorize(text: string): Signal["category"] {
-  const lower = text.toLowerCase();
-  if (/\b(test|vitest|jest|coverage|smoke|verify)\b/.test(lower)) return "testing";
-  if (/\b(secret|privacy|security|token|credential|permission)\b/.test(lower)) return "security";
-  if (/\b(api|route|endpoint|schema)\b/.test(lower)) return "api";
-  if (/\b(component|react|css|ui|frontend|browser)\b/.test(lower)) return "frontend";
-  if (/\b(server|database|backend|service)\b/.test(lower)) return "backend";
-  if (/\b(command|npm|pnpm|script|tool)\b/.test(lower)) return "tooling";
-  if (/\b(workflow|review|commit|branch|plan)\b/.test(lower)) return "workflow";
-  if (/\b(module|architecture|package|dependency)\b/.test(lower)) return "architecture";
-  return "general";
-}
-
-function cleanStatement(value: string): string {
-  return value.replace(/\s+/g, " ").trim().replace(/^to\s+/i, "");
-}
-
-function summarizeText(value: string): string | undefined {
-  const cleaned = cleanStatement(value);
-  return cleaned ? cleaned.slice(0, 140) : undefined;
 }
 
 function dedupeSignals(signals: Signal[]): Signal[] {

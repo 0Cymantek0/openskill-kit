@@ -45,9 +45,12 @@ export async function recordCalibrationOutcomes(
       report.scopes[scopeKey] = increment(report.scopes[scopeKey], outcome);
     }
     const nodeCards = await readEvidenceCards(root, node.evidence.flatMap((item) => item.cardIds ?? []));
-    const kinds = new Set(node.evidence.map((item) => signalsById.get(item.signalId)?.kind).filter((value): value is Signal["kind"] => Boolean(value)));
-    for (const kind of kinds.size ? kinds : ["unknown"]) {
-      report.extractors[kind] = increment(report.extractors[kind], outcome);
+    const extractors = new Set(node.evidence.map((item) => {
+      const signal = signalsById.get(item.signalId);
+      return signal?.extractorId ?? signal?.kind;
+    }).filter((value): value is string => Boolean(value)));
+    for (const extractor of extractors.size ? extractors : ["unknown"]) {
+      report.extractors[extractor] = increment(report.extractors[extractor], outcome);
     }
     for (const evidenceKind of evidenceKindKeys(node, signalsById, nodeCards)) {
       report.evidenceKinds[evidenceKind] = increment(report.evidenceKinds[evidenceKind], outcome);
@@ -96,7 +99,7 @@ export async function applyCalibrationToSignals(projectRoot: string, signals: Si
   return signals.map((signal) => {
     const reliabilities = [
       report.categories[signal.category]?.reliability,
-      report.extractors[signal.kind]?.reliability,
+      report.extractors[signal.extractorId ?? signal.kind]?.reliability,
       ...scopeKeys(signal.scope).map((key) => report.scopes[key]?.reliability),
       report.evidenceKinds[inferredEvidenceKind(signal)]?.reliability,
       report.privacyClasses[inferredPrivacyClass(signal.scope)]?.reliability
