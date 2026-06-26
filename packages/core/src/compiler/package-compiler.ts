@@ -78,6 +78,8 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
     tools: [
       "osk_bootstrap_session",
       "osk_explain_status",
+      "osk_detect_environment",
+      "osk_get_agent_surfaces",
       "osk_get_context_pack",
       "osk_get_relevant_preferences",
       "osk_record_event",

@@ -12,7 +12,7 @@ npm run release-check
 
 Manual audit:
 
-- Fresh project flow works: `init -> observe -> learn -> review -> compile -> install -> eval -> pack -> sign -> verify -> import-pack --review`.
+- Fresh project flow works: `init -> detect -> observe -> learn -> review -> compile -> install -> eval -> pack -> sign -> verify -> import-pack --review`.
 - `doctor --full` has no unexpected failures.
 - `status --explain` gives useful next action text.
 - Generated packs do not include private event, signal, review, eval-run, report, raw prompt, raw diff, or secret data.

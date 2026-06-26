@@ -4,6 +4,7 @@
 npm install
 npm run build
 npx openskill-kit init
+npx openskill-kit detect
 npx openskill-kit observe --type user-prompt-submit --text "Always run npm test before final response."
 npx openskill-kit learn
 npx openskill-kit review --activate-all
@@ -33,6 +34,7 @@ Generated adaptive artifacts:
 - `.openskill-kit/preferences/graph.json`: Behavior Profile.
 - `.openskill-kit/preferences/calibration.json`: review-outcome reliability by category and extractor.
 - `.openskill-kit/preferences/integrity-report.json`: memory integrity checks for compiled behavior.
+- `.openskill-kit/detection/`: metadata-only scan results for agent instruction, rule, skill, hook, and MCP surfaces.
 - `.openskill-kit/preferences/active/`: Active Behavior Layer.
 - `.openskill-kit/compiled/context-pack.md`: compact agent context.
 - `.openskill-kit/compiled/previews/staged-context-pack.md`: review-only staged

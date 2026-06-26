@@ -17,6 +17,8 @@ export * from "./registry/registry.js";
 export * from "./sandbox/policy.js";
 export * from "./sandbox/runner.js";
 export * from "./doctor/doctor.js";
+export * from "./detection/schema.js";
+export * from "./detection/detector.js";
 export * from "./agents/agent.js";
 export * from "./maintenance/maintenance.js";
 export * from "./config/schema.js";

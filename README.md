@@ -28,6 +28,7 @@ npx openskill-kit agent doctor
 npx openskill-kit agent install-hooks --target project --yes
 npx openskill-kit install --target agents-project --yes
 npx openskill-kit status --explain
+npx openskill-kit detect
 npx openskill-kit doctor --full
 npx openskill-kit compact
 ```
@@ -105,6 +106,7 @@ openskill-kit eval
 openskill-kit eval --compare-baseline
 openskill-kit eval --mode external-agent --dry-run
 openskill-kit status --explain
+openskill-kit detect
 openskill-kit doctor --full
 openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
 openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
@@ -173,6 +175,8 @@ openskill-kit-mcp
 Key tools:
 
 - `osk_bootstrap_session`
+- `osk_detect_environment`
+- `osk_get_agent_surfaces`
 - `osk_get_context_pack`
 - `osk_get_relevant_preferences`
 - `osk_record_event`

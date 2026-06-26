@@ -140,6 +140,17 @@ The compiler writes deterministic artifacts:
 
 Managed `AGENTS.md` / `CLAUDE.md` installation preserves content outside the OpenSkillKit block and supports dry-run install/uninstall.
 
+## Agent Environment Detection
+
+`openskill-kit detect` writes `.openskill-kit/detection/surfaces.json`,
+`.openskill-kit/detection/last-scan.json`, and
+`.openskill-kit/detection/reports/environment.md`. The detector reports project
+instruction files, Claude/Cursor rules, MCP configs, skills, hooks, and
+OpenSkillKit compiled artifacts with read/write policy, privacy risk, managed
+block metadata, and confidence. User/global surfaces are opt-in through
+`--include-user-surfaces` and remain metadata-only by default. Raw session logs
+and agent memories are never imported silently.
+
 ## MCP Runtime
 
 `openskill-kit-mcp` exposes adaptive tools for bootstrap, status, context packs, preference retrieval, event recording, proposal submission, review actions, learning, compilation, preference explanation, behavior packs, encrypted sync, evals, doctor checks, lifecycle runs, and maintenance operations.

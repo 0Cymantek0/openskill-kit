@@ -9,6 +9,7 @@ import {
   appendEvent,
   applyPreferenceReview,
   compileBehaviorLayer,
+  detectAgentEnvironment,
   draftSkill,
   evaluateSkill,
   explainPreference,
@@ -106,6 +107,45 @@ export function createOpenSkillMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "osk_detect_environment",
+    {
+      title: "OpenSkillKit Detect Agent Environment",
+      description: "Detect project and optional user agent surfaces as privacy-aware metadata.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        includeUserSurfaces: z.boolean().default(false),
+        includeSensitivePreview: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, includeUserSurfaces, includeSensitivePreview }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await detectAgentEnvironment(root, { includeUserSurfaces, includeSensitivePreview }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_agent_surfaces",
+    {
+      title: "OpenSkillKit Agent Surfaces",
+      description: "Return the last detected agent surfaces, running detection first if needed.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        refresh: z.boolean().default(false),
+        includeUserSurfaces: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, refresh, includeUserSurfaces }) => {
+      const root = resolveProjectRoot(projectRoot);
+      if (refresh) return toolResult(await detectAgentEnvironment(root, { includeUserSurfaces }), root);
+      const lastScanPath = path.join(root, ".openskill-kit", "detection", "last-scan.json");
+      const existing = await import("node:fs/promises").then((fs) => fs.readFile(lastScanPath, "utf8").then(JSON.parse).catch(() => undefined));
+      return toolResult(existing ?? await detectAgentEnvironment(root, { includeUserSurfaces }), root);
+    }
+  );
+
+  server.registerTool(
     "osk_get_context_pack",
     {
       title: "OpenSkillKit Context Pack",
@@ -185,12 +225,12 @@ export function createOpenSkillMcpServer(): McpServer {
     {
       title: "OpenSkillKit Compile Behavior Layer",
       description: "Compile active behavior into context pack, skill, hooks, and MCP config.",
-      inputSchema: z.object({ projectRoot: projectRootSchema, targets: z.array(z.enum(CompileTargets)).optional() }),
+      inputSchema: z.object({ projectRoot: projectRootSchema, targets: z.array(z.enum(CompileTargets)).optional(), includeStagedPreview: z.boolean().default(false) }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, targets }) => {
+    async ({ projectRoot, targets, includeStagedPreview }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await compileBehaviorLayer(root, { targets }), root);
+      return toolResult(await compileBehaviorLayer(root, { targets, includeStagedPreview }), root);
     }
   );
 

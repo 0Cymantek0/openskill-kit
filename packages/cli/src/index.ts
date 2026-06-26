@@ -7,6 +7,7 @@ import {
   appendEvent,
   applyPreferenceReview,
   compileBehaviorLayer,
+  detectAgentEnvironment,
   draftSkill,
   evaluateSkill,
   explainPreference,
@@ -109,6 +110,25 @@ program.command("doctor")
     const report = options.full === true ? await runFullDoctor(process.cwd()) : await runDoctor(process.cwd());
     output(options.json, report, `Doctor ${report.status}: ${report.checks.length} checks`);
     process.exitCode = report.status === "fail" ? 1 : 0;
+  });
+
+program.command("detect")
+  .description("Detect project and optional user agent surfaces without importing private logs")
+  .option("--include-user-surfaces", "Include user/global agent surfaces as metadata-only records")
+  .option("--include-sensitive-preview", "Allow content metadata inspection for sensitive/user surfaces")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await detectAgentEnvironment(process.cwd(), {
+      includeUserSurfaces: options.includeUserSurfaces === true,
+      includeSensitivePreview: options.includeSensitivePreview === true
+    });
+    output(options.json, result, [
+      `Detected ${result.summary.total} agent surface(s)`,
+      `Managed-block writable: ${result.summary.writableManagedBlocks}`,
+      `Preview-only: ${result.summary.previewOnly}`,
+      `Metadata-only: ${result.summary.metadataOnly}`,
+      result.artifacts.reportPath ? `Report: ${result.artifacts.reportPath}` : undefined
+    ].filter(Boolean).join("\n"));
   });
 
 const openworld = program.command("openworld")
@@ -240,9 +260,16 @@ const agent = program.command("agent")
 
 agent.command("doctor")
   .description("Check adaptive agent hook readiness")
+  .option("--deep", "Also run agent environment detection")
   .option("--json", "Print JSON")
   .action(async (options) => {
     const report = await runAgentDoctor(process.cwd());
+    if (options.deep === true) {
+      const detection = await detectAgentEnvironment(process.cwd());
+      output(options.json, { report, detection }, `Agent doctor ${report.status}: ${report.checks.length} checks\nDetected ${detection.summary.total} agent surface(s)`);
+      process.exitCode = report.status === "fail" ? 1 : 0;
+      return;
+    }
     output(options.json, report, `Agent doctor ${report.status}: ${report.checks.length} checks`);
     process.exitCode = report.status === "fail" ? 1 : 0;
   });

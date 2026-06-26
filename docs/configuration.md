@@ -32,6 +32,14 @@ openskill-kit compile --target context-pack
 openskill-kit compile --target project-rules
 ```
 
+## Detection
+
+`openskill-kit detect` scans project agent surfaces and writes metadata under
+`.openskill-kit/detection/`. Add `--include-user-surfaces` to include
+home-directory Codex, Claude, and skill locations as metadata-only records.
+Detected user memories and override files are never written or imported
+silently.
+
 `plugin` expands to its required local dependencies so the plugin bundle has the
 skill, hooks, MCP metadata, and manifest files it needs. Target filtering is
 best used in CI or preview workflows where you want narrow artifact churn.
