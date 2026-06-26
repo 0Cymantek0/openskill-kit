@@ -42,6 +42,13 @@ if (openworldPlan.task?.schemaVersion !== "openskill-kit.openworld-task.v1" || o
   throw new Error("openworld plan failed");
 }
 await stat(path.join(root, ".openskill-kit", "openworld", "tasks", openworldPlan.task.id, "task.json"));
+await writeFile(path.join(root, "openworld-source.md"), "Prefer local-only OpenWorld source ingestion before web adapters.\n", "utf8");
+const openworldSource = await runJson(["openworld", "research", "--task-id", openworldPlan.task.id, "--file", "openworld-source.md", "--json"]);
+if (openworldSource.source?.kind !== "local-doc" || openworldSource.audit?.status !== "pass") throw new Error("openworld research failed");
+const openworldAnchor = await runJson(["openworld", "anchors", "--task-id", openworldPlan.task.id, "--source-id", openworldSource.source.id, "--json"]);
+if (!openworldAnchor.anchor?.id || !openworldAnchor.anchor.claim.includes("local-only OpenWorld")) throw new Error("openworld anchor failed");
+const openworldVerifier = await runJson(["openworld", "build-verifier", "--task-id", openworldPlan.task.id, "--anchor-id", openworldAnchor.anchor.id, "--json"]);
+if (openworldVerifier.suite?.cases?.length !== 1) throw new Error("openworld verifier draft failed");
 const smokeSecret = ["smoke", "secret"].join("-");
 const observed = await runJson(["observe", "--type", "user-prompt-submit", "--text", `Always run npm test before final response. TOKEN=${smokeSecret}`, "--json"]);
 if (!observed.event?.id || JSON.stringify(observed).includes(smokeSecret)) {

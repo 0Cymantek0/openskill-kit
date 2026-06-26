@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
+import { writeFileAtomic, withFileLock } from "../storage/atomic.js";
 import { assertOpenWorldArtifactPath } from "./leakage.js";
 import {
   AnchorCardSchema,
@@ -65,6 +65,17 @@ export async function writeOpenWorldSource(projectRoot: string, source: OpenWorl
   return writeTaskArtifact(projectRoot, parsed.taskId, "sources", `${parsed.id}.json`, parsed);
 }
 
+export async function writeOpenWorldSourceContent(projectRoot: string, taskId: string, sourceId: string, content: string): Promise<string> {
+  const root = path.resolve(projectRoot);
+  const file = taskArtifactPath(root, taskId, "sources", `${sourceId}.content.txt`);
+  await writeOpenWorldFile(root, file, content);
+  return file;
+}
+
+export async function readOpenWorldSourceContent(projectRoot: string, taskId: string, sourceId: string): Promise<string> {
+  return fs.readFile(taskArtifactPath(projectRoot, taskId, "sources", `${sourceId}.content.txt`), "utf8");
+}
+
 export async function readOpenWorldSource(projectRoot: string, taskId: string, sourceId: string): Promise<OpenWorldSource> {
   return OpenWorldSourceSchema.parse(JSON.parse(await fs.readFile(taskArtifactPath(projectRoot, taskId, "sources", `${sourceId}.json`), "utf8")));
 }
@@ -118,9 +129,13 @@ function writeTaskArtifact(projectRoot: string, taskId: string, subdir: string, 
 }
 
 async function writeOpenWorldJson(projectRoot: string, file: string, value: unknown): Promise<void> {
+  await writeOpenWorldFile(projectRoot, file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function writeOpenWorldFile(projectRoot: string, file: string, value: string): Promise<void> {
   const target = assertOpenWorldArtifactPath(projectRoot, file);
   await withFileLock(path.join(path.dirname(target), ".write.lock"), async () => {
-    await writeJsonAtomic(target, value);
+    await writeFileAtomic(target, value);
   });
 }
 

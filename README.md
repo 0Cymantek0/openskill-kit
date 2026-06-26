@@ -38,6 +38,9 @@ OpenWorld scaffold commands are local-only and not benchmark-proven yet:
 npx openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
 npx openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
 npx openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
+npx openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
+npx openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
+npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
 npx openskill-kit openworld report --task-id <owtask_id>
 ```
 
@@ -105,6 +108,9 @@ openskill-kit doctor --full
 openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
 openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
 openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
+openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
+openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
+openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
 openskill-kit openworld report --task-id <owtask_id>
 openskill-kit compact
 openskill-kit pack

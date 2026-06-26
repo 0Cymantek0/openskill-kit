@@ -40,6 +40,7 @@ export const OpenWorldSourceSchema = z.object({
   kind: z.enum(["project-file", "local-doc", "web", "repository", "paper", "tutorial", "user-provided", "generated-placeholder"]),
   uri: z.string().min(1),
   title: z.string().optional(),
+  contentPath: z.string().optional(),
   retrievedAt: z.string().datetime(),
   contentHash: z.string().min(16),
   trust: SourceTrustSchema.default({ authority: 0.5, freshness: 0.5, independence: 0.5 }),

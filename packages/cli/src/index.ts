@@ -31,6 +31,9 @@ import {
   proposeSemanticPreference,
   retrieveRelevantPreferences,
   auditOpenWorldLeakage,
+  buildVirtualSuiteFromAnchors,
+  draftAnchorFromOpenWorldSource,
+  ingestLocalOpenWorldSource,
   renderOpenWorldTaskReport,
   readOpenWorldTask,
   runOpenWorldPython,
@@ -185,6 +188,41 @@ openworld.command("plan")
     ];
     const result = await runOpenWorldPython({ projectRoot: process.cwd(), args, timeoutMs: options.timeoutMs });
     output(options.json, result.result, "OpenWorld plan written");
+  });
+
+openworld.command("research")
+  .description("Ingest one project-local source file for an OpenWorld task")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--file <path>", "Project-local source file")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await ingestLocalOpenWorldSource(process.cwd(), options.taskId, options.file);
+    output(options.json, result, `OpenWorld source ${result.source.id}\n${result.sourcePath}`);
+  });
+
+openworld.command("anchors")
+  .description("Draft an Anchor Card from a cached OpenWorld source")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--source-id <id>", "Source id")
+  .option("--claim <text>", "Override extracted claim")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await draftAnchorFromOpenWorldSource(process.cwd(), options.taskId, options.sourceId, options.claim);
+    output(options.json, result, `OpenWorld anchor ${result.anchor.id}\n${result.anchorPath}`);
+  });
+
+openworld.command("build-verifier")
+  .description("Draft a visible/holdout virtual verifier suite from Anchor Cards")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--anchor-id <id>", "Anchor id", collectOption, [])
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const anchors = await Promise.all(options.anchorId.map(async (id: string) => {
+      const file = path.join(process.cwd(), ".openskill-kit", "openworld", "tasks", options.taskId, "anchors", `${id}.json`);
+      return JSON.parse(await fs.readFile(file, "utf8"));
+    }));
+    const result = await buildVirtualSuiteFromAnchors(process.cwd(), options.taskId, anchors);
+    output(options.json, result, `OpenWorld virtual suite ${result.suite.id}\n${result.suitePath}`);
   });
 
 openworld.command("report")
