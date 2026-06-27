@@ -9,6 +9,7 @@ import {
   compileBehaviorLayer,
   explainPreferenceWithEvidence,
   explainAdaptiveStatus,
+  getCompiledPluginStatus,
   initAdaptiveProject,
   readEvidenceCards,
   readCalibrationReport,
@@ -38,8 +39,12 @@ describe("deep architecture hardening", () => {
 
   it("compiles a self-describing agent plugin bundle for existing harnesses", async () => {
     const root = await tempProject();
+    const before = await getCompiledPluginStatus(root);
+    expect(before.ready).toBe(false);
+    expect(before.missing).toEqual(expect.arrayContaining(["plugin.json", ".agent-plugin/plugin.json", ".mcp.json"]));
     await writeGraph(root, [pref("plugin", "Prefer plugin-first harness attachment", "workflow", [])]);
     const compiled = await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const status = await getCompiledPluginStatus(root);
     const pluginRoot = path.join(root, ".openskill-kit", "compiled", "plugin");
     const manifest = JSON.parse(await readFile(path.join(pluginRoot, "plugin.json"), "utf8"));
     const packagedManifest = JSON.parse(await readFile(path.join(pluginRoot, ".agent-plugin", "plugin.json"), "utf8"));
@@ -47,6 +52,10 @@ describe("deep architecture hardening", () => {
     const readme = await readFile(path.join(pluginRoot, "README.md"), "utf8");
 
     expect(compiled.compiledTargets).toEqual(expect.arrayContaining(["plugin", "agent-skills", "mcp-resources", "hooks", "project-rules"]));
+    expect(status.ready).toBe(true);
+    expect(status.pluginDir).toBe(pluginRoot);
+    expect(status.mcpServerCommand).toBe("openskill-kit-mcp");
+    expect(status.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
     expect(manifest.schemaVersion).toBe("openskill-kit.agent-plugin.v1");
     expect(manifest.compatibility).toEqual(expect.arrayContaining(["agent-plugin", "mcp-stdio", "codex", "claude-code"]));
     expect(manifest.skills).toEqual(expect.arrayContaining(["skills/project-behavior"]));

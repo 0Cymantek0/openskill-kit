@@ -20,6 +20,7 @@ import {
   extractSignals,
   evolveSkill,
   explainAdaptiveStatus,
+  getCompiledPluginStatus,
   getAdaptiveStatus,
   assessOpenWorldVerifierQuality,
   buildOpenWorldRetrievalAdapters,
@@ -114,7 +115,19 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, projectName, init }) => {
       const root = resolveProjectRoot(projectRoot);
       const result = init ? await initAdaptiveProject({ projectRoot: root, projectName }) : await getAdaptiveStatus(root);
-      return toolResult(result, root);
+      const status = await getAdaptiveStatus(root);
+      const plugin = await getCompiledPluginStatus(root);
+      return toolResult({
+        schemaVersion: "openskill-kit.bootstrap-session.v1",
+        initResult: result,
+        status,
+        plugin,
+        nextActions: [
+          ...plugin.nextActions,
+          ...(status.pendingReviewCount > 0 ? ["Review pending behavior before compiling or attaching the plugin."] : []),
+          ...(status.activePreferenceCount > 0 && !status.compiled.contextPack ? ["Run `osk_compile_behavior_layer` with target `plugin` to refresh compiled behavior."] : [])
+        ]
+      }, root);
     }
   );
 

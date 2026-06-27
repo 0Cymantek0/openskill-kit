@@ -43,6 +43,9 @@ Harness behavior should stay conservative:
 
 - Load skills and MCP descriptors read-only by default.
 - Start `openskill-kit-mcp` from the project root with stdio.
+- Call `osk_bootstrap_session` first; it reports whether the compiled plugin is
+  ready, where to attach it, which skills/capabilities are exposed, and which
+  approvals remain required.
 - Preview managed instruction files and hooks before applying.
 - Require explicit approval for global writes, hook execution, interaction
   imports, and behavior pack imports.

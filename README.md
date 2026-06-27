@@ -290,6 +290,11 @@ Key tools:
 Legacy skill drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.
 
+`osk_bootstrap_session` is the recommended first call for a coding harness. It
+returns initialization status plus compiled plugin readiness, attach path,
+published skills/capabilities, MCP command, privacy exclusions, approval gates,
+and next actions.
+
 ## Project Owner Workflow
 
 1. Initialize the project.

@@ -9,7 +9,7 @@ export interface CompilePluginResult {
   files: string[];
 }
 
-interface AgentPluginManifest {
+export interface AgentPluginManifest {
   schemaVersion: "openskill-kit.agent-plugin.v1";
   name: string;
   version: string;
@@ -45,6 +45,23 @@ interface AgentPluginManifest {
   files: string[];
 }
 
+export interface CompiledPluginStatus {
+  schemaVersion: "openskill-kit.compiled-plugin-status.v1";
+  ready: boolean;
+  pluginDir: string;
+  manifestPath: string;
+  agentPluginManifestPath: string;
+  mcpAttachmentPath: string;
+  mcpServerCommand: string;
+  manifest?: AgentPluginManifest;
+  skills: string[];
+  capabilities: string[];
+  approvalGates: string[];
+  privacyExclusions: string[];
+  missing: string[];
+  nextActions: string[];
+}
+
 export async function compileAgentPlugin(projectRoot: string): Promise<CompilePluginResult> {
   const root = path.resolve(projectRoot);
   const pluginDir = path.join(root, ".openskill-kit", "compiled", "plugin");
@@ -61,6 +78,47 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
   await writeJsonAtomic(path.join(pluginDir, ".agent-plugin", "plugin.json"), manifest);
   const files = await listFiles(pluginDir);
   return { schemaVersion: "openskill-kit.plugin.v1", pluginDir, manifestPath, files };
+}
+
+export async function getCompiledPluginStatus(projectRoot: string): Promise<CompiledPluginStatus> {
+  const root = path.resolve(projectRoot);
+  const pluginDir = path.join(root, ".openskill-kit", "compiled", "plugin");
+  const manifestPath = path.join(pluginDir, "plugin.json");
+  const agentPluginManifestPath = path.join(pluginDir, ".agent-plugin", "plugin.json");
+  const mcpAttachmentPath = path.join(pluginDir, ".mcp.json");
+  const manifest = await readJson<AgentPluginManifest>(manifestPath).catch(() => undefined);
+  const agentManifestExists = await exists(agentPluginManifestPath);
+  const mcpAttachment = await readJson<{ mcpServers?: Record<string, { command?: string }> }>(mcpAttachmentPath).catch(() => undefined);
+  const mcpServerConfigExists = await exists(path.join(pluginDir, "mcp", "server-config.json"));
+  const missing = [
+    ...(manifest ? [] : ["plugin.json"]),
+    ...(agentManifestExists ? [] : [".agent-plugin/plugin.json"]),
+    ...(mcpAttachment ? [] : [".mcp.json"]),
+    ...(!manifest?.skills?.length ? ["skills"] : []),
+    ...(mcpServerConfigExists ? [] : ["mcp/server-config.json"])
+  ];
+  return {
+    schemaVersion: "openskill-kit.compiled-plugin-status.v1",
+    ready: missing.length === 0,
+    pluginDir,
+    manifestPath,
+    agentPluginManifestPath,
+    mcpAttachmentPath,
+    mcpServerCommand: mcpAttachment?.mcpServers?.["openskill-kit"]?.command ?? manifest?.entrypoints.mcpServer.command ?? "openskill-kit-mcp",
+    manifest,
+    skills: manifest?.skills ?? [],
+    capabilities: manifest?.capabilities ?? [],
+    approvalGates: manifest?.install.requiresExplicitApproval ?? [],
+    privacyExclusions: manifest?.privacy.excludes ?? [],
+    missing,
+    nextActions: missing.length
+      ? ["Run `openskill-kit compile --target plugin` before attaching OpenSkillKit to a coding harness."]
+      : [
+        "Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.",
+        "Start `openskill-kit-mcp` from the project root when the harness supports MCP.",
+        "Keep hooks, global instruction writes, interaction imports, and behavior pack imports behind explicit approval."
+      ]
+  };
 }
 
 async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
@@ -202,4 +260,12 @@ async function copyIfExists(source: string, destination: string): Promise<void> 
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
+}
+
+async function readJson<T>(file: string): Promise<T> {
+  return JSON.parse(await fs.readFile(file, "utf8")) as T;
+}
+
+async function exists(file: string): Promise<boolean> {
+  return fs.stat(file).then(() => true).catch(() => false);
 }

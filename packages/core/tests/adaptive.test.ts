@@ -135,5 +135,8 @@ describe("adaptive behavior layer", () => {
     expect(status.initialized).toBe(true);
     expect(status.eventCount).toBe(2);
     expect(status.compiled.contextPack).toBe(true);
+    expect(status.compiled.plugin).toBe(true);
+    expect(status.compiled.pluginStatus.ready).toBe(true);
+    expect(status.compiled.pluginStatus.skills).toEqual(expect.arrayContaining(["skills/project-behavior", "skills/project-testing"]));
   });
 });

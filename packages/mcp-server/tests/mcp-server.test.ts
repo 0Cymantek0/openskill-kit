@@ -59,6 +59,10 @@ describe("openskill-kit MCP server", () => {
       const bootText = boot.content.find((item) => item.type === "text")?.text;
       expect(bootText).toBeTruthy();
       expect(bootText).not.toContain(root);
+      const bootParsed = JSON.parse(bootText ?? "{}");
+      expect(bootParsed.schemaVersion).toBe("openskill-kit.bootstrap-session.v1");
+      expect(bootParsed.plugin.ready).toBe(false);
+      expect(bootParsed.plugin.nextActions[0]).toContain("compile --target plugin");
 
       await client.callTool({
         name: "osk_record_event",
@@ -75,6 +79,24 @@ describe("openskill-kit MCP server", () => {
       });
       const learnedText = learned.content.find((item) => item.type === "text")?.text;
       expect(learnedText).toContain("run npm test");
+
+      await client.callTool({
+        name: "osk_apply_review_actions",
+        arguments: { projectRoot: root, activateAll: true }
+      });
+      await client.callTool({
+        name: "osk_compile_behavior_layer",
+        arguments: { projectRoot: root, targets: ["plugin"] }
+      });
+      const bootReady = await client.callTool({
+        name: "osk_bootstrap_session",
+        arguments: { projectRoot: root, init: false }
+      });
+      const bootReadyText = bootReady.content.find((item) => item.type === "text")?.text;
+      const bootReadyParsed = JSON.parse(bootReadyText ?? "{}");
+      expect(bootReadyParsed.plugin.ready).toBe(true);
+      expect(bootReadyParsed.plugin.skills).toEqual(expect.arrayContaining(["skills/project-behavior", "skills/project-testing"]));
+      expect(bootReadyParsed.plugin.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",
