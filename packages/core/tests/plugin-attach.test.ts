@@ -170,17 +170,28 @@ describe("agent plugin attach planner", () => {
 
     let profile = await getAgentPluginInstallProfile(root);
     expect(profile.ready).toBe(false);
+    expect(profile.attachment.attached).toBe(false);
     expect(profile.nextActions.join(" ")).toContain("compile --target plugin");
 
     await attachAgentPlugin(root, { host: "generic-mcp", dryRun: true });
     profile = await getAgentPluginInstallProfile(root);
 
     expect(profile.ready).toBe(true);
+    expect(profile.attachment.attached).toBe(false);
+    expect(profile.attachment.hosts.some((host) => host.host === "generic-mcp" && host.status === "missing")).toBe(true);
     expect(profile.profile?.firstCall.mcpTool).toBe("osk_bootstrap_session");
     expect(profile.profile?.mcp.command).toBe("openskill-kit-mcp");
     expect(profile.profile?.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(profile.profile?.commandRouting.map).toBe("commands/commands.json");
     expect(profile.profile?.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_get_plugin_install_profile"]));
+    expect(profile.nextActions).toContain("Preview and apply a hostConfig entry before relying on MCP in this harness.");
+
+    await attachAgentPlugin(root, { host: "generic-mcp", dryRun: false, yes: true });
+    profile = await getAgentPluginInstallProfile(root);
+    expect(profile.ready).toBe(true);
+    expect(profile.attachment.attached).toBe(true);
+    expect(profile.attachment.hosts.some((host) => host.host === "generic-mcp" && host.status === "attached")).toBe(true);
+    expect(profile.nextActions).toContain("Host attachment is ready; existing coding harnesses can call MCP tools through the configured server.");
   });
 });
 

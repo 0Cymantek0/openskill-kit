@@ -40,6 +40,7 @@ export interface AgentPluginInstallProfileStatus {
   schemaVersion: "openskill-kit.agent-plugin-install-profile-status.v1";
   ready: boolean;
   profile?: AgentPluginInstallProfile;
+  attachment: AgentPluginAttachStatus;
   plugin: Pick<CompiledPluginStatus, "ready" | "pluginDir" | "manifestPath" | "mcpServerCommand" | "mcpDescriptorsHash" | "missing" | "integrityIssues" | "nextActions">;
   nextActions: string[];
 }
@@ -177,12 +178,14 @@ export async function getAgentPluginAttachStatus(projectRoot: string): Promise<A
 
 export async function getAgentPluginInstallProfile(projectRoot: string): Promise<AgentPluginInstallProfileStatus> {
   const plugin = await getCompiledPluginStatus(projectRoot);
+  const attachment = await getAgentPluginAttachStatus(projectRoot);
   const ready = plugin.ready && Boolean(plugin.installProfile);
   const nextActions = ready
     ? [
       "Use installProfile.firstCall before reading learned behavior.",
       "Start installProfile.mcp.command with stdio and bind OPENSKILLKIT_PROJECT_ROOT to the absolute project root.",
-      "Route /osk commands through installProfile.commandRouting.map and keep approvalRequiredTools behind explicit user approval."
+      "Route /osk commands through installProfile.commandRouting.map and keep approvalRequiredTools behind explicit user approval.",
+      attachment.attached ? "Host attachment is ready; existing coding harnesses can call MCP tools through the configured server." : "Preview and apply a hostConfig entry before relying on MCP in this harness."
     ]
     : [
       ...plugin.nextActions,
@@ -192,6 +195,7 @@ export async function getAgentPluginInstallProfile(projectRoot: string): Promise
     schemaVersion: "openskill-kit.agent-plugin-install-profile-status.v1",
     ready,
     profile: plugin.installProfile,
+    attachment,
     plugin: {
       ready: plugin.ready,
       pluginDir: plugin.pluginDir,

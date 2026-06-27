@@ -71,7 +71,8 @@ For harness compatibility, generated plugins also include:
 - `/osk plugin install profile`: direct read-only route to
   `osk_get_plugin_install_profile` / `openskill-kit agent
   plugin-install-profile`, so harnesses can fetch the machine attach contract
-  without parsing broad status output.
+  and current host attachment readiness without parsing broad status output or
+  making a second health call.
 - `install-guides/codex.md`, `install-guides/claude-code.md`,
   `install-guides/cursor.md`, and `install-guides/generic-mcp.md`: conservative
   host attach notes. They keep existing host config reviewable instead of
@@ -91,6 +92,9 @@ For harness compatibility, generated plugins also include:
   `compiled.pluginAttachment` so hosts can show whether the plugin is attached,
   root-bound, missing, invalid JSON, pointed at the wrong command, or stale
   against current descriptors.
+  `plugin-install-profile --json` and `osk_get_plugin_install_profile` include
+  the same attachment status next to the install contract so bootstrap flows can
+  decide whether to preview/apply host config from a single read-only response.
 
 Harness behavior should stay conservative:
 

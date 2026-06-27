@@ -705,18 +705,23 @@ agent.command("plugin-install-profile")
   .option("--json", "Print JSON")
   .action(async (options) => {
     const result = await getAgentPluginInstallProfile(process.cwd());
-    output(options.json, result, result.ready && result.profile ? [
-      `Plugin install profile ready: ${result.ready}`,
-      `Plugin directory: ${result.profile.pluginDirectory}`,
-      `First MCP call: ${result.profile.firstCall.mcpTool}`,
-      `MCP server: ${result.profile.mcp.command}`,
-      `Required env: ${Object.keys(result.profile.mcp.requiredEnv).join(", ")}`,
-      `Command map: ${result.profile.commandRouting.map}`,
-      `Approval tools: ${result.profile.approvalRequiredTools.join(", ")}`
-    ].join("\n") : [
-      `Plugin install profile ready: ${result.ready}`,
-      ...result.nextActions
-    ].join("\n"));
+    output(options.json, result, result.ready && result.profile
+      ? [
+        `Plugin install profile ready: ${result.ready}`,
+        `Plugin directory: ${result.profile.pluginDirectory}`,
+        `First MCP call: ${result.profile.firstCall.mcpTool}`,
+        `MCP server: ${result.profile.mcp.command}`,
+        `Required env: ${Object.keys(result.profile.mcp.requiredEnv).join(", ")}`,
+        `Command map: ${result.profile.commandRouting.map}`,
+        `Approval tools: ${result.profile.approvalRequiredTools.join(", ")}`,
+        `Plugin host attached: ${result.attachment.attached}`,
+        `Plugin host status: ${result.attachment.hosts.map((host) => `${host.host}=${host.status}`).join(", ")}`
+      ].join("\n")
+      : [
+        `Plugin install profile ready: ${result.ready}`,
+        `Plugin host attached: ${result.attachment.attached}`,
+        ...result.nextActions
+      ].join("\n"));
     process.exitCode = result.ready ? 0 : 1;
   });
 
