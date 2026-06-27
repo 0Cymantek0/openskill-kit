@@ -130,6 +130,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_diff_behavior_pack", "packs", "read-only"),
   descriptor("osk_import_behavior_pack", "packs", "approval-required", true),
   descriptor("osk_import_encrypted_behavior_pack", "packs", "approval-required", true),
+  descriptor("osk_run_eval", "eval", "local-write"),
   descriptor("osk_run_behavior_eval", "eval", "local-write"),
   descriptor("osk_run_agent_ab_eval", "eval", "local-write"),
   descriptor("osk_run_external_agent_eval", "eval", "approval-required", true),
@@ -177,7 +178,7 @@ const PUBLIC_MCP_PROFILE_TOOLS = [
   "osk_run_openworld_workflow",
   "osk_verify_behavior",
   "osk_compile_deploy",
-  "osk_run_behavior_eval",
+  "osk_run_eval",
   "osk_pack_behavior"
 ];
 

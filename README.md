@@ -108,7 +108,7 @@ benchmark evaluation yet.
 | `/osk verify` | Check descriptors, compiled artifacts, verifier suites, and proof limits. | `osk_verify_behavior` |
 | `/osk compile` | Refresh context packs, skills, command maps, descriptors, hooks, and plugin files. | `osk_compile_deploy` |
 | `/osk deploy` | Preview or apply harness attach and project-local install steps. | `osk_compile_deploy` |
-| `/osk eval` | Measure behavior quality, calibration, and context overhead. | `osk_run_behavior_eval` |
+| `/osk eval` | Measure behavior quality, calibration, and context overhead. | `osk_run_eval` |
 | `/osk pack` | Export, sign, verify, import, or apply reviewed behavior packs. | `osk_pack_behavior` |
 
 See [`docs/commands.md`](docs/commands.md) for the full generated command map.
@@ -171,7 +171,7 @@ Public-profile facade tools:
 - `osk_run_openworld_workflow`
 - `osk_verify_behavior`
 - `osk_compile_deploy`
-- `osk_run_behavior_eval`
+- `osk_run_eval`
 - `osk_pack_behavior`
 
 Advanced-profile tools remain available for scripts and lower-level automation,

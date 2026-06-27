@@ -75,6 +75,7 @@ describe("openskill-kit MCP server", () => {
           "osk_review_behavior",
           "osk_run_openworld_workflow",
           "osk_verify_behavior",
+          "osk_run_eval",
           "osk_pack_behavior",
           "osk_agent_doctor",
           "osk_install_agent_hooks",
@@ -227,6 +228,16 @@ describe("openskill-kit MCP server", () => {
       expect(verifiedParsed.harness.schemaVersion).toBe("openskill-kit.harness-readiness-verification.v1");
       expect(verifiedParsed.harness.summary.publicMcpToolCount).toBeLessThanOrEqual(12);
       expect(verifiedParsed.harness.summary.opencodeCommandCount).toBe(12);
+
+      const evalRun = await client.callTool({
+        name: "osk_run_eval",
+        arguments: { projectRoot: root, mode: "replay" }
+      });
+      const evalParsed = JSON.parse(evalRun.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(evalParsed.schemaVersion).toBe("openskill-kit.eval-facade.v1");
+      expect(evalParsed.mode).toBe("replay");
+      expect(evalParsed.report.schemaVersion).toBe("openskill-kit.eval-report.v1");
+      expect(evalParsed.report.scenarioCount).toBeGreaterThan(0);
 
       const packed = await client.callTool({
         name: "osk_pack_behavior",

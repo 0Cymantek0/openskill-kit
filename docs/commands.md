@@ -208,7 +208,7 @@ Measure OSK behavior through replay or external-agent evals.
 
 - Why public: Evaluation proves the behavior layer works in real workflows.
 - CLI fallback: `openskill-kit eval`
-- MCP first call: `osk_run_behavior_eval`
+- MCP first call: `osk_run_eval`
 - Skills: `osk-operating-manual`
 - Subagents: `osk-evaluator`
 - Output: Eval status, baseline comparison if present, artifacts, and residual risk.

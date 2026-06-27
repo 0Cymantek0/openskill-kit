@@ -103,7 +103,7 @@ Preview or apply project-local harness attachment with receipts.
 
 Measure OSK behavior through replay or external-agent evals.
 
-- MCP tool: `osk_run_behavior_eval`
+- MCP tool: `osk_run_eval`
 - CLI fallback: `openskill-kit eval`
 - Read-only: `no`
 - Explicit approval required: `no`

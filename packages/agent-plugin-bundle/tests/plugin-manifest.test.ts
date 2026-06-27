@@ -60,8 +60,10 @@ describe("agent plugin manifest", () => {
     expect(commandMap.commands).toHaveLength(12);
     expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk task" && item.cli.includes("openskill-kit context"))).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources")).toBe(true);
+    expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk eval" && item.mcpTool === "osk_run_eval")).toBe(true);
     const commandGuide = readFileSync(path.join(root, "commands", "osk.md"), "utf8");
     expect(commandGuide).toContain("Prefer MCP");
+    expect(commandGuide).toContain("MCP tool: `osk_run_eval`");
     const codexGuide = readFileSync(path.join(root, "install-guides", "codex.md"), "utf8");
     const genericGuide = readFileSync(path.join(root, "install-guides", "generic-mcp.md"), "utf8");
     const opencodeGuide = readFileSync(path.join(root, "install-guides", "opencode.md"), "utf8");

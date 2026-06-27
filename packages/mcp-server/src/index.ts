@@ -948,6 +948,37 @@ export function createOpenSkillMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "osk_run_eval",
+    {
+      title: "OpenSkillKit Eval",
+      description: "Run the public eval facade: deterministic replay, baseline compare, or explicit external-agent eval.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        mode: z.enum(["replay", "compare", "external-agent"]).default("replay"),
+        scenariosPath: z.string().optional(),
+        agentCommand: z.string().optional(),
+        agentArgs: z.array(z.string()).default([]),
+        dryRun: z.boolean().default(true),
+        timeoutMs: z.number().int().min(1000).max(300000).default(30000)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, mode, scenariosPath, agentCommand, agentArgs, dryRun, timeoutMs }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const report = mode === "compare"
+        ? await runBehaviorCompareEval({ projectRoot: root, scenariosPath })
+        : mode === "external-agent"
+          ? await runExternalAgentEval({ projectRoot: root, scenariosPath, agentCommand, agentArgs, dryRun, timeoutMs })
+          : await runBehaviorEval({ projectRoot: root, scenariosPath });
+      return toolResult({
+        schemaVersion: "openskill-kit.eval-facade.v1",
+        mode,
+        report
+      }, root);
+    }
+  );
+
+  server.registerTool(
     "osk_run_behavior_eval",
     {
       title: "OpenSkillKit Behavior Eval",

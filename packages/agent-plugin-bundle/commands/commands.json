@@ -165,7 +165,7 @@
         "behavior eval"
       ],
       "description": "Measure OSK behavior through replay or external-agent evals.",
-      "mcpTool": "osk_run_behavior_eval",
+      "mcpTool": "osk_run_eval",
       "cli": "openskill-kit eval",
       "readOnly": false,
       "approvalRequired": false,
