@@ -99,6 +99,8 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_explain_interaction_import", "interactions", "read-only"),
   descriptor("osk_get_interaction_pool", "interactions", "read-only"),
   descriptor("osk_get_git_local_context", "interactions", "read-only"),
+  descriptor("osk_plan_learning_sources", "learning", "local-write"),
+  descriptor("osk_run_learning_plan", "learning", "approval-required", true),
   descriptor("osk_get_context_pack", "retrieval", "read-only"),
   descriptor("osk_get_relevant_preferences", "retrieval", "read-only"),
   descriptor("osk_route_behavior", "routing", "read-only"),
@@ -159,24 +161,64 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_compact_state", "maintenance", "local-write")
 ];
 
+const PUBLIC_MCP_PROFILE_TOOLS = [
+  "osk_bootstrap_session",
+  "osk_get_agent_task_context",
+  "osk_finish_agent_task",
+  "osk_plan_learning_sources",
+  "osk_get_review_queue",
+  "osk_openworld_source_plan",
+  "osk_openworld_refine",
+  "osk_openworld_verifier_quality",
+  "osk_compile_behavior_layer",
+  "osk_preview_plugin_attach",
+  "osk_run_behavior_eval",
+  "osk_export_behavior_pack"
+];
+
 async function compileMcpConfig(root: string, contextPackPath?: string): Promise<CompileMcpConfigResult> {
   const mcpDir = path.join(root, ".openskill-kit", "compiled", "mcp");
   const descriptorPath = path.join(mcpDir, "descriptors.json");
+  const publicDescriptorPath = path.join(mcpDir, "descriptors.public.json");
+  const profilePath = path.join(mcpDir, "profiles.json");
   const hashPath = path.join(mcpDir, "descriptor-hashes.json");
   const mcpConfigPath = path.join(root, ".openskill-kit", "compiled", "mcp", "server-config.json");
   const descriptors = {
     schemaVersion: "openskill-kit.mcp-descriptors.v1",
     server: "openskill-kit-mcp",
+    profile: "advanced",
     tools: MCP_TOOL_DESCRIPTORS
+  };
+  const publicDescriptors = {
+    schemaVersion: "openskill-kit.mcp-descriptors.v1",
+    server: "openskill-kit-mcp",
+    profile: "public",
+    tools: MCP_TOOL_DESCRIPTORS.filter((tool) => PUBLIC_MCP_PROFILE_TOOLS.includes(tool.name))
+  };
+  const profiles = {
+    schemaVersion: "openskill-kit.mcp-profiles.v1",
+    defaultProfile: "public",
+    profiles: {
+      public: PUBLIC_MCP_PROFILE_TOOLS,
+      advanced: ["*"]
+    }
   };
   const toolHashes = Object.fromEntries(MCP_TOOL_DESCRIPTORS.map((tool) => [tool.name, sha256Stable(tool)]));
   const descriptorHash = sha256Stable(descriptors);
+  const publicDescriptorHash = sha256Stable(publicDescriptors);
+  const profileHash = sha256Stable(profiles);
   await writeJsonAtomic(descriptorPath, descriptors);
+  await writeJsonAtomic(publicDescriptorPath, publicDescriptors);
+  await writeJsonAtomic(profilePath, profiles);
   await writeJsonAtomic(hashPath, {
     schemaVersion: "openskill-kit.mcp-descriptor-hashes.v1",
     algorithm: "sha256",
     descriptors: "descriptors.json",
+    publicDescriptors: "descriptors.public.json",
+    profiles: "profiles.json",
     descriptorsHash: descriptorHash,
+    publicDescriptorsHash: publicDescriptorHash,
+    profilesHash: profileHash,
     tools: toolHashes,
     approvalRequiredTools: MCP_TOOL_DESCRIPTORS.filter((tool) => tool.approvalRequired).map((tool) => tool.name)
   });
@@ -184,9 +226,14 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
     schemaVersion: "openskill-kit.mcp-config.v1",
     server: "openskill-kit-mcp",
     tools: MCP_TOOL_DESCRIPTORS.map((tool) => tool.name),
+    defaultProfile: "public",
+    profiles: "profiles.json",
     descriptors: "descriptors.json",
+    publicDescriptors: "descriptors.public.json",
     descriptorHashes: "descriptor-hashes.json",
     descriptorsHash: descriptorHash,
+    publicDescriptorsHash: publicDescriptorHash,
+    profilesHash: profileHash,
     contextPack: contextPackPath ? path.relative(root, contextPackPath).replace(/\\/g, "/") : undefined
   });
   return { configPath: mcpConfigPath, descriptorPath, hashPath };

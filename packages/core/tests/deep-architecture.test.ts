@@ -55,6 +55,8 @@ describe("deep architecture hardening", () => {
     const mcpAttachment = JSON.parse(await readFile(path.join(pluginRoot, ".mcp.json"), "utf8"));
     const mcpConfig = JSON.parse(await readFile(path.join(pluginRoot, "mcp", "server-config.json"), "utf8"));
     const mcpDescriptors = JSON.parse(await readFile(path.join(pluginRoot, "mcp", "descriptors.json"), "utf8"));
+    const mcpPublicDescriptors = JSON.parse(await readFile(path.join(pluginRoot, "mcp", "descriptors.public.json"), "utf8"));
+    const mcpProfiles = JSON.parse(await readFile(path.join(pluginRoot, "mcp", "profiles.json"), "utf8"));
     const mcpHashes = JSON.parse(await readFile(path.join(pluginRoot, "mcp", "descriptor-hashes.json"), "utf8"));
     const commandMap = JSON.parse(await readFile(path.join(pluginRoot, "commands", "commands.json"), "utf8"));
     const commandGuide = await readFile(path.join(pluginRoot, "commands", "osk.md"), "utf8");
@@ -104,12 +106,15 @@ describe("deep architecture hardening", () => {
     expect(manifest.entrypoints.mcpServer.command).toBe("openskill-kit-mcp");
     expect(manifest.entrypoints.mcpServer.transport).toBe("stdio");
     expect(manifest.entrypoints.mcpDescriptors).toBe("mcp/descriptors.json");
+    expect(manifest.entrypoints.mcpPublicDescriptors).toBe("mcp/descriptors.public.json");
+    expect(manifest.entrypoints.mcpProfiles).toBe("mcp/profiles.json");
     expect(manifest.entrypoints.mcpDescriptorHashes).toBe("mcp/descriptor-hashes.json");
     expect(manifest.entrypoints.commands).toBe("commands/commands.json");
     expect(manifest.entrypoints.commandGuide).toBe("commands/osk.md");
     expect(manifest.entrypoints.installGuides).toBe("install-guides");
     expect(manifest.installProfile.schemaVersion).toBe("openskill-kit.agent-plugin-install-profile.v1");
     expect(manifest.installProfile.mcp.command).toBe("openskill-kit-mcp");
+    expect(manifest.installProfile.mcp.defaultProfile).toBe("public");
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host generic-mcp --dry-run");
     expect(manifest.installProfile.hostConfig).toEqual(expect.arrayContaining([
@@ -153,7 +158,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.install.requiresExplicitApproval).toContain("importing interaction exports or private memories");
     expect(manifest.privacy.excludes).toContain(".openskill-kit/interactions/");
     expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
-    expect(manifest.files).toEqual(expect.arrayContaining([".agent-plugin/plugin.json", ".mcp.json", "README.md", "commands/commands.json", "commands/families.json", "commands/osk.md", "install-guides/opencode.md", "install-guides/codex.md", "install-guides/claude-code.md", "install-guides/cursor.md", "install-guides/generic-mcp.md", "opencode/commands/osk-learn.md", "opencode/agents/osk-learner.md", "opencode/plugins/openskillkit.ts", "mcp/server-config.json", "mcp/descriptors.json", "mcp/descriptor-hashes.json", "skills/project-behavior/SKILL.md"]));
+    expect(manifest.files).toEqual(expect.arrayContaining([".agent-plugin/plugin.json", ".mcp.json", "README.md", "commands/commands.json", "commands/families.json", "commands/osk.md", "install-guides/opencode.md", "install-guides/codex.md", "install-guides/claude-code.md", "install-guides/cursor.md", "install-guides/generic-mcp.md", "opencode/commands/osk-learn.md", "opencode/agents/osk-learner.md", "opencode/plugins/openskillkit.ts", "mcp/server-config.json", "mcp/descriptors.json", "mcp/descriptors.public.json", "mcp/profiles.json", "mcp/descriptor-hashes.json", "skills/project-behavior/SKILL.md"]));
     expect(packagedManifest).toEqual(manifest);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(commandMap.publicFamilyCount).toBe(12);
@@ -176,6 +181,16 @@ describe("deep architecture hardening", () => {
     expect(genericMcpGuide).toContain("osk_bootstrap_session");
     expect(mcpAttachment.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     expect(mcpConfig.descriptorsHash).toBe(mcpHashes.descriptorsHash);
+    expect(mcpConfig.defaultProfile).toBe("public");
+    expect(mcpConfig.publicDescriptorsHash).toBe(mcpHashes.publicDescriptorsHash);
+    expect(mcpConfig.profilesHash).toBe(mcpHashes.profilesHash);
+    expect(mcpProfiles.defaultProfile).toBe("public");
+    expect(mcpProfiles.profiles.public).toHaveLength(12);
+    expect(mcpPublicDescriptors.profile).toBe("public");
+    expect(mcpPublicDescriptors.tools).toHaveLength(12);
+    expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_run_learning_plan")).toBe(false);
+    expect(mcpDescriptors.profile).toBe("advanced");
+    expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_run_learning_plan" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_manifest_install" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_plugin_attach" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_plugin_attach_status" && tool.writeRisk === "read-only")).toBe(true);

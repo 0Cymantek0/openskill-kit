@@ -30,6 +30,8 @@ export interface AgentPluginManifest {
     installGuides: string;
     mcpConfig: string;
     mcpDescriptors: string;
+    mcpPublicDescriptors: string;
+    mcpProfiles: string;
     mcpDescriptorHashes: string;
     mcpServer: {
       command: string;
@@ -76,6 +78,9 @@ export interface AgentPluginInstallProfile {
     requiredEnv: Record<string, string>;
     configFile: string;
     descriptors: string;
+    publicDescriptors: string;
+    profiles: string;
+    defaultProfile: "public" | "advanced";
     descriptorHashes: string;
   };
   commandRouting: {
@@ -202,6 +207,8 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
   const mcpAttachment = await readJson<{ mcpServers?: Record<string, { command?: string }> }>(mcpAttachmentPath).catch(() => undefined);
   const mcpHashes = await readJson<{ descriptorsHash?: string }>(mcpDescriptorHashPath).catch(() => undefined);
   const mcpDescriptors = await readJson<unknown>(mcpDescriptorPath).catch(() => undefined);
+  const mcpPublicDescriptors = await readJson<unknown>(path.join(pluginDir, "mcp", "descriptors.public.json")).catch(() => undefined);
+  const mcpProfiles = await readJson<unknown>(path.join(pluginDir, "mcp", "profiles.json")).catch(() => undefined);
   const commandMap = await readJson<{ commands?: AgentPluginCommand[] }>(commandMapPath).catch(() => undefined);
   const commandGuideExists = await exists(commandGuidePath);
   const guideFiles = pluginInstallGuides().map((guide) => path.join(installGuidesPath, guide.file));
@@ -214,6 +221,8 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     ...(!manifest?.skills?.length ? ["skills"] : []),
     ...(mcpServerConfigExists ? [] : ["mcp/server-config.json"]),
     ...(mcpDescriptors ? [] : ["mcp/descriptors.json"]),
+    ...(mcpPublicDescriptors ? [] : ["mcp/descriptors.public.json"]),
+    ...(mcpProfiles ? [] : ["mcp/profiles.json"]),
     ...(mcpHashes ? [] : ["mcp/descriptor-hashes.json"]),
     ...(commandMap?.commands?.length ? [] : ["commands/commands.json"]),
     ...(commandGuideExists ? [] : ["commands/osk.md"]),
@@ -293,6 +302,8 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       installGuides: "install-guides",
       mcpConfig: "mcp/server-config.json",
       mcpDescriptors: "mcp/descriptors.json",
+      mcpPublicDescriptors: "mcp/descriptors.public.json",
+      mcpProfiles: "mcp/profiles.json",
       mcpDescriptorHashes: "mcp/descriptor-hashes.json",
       mcpServer: {
         command: "openskill-kit-mcp",
@@ -372,6 +383,9 @@ function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]):
       },
       configFile: ".mcp.json",
       descriptors: "mcp/descriptors.json",
+      publicDescriptors: "mcp/descriptors.public.json",
+      profiles: "mcp/profiles.json",
+      defaultProfile: "public",
       descriptorHashes: "mcp/descriptor-hashes.json"
     },
     commandRouting: {
@@ -703,6 +717,8 @@ function renderReadme(manifest: AgentPluginManifest): string {
     `- Install guides: \`${manifest.entrypoints.installGuides}\``,
     `- MCP config: \`${manifest.entrypoints.mcpConfig}\``,
     `- MCP descriptors: \`${manifest.entrypoints.mcpDescriptors}\``,
+    `- MCP public descriptors: \`${manifest.entrypoints.mcpPublicDescriptors}\``,
+    `- MCP profiles: \`${manifest.entrypoints.mcpProfiles}\``,
     `- MCP descriptor hashes: \`${manifest.entrypoints.mcpDescriptorHashes}\``,
     `- MCP server: \`${manifest.entrypoints.mcpServer.command}\` (${manifest.entrypoints.mcpServer.transport})`,
     `- Hooks: \`${manifest.entrypoints.hooks}\``,
@@ -715,6 +731,7 @@ function renderReadme(manifest: AgentPluginManifest): string {
     `- First MCP call: \`${manifest.installProfile.firstCall.mcpTool}\``,
     `- CLI fallback: \`${manifest.installProfile.firstCall.cliFallback}\``,
     `- MCP server: \`${manifest.installProfile.mcp.serverName}\` -> \`${manifest.installProfile.mcp.command}\``,
+    `- MCP default profile: \`${manifest.installProfile.mcp.defaultProfile}\``,
     `- Required env: \`${Object.keys(manifest.installProfile.mcp.requiredEnv).join(", ")}\``,
     `- Command routing: \`${manifest.installProfile.commandRouting.map}\``,
     `- Attach preview: \`${manifest.installProfile.attach.previewCli}\``,
