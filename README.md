@@ -267,6 +267,7 @@ Key tools:
 - `osk_install_agent_hooks`
 - `osk_preview_plugin_attach`
 - `osk_apply_plugin_attach`
+- `osk_get_plugin_attach_status`
 - `osk_run_lifecycle_once`
 - `osk_mine_workflows`
 - `osk_get_workflow_graph`

@@ -55,6 +55,11 @@ import behavior packs without explicit user approval.
 - MCP tool: `osk_preview_plugin_attach`
 - CLI fallback: `openskill-kit agent attach-plugin --host generic-mcp --dry-run`
 
+### /osk plugin health
+
+- MCP tool: `osk_get_plugin_attach_status`
+- CLI fallback: `openskill-kit agent plugin-status`
+
 ### /osk run behavior eval
 
 - MCP tool: `osk_run_behavior_eval`

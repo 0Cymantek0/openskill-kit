@@ -22,6 +22,7 @@ import {
   extractSignals,
   evolveSkill,
   explainAdaptiveStatus,
+  getAgentPluginAttachStatus,
   getCompiledPluginStatus,
   getAdaptiveStatus,
   assessOpenWorldVerifierQuality,
@@ -801,6 +802,20 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, host, yes }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await attachAgentPlugin(root, { host, dryRun: yes !== true, yes }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_plugin_attach_status",
+    {
+      title: "OpenSkillKit Plugin Attach Status",
+      description: "Return host MCP attachment health for the compiled OpenSkillKit plugin.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await getAgentPluginAttachStatus(root), root);
     }
   );
 

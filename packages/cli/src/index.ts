@@ -21,6 +21,7 @@ import {
   getAdaptiveStatus,
   explainPreferenceWithEvidence,
   installAgentHooks,
+  getAgentPluginAttachStatus,
   installInstructionManifests,
   uninstallInstructionManifests,
   initAdaptiveProject,
@@ -673,6 +674,19 @@ agent.command("attach-plugin")
     });
     output(options.json, result, result.messages.join("\n"));
     process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+agent.command("plugin-status")
+  .description("Show compiled plugin host attachment health")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await getAgentPluginAttachStatus(process.cwd());
+    output(options.json, result, [
+      `Plugin host attached: ${result.attached}`,
+      `Plugin host status: ${result.hosts.map((host) => `${host.host}=${host.status}`).join(", ")}`,
+      `Plugin attach receipts: ${result.receiptCount}`,
+      ...result.nextActions
+    ].join("\n"));
   });
 
 program.command("draft")

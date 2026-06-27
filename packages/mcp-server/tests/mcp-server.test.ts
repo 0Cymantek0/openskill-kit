@@ -75,6 +75,7 @@ describe("openskill-kit MCP server", () => {
           "osk_install_agent_hooks",
           "osk_preview_plugin_attach",
           "osk_apply_plugin_attach",
+          "osk_get_plugin_attach_status",
           "osk_run_lifecycle_once",
           "osk_openworld_retrieval_adapters",
           "osk_openworld_execute_source_plan",
@@ -138,6 +139,12 @@ describe("openskill-kit MCP server", () => {
       const attachPlanParsed = JSON.parse(attachPlan.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(attachPlanParsed.status).toBe("planned");
       expect(attachPlanParsed.files[0].destination).toContain(".mcp.json");
+      const healthPlan = await client.callTool({
+        name: "osk_get_plugin_attach_status",
+        arguments: { projectRoot: root }
+      });
+      const healthPlanParsed = JSON.parse(healthPlan.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(healthPlanParsed.attached).toBe(false);
 
       const attachApply = await client.callTool({
         name: "osk_apply_plugin_attach",
@@ -151,6 +158,12 @@ describe("openskill-kit MCP server", () => {
       });
       const bootAttachedParsed = JSON.parse(bootAttached.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(bootAttachedParsed.status.compiled.pluginAttachment.attached).toBe(true);
+      const healthAttached = await client.callTool({
+        name: "osk_get_plugin_attach_status",
+        arguments: { projectRoot: root }
+      });
+      const healthAttachedParsed = JSON.parse(healthAttached.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(healthAttachedParsed.attached).toBe(true);
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",

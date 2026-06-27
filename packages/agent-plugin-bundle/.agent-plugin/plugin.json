@@ -134,6 +134,16 @@
         "fallback": "cli"
       },
       {
+        "command": "/osk plugin health",
+        "aliases": ["osk plugin status", "openskill plugin health"],
+        "description": "Show host attachment health for the compiled plugin, including root binding, invalid JSON, and command conflicts.",
+        "mcpTool": "osk_get_plugin_attach_status",
+        "cli": "openskill-kit agent plugin-status",
+        "readOnly": true,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
         "command": "/osk run behavior eval",
         "aliases": ["osk eval", "behavior eval"],
         "description": "Run local behavior replay/evaluation gates and return artifact paths.",

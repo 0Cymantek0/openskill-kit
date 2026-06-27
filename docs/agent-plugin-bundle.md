@@ -90,7 +90,8 @@ Harness behavior should stay conservative:
   CLI fallbacks only when the MCP backend is unavailable.
 - Read the matching `install-guides/` file before applying any host-specific
   config.
-- Use `osk_preview_plugin_attach` for MCP-based attach previews and
+- Use `osk_get_plugin_attach_status` for readiness checks,
+  `osk_preview_plugin_attach` for MCP-based attach previews, and
   `osk_apply_plugin_attach` only after explicit approval.
 - Preview managed instruction files and hooks before applying.
 - Require explicit approval for global writes, hook execution, interaction
