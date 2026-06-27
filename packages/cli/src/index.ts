@@ -39,6 +39,7 @@ import {
   draftAnchorFromOpenWorldSource,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
+  planOpenWorldResearch,
   buildOpenWorldTaskReport,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
@@ -233,6 +234,32 @@ openworld.command("research")
   .action(async (options) => {
     const result = await ingestLocalOpenWorldSource(process.cwd(), options.taskId, options.file);
     output(options.json, result, `OpenWorld source ${result.source.id}\n${result.sourcePath}`);
+  });
+
+openworld.command("source-plan")
+  .description("Plan leakage-audited local source candidates and sanitized OpenWorld research queries")
+  .requiredOption("--task-id <id>", "Task id")
+  .option("--query <text>", "Extra task query")
+  .option("--path <path>", "Restrict candidate discovery to project path", collectOption, [])
+  .option("--max-candidates <number>", "Maximum source candidates", parseIntegerOption, 8)
+  .option("--max-files <number>", "Maximum files to scan", parseIntegerOption, 250)
+  .option("--no-write", "Do not write the plan artifact")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await planOpenWorldResearch(process.cwd(), options.taskId, {
+      query: options.query,
+      paths: options.path,
+      maxCandidates: options.maxCandidates,
+      maxFilesScanned: options.maxFiles,
+      write: options.write !== false
+    });
+    output(options.json, result, [
+      `OpenWorld source plan ${result.id}`,
+      `Candidates: ${result.summary.candidateCount} (${result.summary.recommendedCount} recommended, ${result.summary.blockedCount} blocked)`,
+      result.planPath ? `Plan: ${result.planPath}` : undefined,
+      result.leakageAuditPath ? `Leakage audit: ${result.leakageAuditPath}` : undefined,
+      ...result.recommendedNextCommands.slice(0, 6)
+    ].filter(Boolean).join("\n"));
   });
 
 openworld.command("fetch-source")

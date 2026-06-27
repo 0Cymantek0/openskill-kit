@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { auditOpenWorldLeakage } from "./leakage.js";
+import { auditOpenWorldLeakage, sanitizeOpenWorldQuery } from "./leakage.js";
 import {
   makeOpenWorldSource,
   readOpenWorldSource,
@@ -9,12 +9,17 @@ import {
   readOpenWorldTask,
   writeAnchorCard,
   writeOpenWorldLeakageAudit,
+  writeOpenWorldResearchPlan,
   writeOpenWorldSource,
   writeOpenWorldSourceContent,
   writeOpenWorldTaskTextArtifact,
   writeVirtualTestSuite
 } from "./store.js";
-import type { AnchorCard, OpenWorldLeakageAudit, OpenWorldSource, VirtualTestSuite } from "./schema.js";
+import { OpenWorldResearchPlanSchema } from "./schema.js";
+import type { AnchorCard, OpenWorldLeakageAudit, OpenWorldResearchPlan, OpenWorldSource, OpenWorldSourceCandidate, VirtualTestSuite } from "./schema.js";
+
+const SOURCE_SKIP_DIRS = new Set([".git", ".openskill-kit", "node_modules", "dist", "coverage", "tmp", ".next", ".turbo"]);
+const SOURCE_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".json", ".jsonc", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".toml", ".yaml", ".yml"]);
 
 export interface IngestLocalSourceResult {
   schemaVersion: "openskill-kit.openworld-local-source.v1";
@@ -76,6 +81,109 @@ export async function ingestWebOpenWorldSource(projectRoot: string, taskId: stri
     trust: trustForWebSource(url),
     privacyClass: "openworld-public",
     usableFor: ["skill", "virtual-test", "report"]
+  });
+}
+
+export interface PlanOpenWorldResearchOptions {
+  query?: string;
+  paths?: string[];
+  maxCandidates?: number;
+  maxFilesScanned?: number;
+  maxFileBytes?: number;
+  includeWebQueries?: boolean;
+  write?: boolean;
+  now?: Date;
+}
+
+export async function planOpenWorldResearch(projectRoot: string, taskId: string, options: PlanOpenWorldResearchOptions = {}): Promise<OpenWorldResearchPlan> {
+  const root = path.resolve(projectRoot);
+  const task = await readOpenWorldTask(root, taskId);
+  const now = options.now ?? new Date();
+  const maxCandidates = Math.max(1, Math.min(options.maxCandidates ?? 8, 25));
+  const maxFilesScanned = Math.max(maxCandidates, Math.min(options.maxFilesScanned ?? 250, 1000));
+  const maxFileBytes = Math.max(4_000, Math.min(options.maxFileBytes ?? 128_000, 1_000_000));
+  const queryPlan = buildResearchQueries(task, options.query, options.includeWebQueries ?? true, now);
+  const seedPaths = [...new Set([...(task.paths ?? []), ...(options.paths ?? [])].map((item) => item.trim()).filter(Boolean))];
+  const files = await discoverCandidateFiles(root, seedPaths, maxFilesScanned);
+  const candidateInputs: Array<{ source: string; surface: "query" | "path" | "content" | "artifact"; value: string }> = queryPlan.map((query) => ({
+    source: query.id,
+    surface: "query" as const,
+    value: query.query
+  }));
+  const candidates: OpenWorldSourceCandidate[] = [];
+  const searchTokens = tokenize([task.title, task.prompt, task.taskType, ...(task.languages ?? []), ...seedPaths, options.query ?? ""].join(" "));
+
+  for (const file of files) {
+    const relative = path.relative(root, file).replace(/\\/g, "/");
+    const content = await fs.readFile(file, "utf8").catch(() => "");
+    const sample = content.slice(0, maxFileBytes);
+    const audit = auditOpenWorldLeakage([
+      { source: relative, surface: "path", value: relative },
+      { source: relative, surface: "content", value: sample }
+    ], task, now);
+    candidateInputs.push({ source: relative, surface: "path", value: relative });
+    candidateInputs.push({ source: relative, surface: "content", value: sample });
+    const score = scoreSourceCandidate(relative, sample, searchTokens, seedPaths);
+    const blocked = audit.findings.some((finding) => finding.level === "block");
+    const kind = relative.startsWith("docs/") || relative.endsWith(".md") || relative.endsWith(".mdx") ? "local-doc" : "project-file";
+    candidates.push({
+      id: `owcand_${shortHash(`${taskId}:${relative}`)}`,
+      taskId,
+      kind,
+      uri: relative,
+      title: path.basename(relative),
+      locator: { path: relative },
+      score,
+      status: blocked ? "blocked" : score >= 0.35 ? "recommended" : "available",
+      privacyClass: "project-private",
+      usableFor: ["skill", "virtual-test", "report"],
+      reasons: candidateReasons(relative, sample, score, seedPaths, blocked),
+      leakageFindingIds: audit.findings.map((finding) => finding.id),
+      ingestCommand: blocked ? undefined : `openskill-kit openworld research --task-id ${taskId} --file ${quoteArg(relative)}`
+    });
+  }
+
+  const sorted = candidates
+    .sort((a, b) => statusWeight(b.status) - statusWeight(a.status) || b.score - a.score || a.uri.localeCompare(b.uri))
+    .slice(0, maxCandidates + Math.min(4, candidates.filter((candidate) => candidate.status === "blocked").length));
+  const recommended = sorted.filter((candidate) => candidate.status === "recommended").slice(0, maxCandidates);
+  const topCandidates = [
+    ...recommended,
+    ...sorted.filter((candidate) => candidate.status !== "recommended").slice(0, Math.max(0, maxCandidates - recommended.length))
+  ];
+  const audit = auditOpenWorldLeakage(candidateInputs, task, now);
+  const recommendedNextCommands = [
+    ...topCandidates.filter((candidate) => candidate.status !== "blocked" && candidate.ingestCommand).slice(0, 5).map((candidate) => candidate.ingestCommand!),
+    ...(task.allowWeb && queryPlan.some((query) => query.status !== "blocked")
+      ? [`openskill-kit openworld fetch-source --task-id ${taskId} --url <trusted-doc-url> --content-file <cached-text-file>`]
+      : []),
+    ...(!task.allowWeb ? ["Re-run init-task with --allow-web only if external public sources are explicitly acceptable."] : [])
+  ];
+  const planId = `owrplan_${shortHash(`${taskId}:${now.toISOString()}:${topCandidates.map((candidate) => candidate.uri).join(",")}`)}`;
+  const draft = OpenWorldResearchPlanSchema.parse({
+    schemaVersion: "openskill-kit.openworld-research-plan.v1",
+    id: planId,
+    taskId,
+    createdAt: now.toISOString(),
+    queryPlan,
+    candidates: topCandidates,
+    recommendedNextCommands,
+    summary: {
+      queryCount: queryPlan.length,
+      candidateCount: topCandidates.length,
+      recommendedCount: topCandidates.filter((candidate) => candidate.status === "recommended").length,
+      blockedCount: topCandidates.filter((candidate) => candidate.status === "blocked").length,
+      webAllowed: task.allowWeb
+    },
+    leakageAuditId: audit.id
+  });
+  const auditPath = await writeOpenWorldLeakageAudit(root, audit);
+  const planPath = options.write === false ? undefined : await writeOpenWorldResearchPlan(root, draft);
+  return OpenWorldResearchPlanSchema.parse({
+    ...draft,
+    leakageAuditPath: path.relative(root, auditPath).replace(/\\/g, "/"),
+    planPath: planPath ? path.relative(root, planPath).replace(/\\/g, "/") : undefined,
+    recommendedNextCommands: draft.recommendedNextCommands
   });
 }
 
@@ -344,6 +452,120 @@ function trustForWebSource(url: URL): OpenWorldSource["trust"] {
   if (kind === "repository") return { authority: 0.78, freshness: 0.7, independence: 0.72, rationale: "Explicit web source is repository-hosted." };
   if (kind === "paper") return { authority: 0.82, freshness: 0.58, independence: 0.8, rationale: "Explicit web source is a paper or preprint." };
   return { authority: 0.48, freshness: 0.5, independence: 0.55, rationale: "General web source; lower authority until reviewed." };
+}
+
+function buildResearchQueries(
+  task: { id: string; title: string; prompt: string; taskType: string; languages: string[]; paths: string[]; allowWeb: boolean; forbiddenIdentifiers: string[]; forbiddenPaths: string[] },
+  query: string | undefined,
+  includeWebQueries: boolean,
+  now: Date
+): OpenWorldResearchPlan["queryPlan"] {
+  const raw = [
+    { purpose: "task" as const, query: query ?? `${task.title} ${task.prompt}` },
+    ...task.languages.slice(0, 4).map((language) => ({ purpose: "language-docs" as const, query: `${language} ${task.taskType} official docs ${task.title}` })),
+    ...task.paths.slice(0, 6).map((taskPath) => ({ purpose: "path-docs" as const, query: `${path.basename(taskPath)} ${task.taskType} docs ${task.title}` })),
+    ...(includeWebQueries && task.allowWeb ? [{ purpose: "targeted-followup" as const, query: `${task.title} best practices official documentation` }] : [])
+  ];
+  const seen = new Set<string>();
+  return raw
+    .map((item, index) => {
+      const sanitized = sanitizeOpenWorldQuery(item.query, task);
+      const status = sanitized !== item.query ? "sanitized" as const : "ready" as const;
+      return {
+        id: `owquery_${shortHash(`${task.id}:${now.toISOString()}:${index}:${sanitized}`)}`,
+        purpose: item.purpose,
+        query: item.query,
+        sanitizedQuery: sanitized || "redacted query",
+        status,
+        reasons: status === "sanitized" ? ["Forbidden or oracle-like terms were redacted before external use."] : []
+      };
+    })
+    .filter((item) => {
+      const key = item.sanitizedQuery.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+async function discoverCandidateFiles(root: string, seedPaths: string[], maxFiles: number): Promise<string[]> {
+  const starts = seedPaths.length
+    ? seedPaths.map((item) => path.resolve(root, item))
+    : ["README.md", "docs", "packages", "examples", "python", "package.json", "pyproject.toml"].map((item) => path.join(root, item));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const start of starts) {
+    if (out.length >= maxFiles) break;
+    const stat = await fs.stat(start).catch(() => undefined);
+    if (!stat) continue;
+    if (stat.isFile()) {
+      addCandidate(root, start, out, seen);
+      continue;
+    }
+    if (stat.isDirectory()) await walkCandidateDir(root, start, out, seen, maxFiles);
+  }
+  if (out.length === 0) await walkCandidateDir(root, root, out, seen, maxFiles);
+  return out.slice(0, maxFiles);
+}
+
+async function walkCandidateDir(root: string, dir: string, out: string[], seen: Set<string>, maxFiles: number): Promise<void> {
+  for (const entry of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    if (out.length >= maxFiles) return;
+    if (entry.isDirectory() && SOURCE_SKIP_DIRS.has(entry.name)) continue;
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) await walkCandidateDir(root, full, out, seen, maxFiles);
+    else addCandidate(root, full, out, seen);
+  }
+}
+
+function addCandidate(root: string, file: string, out: string[], seen: Set<string>): void {
+  const resolved = path.resolve(file);
+  if (!(resolved === root || resolved.startsWith(`${root}${path.sep}`))) return;
+  if (!SOURCE_EXTENSIONS.has(path.extname(resolved).toLowerCase())) return;
+  const relative = path.relative(root, resolved).replace(/\\/g, "/");
+  if (seen.has(relative)) return;
+  seen.add(relative);
+  out.push(resolved);
+}
+
+function scoreSourceCandidate(relative: string, sample: string, tokens: string[], seedPaths: string[]): number {
+  const haystack = tokenize(`${relative} ${sample.slice(0, 20_000)}`);
+  const tokenSet = new Set(haystack);
+  const overlap = tokens.length ? tokens.filter((token) => tokenSet.has(token)).length / tokens.length : 0;
+  const pathBoost = seedPaths.some((seed) => relative.startsWith(seed.replace(/\\/g, "/")) || relative.includes(seed.replace(/\\/g, "/"))) ? 0.22 : 0;
+  const docsBoost = /^docs\//.test(relative) || /(?:^|\/)README\.md$/i.test(relative) ? 0.16 : 0;
+  const configBoost = /(?:package|pyproject|tsconfig|vitest|jest|eslint|ruff|mypy)\./i.test(relative) ? 0.08 : 0;
+  const sizePenalty = sample.length < 24 ? 0.2 : 0;
+  return clamp(Math.round((overlap * 0.68 + pathBoost + docsBoost + configBoost - sizePenalty) * 100) / 100);
+}
+
+function candidateReasons(relative: string, sample: string, score: number, seedPaths: string[], blocked: boolean): string[] {
+  if (blocked) return ["Blocked by OpenWorld leakage audit."];
+  const reasons = [`score=${score}`];
+  if (seedPaths.some((seed) => relative.startsWith(seed.replace(/\\/g, "/")) || relative.includes(seed.replace(/\\/g, "/")))) reasons.push("Matches task path scope.");
+  if (/^docs\//.test(relative) || /(?:^|\/)README\.md$/i.test(relative)) reasons.push("Documentation-like source.");
+  if (/(?:package|pyproject|tsconfig|vitest|jest|eslint|ruff|mypy)\./i.test(relative)) reasons.push("Project configuration source.");
+  if (sample.length > 0) reasons.push("Readable text source.");
+  return reasons;
+}
+
+function statusWeight(status: OpenWorldSourceCandidate["status"]): number {
+  if (status === "recommended") return 3;
+  if (status === "available") return 2;
+  if (status === "blocked") return 1;
+  return 0;
+}
+
+function tokenize(value: string): string[] {
+  return [...new Set(value.toLowerCase().match(/[a-z0-9][a-z0-9_-]{2,}/g) ?? [])].slice(0, 120);
+}
+
+function quoteArg(value: string): string {
+  return /\s/.test(value) ? JSON.stringify(value) : value;
+}
+
+function clamp(value: number): number {
+  return Math.max(0, Math.min(1, value));
 }
 
 function sha256(value: string): string {

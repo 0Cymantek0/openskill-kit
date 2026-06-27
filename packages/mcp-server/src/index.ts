@@ -23,6 +23,7 @@ import {
   getAdaptiveStatus,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
+  planOpenWorldResearch,
   installAgentHooks,
   installInstructionManifests,
   uninstallInstructionManifests,
@@ -881,6 +882,28 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runOpenWorldDoctor(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_source_plan",
+    {
+      title: "OpenSkillKit OpenWorld Source Plan",
+      description: "Plan leakage-audited local source candidates and sanitized OpenWorld research queries before ingesting sources.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        query: z.string().optional(),
+        paths: z.array(z.string().min(1)).default([]),
+        maxCandidates: z.number().int().min(1).max(25).default(8),
+        maxFilesScanned: z.number().int().min(1).max(1000).default(250),
+        write: z.boolean().default(true)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, query, paths, maxCandidates, maxFilesScanned, write }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await planOpenWorldResearch(root, taskId, { query, paths, maxCandidates, maxFilesScanned, write }), root);
     }
   );
 

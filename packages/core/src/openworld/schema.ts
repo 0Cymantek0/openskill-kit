@@ -94,6 +94,51 @@ export const OpenWorldTrustCacheSchema = z.object({
   entries: z.record(z.string(), OpenWorldTrustCacheEntrySchema).default({})
 });
 
+export const OpenWorldResearchQuerySchema = z.object({
+  id: z.string().min(1),
+  purpose: z.enum(["task", "language-docs", "path-docs", "package-docs", "targeted-followup"]),
+  query: z.string().min(1),
+  sanitizedQuery: z.string().min(1),
+  status: z.enum(["ready", "sanitized", "blocked"]),
+  reasons: z.array(z.string().min(1)).default([])
+});
+
+export const OpenWorldSourceCandidateSchema = z.object({
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  kind: OpenWorldSourceSchema.shape.kind,
+  uri: z.string().min(1),
+  title: z.string().optional(),
+  locator: OpenWorldSourceSchema.shape.locator.default({}),
+  score: z.number().min(0).max(1),
+  status: z.enum(["recommended", "available", "blocked", "skipped"]),
+  privacyClass: z.enum(OpenWorldPrivacyClasses),
+  usableFor: z.array(z.enum(["skill", "virtual-test", "safety", "report"])).default(["skill", "virtual-test", "report"]),
+  reasons: z.array(z.string().min(1)).default([]),
+  leakageFindingIds: z.array(z.string().min(1)).default([]),
+  ingestCommand: z.string().optional()
+});
+
+export const OpenWorldResearchPlanSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.openworld-research-plan.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  createdAt: z.string().datetime(),
+  queryPlan: z.array(OpenWorldResearchQuerySchema).default([]),
+  candidates: z.array(OpenWorldSourceCandidateSchema).default([]),
+  recommendedNextCommands: z.array(z.string().min(1)).default([]),
+  summary: z.object({
+    queryCount: z.number().int().min(0),
+    candidateCount: z.number().int().min(0),
+    recommendedCount: z.number().int().min(0),
+    blockedCount: z.number().int().min(0),
+    webAllowed: z.boolean()
+  }),
+  leakageAuditId: z.string().optional(),
+  leakageAuditPath: z.string().optional(),
+  planPath: z.string().optional()
+});
+
 export const AnchorCardSchema = z.object({
   schemaVersion: z.literal("openskill-kit.anchor-card.v1"),
   id: z.string().min(1),
@@ -276,6 +321,9 @@ export type OpenWorldTask = z.infer<typeof OpenWorldTaskSchema>;
 export type OpenWorldSource = z.infer<typeof OpenWorldSourceSchema>;
 export type OpenWorldSourceIndex = z.infer<typeof OpenWorldSourceIndexSchema>;
 export type OpenWorldTrustCache = z.infer<typeof OpenWorldTrustCacheSchema>;
+export type OpenWorldResearchQuery = z.infer<typeof OpenWorldResearchQuerySchema>;
+export type OpenWorldSourceCandidate = z.infer<typeof OpenWorldSourceCandidateSchema>;
+export type OpenWorldResearchPlan = z.infer<typeof OpenWorldResearchPlanSchema>;
 export type AnchorCard = z.infer<typeof AnchorCardSchema>;
 export type VirtualTestCase = z.infer<typeof VirtualTestCaseSchema>;
 export type VirtualTestSuite = z.infer<typeof VirtualTestSuiteSchema>;

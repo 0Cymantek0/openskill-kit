@@ -39,6 +39,7 @@ OpenWorld scaffold commands are local-only and not benchmark-proven yet:
 npx openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
 npx openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
 npx openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
+npx openskill-kit openworld source-plan --task-id <owtask_id> --path docs
 npx openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
 npx openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
 npx openskill-kit openworld sources
@@ -70,11 +71,12 @@ OpenSkillKit stores raw lifecycle events in append-only JSONL only when privacy
 settings allow it. Secret-like content is redacted before storage. Signals and
 Preference Nodes stay reviewable as normal project files.
 
-The OpenWorld layer now covers task records, leakage audits, source
-ingestion/cache, Anchor Cards, visible/holdout virtual verifier generation,
-local sandbox execution of generated verifier scripts, and bounded verifier
-refinement/eval report records, and review-only promotion proposals. It still
-does not perform LLM skill generation, containerized candidate-skill repair, or
+The OpenWorld layer now covers task records, leakage audits, local source
+discovery plans, source ingestion/cache, explicit web source fetches, Anchor
+Cards, visible/holdout virtual verifier generation, local sandbox execution of
+generated verifier scripts, bounded verifier refinement/eval report records,
+and review-only promotion proposals. It still does not perform autonomous web
+search, LLM skill generation, containerized candidate-skill repair, or
 hidden-oracle benchmark evaluation yet.
 
 ## Core Commands
@@ -129,6 +131,7 @@ openskill-kit doctor --full
 openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
 openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
 openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
+openskill-kit openworld source-plan --task-id <owtask_id> --path docs
 openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
 openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
 openskill-kit openworld sources
@@ -245,6 +248,7 @@ Key tools:
 - `osk_explain_status`
 - `osk_run_full_doctor`
 - `osk_openworld_doctor`
+- `osk_openworld_source_plan`
 - `osk_openworld_ingest_source`
 - `osk_openworld_sources`
 - `osk_openworld_run_verifier`

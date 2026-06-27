@@ -7,6 +7,7 @@ import {
   AnchorCardSchema,
   OpenWorldEvolutionRunSchema,
   OpenWorldLeakageAuditSchema,
+  OpenWorldResearchPlanSchema,
   OpenWorldSourceSchema,
   OpenWorldSourceIndexSchema,
   OpenWorldTrustCacheSchema,
@@ -17,6 +18,7 @@ import {
   type AnchorCard,
   type OpenWorldEvolutionRun,
   type OpenWorldLeakageAudit,
+  type OpenWorldResearchPlan,
   type OpenWorldSource,
   type OpenWorldSourceIndex,
   type OpenWorldTrustCache,
@@ -131,6 +133,14 @@ export async function writeOpenWorldLeakageAudit(projectRoot: string, audit: Ope
   const parsed = OpenWorldLeakageAuditSchema.parse(audit);
   const taskId = parsed.taskId ?? "global";
   return writeTaskArtifact(projectRoot, taskId, "audits", `${parsed.id}.json`, parsed);
+}
+
+export async function writeOpenWorldResearchPlan(projectRoot: string, plan: OpenWorldResearchPlan): Promise<string> {
+  const root = path.resolve(projectRoot);
+  const parsed = OpenWorldResearchPlanSchema.parse(plan);
+  const file = taskArtifactPath(root, parsed.taskId, "research", "plans", `${parsed.id}.json`);
+  await writeOpenWorldJson(root, file, parsed);
+  return file;
 }
 
 export async function writeOpenWorldEvolutionRun(projectRoot: string, run: OpenWorldEvolutionRun): Promise<string> {

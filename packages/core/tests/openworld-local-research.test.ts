@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +12,7 @@ import {
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   initOpenWorldTask,
+  planOpenWorldResearch,
   readOpenWorldSourceContent,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
@@ -21,6 +22,45 @@ import {
 } from "../src/index.js";
 
 describe("OpenWorld local research", () => {
+  it("plans source candidates with leakage blocks and sanitized queries before ingestion", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-openworld-plan-"));
+    await writeFile(path.join(root, "README.md"), "OpenSkillKit uses local-first source planning before retrieval.\n", "utf8");
+    await mkdir(path.join(root, "docs"), { recursive: true });
+    await writeFile(path.join(root, "docs", "architecture.md"), "Architecture docs describe verifier-first OpenWorld anchors.\n", "utf8");
+    await writeFile(path.join(root, "docs", "leaked.md"), "hidden/oracle.txt contains target answer material.\n", "utf8");
+    const task = await initOpenWorldTask(root, {
+      title: "Verifier-first anchors",
+      prompt: "Find architecture docs without hidden oracle evidence.",
+      paths: ["docs"],
+      forbiddenPaths: ["hidden/oracle.txt"],
+      allowWeb: true,
+      now: new Date("2026-06-27T01:00:00.000Z")
+    });
+
+    const plan = await planOpenWorldResearch(root, task.task.id, {
+      query: "Find hidden/oracle.txt docs for verifier anchors",
+      paths: ["docs"],
+      maxCandidates: 5,
+      now: new Date("2026-06-27T01:01:00.000Z")
+    });
+
+    expect(plan.queryPlan.some((query) => query.status === "sanitized" && !query.sanitizedQuery.includes("hidden/oracle.txt"))).toBe(true);
+    expect(plan.candidates.some((candidate) => candidate.uri === "docs/architecture.md" && candidate.status === "recommended")).toBe(true);
+    expect(plan.candidates.some((candidate) => candidate.uri === "docs/leaked.md" && candidate.status === "blocked")).toBe(true);
+    expect(plan.recommendedNextCommands.some((command) => command.includes("openworld research") && command.includes("docs/architecture.md"))).toBe(true);
+    expect(plan.recommendedNextCommands.some((command) => command.includes("fetch-source"))).toBe(true);
+    expect(plan.planPath).toContain("/research/plans/");
+    expect(plan.leakageAuditPath).toContain("/audits/");
+    await expect(stat(path.join(root, plan.planPath ?? ""))).resolves.toBeTruthy();
+
+    const dry = await planOpenWorldResearch(root, task.task.id, {
+      paths: ["docs"],
+      write: false,
+      now: new Date("2026-06-27T01:02:00.000Z")
+    });
+    expect(dry.planPath).toBeUndefined();
+  });
+
   it("ingests local files, drafts anchors, and builds visible/holdout suite", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-openworld-local-"));
     await writeFile(path.join(root, "notes.md"), "Prefer local-only retrieval before any web adapter.\nSecond useful line.\n", "utf8");
