@@ -89,6 +89,7 @@ if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string 
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.readOnly === true)) throw new Error("compiled plugin command map missing import adapter route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing approved session import route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.readOnly === true)) throw new Error("compiled plugin command map missing session import history route");
+if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.readOnly === true)) throw new Error("compiled plugin command map missing session import explain route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk openworld doctor" && item.mcpTool === "osk_openworld_doctor" && item.readOnly === true)) throw new Error("compiled plugin command map missing OpenWorld doctor route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk openworld promote review" && item.mcpTool === "osk_openworld_promote_review" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing OpenWorld promote review approval");
 if (!pluginManifest.files?.includes("commands/commands.json")) throw new Error("compiled plugin manifest missing command map file");
@@ -100,7 +101,7 @@ if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/"))
 const interactionAdapters = await runJson(["interactions", "adapters", "--json"]);
 if (!interactionAdapters.adapters?.some((adapter: { id: string; privacy: string }) => adapter.id === "codex" && adapter.privacy === "explicit-import-only")) throw new Error("interaction adapters command missing Codex explicit import policy");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 23") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 24") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
 if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");

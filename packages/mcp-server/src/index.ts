@@ -41,6 +41,7 @@ import {
   importProjectBehaviorPack,
   importEncryptedProjectBehaviorPack,
   importInteractionSource,
+  explainInteractionImport,
   installSkill,
   listInteractionAdapters,
   inspectProjectBehaviorPack,
@@ -244,6 +245,20 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult({ schemaVersion: "openskill-kit.interaction-import-runs.v1", runs: await readInteractionImportRuns(root) }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_explain_interaction_import",
+    {
+      title: "OpenSkillKit Explain Interaction Import",
+      description: "Explain one interaction import run without reading raw source content.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, runId: z.string().min(1) }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, runId }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await explainInteractionImport(root, runId), root);
     }
   );
 

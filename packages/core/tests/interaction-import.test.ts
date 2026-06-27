@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   extractSignals,
+  explainInteractionImport,
   getAdaptiveStatus,
   importInteractionSource,
   initAdaptiveProject,
@@ -73,6 +74,16 @@ describe("interaction import", () => {
     expect(duplicate.messages.join(" ")).toContain("already imported");
     const runs = await readInteractionImportRuns(root);
     expect(runs.some((run) => run.status === "imported" && run.source.adapter === "codex")).toBe(true);
+    const explained = await explainInteractionImport(root, imported.id);
+    expect(explained.schemaVersion).toBe("openskill-kit.interaction-import-explain.v1");
+    expect(explained.imported.foundEventCount).toBe(2);
+    expect(explained.privacy.rawSourceStored).toBe(false);
+    expect(explained.privacy.rawSourceCopiedToArtifacts).toBe(false);
+    expect(explained.privacy.redactedEventCount).toBeGreaterThan(0);
+    expect(explained.learnable.canLearn).toBe(true);
+    expect(explained.learnable.signalSources).toEqual(expect.arrayContaining(["command outcomes", "user text snippets"]));
+    expect(explained.learnable.nextActions.join(" ")).toContain("learn");
+    expect(JSON.stringify(explained)).not.toContain("sk-live-secret");
     const status = await getAdaptiveStatus(root);
     expect(status.interactionImportCount).toBeGreaterThanOrEqual(3);
     expect(status.importedInteractionEventCount).toBe(2);
@@ -121,6 +132,9 @@ describe("interaction import", () => {
     expect(planned.source.adapterStatus).toBe("experimental");
     expect(planned.warnings.join(" ")).toContain("Unknown interaction adapter");
     expect(await readFile(planned.artifacts.markdownPath, "utf8")).toContain("Adapter known: no");
+    const explained = await explainInteractionImport(root, planned.id);
+    expect(explained.learnable.canLearn).toBe(false);
+    expect(explained.learnable.nextActions.join(" ")).toContain("--yes");
   });
 
   it("normalizes Claude Code nested message and tool records", async () => {

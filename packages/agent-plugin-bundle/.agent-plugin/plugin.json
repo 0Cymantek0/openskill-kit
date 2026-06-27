@@ -115,6 +115,16 @@
         "fallback": "cli"
       },
       {
+        "command": "/osk explain import",
+        "aliases": ["osk import explain", "openskill explain import"],
+        "description": "Explain one interaction import receipt, privacy state, and learning next actions without reading raw source content.",
+        "mcpTool": "osk_explain_interaction_import",
+        "cli": "openskill-kit interactions explain <run-id>",
+        "readOnly": true,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
         "command": "/osk learn from this session",
         "aliases": ["osk learn", "learn this session"],
         "description": "Extract candidate preferences from captured local events after user approval for any import source.",

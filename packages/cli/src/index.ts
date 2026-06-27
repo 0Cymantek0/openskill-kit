@@ -31,6 +31,7 @@ import {
   importProjectBehaviorPack,
   importEncryptedProjectBehaviorPack,
   importInteractionSource,
+  explainInteractionImport,
   installSkill,
   listInteractionAdapters,
   inspectProjectBehaviorPack,
@@ -1213,6 +1214,21 @@ interactions.command("imports")
   .action(async (options) => {
     const runs = await readInteractionImportRuns(process.cwd());
     output(options.json, { schemaVersion: "openskill-kit.interaction-import-runs.v1", runs }, runs.length ? runs.map((run) => `${run.id} ${run.status} parsed=${run.parsedEventCount} appended=${run.appendedEventCount} ${run.source.adapter}`).join("\n") : "No interaction imports");
+  });
+
+interactions.command("explain")
+  .description("Explain one interaction import receipt without reading raw source content")
+  .argument("<run-id>", "Interaction import run id")
+  .option("--json", "Print JSON")
+  .action(async (runId, options) => {
+    const result = await explainInteractionImport(process.cwd(), runId);
+    output(options.json, result, [
+      `${result.runId} ${result.status}: parsed=${result.imported.parsedEventCount} appended=${result.imported.appendedEventCount}`,
+      `Adapter: ${result.source.adapter} (${result.source.adapterStatus})`,
+      `Privacy: raw source stored=${result.privacy.rawSourceStored}, artifact copy=${result.privacy.rawSourceCopiedToArtifacts}`,
+      `Learnable: ${result.learnable.canLearn ? "yes" : "no"}${result.learnable.signalSources.length ? ` (${result.learnable.signalSources.join(", ")})` : ""}`,
+      ...result.learnable.nextActions.map((action) => `- ${action}`)
+    ].join("\n"));
   });
 
 const workflows = program.command("workflows")

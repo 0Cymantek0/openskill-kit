@@ -146,6 +146,7 @@ openskill-kit interactions adapters
 openskill-kit interactions import ./session-export.jsonl
 openskill-kit interactions import ./session-export.jsonl --adapter codex --yes
 openskill-kit interactions imports
+openskill-kit interactions explain <import-run-id>
 openskill-kit doctor --full
 openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
 openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
@@ -238,6 +239,7 @@ Key tools:
 - `osk_import_interaction_source`
 - `osk_list_interaction_adapters`
 - `osk_list_interaction_imports`
+- `osk_explain_interaction_import`
 - `osk_get_context_pack`
 - `osk_get_relevant_preferences`
 - `osk_route_behavior`
@@ -314,6 +316,8 @@ For cross-agent session learning, route `/osk import session` to
 `osk_import_interaction_source` and keep the first pass as a preview unless the
 user approves applying it. Route `/osk session imports` to
 `osk_list_interaction_imports` for read-only import receipts. Route
+`/osk explain import` to `osk_explain_interaction_import` before learning from
+an imported source when a harness needs privacy state and learning next actions. Route
 `/osk import adapters` to `osk_list_interaction_adapters` before import when a
 harness needs accepted formats, adapter status, and the explicit-import-only
 privacy policy.

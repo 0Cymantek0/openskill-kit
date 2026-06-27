@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { appendEvent, readProjectConfig } from "../events/store.js";
-import type { OpenSkillEventInput } from "../events/schema.js";
+import { appendEvent, readEvents, readProjectConfig } from "../events/store.js";
+import type { OpenSkillEvent, OpenSkillEventInput } from "../events/schema.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
 export interface ImportInteractionSourceOptions {
@@ -68,6 +68,41 @@ export interface InteractionAdapterValidation {
   normalizedAdapter: string;
   agentName?: string;
   warnings: string[];
+}
+
+export interface ExplainInteractionImportResult {
+  schemaVersion: "openskill-kit.interaction-import-explain.v1";
+  runId: string;
+  status: InteractionImportRun["status"];
+  source: InteractionImportRun["source"];
+  dryRun: boolean;
+  imported: {
+    parsedEventCount: number;
+    appendedEventCount: number;
+    skippedCount: number;
+    eventIds: string[];
+    foundEventCount: number;
+    missingEventIds: string[];
+  };
+  privacy: {
+    rawSourceStored: false;
+    rawSourceCopiedToArtifacts: false;
+    eventSnippetPolicy: string;
+    redactedEventCount: number;
+    rawStoredEventCount: number;
+    containsUserTextEventCount: number;
+    containsCodeEventCount: number;
+  };
+  preview: InteractionImportRun["preview"];
+  learnable: {
+    canLearn: boolean;
+    eventTypes: OpenSkillEvent["eventType"][];
+    signalSources: string[];
+    nextActions: string[];
+  };
+  warnings: string[];
+  messages: string[];
+  artifacts: InteractionImportRun["artifacts"];
 }
 
 const EVENT_TYPES = new Set<OpenSkillEventInput["eventType"]>([
@@ -239,6 +274,52 @@ export async function readInteractionImportRuns(projectRootInput: string): Promi
     runs.push(parsed);
   }
   return runs.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export async function explainInteractionImport(projectRootInput: string, runId: string): Promise<ExplainInteractionImportResult> {
+  const root = path.resolve(projectRootInput);
+  const runs = await readInteractionImportRuns(root);
+  const run = runs.find((item) => item.id === runId);
+  if (!run) throw new Error(`Interaction import run not found: ${runId}`);
+  const events = run.eventIds.length ? await readEvents(root) : [];
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const importedEvents = run.eventIds.map((id) => eventsById.get(id)).filter((event): event is OpenSkillEvent => Boolean(event));
+  const missingEventIds = run.eventIds.filter((id) => !eventsById.has(id));
+  const eventTypes = [...new Set(importedEvents.map((event) => event.eventType))].sort();
+  return {
+    schemaVersion: "openskill-kit.interaction-import-explain.v1",
+    runId: run.id,
+    status: run.status,
+    source: run.source,
+    dryRun: run.dryRun,
+    imported: {
+      parsedEventCount: run.parsedEventCount,
+      appendedEventCount: run.appendedEventCount,
+      skippedCount: run.skippedCount,
+      eventIds: [...run.eventIds],
+      foundEventCount: importedEvents.length,
+      missingEventIds
+    },
+    privacy: {
+      rawSourceStored: false,
+      rawSourceCopiedToArtifacts: false,
+      eventSnippetPolicy: "OpenSkillKit keeps bounded redacted event snippets only; raw session/export source is never copied into import artifacts.",
+      redactedEventCount: importedEvents.filter((event) => event.privacy.redacted).length,
+      rawStoredEventCount: importedEvents.filter((event) => event.privacy.rawStored).length,
+      containsUserTextEventCount: importedEvents.filter((event) => event.privacy.containsUserText).length,
+      containsCodeEventCount: importedEvents.filter((event) => event.privacy.containsCode).length
+    },
+    preview: [...run.preview],
+    learnable: {
+      canLearn: run.status === "imported" && importedEvents.length > 0,
+      eventTypes,
+      signalSources: learnableSignalSources(importedEvents, run.preview),
+      nextActions: explainImportNextActions(run, importedEvents.length, missingEventIds.length)
+    },
+    warnings: [...run.warnings],
+    messages: [...run.messages],
+    artifacts: { ...run.artifacts }
+  };
 }
 
 function parseInteractionText(text: string, options: ImportInteractionSourceOptions, sourceHash: string): { events: OpenSkillEventInput[]; warnings: string[] } {
@@ -435,6 +516,26 @@ function previewEvent(event: OpenSkillEventInput): InteractionImportRun["preview
     containsUserText: event.privacy?.containsUserText ?? false,
     containsCode: event.privacy?.containsCode ?? false
   };
+}
+
+function learnableSignalSources(events: OpenSkillEvent[], preview: InteractionImportRun["preview"]): string[] {
+  const sources = new Set<string>();
+  if (events.some((event) => event.eventType === "user-prompt-submit" || event.privacy.containsUserText) || preview.some((item) => item.containsUserText)) sources.add("user text snippets");
+  if (events.some((event) => event.commands.length > 0) || preview.some((item) => item.commandCount > 0)) sources.add("command outcomes");
+  if (events.some((event) => event.files.length > 0) || preview.some((item) => item.fileCount > 0)) sources.add("file references");
+  if (events.some((event) => event.eventType === "user-accepted" || event.eventType === "user-rejected" || event.eventType === "user-edited")) sources.add("accept/reject/edit feedback");
+  return [...sources].sort();
+}
+
+function explainImportNextActions(run: InteractionImportRun, foundEventCount: number, missingEventCount: number): string[] {
+  const actions: string[] = [];
+  if (run.status === "planned") actions.push("Review preview first; rerun import with `--yes` only if this source should become local evidence.");
+  if (run.status === "imported" && foundEventCount > 0) actions.push("Run `openskill-kit learn` or `osk_learn_from_session` to turn imported events into review candidates.");
+  if (run.status === "imported" && foundEventCount === 0) actions.push("Imported run has no readable events; inspect event store before learning.");
+  if (run.status === "blocked") actions.push("Resolve import warnings before retrying; no events were appended.");
+  if (missingEventCount > 0) actions.push("Some appended event ids were not found in the current event store; run doctor before learning from this import.");
+  actions.push("Do not inspect or copy raw source content unless the user explicitly asks.");
+  return [...new Set(actions)];
 }
 
 async function findImportedDuplicate(root: string, sourceHash: string): Promise<InteractionImportRun | undefined> {
