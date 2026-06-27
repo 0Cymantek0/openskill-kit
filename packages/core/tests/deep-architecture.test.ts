@@ -52,6 +52,8 @@ describe("deep architecture hardening", () => {
     const mcpConfig = JSON.parse(await readFile(path.join(pluginRoot, "mcp", "server-config.json"), "utf8"));
     const mcpDescriptors = JSON.parse(await readFile(path.join(pluginRoot, "mcp", "descriptors.json"), "utf8"));
     const mcpHashes = JSON.parse(await readFile(path.join(pluginRoot, "mcp", "descriptor-hashes.json"), "utf8"));
+    const commandMap = JSON.parse(await readFile(path.join(pluginRoot, "commands", "commands.json"), "utf8"));
+    const commandGuide = await readFile(path.join(pluginRoot, "commands", "osk.md"), "utf8");
     const readme = await readFile(path.join(pluginRoot, "README.md"), "utf8");
 
     expect(compiled.compiledTargets).toEqual(expect.arrayContaining(["plugin", "agent-skills", "mcp-resources", "hooks", "project-rules"]));
@@ -59,7 +61,10 @@ describe("deep architecture hardening", () => {
     expect(status.pluginDir).toBe(pluginRoot);
     expect(status.mcpServerCommand).toBe("openskill-kit-mcp");
     expect(status.mcpDescriptorsHash).toMatch(/^sha256:/);
+    expect(status.commandMapPath).toBe(path.join(pluginRoot, "commands", "commands.json"));
+    expect(status.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(status.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
+    expect(status.nextActions).toContain("Map `/osk ...` requests through `commands/commands.json`; prefer MCP tools and use CLI fallbacks only when MCP is unavailable.");
     expect(manifest.schemaVersion).toBe("openskill-kit.agent-plugin.v1");
     expect(manifest.compatibility).toEqual(expect.arrayContaining(["agent-plugin", "mcp-stdio", "codex", "claude-code"]));
     expect(manifest.skills).toEqual(expect.arrayContaining(["skills/project-behavior"]));
@@ -67,20 +72,29 @@ describe("deep architecture hardening", () => {
     expect(manifest.entrypoints.mcpServer.transport).toBe("stdio");
     expect(manifest.entrypoints.mcpDescriptors).toBe("mcp/descriptors.json");
     expect(manifest.entrypoints.mcpDescriptorHashes).toBe("mcp/descriptor-hashes.json");
+    expect(manifest.entrypoints.commands).toBe("commands/commands.json");
+    expect(manifest.entrypoints.commandGuide).toBe("commands/osk.md");
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk update skills" && item.mcpTool === "osk_compile_behavior_layer" && item.cli === "openskill-kit compile --target agent-skills")).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk evolve this skill" && !item.mcpTool && item.cli.includes("openskill-kit evolve"))).toBe(true);
     expect(manifest.integrity.descriptorHashes).toBe("mcp/descriptor-hashes.json");
     expect(manifest.integrity.descriptorsHash).toBe(mcpHashes.descriptorsHash);
     expect(manifest.install.defaultMode).toBe("attach");
     expect(manifest.install.requiresExplicitApproval).toContain("importing interaction exports or private memories");
     expect(manifest.privacy.excludes).toContain(".openskill-kit/interactions/");
     expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
-    expect(manifest.files).toEqual(expect.arrayContaining([".agent-plugin/plugin.json", ".mcp.json", "README.md", "mcp/server-config.json", "mcp/descriptors.json", "mcp/descriptor-hashes.json", "skills/project-behavior/SKILL.md"]));
+    expect(manifest.files).toEqual(expect.arrayContaining([".agent-plugin/plugin.json", ".mcp.json", "README.md", "commands/commands.json", "commands/osk.md", "mcp/server-config.json", "mcp/descriptors.json", "mcp/descriptor-hashes.json", "skills/project-behavior/SKILL.md"]));
     expect(packagedManifest).toEqual(manifest);
+    expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
+    expect(commandGuide).toContain("Prefer MCP");
+    expect(commandGuide).toContain("openskill-kit status");
     expect(mcpAttachment.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     expect(mcpConfig.descriptorsHash).toBe(mcpHashes.descriptorsHash);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_manifest_install" && tool.approvalRequired === true)).toBe(true);
     expect(mcpHashes.tools["osk_bootstrap_session"]).toMatch(/^sha256:/);
     expect(mcpHashes.approvalRequiredTools).toContain("osk_install_agent_hooks");
     expect(readme).toContain("Start `openskill-kit-mcp`");
+    expect(readme).toContain("Command map: `commands/commands.json`");
+    expect(readme).toContain("`/osk install hooks`");
     expect(readme).toContain("Never attach hidden benchmark answers");
   });
 

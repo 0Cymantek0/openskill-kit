@@ -23,6 +23,8 @@ export interface AgentPluginManifest {
   skills: string[];
   entrypoints: {
     skillDirectory: string;
+    commands: string;
+    commandGuide: string;
     mcpConfig: string;
     mcpDescriptors: string;
     mcpDescriptorHashes: string;
@@ -34,6 +36,7 @@ export interface AgentPluginManifest {
     hooks: string;
     behavior: string;
   };
+  commands: AgentPluginCommand[];
   install: {
     defaultMode: "attach";
     steps: string[];
@@ -53,6 +56,17 @@ export interface AgentPluginManifest {
   files: string[];
 }
 
+export interface AgentPluginCommand {
+  command: string;
+  aliases: string[];
+  description: string;
+  mcpTool?: string;
+  cli: string;
+  readOnly: boolean;
+  approvalRequired: boolean;
+  fallback: "cli";
+}
+
 export interface CompiledPluginStatus {
   schemaVersion: "openskill-kit.compiled-plugin-status.v1";
   ready: boolean;
@@ -62,9 +76,12 @@ export interface CompiledPluginStatus {
   mcpAttachmentPath: string;
   mcpDescriptorPath: string;
   mcpDescriptorHashPath: string;
+  commandMapPath: string;
+  commandGuidePath: string;
   mcpServerCommand: string;
   mcpDescriptorsHash?: string;
   manifest?: AgentPluginManifest;
+  commands: AgentPluginCommand[];
   skills: string[];
   capabilities: string[];
   approvalGates: string[];
@@ -83,6 +100,12 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "hooks"), path.join(pluginDir, "hooks"));
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "mcp"), path.join(pluginDir, "mcp"));
   const manifest = await buildManifest(pluginDir);
+  await writeJsonAtomic(path.join(pluginDir, "commands", "commands.json"), {
+    schemaVersion: "openskill-kit.command-map.v1",
+    routing: "prefer MCP tools when available; otherwise run the CLI fallback from the project root",
+    commands: manifest.commands
+  });
+  await writeFileAtomic(path.join(pluginDir, "commands", "osk.md"), renderCommandGuide(manifest));
   await writeFileAtomic(path.join(pluginDir, "README.md"), renderReadme(manifest));
   await writeJsonAtomic(path.join(pluginDir, ".mcp.json"), buildMcpAttachmentConfig());
   manifest.files = [...new Set([...(await listFiles(pluginDir)).filter((file) => file !== "plugin.json"), ".agent-plugin/plugin.json"])].sort();
@@ -100,11 +123,15 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
   const mcpAttachmentPath = path.join(pluginDir, ".mcp.json");
   const mcpDescriptorPath = path.join(pluginDir, "mcp", "descriptors.json");
   const mcpDescriptorHashPath = path.join(pluginDir, "mcp", "descriptor-hashes.json");
+  const commandMapPath = path.join(pluginDir, "commands", "commands.json");
+  const commandGuidePath = path.join(pluginDir, "commands", "osk.md");
   const manifest = await readJson<AgentPluginManifest>(manifestPath).catch(() => undefined);
   const agentManifest = await readJson<AgentPluginManifest>(agentPluginManifestPath).catch(() => undefined);
   const mcpAttachment = await readJson<{ mcpServers?: Record<string, { command?: string }> }>(mcpAttachmentPath).catch(() => undefined);
   const mcpHashes = await readJson<{ descriptorsHash?: string }>(mcpDescriptorHashPath).catch(() => undefined);
   const mcpDescriptors = await readJson<unknown>(mcpDescriptorPath).catch(() => undefined);
+  const commandMap = await readJson<{ commands?: AgentPluginCommand[] }>(commandMapPath).catch(() => undefined);
+  const commandGuideExists = await exists(commandGuidePath);
   const mcpServerConfigExists = await exists(path.join(pluginDir, "mcp", "server-config.json"));
   const missing = [
     ...(manifest ? [] : ["plugin.json"]),
@@ -113,7 +140,9 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     ...(!manifest?.skills?.length ? ["skills"] : []),
     ...(mcpServerConfigExists ? [] : ["mcp/server-config.json"]),
     ...(mcpDescriptors ? [] : ["mcp/descriptors.json"]),
-    ...(mcpHashes ? [] : ["mcp/descriptor-hashes.json"])
+    ...(mcpHashes ? [] : ["mcp/descriptor-hashes.json"]),
+    ...(commandMap?.commands?.length ? [] : ["commands/commands.json"]),
+    ...(commandGuideExists ? [] : ["commands/osk.md"])
   ];
   const actualDescriptorsHash = mcpDescriptors ? sha256Stable(mcpDescriptors) : undefined;
   const integrityIssues = [
@@ -130,9 +159,12 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     mcpAttachmentPath,
     mcpDescriptorPath,
     mcpDescriptorHashPath,
+    commandMapPath,
+    commandGuidePath,
     mcpServerCommand: mcpAttachment?.mcpServers?.["openskill-kit"]?.command ?? manifest?.entrypoints.mcpServer.command ?? "openskill-kit-mcp",
     mcpDescriptorsHash: mcpHashes?.descriptorsHash ?? manifest?.integrity.descriptorsHash,
     manifest,
+    commands: commandMap?.commands ?? manifest?.commands ?? [],
     skills: manifest?.skills ?? [],
     capabilities: manifest?.capabilities ?? [],
     approvalGates: manifest?.install.requiresExplicitApproval ?? [],
@@ -145,6 +177,7 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
         ? ["Re-run `openskill-kit compile --target plugin`; compiled plugin integrity check failed."]
       : [
         "Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.",
+        "Map `/osk ...` requests through `commands/commands.json`; prefer MCP tools and use CLI fallbacks only when MCP is unavailable.",
         "Start `openskill-kit-mcp` from the project root when the harness supports MCP.",
         "Keep hooks, global instruction writes, interaction imports, and behavior pack imports behind explicit approval."
       ]
@@ -173,6 +206,8 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
     skills: await pluginSkillRefs(pluginDir),
     entrypoints: {
       skillDirectory: "skills",
+      commands: "commands/commands.json",
+      commandGuide: "commands/osk.md",
       mcpConfig: "mcp/server-config.json",
       mcpDescriptors: "mcp/descriptors.json",
       mcpDescriptorHashes: "mcp/descriptor-hashes.json",
@@ -184,11 +219,13 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       hooks: "hooks/hooks.json",
       behavior: "behavior"
     },
+    commands: pluginCommands(),
     install: {
       defaultMode: "attach",
       steps: [
         "Attach this directory as a local plugin from the project root.",
         "Load `skills/` as repository-scoped skills.",
+        "Map `/osk ...` requests using `commands/commands.json`; prefer MCP tools and fall back to CLI commands.",
         "Start `openskill-kit-mcp` with stdio from the project root when the harness supports MCP.",
         "Preview hooks and managed instruction files before applying them."
       ],
@@ -237,6 +274,35 @@ async function pluginSkillRefs(pluginDir: string): Promise<string[]> {
   return entries.filter((entry) => entry.isDirectory()).map((entry) => `skills/${entry.name}`).sort();
 }
 
+function pluginCommands(): AgentPluginCommand[] {
+  return [
+    command("/osk init", ["openskill init", "bootstrap openskill"], "Initialize or bootstrap project behavior state and report plugin readiness.", "osk_bootstrap_session", "openskill-kit init && openskill-kit status", false, false),
+    command("/osk status", ["osk status", "openskill status"], "Show learned behavior, compiled artifacts, plugin readiness, and next actions.", "osk_bootstrap_session", "openskill-kit status", true, false),
+    command("/osk learn from this session", ["osk learn", "learn this session"], "Extract candidate preferences from captured local events after user approval for any import source.", "osk_learn_from_session", "openskill-kit learn", false, false),
+    command("/osk explain why you learned this", ["osk explain", "explain preference"], "Explain a learned preference through sanitized evidence cards.", "osk_explain_preference", "openskill-kit explain <preference-id>", true, false),
+    command("/osk review pending behavior", ["osk review", "review behavior"], "Open the review queue for candidate behavior before activation.", "osk_get_review_queue", "openskill-kit review", false, false),
+    command("/osk update skills", ["osk compile skills", "update project skills"], "Compile project-scoped skills from active behavior.", "osk_compile_behavior_layer", "openskill-kit compile --target agent-skills", false, false),
+    command("/osk update AGENTS.md", ["osk update agents", "compile project rules"], "Preview managed AGENTS/CLAUDE instruction updates.", "osk_compile_behavior_layer", "openskill-kit compile --target project-rules", false, false),
+    command("/osk install hooks", ["osk hooks", "install openskill hooks"], "Preview or install local hooks; requires explicit user approval before enabling execution.", "osk_install_agent_hooks", "openskill-kit hooks install --dry-run", false, true),
+    command("/osk run behavior eval", ["osk eval", "behavior eval"], "Run local behavior replay/evaluation gates and return artifact paths.", "osk_run_behavior_eval", "openskill-kit eval", false, false),
+    command("/osk evolve this skill", ["osk evolve", "evolve skill"], "Draft, verify, and evaluate a reusable skill from local evidence.", undefined, "openskill-kit evolve \"<topic>\" --no-llm", false, false),
+    command("/osk sync project behavior pack", ["osk pack", "sync behavior pack"], "Export or import behavior packs only through review, verification, and trust gates.", "osk_export_behavior_pack", "openskill-kit pack export", false, true)
+  ];
+}
+
+function command(commandText: string, aliases: string[], description: string, mcpTool: string | undefined, cli: string, readOnly: boolean, approvalRequired: boolean): AgentPluginCommand {
+  return {
+    command: commandText,
+    aliases,
+    description,
+    mcpTool,
+    cli,
+    readOnly,
+    approvalRequired,
+    fallback: "cli"
+  };
+}
+
 function renderReadme(manifest: AgentPluginManifest): string {
   return [
     "# OpenSkillKit Agent Plugin",
@@ -250,12 +316,20 @@ function renderReadme(manifest: AgentPluginManifest): string {
     "## Entrypoints",
     "",
     `- Skills: \`${manifest.entrypoints.skillDirectory}\``,
+    `- Command map: \`${manifest.entrypoints.commands}\``,
+    `- Command guide: \`${manifest.entrypoints.commandGuide}\``,
     `- MCP config: \`${manifest.entrypoints.mcpConfig}\``,
     `- MCP descriptors: \`${manifest.entrypoints.mcpDescriptors}\``,
     `- MCP descriptor hashes: \`${manifest.entrypoints.mcpDescriptorHashes}\``,
     `- MCP server: \`${manifest.entrypoints.mcpServer.command}\` (${manifest.entrypoints.mcpServer.transport})`,
     `- Hooks: \`${manifest.entrypoints.hooks}\``,
     `- Behavior artifacts: \`${manifest.entrypoints.behavior}\``,
+    "",
+    "## Commands",
+    "",
+    "Treat `/osk ...` phrases as harness intents. Prefer the mapped MCP tool when available; otherwise run the CLI fallback from the project root.",
+    "",
+    ...manifest.commands.map((item) => `- \`${item.command}\` -> ${item.mcpTool ? `MCP \`${item.mcpTool}\`, ` : ""}fallback \`${item.cli}\`${item.approvalRequired ? " (approval required)" : ""}`),
     "",
     "## Approval Gates",
     "",
@@ -267,6 +341,30 @@ function renderReadme(manifest: AgentPluginManifest): string {
     "",
     "Never attach hidden benchmark answers, secrets, user/global memories, or raw interaction exports through this plugin.",
     ""
+  ].join("\n");
+}
+
+function renderCommandGuide(manifest: AgentPluginManifest): string {
+  return [
+    "# OpenSkillKit Command Map",
+    "",
+    "When a user writes an `/osk ...` phrase, treat it as an intent for this plugin. Prefer MCP because it returns structured status and readiness data. If MCP is unavailable, run the CLI fallback from the project root.",
+    "",
+    "Do not enable hooks, write global instructions, import private interactions, or import behavior packs without explicit user approval.",
+    "",
+    "## Commands",
+    "",
+    ...manifest.commands.flatMap((item) => [
+      `### ${item.command}`,
+      "",
+      item.description,
+      "",
+      `- MCP tool: \`${item.mcpTool ?? "none; use CLI fallback"}\``,
+      `- CLI fallback: \`${item.cli}\``,
+      `- Read-only: \`${item.readOnly ? "yes" : "no"}\``,
+      `- Explicit approval required: \`${item.approvalRequired ? "yes" : "no"}\``,
+      ""
+    ])
   ].join("\n");
 }
 

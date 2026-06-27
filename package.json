@@ -20,11 +20,14 @@
     "dist/**/*",
     "docs/",
     "examples/",
-    "python/",
+    "python/pyproject.toml",
+    "python/openskillkit_evolution/**/*.py",
+    "python/tests/**/*.py",
     "packages/*/dist/**/*",
     "packages/*/package.json",
     "packages/agent-plugin-bundle/.mcp.json",
     "packages/agent-plugin-bundle/.agent-plugin/",
+    "packages/agent-plugin-bundle/commands/",
     "packages/agent-plugin-bundle/skills/"
   ],
   "scripts": {

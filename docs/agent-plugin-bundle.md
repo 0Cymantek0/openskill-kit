@@ -1,10 +1,12 @@
 # Agent Plugin Bundle
 
 OpenSkillKit is intended to attach to an existing coding harness, not replace
-it. The plugin bundle gives that harness three local entrypoints:
+it. The plugin bundle gives that harness four local entrypoints:
 
 - `skills/` for repository-scoped skill instructions.
 - `.mcp.json` for the local `openskill-kit-mcp` stdio backend.
+- `commands/` for `/osk ...` intent mapping with MCP-first and CLI fallback
+  routes.
 - `.agent-plugin/plugin.json` for the host-facing capability and privacy
   contract.
 
@@ -41,6 +43,9 @@ For harness compatibility, generated plugins also include:
 - `mcp/descriptors.json` and `mcp/descriptor-hashes.json`: deterministic MCP
   tool descriptor catalog plus SHA-256 hashes so a harness can detect descriptor
   drift before trusting the tool surface.
+- `commands/commands.json` and `commands/osk.md`: slash-command intent map.
+  Hosts that do not implement slash commands can still interpret `/osk ...`
+  phrases by calling the mapped MCP tool or running the CLI fallback.
 
 Harness behavior should stay conservative:
 
@@ -54,6 +59,8 @@ Harness behavior should stay conservative:
 - Call `osk_bootstrap_session` first; it reports whether the compiled plugin is
   ready, where to attach it, which skills/capabilities are exposed, and which
   approvals remain required.
+- Route `/osk ...` requests through `commands/commands.json`; prefer MCP and use
+  CLI fallbacks only when the MCP backend is unavailable.
 - Preview managed instruction files and hooks before applying.
 - Require explicit approval for global writes, hook execution, interaction
   imports, and behavior pack imports.

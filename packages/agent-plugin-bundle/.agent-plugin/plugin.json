@@ -29,6 +29,122 @@
     "server": "openskill-kit-mcp",
     "transport": "stdio"
   },
+  "commands": {
+    "map": "commands/commands.json",
+    "guide": "commands/osk.md",
+    "routing": "prefer MCP tools when available; otherwise run CLI fallbacks from the project root",
+    "items": [
+      {
+        "command": "/osk init",
+        "aliases": ["openskill init", "bootstrap openskill"],
+        "description": "Initialize or bootstrap project behavior state and report plugin readiness.",
+        "mcpTool": "osk_bootstrap_session",
+        "cli": "openskill-kit init && openskill-kit status",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk status",
+        "aliases": ["osk status", "openskill status"],
+        "description": "Show learned behavior, compiled artifacts, plugin readiness, and next actions.",
+        "mcpTool": "osk_bootstrap_session",
+        "cli": "openskill-kit status",
+        "readOnly": true,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk learn from this session",
+        "aliases": ["osk learn", "learn this session"],
+        "description": "Extract candidate preferences from captured local events after user approval for any import source.",
+        "mcpTool": "osk_learn_from_session",
+        "cli": "openskill-kit learn",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk explain why you learned this",
+        "aliases": ["osk explain", "explain preference"],
+        "description": "Explain a learned preference through sanitized evidence cards.",
+        "mcpTool": "osk_explain_preference",
+        "cli": "openskill-kit explain <preference-id>",
+        "readOnly": true,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk review pending behavior",
+        "aliases": ["osk review", "review behavior"],
+        "description": "Open the review queue for candidate behavior before activation.",
+        "mcpTool": "osk_get_review_queue",
+        "cli": "openskill-kit review",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk update skills",
+        "aliases": ["osk compile skills", "update project skills"],
+        "description": "Compile project-scoped skills from active behavior.",
+        "mcpTool": "osk_compile_behavior_layer",
+        "cli": "openskill-kit compile --target agent-skills",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk update AGENTS.md",
+        "aliases": ["osk update agents", "compile project rules"],
+        "description": "Preview managed AGENTS/CLAUDE instruction updates.",
+        "mcpTool": "osk_compile_behavior_layer",
+        "cli": "openskill-kit compile --target project-rules",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk install hooks",
+        "aliases": ["osk hooks", "install openskill hooks"],
+        "description": "Preview or install local hooks; requires explicit user approval before enabling execution.",
+        "mcpTool": "osk_install_agent_hooks",
+        "cli": "openskill-kit hooks install --dry-run",
+        "readOnly": false,
+        "approvalRequired": true,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk run behavior eval",
+        "aliases": ["osk eval", "behavior eval"],
+        "description": "Run local behavior replay/evaluation gates and return artifact paths.",
+        "mcpTool": "osk_run_behavior_eval",
+        "cli": "openskill-kit eval",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk evolve this skill",
+        "aliases": ["osk evolve", "evolve skill"],
+        "description": "Draft, verify, and evaluate a reusable skill from local evidence.",
+        "cli": "openskill-kit evolve \"<topic>\" --no-llm",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk sync project behavior pack",
+        "aliases": ["osk pack", "sync behavior pack"],
+        "description": "Export or import behavior packs only through review, verification, and trust gates.",
+        "mcpTool": "osk_export_behavior_pack",
+        "cli": "openskill-kit pack export",
+        "readOnly": false,
+        "approvalRequired": true,
+        "fallback": "cli"
+      }
+    ]
+  },
   "privacy": {
     "localFirst": true,
     "requiresExplicitApproval": [
