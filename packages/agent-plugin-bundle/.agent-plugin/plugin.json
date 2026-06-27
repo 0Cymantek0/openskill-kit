@@ -39,6 +39,74 @@
       "generic-mcp": "install-guides/generic-mcp.md"
     }
   },
+  "installProfile": {
+    "schemaVersion": "openskill-kit.agent-plugin-install-profile.v1",
+    "mode": "local-project-plugin",
+    "pluginDirectory": "packages/agent-plugin-bundle",
+    "firstCall": {
+      "mcpTool": "osk_bootstrap_session",
+      "cliFallback": "openskill-kit status --json"
+    },
+    "mcp": {
+      "serverName": "openskill-kit",
+      "command": "openskill-kit-mcp",
+      "transport": "stdio",
+      "workingDirectory": ".",
+      "requiredEnv": {
+        "OPENSKILLKIT_PROJECT_ROOT": "<absolute project root>"
+      },
+      "configFile": ".mcp.json",
+      "descriptors": "mcp/descriptors.json",
+      "descriptorHashes": "mcp/descriptor-hashes.json"
+    },
+    "commandRouting": {
+      "map": "commands/commands.json",
+      "guide": "commands/osk.md",
+      "prefer": "mcp",
+      "fallback": "cli"
+    },
+    "approvalRequiredTools": [
+      "osk_import_interaction_source",
+      "osk_install_agent_hooks",
+      "osk_apply_manifest_install",
+      "osk_apply_plugin_attach",
+      "osk_openworld_promote_review",
+      "osk_export_behavior_pack"
+    ],
+    "readOnlyFirstTools": [
+      "osk_bootstrap_session",
+      "osk_detect_environment",
+      "osk_get_plugin_attach_status",
+      "osk_get_agent_task_context"
+    ],
+    "attach": {
+      "previewCli": "openskill-kit agent attach-plugin --host generic-mcp --dry-run",
+      "applyCli": "openskill-kit agent attach-plugin --host generic-mcp --yes",
+      "statusCli": "openskill-kit agent plugin-status --json"
+    },
+    "hostConfig": [
+      {
+        "host": "codex",
+        "configPath": ".mcp.json",
+        "supportLevel": "supported"
+      },
+      {
+        "host": "claude-code",
+        "configPath": ".mcp.json",
+        "supportLevel": "supported"
+      },
+      {
+        "host": "cursor",
+        "configPath": ".cursor/mcp.json",
+        "supportLevel": "preview"
+      },
+      {
+        "host": "generic-mcp",
+        "configPath": ".mcp.json",
+        "supportLevel": "supported"
+      }
+    ]
+  },
   "commands": {
     "map": "commands/commands.json",
     "guide": "commands/osk.md",

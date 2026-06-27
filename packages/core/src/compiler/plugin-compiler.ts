@@ -38,6 +38,7 @@ export interface AgentPluginManifest {
     hooks: string;
     behavior: string;
   };
+  installProfile: AgentPluginInstallProfile;
   commands: AgentPluginCommand[];
   install: {
     defaultMode: "attach";
@@ -56,6 +57,44 @@ export interface AgentPluginManifest {
     descriptorsHash?: string;
   };
   files: string[];
+}
+
+export interface AgentPluginInstallProfile {
+  schemaVersion: "openskill-kit.agent-plugin-install-profile.v1";
+  mode: "local-project-plugin";
+  pluginDirectory: string;
+  firstCall: {
+    mcpTool: string;
+    cliFallback: string;
+  };
+  mcp: {
+    serverName: string;
+    command: string;
+    transport: "stdio";
+    workingDirectory: string;
+    requiredEnv: Record<string, string>;
+    configFile: string;
+    descriptors: string;
+    descriptorHashes: string;
+  };
+  commandRouting: {
+    map: string;
+    guide: string;
+    prefer: "mcp";
+    fallback: "cli";
+  };
+  approvalRequiredTools: string[];
+  readOnlyFirstTools: string[];
+  attach: {
+    previewCli: string;
+    applyCli: string;
+    statusCli: string;
+  };
+  hostConfig: Array<{
+    host: AgentPluginHostCompatibility["host"];
+    configPath: string;
+    supportLevel: AgentPluginHostCompatibility["supportLevel"];
+  }>;
 }
 
 export interface AgentPluginCommand {
@@ -97,6 +136,7 @@ export interface CompiledPluginStatus {
   skills: string[];
   capabilities: string[];
   hostCompatibility: AgentPluginHostCompatibility[];
+  installProfile?: AgentPluginInstallProfile;
   approvalGates: string[];
   privacyExclusions: string[];
   missing: string[];
@@ -190,6 +230,7 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     skills: manifest?.skills ?? [],
     capabilities: manifest?.capabilities ?? [],
     hostCompatibility: manifest?.hostCompatibility ?? [],
+    installProfile: manifest?.installProfile,
     approvalGates: manifest?.install.requiresExplicitApproval ?? [],
     privacyExclusions: manifest?.privacy.excludes ?? [],
     missing,
@@ -247,6 +288,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       hooks: "hooks/hooks.json",
       behavior: "behavior"
     },
+    installProfile: buildInstallProfile(pluginHostCompatibility()),
     commands: pluginCommands(),
     install: {
       defaultMode: "attach",
@@ -294,6 +336,48 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       descriptorsHash: await readJson<{ descriptorsHash?: string }>(path.join(pluginDir, "mcp", "descriptor-hashes.json")).then((value) => value.descriptorsHash).catch(() => undefined)
     },
     files: filesBeforeManifest.filter((file) => file !== "plugin.json").sort()
+  };
+}
+
+function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]): AgentPluginInstallProfile {
+  return {
+    schemaVersion: "openskill-kit.agent-plugin-install-profile.v1",
+    mode: "local-project-plugin",
+    pluginDirectory: ".openskill-kit/compiled/plugin",
+    firstCall: {
+      mcpTool: "osk_bootstrap_session",
+      cliFallback: "openskill-kit status --json"
+    },
+    mcp: {
+      serverName: "openskill-kit",
+      command: "openskill-kit-mcp",
+      transport: "stdio",
+      workingDirectory: ".",
+      requiredEnv: {
+        OPENSKILLKIT_PROJECT_ROOT: "<absolute project root>"
+      },
+      configFile: ".mcp.json",
+      descriptors: "mcp/descriptors.json",
+      descriptorHashes: "mcp/descriptor-hashes.json"
+    },
+    commandRouting: {
+      map: "commands/commands.json",
+      guide: "commands/osk.md",
+      prefer: "mcp",
+      fallback: "cli"
+    },
+    approvalRequiredTools: pluginCommands().filter((item) => item.approvalRequired && item.mcpTool).map((item) => item.mcpTool!),
+    readOnlyFirstTools: ["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_agent_task_context"],
+    attach: {
+      previewCli: "openskill-kit agent attach-plugin --host generic-mcp --dry-run",
+      applyCli: "openskill-kit agent attach-plugin --host generic-mcp --yes",
+      statusCli: "openskill-kit agent plugin-status --json"
+    },
+    hostConfig: hostCompatibility.map((host) => ({
+      host: host.host,
+      configPath: host.configPath,
+      supportLevel: host.supportLevel
+    }))
   };
 }
 
@@ -485,6 +569,17 @@ function renderReadme(manifest: AgentPluginManifest): string {
     `- MCP server: \`${manifest.entrypoints.mcpServer.command}\` (${manifest.entrypoints.mcpServer.transport})`,
     `- Hooks: \`${manifest.entrypoints.hooks}\``,
     `- Behavior artifacts: \`${manifest.entrypoints.behavior}\``,
+    `- Install profile: \`${manifest.installProfile.schemaVersion}\``,
+    "",
+    "## Install Profile",
+    "",
+    `- Plugin directory: \`${manifest.installProfile.pluginDirectory}\``,
+    `- First MCP call: \`${manifest.installProfile.firstCall.mcpTool}\``,
+    `- CLI fallback: \`${manifest.installProfile.firstCall.cliFallback}\``,
+    `- MCP server: \`${manifest.installProfile.mcp.serverName}\` -> \`${manifest.installProfile.mcp.command}\``,
+    `- Required env: \`${Object.keys(manifest.installProfile.mcp.requiredEnv).join(", ")}\``,
+    `- Command routing: \`${manifest.installProfile.commandRouting.map}\``,
+    `- Attach preview: \`${manifest.installProfile.attach.previewCli}\``,
     "",
     "## Commands",
     "",

@@ -53,6 +53,10 @@ For harness compatibility, generated plugins also include:
 
 - `.agent-plugin/plugin.json`: same host-facing manifest under the conventional
   plugin metadata directory.
+- `plugin.json.installProfile`: machine-friendly attach contract for harnesses.
+  It names the first MCP call, CLI fallback, MCP server command, required
+  project-root env binding, command map, approval-gated tools, read-only
+  readiness tools, and attach preview/apply/status commands.
 - `plugin.json.hostCompatibility`: structured Codex, Claude Code, Cursor, and
   generic MCP compatibility records with support level, expected config path,
   instruction surface, requirements, and safety notes.
@@ -85,6 +89,9 @@ For harness compatibility, generated plugins also include:
 Harness behavior should stay conservative:
 
 - Load skills and MCP descriptors read-only by default.
+- Read `plugin.json.installProfile` before parsing prose guides. It is the
+  stable machine contract for first call, MCP command, env binding, command
+  routing, approval gates, and host config paths.
 - Check `plugin.json.hostCompatibility` for the target host before writing any
   config. Treat preview hosts, currently Cursor rules, as manual-confirmation
   paths even when MCP attachment is supported.

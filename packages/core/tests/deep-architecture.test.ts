@@ -83,6 +83,13 @@ describe("deep architecture hardening", () => {
     expect(status.commands.some((item) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status")).toBe(true);
     expect(status.hostCompatibility.some((host) => host.host === "generic-mcp" && host.requires.some((requirement) => requirement.includes("stdio MCP")))).toBe(true);
+    expect(status.installProfile?.schemaVersion).toBe("openskill-kit.agent-plugin-install-profile.v1");
+    expect(status.installProfile?.pluginDirectory).toBe(".openskill-kit/compiled/plugin");
+    expect(status.installProfile?.firstCall).toEqual({ mcpTool: "osk_bootstrap_session", cliFallback: "openskill-kit status --json" });
+    expect(status.installProfile?.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(status.installProfile?.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
+    expect(status.installProfile?.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_install_agent_hooks", "osk_import_interaction_source", "osk_openworld_promote_review"]));
+    expect(status.installProfile?.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status"]));
     expect(status.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
     expect(status.nextActions).toContain("Check `plugin.hostCompatibility` for the target harness requirements before applying host config.");
     expect(status.nextActions).toContain("Open `install-guides/` for the target harness before writing any host config.");
@@ -102,6 +109,14 @@ describe("deep architecture hardening", () => {
     expect(manifest.entrypoints.commands).toBe("commands/commands.json");
     expect(manifest.entrypoints.commandGuide).toBe("commands/osk.md");
     expect(manifest.entrypoints.installGuides).toBe("install-guides");
+    expect(manifest.installProfile.schemaVersion).toBe("openskill-kit.agent-plugin-install-profile.v1");
+    expect(manifest.installProfile.mcp.command).toBe("openskill-kit-mcp");
+    expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host generic-mcp --dry-run");
+    expect(manifest.installProfile.hostConfig).toEqual(expect.arrayContaining([
+      expect.objectContaining({ host: "codex", configPath: ".mcp.json", supportLevel: "supported" }),
+      expect.objectContaining({ host: "cursor", configPath: ".cursor/mcp.json", supportLevel: "preview" })
+    ]));
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk update skills" && item.mcpTool === "osk_compile_behavior_layer" && item.cli === "openskill-kit compile --target agent-skills")).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk context" && item.mcpTool === "osk_get_agent_task_context" && item.cli.includes("openskill-kit context"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk finish task" && item.mcpTool === "osk_finish_agent_task" && item.cli.includes("finish-task"))).toBe(true);
@@ -172,6 +187,9 @@ describe("deep architecture hardening", () => {
     expect(readme).toContain("Start `openskill-kit-mcp`");
     expect(readme).toContain("Command map: `commands/commands.json`");
     expect(readme).toContain("Install guides: `install-guides`");
+    expect(readme).toContain("## Install Profile");
+    expect(readme).toContain("First MCP call: `osk_bootstrap_session`");
+    expect(readme).toContain("OPENSKILLKIT_PROJECT_ROOT");
     expect(readme).toContain("## Host Compatibility");
     expect(readme).toContain("cursor (preview)");
     expect(readme).toContain("`/osk install hooks`");

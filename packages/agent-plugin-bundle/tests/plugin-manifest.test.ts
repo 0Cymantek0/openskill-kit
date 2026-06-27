@@ -16,6 +16,13 @@ describe("agent plugin manifest", () => {
     expect(manifest.installGuides.hosts.codex).toBe("install-guides/codex.md");
     expect(manifest.installGuides.hosts["generic-mcp"]).toBe("install-guides/generic-mcp.md");
     expect(manifest.commands.map).toBe("commands/commands.json");
+    expect(manifest.installProfile.schemaVersion).toBe("openskill-kit.agent-plugin-install-profile.v1");
+    expect(manifest.installProfile.pluginDirectory).toBe("packages/agent-plugin-bundle");
+    expect(manifest.installProfile.firstCall).toEqual({ mcpTool: "osk_bootstrap_session", cliFallback: "openskill-kit status --json" });
+    expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(manifest.installProfile.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
+    expect(manifest.installProfile.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_install_agent_hooks", "osk_import_interaction_source", "osk_openworld_promote_review"]));
+    expect(manifest.installProfile.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status"]));
     expect(manifest.commands.items).toHaveLength(32);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk context" && item.mcpTool === "osk_get_agent_task_context")).toBe(true);
