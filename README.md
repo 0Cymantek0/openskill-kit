@@ -48,7 +48,7 @@ npx openskill-kit openworld sources
 npx openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
 npx openskill-kit openworld candidate-skill --task-id <owtask_id> --anchor-id <anchor_id>
-npx openskill-kit openworld repair-candidate --task-id <owtask_id> --candidate-id <owskill_id> --suite-id <suite_id>
+npx openskill-kit openworld repair-candidate --task-id <owtask_id> --candidate-id <owskill_id> --suite-id <suite_id> --sandbox docker --docker-image node:22-alpine
 npx openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite_id>
 npx openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 npx openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id> --candidate-id <owskill_id>
@@ -81,13 +81,13 @@ The OpenWorld layer now covers task records, leakage audits, local source
 discovery plans, source ingestion/cache, explicit web source fetches, Anchor
 Cards, named retrieval adapter contracts with allow-web gates, deterministic
 package/language docs-repo URL discovery, execution traces, source-plan execution artifacts, visible/holdout virtual verifier
-generation, review-only candidate skill artifacts, local sandbox execution of
+generation, review-only candidate skill artifacts, local-process or opt-in Docker sandbox execution of
 generated verifier scripts, verifier quality scoring, bounded verifier
 refinement/eval report records, candidate revision artifacts, local-process
-sandbox repair probes, and review-only promotion proposals. It also has a static
+sandbox repair probes with optional caller-provided Docker mode, and review-only promotion proposals. It also has a static
 hidden-oracle denied-path harness that scans generated artifacts without reading
 oracle files. It still does not perform broad search-engine-backed web crawling,
-built-in LLM skill generation, containerized candidate-skill repair, or hidden-oracle
+built-in LLM skill generation, managed container runtime/pools, or hidden-oracle
 benchmark evaluation yet.
 
 ## Core Commands
@@ -151,7 +151,7 @@ openskill-kit openworld sources
 openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
 openskill-kit openworld candidate-skill --task-id <owtask_id> --anchor-id <anchor_id>
-openskill-kit openworld repair-candidate --task-id <owtask_id> --candidate-id <owskill_id> --suite-id <suite_id>
+openskill-kit openworld repair-candidate --task-id <owtask_id> --candidate-id <owskill_id> --suite-id <suite_id> --sandbox docker --docker-image node:22-alpine
 openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite_id>
 openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id> --candidate-id <owskill_id>

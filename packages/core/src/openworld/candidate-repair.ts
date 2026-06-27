@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { createLocalSandboxPolicy } from "../sandbox/policy.js";
+import { createDockerSandboxPolicy, createLocalSandboxPolicy } from "../sandbox/policy.js";
 import { runSandboxCommand } from "../sandbox/runner.js";
 import { reviseOpenWorldCandidateSkill } from "./candidate-skill.js";
 import { OpenWorldCandidateRepairRunSchema, type OpenWorldCandidateRepairRun, type OpenWorldEvolutionRun } from "./schema.js";
@@ -16,6 +16,8 @@ export interface RunOpenWorldCandidateRepairLoopOptions {
   maxRounds?: number;
   failureType?: OpenWorldEvolutionRun["rounds"][number]["failureType"];
   notes?: string[];
+  sandboxMode?: "local-process" | "docker";
+  dockerImage?: string;
   timeoutMs?: number;
   now?: Date;
 }
@@ -33,6 +35,8 @@ export async function runOpenWorldCandidateRepairLoop(
 ): Promise<RunOpenWorldCandidateRepairLoopResult> {
   const root = path.resolve(projectRoot);
   const startedAt = options.now ?? new Date();
+  const sandboxMode = options.sandboxMode ?? "local-process";
+  if (sandboxMode === "docker" && !options.dockerImage) throw new Error("OpenWorld docker candidate repair requires dockerImage.");
   const maxRounds = Math.max(1, Math.min(options.maxRounds ?? 1, 5));
   const candidate = await readOpenWorldCandidateSkill(root, taskId, options.candidateSkillId);
   const runId = `owrepair_${shortHash(`${taskId}:${candidate.id}:${startedAt.toISOString()}`)}`;
@@ -46,7 +50,11 @@ export async function runOpenWorldCandidateRepairLoop(
       notes: options.notes?.length ? options.notes : ["Repair loop requested a source-grounded candidate revision."],
       now: new Date(startedAt.getTime() + index)
     });
-    const probe = await runRevisionProbe(root, taskId, candidate.id, revision.revision.id, revision.revision.artifacts.skillPath, options.timeoutMs);
+    const probe = await runRevisionProbe(root, taskId, candidate.id, revision.revision.id, revision.revision.artifacts.skillPath, {
+      sandboxMode,
+      dockerImage: options.dockerImage,
+      timeoutMs: options.timeoutMs
+    });
     const roundStatus = probe.summary.blocked || probe.summary.timeout
       ? "blocked"
       : probe.summary.fail
@@ -85,13 +93,16 @@ export async function runOpenWorldCandidateRepairLoop(
     startedAt: startedAt.toISOString(),
     completedAt,
     status,
-    sandboxMode: "local-process",
+    sandboxMode,
+    dockerImage: sandboxMode === "docker" ? options.dockerImage : undefined,
     maxRounds,
     hiddenOracleProof: false,
     rounds,
     limitations: [
       "Repair loop writes candidate artifacts only; no active behavior changed.",
-      "Repair probe runs in local-process sandbox mode, not a container boundary.",
+      sandboxMode === "docker"
+        ? "Repair probe requested Docker sandbox mode; host Docker availability and image trust remain operator responsibilities."
+        : "Repair probe runs in local-process sandbox mode, not a container boundary.",
       "Repair probe validates structure, anchor reference presence, and oracle-marker absence; it does not prove hidden-oracle benchmark success."
     ]
   });
@@ -106,23 +117,32 @@ export async function runOpenWorldCandidateRepairLoop(
   return { schemaVersion: "openskill-kit.openworld-candidate-repair-run-result.v1", run, repairRunPath };
 }
 
-async function runRevisionProbe(root: string, taskId: string, candidateId: string, revisionId: string, skillPath: string, timeoutMs?: number): Promise<{
-  sandboxMode: "local-process";
+async function runRevisionProbe(root: string, taskId: string, candidateId: string, revisionId: string, skillPath: string, options: { sandboxMode: "local-process" | "docker"; dockerImage?: string; timeoutMs?: number }): Promise<{
+  sandboxMode: "local-process" | "docker";
   probeScriptPath: string;
   probeResultPath: string;
   summary: { pass: number; fail: number; blocked: number; timeout: number };
 }> {
   const script = renderProbeScript(skillPath);
   const scriptPath = await writeOpenWorldTaskTextArtifact(root, taskId, ["candidates", candidateId, "repairs", revisionId, "repair-probe.cjs"], script);
-  const policy = createLocalSandboxPolicy({
-    projectRoot: root,
-    allowNetwork: false,
-    allowedCommands: [process.execPath, "node"],
-    timeoutMs: timeoutMs ?? 30000,
-    maxOutputBytes: 128 * 1024
-  });
+  const policy = options.sandboxMode === "docker"
+    ? createDockerSandboxPolicy({
+      projectRoot: root,
+      image: options.dockerImage!,
+      allowNetwork: false,
+      allowedCommands: ["node"],
+      timeoutMs: options.timeoutMs ?? 30000,
+      maxOutputBytes: 128 * 1024
+    })
+    : createLocalSandboxPolicy({
+      projectRoot: root,
+      allowNetwork: false,
+      allowedCommands: [process.execPath, "node"],
+      timeoutMs: options.timeoutMs ?? 30000,
+      maxOutputBytes: 128 * 1024
+    });
   const result = await runSandboxCommand(policy, {
-    command: process.execPath,
+    command: options.sandboxMode === "docker" ? "node" : process.execPath,
     args: [path.relative(root, scriptPath).replace(/\\/g, "/")],
     cwd: root
   });
@@ -145,7 +165,7 @@ async function runRevisionProbe(root: string, taskId: string, candidateId: strin
     stderr: result.stderr.slice(0, 4000)
   }, null, 2)}\n`);
   return {
-    sandboxMode: "local-process",
+    sandboxMode: options.sandboxMode,
     probeScriptPath: path.relative(root, scriptPath).replace(/\\/g, "/"),
     probeResultPath: path.relative(root, resultPath).replace(/\\/g, "/"),
     summary

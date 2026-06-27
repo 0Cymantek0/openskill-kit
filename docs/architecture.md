@@ -252,9 +252,11 @@ directories, plus `manifest.json` and `traceability-map.json`. The generated
 cases check anchor/source linkage, source-cache presence, recorded content hash,
 quote traceability, and generic oracle-marker absence. Artifact text is leakage
 audited before any verifier script is written. `openworld run-verifier` executes
-ready Node cases through the local `execFile` sandbox with no shell expansion,
-network disabled in policy metadata, stripped environment, output caps, and a
-JSON execution record under `verifiers/<suite-id>/results/`.
+ready Node cases through the local `execFile` sandbox by default, or through
+caller-provided Docker mode with `--sandbox docker --docker-image <image>`.
+Both modes use no shell expansion, network disabled in policy metadata or Docker
+`--network none`, stripped environment, output caps, and a JSON execution record
+under `verifiers/<suite-id>/results/`.
 
 `openworld candidate-skill` writes a review-only SKILL.md package under
 `openworld/tasks/<task-id>/candidates/`. It is generated only from Anchor Cards,
@@ -267,9 +269,11 @@ call the same local repair loop exposed by `openworld repair-candidate`. Each
 repair round writes a candidate skill revision under the candidate's
 `revisions/` directory, appends diagnosis notes, carries anchor references
 forward, runs the same leakage, validation, and safety gates, writes a probe
-script, and executes that probe through the local-process sandbox. The repair
-run is recorded under the candidate's `repairs/` directory. This is a real
-local sandbox repair loop, but still not a containerized isolation boundary.
+script, and executes that probe through local-process sandbox mode by default
+or caller-provided Docker mode when requested. The repair run is recorded under
+the candidate's `repairs/` directory. This is a real sandbox repair loop, but
+OpenSkillKit still does not manage container images, Docker availability
+preflight, or reusable container pools.
 
 `openworld verifier-quality` scores verifier suites before refinement. It checks
 case readiness, anchor coverage, visible/holdout split, source traceability,
@@ -282,7 +286,7 @@ early on pass or actionable non-transient failure, and runs holdout only after a
 visible pass. It writes an OpenWorld `EvolutionRun` with failure taxonomy,
 verifier result links, pass/fail summaries, source/anchor/suite references, and
 cost metadata. This is verifier-driven control flow with candidate revision
-artifacts and local repair probes, not full containerized skill repair yet.
+artifacts and local or caller-provided Docker repair probes.
 
 `openworld eval-report` turns an `EvolutionRun` into JSON and Markdown metrics:
 visible/holdout pass rates, overfit risk, leakage audit count, run/result

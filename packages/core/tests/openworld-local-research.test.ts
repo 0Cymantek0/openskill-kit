@@ -165,6 +165,9 @@ describe("OpenWorld local research", () => {
     await expect(stat(suite.manifestPath)).resolves.toBeTruthy();
     await expect(stat(suite.traceabilityMapPath)).resolves.toBeTruthy();
     expect(JSON.parse(await readFile(suite.manifestPath, "utf8")).holdout).toHaveLength(1);
+    await expect(runVirtualTestSuite(root, task.task.id, suite.suite.id, {
+      sandboxMode: "docker"
+    })).rejects.toThrow(/dockerImage/);
     const quality = await assessOpenWorldVerifierQuality(root, task.task.id, suite.suite.id, {
       now: new Date("2026-06-26T01:03:30.000Z")
     });
@@ -179,6 +182,7 @@ describe("OpenWorld local research", () => {
       now: new Date("2026-06-26T01:04:00.000Z")
     });
     expect(execution.summary).toMatchObject({ pass: 4, fail: 0, blocked: 0, timeout: 0, skipped: 0 });
+    expect(execution.sandboxMode).toBe("local-process");
     expect(execution.resultPath).toContain("/results/");
 
     const refined = await runOpenWorldRefinement(root, task.task.id, suite.suite.id, {

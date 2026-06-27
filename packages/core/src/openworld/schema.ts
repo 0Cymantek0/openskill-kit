@@ -261,6 +261,8 @@ export const VirtualTestSuiteExecutionSchema = z.object({
   suiteId: z.string().min(1),
   split: z.enum(["visible", "holdout", "all"]),
   executedAt: z.string().datetime(),
+  sandboxMode: z.enum(["local-process", "docker"]).default("local-process"),
+  dockerImage: z.string().min(1).optional(),
   results: z.array(z.object({
     caseId: z.string().min(1),
     split: z.enum(["visible", "holdout"]),
@@ -400,6 +402,7 @@ export const OpenWorldCandidateRepairRunSchema = z.object({
   completedAt: z.string().datetime(),
   status: z.enum(["passed", "failed", "blocked"]),
   sandboxMode: z.enum(["local-process", "docker"]),
+  dockerImage: z.string().min(1).optional(),
   maxRounds: z.number().int().min(1).max(5),
   hiddenOracleProof: z.literal(false),
   rounds: z.array(z.object({

@@ -27,9 +27,9 @@ Manual audit:
 - OpenWorld `retrieval-adapters`, `source-plan`, and `execute-source-plan` expose adapter gates, ingest only leakage-audited recommended local candidates plus explicit vetted URLs or opt-in autonomous docs/repo candidates, and write adapter-level execution traces.
 - OpenWorld `build-verifier` writes manifest, traceability map, visible/holdout executable cases, and blocks leaked verifier artifacts before writing scripts.
 - OpenWorld `candidate-skill` writes only review-only Anchor-grounded skill artifacts, validates package structure, runs safety scan, and never activates behavior.
-- OpenWorld `repair-candidate` writes candidate revisions, executes local sandbox repair probes, records repair runs, and never activates behavior.
+- OpenWorld `repair-candidate` writes candidate revisions, executes local-process or caller-provided Docker sandbox repair probes, records repair runs, and never activates behavior.
 - OpenWorld `verifier-quality` scores traceability, determinism, holdout coverage, source trust, and leakage metadata without claiming hidden-oracle proof.
-- OpenWorld `run-verifier --split visible` executes generated cases through the sandbox runner and writes a result JSON.
+- OpenWorld `run-verifier --split visible` executes generated cases through local-process or caller-provided Docker sandbox mode and writes a result JSON.
 - OpenWorld `refine` writes an EvolutionRun, records candidate skill ids, runs the candidate repair loop on visible failures, stops early on actionable visible failures, and runs holdout only after visible pass.
 - OpenWorld `eval-report` labels proof level as artifact-verifier and says hidden-oracle proof is false.
 - OpenWorld `hidden-oracle-harness` scans generated artifacts for denied path exposure without reading oracle contents and does not claim benchmark proof.

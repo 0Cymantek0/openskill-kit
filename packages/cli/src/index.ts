@@ -419,6 +419,8 @@ openworld.command("repair-candidate")
   .option("--suite-id <id>", "Related virtual suite id")
   .option("--failure-type <type>", "Failure type to record")
   .option("--note <text>", "Repair diagnosis note", collectOption, [])
+  .option("--sandbox <mode>", "local-process|docker", "local-process")
+  .option("--docker-image <image>", "Docker image for --sandbox docker")
   .option("--max-rounds <number>", "Maximum repair rounds", parseIntegerOption, 1)
   .option("--timeout-ms <number>", "Probe timeout", parseIntegerOption, 30000)
   .option("--json", "Print JSON")
@@ -428,6 +430,8 @@ openworld.command("repair-candidate")
       suiteId: options.suiteId,
       failureType: options.failureType,
       notes: options.note,
+      sandboxMode: parseSandboxMode(options.sandbox),
+      dockerImage: options.dockerImage,
       maxRounds: options.maxRounds,
       timeoutMs: options.timeoutMs
     });
@@ -440,12 +444,16 @@ openworld.command("run-verifier")
   .requiredOption("--task-id <id>", "Task id")
   .requiredOption("--suite-id <id>", "Virtual test suite id")
   .option("--split <split>", "visible|holdout|all", "visible")
+  .option("--sandbox <mode>", "local-process|docker", "local-process")
+  .option("--docker-image <image>", "Docker image for --sandbox docker")
   .option("--timeout-ms <number>", "Per-case timeout", parseIntegerOption, 30000)
   .option("--json", "Print JSON")
   .action(async (options) => {
     const split = parseVerifierSplit(options.split);
     const result = await runVirtualTestSuite(process.cwd(), options.taskId, options.suiteId, {
       split,
+      sandboxMode: parseSandboxMode(options.sandbox),
+      dockerImage: options.dockerImage,
       timeoutMs: options.timeoutMs
     });
     output(options.json, result, `OpenWorld verifier ${result.suiteId} ${result.split}: ${result.summary.pass} pass, ${result.summary.fail} fail, ${result.summary.blocked} blocked, ${result.summary.timeout} timeout, ${result.summary.skipped} skipped\n${result.resultPath ?? ""}`);
@@ -478,6 +486,8 @@ openworld.command("refine")
   .requiredOption("--task-id <id>", "Task id")
   .requiredOption("--suite-id <id>", "Virtual test suite id")
   .option("--candidate-id <id>", "Candidate skill id to associate with refinement and revise on visible failure")
+  .option("--sandbox <mode>", "local-process|docker", "local-process")
+  .option("--docker-image <image>", "Docker image for --sandbox docker")
   .option("--max-rounds <number>", "Maximum visible refinement rounds", parseIntegerOption, 3)
   .option("--timeout-ms <number>", "Per-case timeout", parseIntegerOption, 30000)
   .option("--json", "Print JSON")
@@ -485,7 +495,9 @@ openworld.command("refine")
     const result = await runOpenWorldRefinement(process.cwd(), options.taskId, options.suiteId, {
       maxRounds: options.maxRounds,
       timeoutMs: options.timeoutMs,
-      candidateSkillId: options.candidateId
+      candidateSkillId: options.candidateId,
+      sandboxMode: parseSandboxMode(options.sandbox),
+      dockerImage: options.dockerImage
     });
     output(options.json, result, `OpenWorld refinement ${result.status}: ${result.rounds.length} round(s)\n${path.join(".openskill-kit", "evolution", "runs", result.id, "run.json")}`);
     process.exitCode = result.status === "passed" ? 0 : 1;
@@ -1311,6 +1323,11 @@ function parseFloatOption(value: string): number {
 function parseVerifierSplit(value: string): "visible" | "holdout" | "all" {
   if (value === "visible" || value === "holdout" || value === "all") return value;
   throw new Error(`Invalid verifier split: ${value}. Expected visible, holdout, or all.`);
+}
+
+function parseSandboxMode(value: string): "local-process" | "docker" {
+  if (value === "local-process" || value === "docker") return value;
+  throw new Error(`Invalid sandbox mode: ${value}. Expected local-process or docker.`);
 }
 
 async function resolvePassphrase(options: { passphrase?: string; passphraseFile?: string }): Promise<string> {

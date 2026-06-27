@@ -15,6 +15,8 @@ export interface RunOpenWorldRefinementOptions {
   maxRounds?: number;
   timeoutMs?: number;
   candidateSkillId?: string;
+  sandboxMode?: "local-process" | "docker";
+  dockerImage?: string;
   now?: Date;
 }
 
@@ -26,6 +28,8 @@ export async function runOpenWorldRefinement(
 ): Promise<OpenWorldEvolutionRun> {
   const root = path.resolve(projectRoot);
   const startedAt = options.now ?? new Date();
+  const sandboxMode = options.sandboxMode ?? "local-process";
+  if (sandboxMode === "docker" && !options.dockerImage) throw new Error("OpenWorld docker refinement requires dockerImage.");
   const task = await readOpenWorldTask(root, taskId);
   const suite = await readVirtualTestSuite(root, taskId, suiteId);
   const maxRounds = Math.max(1, Math.min(options.maxRounds ?? 3, 5));
@@ -71,6 +75,8 @@ export async function runOpenWorldRefinement(
   for (let index = 0; index < maxRounds; index += 1) {
     const visible = await runVirtualTestSuite(root, taskId, suiteId, {
       split: "visible",
+      sandboxMode,
+      dockerImage: options.dockerImage,
       timeoutMs: options.timeoutMs,
       now: new Date(startedAt.getTime() + index)
     });
@@ -95,6 +101,8 @@ export async function runOpenWorldRefinement(
         maxRounds: 1,
         failureType: diagnosis.failureType,
         notes: diagnosis.notes,
+        sandboxMode,
+        dockerImage: options.dockerImage,
         now: new Date(startedAt.getTime() + index + 1)
       });
       const repairRound = repair.run.rounds[0];
@@ -107,6 +115,8 @@ export async function runOpenWorldRefinement(
     if (diagnosis.status === "passed") {
       const holdout = await runVirtualTestSuite(root, taskId, suiteId, {
         split: "holdout",
+        sandboxMode,
+        dockerImage: options.dockerImage,
         timeoutMs: options.timeoutMs,
         now: new Date(startedAt.getTime() + maxRounds + index)
       });

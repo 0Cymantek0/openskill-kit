@@ -1,6 +1,6 @@
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { createLocalSandboxPolicy } from "../sandbox/policy.js";
+import { createDockerSandboxPolicy, createLocalSandboxPolicy } from "../sandbox/policy.js";
 import { runSandboxCommand } from "../sandbox/runner.js";
 import { readVirtualTestSuite, writeVirtualTestSuiteExecution } from "./store.js";
 import {
@@ -11,6 +11,8 @@ import {
 
 export interface RunVirtualTestSuiteOptions {
   split?: "visible" | "holdout" | "all";
+  sandboxMode?: "local-process" | "docker";
+  dockerImage?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
   now?: Date;
@@ -26,13 +28,24 @@ export async function runVirtualTestSuite(
   const split = options.split ?? "visible";
   const suite = await readVirtualTestSuite(root, taskId, suiteId);
   const selected = suite.cases.filter((testCase) => split === "all" || testCase.split === split);
-  const policy = createLocalSandboxPolicy({
-    projectRoot: root,
-    allowNetwork: false,
-    allowedCommands: [process.execPath, "node"],
-    timeoutMs: options.timeoutMs ?? 30000,
-    maxOutputBytes: options.maxOutputBytes ?? 256 * 1024
-  });
+  const sandboxMode = options.sandboxMode ?? "local-process";
+  if (sandboxMode === "docker" && !options.dockerImage) throw new Error("OpenWorld docker verifier requires dockerImage.");
+  const policy = sandboxMode === "docker"
+    ? createDockerSandboxPolicy({
+      projectRoot: root,
+      image: options.dockerImage!,
+      allowNetwork: false,
+      allowedCommands: ["node"],
+      timeoutMs: options.timeoutMs ?? 30000,
+      maxOutputBytes: options.maxOutputBytes ?? 256 * 1024
+    })
+    : createLocalSandboxPolicy({
+      projectRoot: root,
+      allowNetwork: false,
+      allowedCommands: [process.execPath, "node"],
+      timeoutMs: options.timeoutMs ?? 30000,
+      maxOutputBytes: options.maxOutputBytes ?? 256 * 1024
+    });
   const results = [];
   for (const testCase of selected) {
     if (testCase.runner !== "node" || testCase.status !== "ready") {
@@ -46,7 +59,7 @@ export async function runVirtualTestSuite(
       });
       continue;
     }
-    const command = resolveCaseCommand(testCase);
+    const command = resolveCaseCommand(testCase, sandboxMode);
     if (!command) {
       results.push({
         caseId: testCase.id,
@@ -91,6 +104,8 @@ export async function runVirtualTestSuite(
     suiteId,
     split,
     executedAt,
+    sandboxMode,
+    dockerImage: sandboxMode === "docker" ? options.dockerImage : undefined,
     results,
     summary
   });
@@ -103,11 +118,12 @@ export async function runVirtualTestSuite(
   return withPath;
 }
 
-function resolveCaseCommand(testCase: VirtualTestCase): { command: string; args: string[]; label: string } | undefined {
+function resolveCaseCommand(testCase: VirtualTestCase, sandboxMode: "local-process" | "docker"): { command: string; args: string[]; label: string } | undefined {
   const [rawCommand, ...rawArgs] = testCase.command;
   if (!rawCommand) return undefined;
   const normalized = rawCommand.toLowerCase();
   if (normalized === "node" || normalized.endsWith("/node") || normalized.endsWith("\\node") || normalized.endsWith("node.exe")) {
+    if (sandboxMode === "docker") return { command: "node", args: rawArgs, label: "node" };
     return { command: process.execPath, args: rawArgs, label: "node" };
   }
   return { command: rawCommand, args: rawArgs, label: rawCommand };

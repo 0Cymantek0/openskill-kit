@@ -1015,19 +1015,21 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_openworld_run_verifier",
     {
       title: "OpenSkillKit OpenWorld Run Verifier",
-      description: "Run a generated OpenWorld visible or holdout virtual verifier suite in the local execFile sandbox.",
+      description: "Run a generated OpenWorld visible or holdout virtual verifier suite in local-process or opt-in Docker sandbox mode.",
       inputSchema: z.object({
         projectRoot: projectRootSchema,
         taskId: z.string().min(1),
         suiteId: z.string().min(1),
         split: z.enum(["visible", "holdout", "all"]).default("visible"),
+        sandboxMode: z.enum(["local-process", "docker"]).default("local-process"),
+        dockerImage: z.string().min(1).optional(),
         timeoutMs: z.number().int().min(1000).max(300000).default(30000)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, taskId, suiteId, split, timeoutMs }) => {
+    async ({ projectRoot, taskId, suiteId, split, sandboxMode, dockerImage, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await runVirtualTestSuite(root, taskId, suiteId, { split, timeoutMs }), root);
+      return toolResult(await runVirtualTestSuite(root, taskId, suiteId, { split, sandboxMode, dockerImage, timeoutMs }), root);
     }
   );
 
@@ -1056,7 +1058,7 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_openworld_repair_candidate",
     {
       title: "OpenSkillKit OpenWorld Repair Candidate",
-      description: "Run a local sandbox repair loop for a review-only OpenWorld candidate skill revision.",
+      description: "Run a local-process or opt-in Docker sandbox repair loop for a review-only OpenWorld candidate skill revision.",
       inputSchema: z.object({
         projectRoot: projectRootSchema,
         taskId: z.string().min(1),
@@ -1064,18 +1066,22 @@ export function createOpenSkillMcpServer(): McpServer {
         suiteId: z.string().min(1).optional(),
         failureType: z.enum(["missing-knowledge", "verifier-bug", "source-conflict", "skill-failure", "sandbox-error", "leakage", "overfit-risk", "unknown"]).optional(),
         notes: z.array(z.string().min(1)).default([]),
+        sandboxMode: z.enum(["local-process", "docker"]).default("local-process"),
+        dockerImage: z.string().min(1).optional(),
         maxRounds: z.number().int().min(1).max(5).default(1),
         timeoutMs: z.number().int().min(1000).max(300000).default(30000)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, taskId, candidateSkillId, suiteId, failureType, notes, maxRounds, timeoutMs }) => {
+    async ({ projectRoot, taskId, candidateSkillId, suiteId, failureType, notes, sandboxMode, dockerImage, maxRounds, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runOpenWorldCandidateRepairLoop(root, taskId, {
         candidateSkillId,
         suiteId,
         failureType,
         notes,
+        sandboxMode,
+        dockerImage,
         maxRounds,
         timeoutMs
       }), root);
@@ -1111,14 +1117,16 @@ export function createOpenSkillMcpServer(): McpServer {
         taskId: z.string().min(1),
         suiteId: z.string().min(1),
         candidateSkillId: z.string().min(1).optional(),
+        sandboxMode: z.enum(["local-process", "docker"]).default("local-process"),
+        dockerImage: z.string().min(1).optional(),
         maxRounds: z.number().int().min(1).max(5).default(3),
         timeoutMs: z.number().int().min(1000).max(300000).default(30000)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, taskId, suiteId, candidateSkillId, maxRounds, timeoutMs }) => {
+    async ({ projectRoot, taskId, suiteId, candidateSkillId, sandboxMode, dockerImage, maxRounds, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await runOpenWorldRefinement(root, taskId, suiteId, { candidateSkillId, maxRounds, timeoutMs }), root);
+      return toolResult(await runOpenWorldRefinement(root, taskId, suiteId, { candidateSkillId, sandboxMode, dockerImage, maxRounds, timeoutMs }), root);
     }
   );
 
