@@ -113,6 +113,13 @@ Harness behavior should stay conservative:
   Keep the first run as a preview/dry-run unless the user approves applying the
   import; the command exists so harness users do not have to discover raw CLI
   import names.
+- Route `/osk import review` to `osk_import_interaction_source` with adapter
+  `review-local` when the user supplies PR review exports or local review notes.
+  Keep it approval-gated; previewed review comments become normal
+  `review-comment` evidence only after explicit import.
+- Route `/osk git context` to `osk_get_git_local_context` when the harness needs
+  branch, changed-file, aggregate diff, or recent-commit metadata. It is
+  read-only and must not be treated as permission to read raw diffs.
 - Route `/osk import adapters` to `osk_list_interaction_adapters` before import
   when the harness needs the supported adapter list, accepted formats, adapter
   status, and explicit-import-only privacy policy.

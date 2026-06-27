@@ -24,10 +24,11 @@ const execFileAsync = promisify(execFile);
 describe("interaction import", () => {
   it("describes supported adapters for harness-driven imports", () => {
     const adapters = listInteractionAdapters();
-    expect(adapters.map((adapter) => adapter.id)).toEqual(["manual-import", "codex", "claude-code", "cursor", "git-local"]);
+    expect(adapters.map((adapter) => adapter.id)).toEqual(["manual-import", "codex", "claude-code", "cursor", "review-local", "git-local"]);
     expect(adapters.filter((adapter) => adapter.id !== "git-local").every((adapter) => adapter.privacy === "explicit-import-only")).toBe(true);
     expect(adapters.find((adapter) => adapter.id === "git-local")?.privacy).toBe("metadata-only");
     expect(adapters.find((adapter) => adapter.id === "codex")?.acceptedFormats).toContain("JSONL messages");
+    expect(adapters.find((adapter) => adapter.id === "review-local")?.acceptedFormats).toContain("markdown review notes");
   });
 
   it("inspects local git metadata without exposing raw diffs", async () => {
@@ -153,6 +154,48 @@ describe("interaction import", () => {
     expect(events.map((event) => event.eventType)).toEqual(["user-prompt-submit", "post-tool-use"]);
     expect(events[1]?.commands[0]?.command).toBe("npm");
     expect(events[1]?.commands[0]?.args).toEqual(["run", "smoke"]);
+  });
+
+  it("imports local review comments as review feedback without copying raw review files", async () => {
+    const root = await tempProject();
+    const source = path.join(root, "review-notes.md");
+    await writeFile(source, [
+      "# Review",
+      "- src/auth.ts:12 - Security blocker: never log authorization tokens. REVIEW_SECRET=review-secret",
+      "- tests/auth.test.ts: Missing regression test for expired sessions.",
+      "Casual chatter line."
+    ].join("\n"), "utf8");
+
+    const planned = await importInteractionSource(root, source, {
+      adapter: "review-local",
+      now: new Date("2026-06-27T06:30:00.000Z")
+    });
+    expect(planned.status).toBe("planned");
+    expect(planned.parsedEventCount).toBe(2);
+    expect(planned.preview.map((event) => event.eventType)).toEqual(["review-comment", "review-comment"]);
+    expect(await readFile(planned.artifacts.markdownPath, "utf8")).not.toContain("review-secret");
+
+    const imported = await importInteractionSource(root, source, {
+      adapter: "review-local",
+      dryRun: false,
+      now: new Date("2026-06-27T06:31:00.000Z")
+    });
+    expect(imported.status).toBe("imported");
+    expect(imported.appendedEventCount).toBe(2);
+    const events = await readEvents(root);
+    expect(events.map((event) => event.eventType)).toEqual(["review-comment", "review-comment"]);
+    expect(events[0]?.files[0]).toMatchObject({ path: "src/auth.ts", action: "unknown" });
+    expect(events[0]?.source).toMatchObject({ adapter: "review-local", agentName: "Review" });
+    expect(JSON.stringify(events)).not.toContain("REVIEW_SECRET=review-secret");
+
+    const signals = await extractSignals(root, new Date("2026-06-27T06:32:00.000Z"));
+    expect(signals.signals.some((signal) => signal.kind === "review-feedback" && signal.category === "security")).toBe(true);
+    const graph = await updatePreferenceGraph(root, new Date("2026-06-27T06:33:00.000Z"));
+    expect(graph.graph.nodes.some((node) => node.statement.includes("review feedback"))).toBe(true);
+    const explained = await explainInteractionImport(root, imported.id);
+    expect(explained.learnable.signalSources).toContain("review feedback");
+    const pool = await readInteractionPool(root);
+    expect(pool.records.every((record) => record.adapter === "review-local" && record.eventType === "review-comment")).toBe(true);
   });
 
   it("allows unknown adapters but marks generic parsing as experimental", async () => {

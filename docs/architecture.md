@@ -214,6 +214,14 @@ metadata-only records to `.openskill-kit/interactions/pool.jsonl`; CLI
 `interactions pool` and MCP `osk_get_interaction_pool` expose that normalized
 cross-agent event index without raw transcript content.
 
+`interactions import-review <file>` is a first-class `review-local` adapter for
+explicitly supplied PR review exports, copied review notes, or local
+review-comment files. It turns markdown/plain-text lines and JSON review
+comment objects into `review-comment` events so the existing review-feedback
+extractor can learn from high-signal human critique. It stays dry-run by
+default, uses the normal import receipts, and never copies raw review source
+text into artifacts.
+
 `interactions git-context` and MCP `osk_get_git_local_context` expose the
 `git-local` metadata adapter for harnesses that need local repo state. It
 returns branch, HEAD, upstream/ahead-behind metadata, changed file names,

@@ -50,6 +50,15 @@ previews under `.openskill-kit/interactions/import-runs/`, not raw source logs.
 Duplicate source hashes are blocked on apply unless `--allow-duplicate` is
 explicit.
 
+Use `openskill-kit interactions import-review <file>` when the source is a
+local review-comment file or PR review export. It is still an explicit import:
+the first run previews `review-comment` events, and `--yes` is required before
+review feedback becomes local evidence.
+
+Use `openskill-kit interactions git-context` for read-only local git metadata.
+It reports branch, changed file names, aggregate diff stats, and recent commit
+subjects without raw diffs or file contents.
+
 `plugin` expands to its required local dependencies so the plugin bundle has the
 skill, hooks, MCP metadata, and manifest files it needs. Target filtering is
 best used in CI or preview workflows where you want narrow artifact churn.

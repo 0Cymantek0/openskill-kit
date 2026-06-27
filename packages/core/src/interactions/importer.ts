@@ -196,6 +196,16 @@ const INTERACTION_ADAPTERS: InteractionAdapterDescriptor[] = [
     notes: ["Normalizes user/assistant messages, terminal command records, and referenced file paths while keeping IDE accept/reject telemetry conservative."]
   },
   {
+    id: "review-local",
+    displayName: "Local review comments",
+    status: "available",
+    privacy: "explicit-import-only",
+    acceptedFormats: ["markdown review notes", "plain text review notes", "JSON review comment arrays", "GitHub-like review comment exports"],
+    detectionHints: ["Use for explicitly supplied PR review exports, copied code review notes, and local review-comment files."],
+    defaultAgentName: "Review",
+    notes: ["Converts supplied review text into review-comment events; raw source files are not copied into artifacts."]
+  },
+  {
     id: "git-local",
     displayName: "Local git metadata",
     status: "available",
@@ -378,6 +388,7 @@ export async function explainInteractionImport(projectRootInput: string, runId: 
 }
 
 function parseInteractionText(text: string, options: ImportInteractionSourceOptions, sourceHash: string): { events: OpenSkillEventInput[]; warnings: string[] } {
+  if (normalizeAdapterId(options.adapter ?? "manual-import") === "review-local") return parseReviewLocalText(text, options, sourceHash);
   const warnings: string[] = [];
   const objects = parseJsonObjects(text, warnings);
   const sessionId = `import_${sourceHash.replace(/^sha256:/, "").slice(0, 12)}`;
@@ -385,6 +396,127 @@ function parseInteractionText(text: string, options: ImportInteractionSourceOpti
     ? objects.flatMap((object, index) => eventFromObject(object, index, sessionId, options, warnings))
     : eventsFromPlainText(text, sessionId, options);
   return { events, warnings };
+}
+
+function parseReviewLocalText(text: string, options: ImportInteractionSourceOptions, sourceHash: string): { events: OpenSkillEventInput[]; warnings: string[] } {
+  const jsonWarnings: string[] = [];
+  const objects = parseJsonObjects(text, jsonWarnings);
+  const warnings: string[] = objects.length ? jsonWarnings : [];
+  const sessionId = `review_${sourceHash.replace(/^sha256:/, "").slice(0, 12)}`;
+  const events = objects.length
+    ? objects.flatMap((object, index) => reviewEventFromObject(object, index, sessionId, options, warnings))
+    : reviewEventsFromPlainText(text, sessionId, options);
+  if (!events.length) warnings.push("No review comments found; supported inputs are JSON comment objects or non-heading markdown/plain-text comment lines.");
+  return { events, warnings };
+}
+
+function reviewEventFromObject(object: unknown, index: number, fallbackSessionId: string, options: ImportInteractionSourceOptions, warnings: string[]): OpenSkillEventInput[] {
+  if (Array.isArray(object)) return object.flatMap((item, nestedIndex) => reviewEventFromObject(item, index + nestedIndex, fallbackSessionId, options, warnings));
+  if (!isObject(object)) {
+    warnings.push(`Skipped non-object review entry at index ${index}.`);
+    return [];
+  }
+  const nested = [
+    object.comments,
+    object.reviewComments,
+    object.review_comments,
+    object.reviews,
+    object.nodes,
+    object.items
+  ].find(Array.isArray);
+  if (Array.isArray(nested)) return nested.flatMap((item, nestedIndex) => reviewEventFromObject(item, index + nestedIndex, fallbackSessionId, options, warnings));
+  const text =
+    stringValue(object.body) ??
+    stringValue(object.comment) ??
+    stringValue(object.text) ??
+    stringValue(object.message) ??
+    stringValue(object.summary) ??
+    stringValue(object.content);
+  if (!text) {
+    warnings.push(`Skipped review entry at index ${index}; no comment body/text field.`);
+    return [];
+  }
+  return [reviewEvent({
+    index,
+    sessionId: sessionIdFromObject(object) ?? fallbackSessionId,
+    timestamp: datetimeValue(object.timestamp) ?? datetimeValue(object.createdAt) ?? datetimeValue(object.created_at) ?? timestampFor(options.now ?? new Date(), index),
+    adapter: options.adapter ?? "review-local",
+    agentName: options.agentName,
+    text,
+    filePath: filePathFromObject(object),
+    author: stringValue(object.author) ?? stringValue(object.user) ?? stringValue(object.reviewer),
+    severity: stringValue(object.severity) ?? stringValue(object.level)
+  })];
+}
+
+function reviewEventsFromPlainText(text: string, sessionId: string, options: ImportInteractionSourceOptions): OpenSkillEventInput[] {
+  const events: OpenSkillEventInput[] = [];
+  const lines = text.split(/\r?\n/);
+  for (const [index, rawLine] of lines.entries()) {
+    const parsed = reviewLine(rawLine);
+    if (!parsed) continue;
+    events.push(reviewEvent({
+      index,
+      sessionId,
+      timestamp: timestampFor(options.now ?? new Date(), index),
+      adapter: options.adapter ?? "review-local",
+      agentName: options.agentName,
+      text: parsed.text,
+      filePath: parsed.filePath
+    }));
+  }
+  return events;
+}
+
+function reviewLine(rawLine: string): { text: string; filePath?: string } | undefined {
+  const line = rawLine.trim().replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, "");
+  if (!line || line.startsWith("#") || /^```/.test(line)) return undefined;
+  const withPath = line.match(/^`?([A-Za-z0-9_./\\-]+\.[A-Za-z0-9_./\\-]+)`?(?::(\d+))?\s*(?:-|:|--|=>)\s*(.{6,})$/);
+  if (withPath) return { filePath: withPath[1]!.replace(/\\/g, "/"), text: withPath[3]!.trim() };
+  const reviewish = /\b(review|reviewer|nit|blocker|must|should|avoid|never|security|bug|fix|regression|test|missing)\b/i.test(line);
+  if (!reviewish || line.length < 8) return undefined;
+  return { text: line };
+}
+
+function reviewEvent(input: {
+  index: number;
+  sessionId: string;
+  timestamp: string;
+  adapter: string;
+  agentName?: string;
+  text: string;
+  filePath?: string;
+  author?: string;
+  severity?: string;
+}): OpenSkillEventInput {
+  return {
+    schemaVersion: "openskill-kit.event.v1",
+    sessionId: input.sessionId,
+    timestamp: input.timestamp,
+    source: {
+      adapter: input.adapter,
+      agentName: input.agentName
+    },
+    eventType: "review-comment",
+    intent: snippet(input.text),
+    normalized: {
+      textSnippet: snippet(input.text),
+      textOmitted: input.text.length > MAX_SNIPPET_CHARS,
+      importIndex: input.index,
+      review: {
+        author: input.author,
+        severity: input.severity
+      }
+    },
+    files: input.filePath ? [{ path: input.filePath, action: "unknown" }] : [],
+    commands: [],
+    privacy: {
+      redacted: false,
+      rawStored: false,
+      containsUserText: true,
+      containsCode: Boolean(input.filePath)
+    }
+  };
 }
 
 function parseJsonObjects(text: string, warnings: string[]): unknown[] {
@@ -579,6 +711,7 @@ function learnableSignalSources(events: OpenSkillEvent[], preview: InteractionIm
   if (events.some((event) => event.commands.length > 0) || preview.some((item) => item.commandCount > 0)) sources.add("command outcomes");
   if (events.some((event) => event.files.length > 0) || preview.some((item) => item.fileCount > 0)) sources.add("file references");
   if (events.some((event) => event.eventType === "user-accepted" || event.eventType === "user-rejected" || event.eventType === "user-edited")) sources.add("accept/reject/edit feedback");
+  if (events.some((event) => event.eventType === "review-comment") || preview.some((item) => item.eventType === "review-comment")) sources.add("review feedback");
   return [...sources].sort();
 }
 

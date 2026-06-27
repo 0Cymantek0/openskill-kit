@@ -42,6 +42,12 @@ activates behavior; they do not prove hidden-oracle benchmark performance.
 - CLI fallback: `openskill-kit interactions import <path>`
 - Explicit approval required: `yes`
 
+### /osk import review
+
+- MCP tool: `osk_import_interaction_source`
+- CLI fallback: `openskill-kit interactions import-review <path>`
+- Explicit approval required: `yes`
+
 ### /osk session imports
 
 - MCP tool: `osk_list_interaction_imports`

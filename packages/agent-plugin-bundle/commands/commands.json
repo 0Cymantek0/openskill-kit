@@ -63,6 +63,16 @@
       "fallback": "cli"
     },
     {
+      "command": "/osk import review",
+      "aliases": ["osk import review comments", "openskill import review"],
+      "description": "Preview or import a local review-comment file as redacted review feedback events; applying requires explicit approval.",
+      "mcpTool": "osk_import_interaction_source",
+      "cli": "openskill-kit interactions import-review <path>",
+      "readOnly": false,
+      "approvalRequired": true,
+      "fallback": "cli"
+    },
+    {
       "command": "/osk session imports",
       "aliases": ["osk imports", "openskill imports"],
       "description": "List previous interaction import runs without raw source content.",
