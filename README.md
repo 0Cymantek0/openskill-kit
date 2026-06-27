@@ -29,11 +29,13 @@ preview-first behavior.
 npm install
 npm run build
 
-# Run interactive setup wizard (bootstraps, compiles, previews and attaches to OpenCode)
+# Preview setup, then re-run with --yes when the plan is acceptable
 npx openskill-kit osk setup --host opencode
+npx openskill-kit osk setup --host opencode --yes
 
-# To safely uninstall and revert all configuration patches and generated files:
+# Preview uninstall, then apply. Local .openskill-kit state is preserved unless --delete-state is used.
 npx openskill-kit osk uninstall --host opencode
+npx openskill-kit osk uninstall --host opencode --yes
 ```
 
 When attached through MCP, the harness should call `osk_bootstrap_session`
