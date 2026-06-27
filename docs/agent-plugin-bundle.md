@@ -67,6 +67,10 @@ For harness compatibility, generated plugins also include:
 - `commands/commands.json` and `commands/osk.md`: slash-command intent map.
   Hosts that do not implement slash commands can still interpret `/osk ...`
   phrases by calling the mapped MCP tool or running the CLI fallback.
+- `/osk plugin install profile`: direct read-only route to
+  `osk_get_plugin_install_profile` / `openskill-kit agent
+  plugin-install-profile`, so harnesses can fetch the machine attach contract
+  without parsing broad status output.
 - `install-guides/codex.md`, `install-guides/claude-code.md`,
   `install-guides/cursor.md`, and `install-guides/generic-mcp.md`: conservative
   host attach notes. They keep existing host config reviewable instead of
@@ -165,6 +169,7 @@ Harness behavior should stay conservative:
 - Read the matching `install-guides/` file before applying any host-specific
   config.
 - Use `osk_get_plugin_attach_status` for readiness checks,
+  `osk_get_plugin_install_profile` for the machine attach contract,
   `osk_preview_plugin_attach` for MCP-based attach previews, and
   `osk_apply_plugin_attach` only after explicit approval.
 - Preview managed instruction files and hooks before applying.

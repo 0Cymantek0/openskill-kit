@@ -22,8 +22,8 @@ describe("agent plugin manifest", () => {
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(manifest.installProfile.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
     expect(manifest.installProfile.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_install_agent_hooks", "osk_import_interaction_source", "osk_openworld_promote_review"]));
-    expect(manifest.installProfile.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status"]));
-    expect(manifest.commands.items).toHaveLength(32);
+    expect(manifest.installProfile.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile"]));
+    expect(manifest.commands.items).toHaveLength(33);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk context" && item.mcpTool === "osk_get_agent_task_context")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk finish task" && item.mcpTool === "osk_finish_agent_task")).toBe(true);
@@ -37,6 +37,7 @@ describe("agent plugin manifest", () => {
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.readOnly === true)).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status")).toBe(true);
+    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk plugin install profile" && item.mcpTool === "osk_get_plugin_install_profile" && item.readOnly === true)).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk openworld doctor" && item.mcpTool === "osk_openworld_doctor" && item.readOnly === true)).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld build verifier" && item.mcpTool === "osk_openworld_build_verifier")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk openworld verifier quality" && item.mcpTool === "osk_openworld_verifier_quality" && item.readOnly === true)).toBe(true);
@@ -49,7 +50,7 @@ describe("agent plugin manifest", () => {
     const mcp = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));
     expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     const commandMap = JSON.parse(readFileSync(path.join(root, "commands", "commands.json"), "utf8"));
-    expect(commandMap.commands).toHaveLength(32);
+    expect(commandMap.commands).toHaveLength(33);
     expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk context" && item.cli.includes("openskill-kit context"))).toBe(true);
     expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk finish task" && item.cli.includes("finish-task"))).toBe(true);
     expect(commandMap.commands.some((item: { command: string; cli: string; readOnly: boolean }) => item.command === "/osk import adapters" && item.cli.includes("interactions adapters") && item.readOnly === true)).toBe(true);
@@ -60,6 +61,7 @@ describe("agent plugin manifest", () => {
     expect(commandMap.commands.some((item: { command: string; cli: string; readOnly: boolean }) => item.command === "/osk explain import" && item.cli.includes("interactions explain") && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; cli: string; readOnly: boolean }) => item.command === "/osk interaction pool" && item.cli.includes("interactions pool") && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; cli: string; readOnly: boolean }) => item.command === "/osk git context" && item.cli.includes("interactions git-context") && item.readOnly === true)).toBe(true);
+    expect(commandMap.commands.some((item: { command: string; cli: string; readOnly: boolean }) => item.command === "/osk plugin install profile" && item.cli.includes("agent plugin-install-profile") && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; cli: string; readOnly: boolean }) => item.command === "/osk openworld doctor" && item.cli.includes("openworld doctor") && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk openworld build verifier" && item.cli.includes("openworld build-verifier"))).toBe(true);
     expect(commandMap.commands.some((item: { command: string; cli: string; readOnly: boolean }) => item.command === "/osk openworld verifier quality" && item.cli.includes("openworld verifier-quality") && item.readOnly === true)).toBe(true);

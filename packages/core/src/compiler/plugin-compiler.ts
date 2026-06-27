@@ -367,7 +367,7 @@ function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]):
       fallback: "cli"
     },
     approvalRequiredTools: pluginCommands().filter((item) => item.approvalRequired && item.mcpTool).map((item) => item.mcpTool!),
-    readOnlyFirstTools: ["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_agent_task_context"],
+    readOnlyFirstTools: ["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile", "osk_get_agent_task_context"],
     attach: {
       previewCli: "openskill-kit agent attach-plugin --host generic-mcp --dry-run",
       applyCli: "openskill-kit agent attach-plugin --host generic-mcp --yes",
@@ -519,6 +519,7 @@ function pluginCommands(): AgentPluginCommand[] {
     command("/osk install hooks", ["osk hooks", "install openskill hooks"], "Preview or install local hooks; requires explicit user approval before enabling execution.", "osk_install_agent_hooks", "openskill-kit hooks install --dry-run", false, true),
     command("/osk attach plugin", ["osk attach", "attach openskill plugin"], "Preview host MCP config needed to attach this plugin to an existing coding harness; applying requires explicit approval.", "osk_preview_plugin_attach", "openskill-kit agent attach-plugin --host generic-mcp --dry-run", false, false),
     command("/osk plugin health", ["osk plugin status", "openskill plugin health"], "Show host attachment health for the compiled plugin, including root binding, invalid JSON, and command conflicts.", "osk_get_plugin_attach_status", "openskill-kit agent plugin-status", true, false),
+    command("/osk plugin install profile", ["osk install profile", "openskill plugin install profile"], "Return the machine-readable install contract for existing coding harnesses: first call, MCP command, env binding, command map, and approval gates.", "osk_get_plugin_install_profile", "openskill-kit agent plugin-install-profile", true, false),
     command("/osk run behavior eval", ["osk eval", "behavior eval"], "Run local behavior replay/evaluation gates and return artifact paths.", "osk_run_behavior_eval", "openskill-kit eval", false, false),
     command("/osk openworld doctor", ["osk ow doctor", "openskill openworld doctor"], "Show which OpenWorld capabilities are real today and which remain unproven.", "osk_openworld_doctor", "openskill-kit openworld doctor", true, false),
     command("/osk openworld source plan", ["osk ow source plan", "openskill openworld source plan"], "Plan leakage-audited local and explicit web source candidates for an OpenWorld task.", "osk_openworld_source_plan", "openskill-kit openworld source-plan --task-id <task-id>", false, false),

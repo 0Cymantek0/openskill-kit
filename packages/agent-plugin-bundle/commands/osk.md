@@ -187,6 +187,15 @@ Show host attachment health for the compiled plugin, including root binding, inv
 - Read-only: `yes`
 - Explicit approval required: `no`
 
+### /osk plugin install profile
+
+Return the machine-readable install contract for existing coding harnesses: first call, MCP command, env binding, command map, and approval gates.
+
+- MCP tool: `osk_get_plugin_install_profile`
+- CLI fallback: `openskill-kit agent plugin-install-profile`
+- Read-only: `yes`
+- Explicit approval required: `no`
+
 ### /osk run behavior eval
 
 Run local behavior replay/evaluation gates and return artifact paths.

@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   attachAgentPlugin,
   explainAdaptiveStatus,
+  getAgentPluginInstallProfile,
   getAgentPluginAttachStatus,
   initAdaptiveProject,
   type PreferenceGraph,
@@ -120,6 +121,25 @@ describe("agent plugin attach planner", () => {
     const afterAttach = await explainAdaptiveStatus(root);
     expect(afterAttach.nextActions.some((action) => action.includes("agent attach-plugin"))).toBe(false);
     expect(afterAttach.status.compiled.pluginAttachment.attached).toBe(true);
+  });
+
+  it("returns a read-only install profile for harness bootstrap", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("profile", "Prefer machine-readable plugin install profiles", "workflow")]);
+
+    let profile = await getAgentPluginInstallProfile(root);
+    expect(profile.ready).toBe(false);
+    expect(profile.nextActions.join(" ")).toContain("compile --target plugin");
+
+    await attachAgentPlugin(root, { host: "generic-mcp", dryRun: true });
+    profile = await getAgentPluginInstallProfile(root);
+
+    expect(profile.ready).toBe(true);
+    expect(profile.profile?.firstCall.mcpTool).toBe("osk_bootstrap_session");
+    expect(profile.profile?.mcp.command).toBe("openskill-kit-mcp");
+    expect(profile.profile?.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(profile.profile?.commandRouting.map).toBe("commands/commands.json");
+    expect(profile.profile?.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_get_plugin_install_profile"]));
   });
 });
 

@@ -135,6 +135,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_preview_plugin_attach", "plugin", "local-write"),
   descriptor("osk_apply_plugin_attach", "plugin", "approval-required", true),
   descriptor("osk_get_plugin_attach_status", "plugin", "read-only"),
+  descriptor("osk_get_plugin_install_profile", "plugin", "read-only"),
   descriptor("osk_run_lifecycle_once", "lifecycle", "local-write"),
   descriptor("osk_mine_workflows", "workflows", "local-write"),
   descriptor("osk_get_workflow_graph", "workflows", "read-only"),

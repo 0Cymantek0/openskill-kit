@@ -94,6 +94,7 @@ if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string;
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.readOnly === true)) throw new Error("compiled plugin command map missing session import explain route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.readOnly === true)) throw new Error("compiled plugin command map missing interaction pool route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.readOnly === true)) throw new Error("compiled plugin command map missing git context route");
+if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk plugin install profile" && item.mcpTool === "osk_get_plugin_install_profile" && item.readOnly === true)) throw new Error("compiled plugin command map missing plugin install profile route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk openworld doctor" && item.mcpTool === "osk_openworld_doctor" && item.readOnly === true)) throw new Error("compiled plugin command map missing OpenWorld doctor route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld build verifier" && item.mcpTool === "osk_openworld_build_verifier")) throw new Error("compiled plugin command map missing OpenWorld build verifier route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk openworld verifier quality" && item.mcpTool === "osk_openworld_verifier_quality" && item.readOnly === true)) throw new Error("compiled plugin command map missing OpenWorld verifier quality route");
@@ -119,8 +120,10 @@ const terminalImportPlan = await runJson(["interactions", "import-terminal", "te
 if (terminalImportPlan.status !== "planned" || terminalImportPlan.parsedEventCount !== 1 || terminalImportPlan.preview?.[0]?.eventType !== "post-tool-use") throw new Error("terminal import preview failed");
 const gitContext = await runJson(["interactions", "git-context", "--json"]);
 if (gitContext.schemaVersion !== "openskill-kit.git-local-context.v1" || gitContext.adapter?.rawDiffIncluded !== false) throw new Error("git context command failed");
+const pluginInstallProfile = await runJson(["agent", "plugin-install-profile", "--json"]);
+if (pluginInstallProfile.ready !== true || pluginInstallProfile.profile?.firstCall?.mcpTool !== "osk_bootstrap_session" || pluginInstallProfile.profile?.mcp?.requiredEnv?.OPENSKILLKIT_PROJECT_ROOT !== "<absolute project root>") throw new Error("plugin install profile command failed");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 32") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 33") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
 if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");

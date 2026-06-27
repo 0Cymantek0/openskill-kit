@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { compileBehaviorLayer } from "../compiler/package-compiler.js";
-import { getCompiledPluginStatus, type CompiledPluginStatus } from "../compiler/plugin-compiler.js";
+import { getCompiledPluginStatus, type AgentPluginInstallProfile, type CompiledPluginStatus } from "../compiler/plugin-compiler.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 
 export const AgentPluginAttachHosts = ["codex", "claude-code", "cursor", "generic-mcp"] as const;
@@ -33,6 +33,14 @@ export interface AgentPluginAttachStatus {
   hosts: AgentPluginHostAttachStatus[];
   receiptCount: number;
   latestReceiptPath?: string;
+  nextActions: string[];
+}
+
+export interface AgentPluginInstallProfileStatus {
+  schemaVersion: "openskill-kit.agent-plugin-install-profile-status.v1";
+  ready: boolean;
+  profile?: AgentPluginInstallProfile;
+  plugin: Pick<CompiledPluginStatus, "ready" | "pluginDir" | "manifestPath" | "mcpServerCommand" | "mcpDescriptorsHash" | "missing" | "integrityIssues" | "nextActions">;
   nextActions: string[];
 }
 
@@ -157,6 +165,37 @@ export async function getAgentPluginAttachStatus(projectRoot: string): Promise<A
     hosts,
     receiptCount: receipts.length,
     latestReceiptPath: receipts[0]?.path,
+    nextActions
+  };
+}
+
+export async function getAgentPluginInstallProfile(projectRoot: string): Promise<AgentPluginInstallProfileStatus> {
+  const plugin = await getCompiledPluginStatus(projectRoot);
+  const ready = plugin.ready && Boolean(plugin.installProfile);
+  const nextActions = ready
+    ? [
+      "Use installProfile.firstCall before reading learned behavior.",
+      "Start installProfile.mcp.command with stdio and bind OPENSKILLKIT_PROJECT_ROOT to the absolute project root.",
+      "Route /osk commands through installProfile.commandRouting.map and keep approvalRequiredTools behind explicit user approval."
+    ]
+    : [
+      ...plugin.nextActions,
+      "Run `openskill-kit compile --target plugin` to generate plugin.json.installProfile."
+    ];
+  return {
+    schemaVersion: "openskill-kit.agent-plugin-install-profile-status.v1",
+    ready,
+    profile: plugin.installProfile,
+    plugin: {
+      ready: plugin.ready,
+      pluginDir: plugin.pluginDir,
+      manifestPath: plugin.manifestPath,
+      mcpServerCommand: plugin.mcpServerCommand,
+      mcpDescriptorsHash: plugin.mcpDescriptorsHash,
+      missing: plugin.missing,
+      integrityIssues: plugin.integrityIssues,
+      nextActions: plugin.nextActions
+    },
     nextActions
   };
 }

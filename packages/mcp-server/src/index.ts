@@ -22,6 +22,7 @@ import {
   extractSignals,
   evolveSkill,
   explainAdaptiveStatus,
+  getAgentPluginInstallProfile,
   getAgentPluginAttachStatus,
   getAgentTaskContext,
   finishAgentTask,
@@ -937,6 +938,20 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await getAgentPluginAttachStatus(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_plugin_install_profile",
+    {
+      title: "OpenSkillKit Plugin Install Profile",
+      description: "Return the machine-readable install profile for attaching OpenSkillKit to an existing coding harness.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await getAgentPluginInstallProfile(root), root);
     }
   );
 

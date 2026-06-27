@@ -77,6 +77,7 @@
       "osk_bootstrap_session",
       "osk_detect_environment",
       "osk_get_plugin_attach_status",
+      "osk_get_plugin_install_profile",
       "osk_get_agent_task_context"
     ],
     "attach": {
@@ -368,6 +369,19 @@
         "description": "Show host attachment health for the compiled plugin, including root binding, invalid JSON, and command conflicts.",
         "mcpTool": "osk_get_plugin_attach_status",
         "cli": "openskill-kit agent plugin-status",
+        "readOnly": true,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk plugin install profile",
+        "aliases": [
+          "osk install profile",
+          "openskill plugin install profile"
+        ],
+        "description": "Return the machine-readable install contract for existing coding harnesses: first call, MCP command, env binding, command map, and approval gates.",
+        "mcpTool": "osk_get_plugin_install_profile",
+        "cli": "openskill-kit agent plugin-install-profile",
         "readOnly": true,
         "approvalRequired": false,
         "fallback": "cli"

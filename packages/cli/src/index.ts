@@ -23,6 +23,7 @@ import {
   finishAgentTask,
   explainPreferenceWithEvidence,
   installAgentHooks,
+  getAgentPluginInstallProfile,
   getAgentPluginAttachStatus,
   installInstructionManifests,
   uninstallInstructionManifests,
@@ -697,6 +698,26 @@ agent.command("plugin-status")
       `Plugin attach receipts: ${result.receiptCount}`,
       ...result.nextActions
     ].join("\n"));
+  });
+
+agent.command("plugin-install-profile")
+  .description("Show machine-readable install profile for existing coding harnesses")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await getAgentPluginInstallProfile(process.cwd());
+    output(options.json, result, result.ready && result.profile ? [
+      `Plugin install profile ready: ${result.ready}`,
+      `Plugin directory: ${result.profile.pluginDirectory}`,
+      `First MCP call: ${result.profile.firstCall.mcpTool}`,
+      `MCP server: ${result.profile.mcp.command}`,
+      `Required env: ${Object.keys(result.profile.mcp.requiredEnv).join(", ")}`,
+      `Command map: ${result.profile.commandRouting.map}`,
+      `Approval tools: ${result.profile.approvalRequiredTools.join(", ")}`
+    ].join("\n") : [
+      `Plugin install profile ready: ${result.ready}`,
+      ...result.nextActions
+    ].join("\n"));
+    process.exitCode = result.ready ? 0 : 1;
   });
 
 program.command("draft")
