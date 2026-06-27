@@ -82,11 +82,17 @@ describe("deep architecture hardening", () => {
     expect(status.commands.some((item) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status")).toBe(true);
+    expect(status.hostCompatibility.some((host) => host.host === "generic-mcp" && host.requires.some((requirement) => requirement.includes("stdio MCP")))).toBe(true);
     expect(status.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
+    expect(status.nextActions).toContain("Check `plugin.hostCompatibility` for the target harness requirements before applying host config.");
     expect(status.nextActions).toContain("Open `install-guides/` for the target harness before writing any host config.");
     expect(status.nextActions).toContain("Map `/osk ...` requests through `commands/commands.json`; prefer MCP tools and use CLI fallbacks only when MCP is unavailable.");
     expect(manifest.schemaVersion).toBe("openskill-kit.agent-plugin.v1");
     expect(manifest.compatibility).toEqual(expect.arrayContaining(["agent-plugin", "mcp-stdio", "codex", "claude-code"]));
+    expect(manifest.hostCompatibility).toEqual(expect.arrayContaining([
+      expect.objectContaining({ host: "codex", supportLevel: "supported", configPath: ".mcp.json", instructionSurface: "AGENTS.md" }),
+      expect.objectContaining({ host: "cursor", supportLevel: "preview", configPath: ".cursor/mcp.json" })
+    ]));
     expect(manifest.capabilities).toContain("openworld-review-promotion");
     expect(manifest.skills).toEqual(expect.arrayContaining(["skills/project-behavior"]));
     expect(manifest.entrypoints.mcpServer.command).toBe("openskill-kit-mcp");
@@ -163,6 +169,8 @@ describe("deep architecture hardening", () => {
     expect(readme).toContain("Start `openskill-kit-mcp`");
     expect(readme).toContain("Command map: `commands/commands.json`");
     expect(readme).toContain("Install guides: `install-guides`");
+    expect(readme).toContain("## Host Compatibility");
+    expect(readme).toContain("cursor (preview)");
     expect(readme).toContain("`/osk install hooks`");
     expect(readme).toContain("Never attach hidden benchmark answers");
   });

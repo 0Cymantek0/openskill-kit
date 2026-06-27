@@ -292,6 +292,7 @@ function blocked(root: string, host: AgentPluginAttachHost, plugin: CompiledPlug
       commands: [],
       skills: [],
       capabilities: [],
+      hostCompatibility: [],
       approvalGates: [],
       privacyExclusions: [],
       missing: ["plugin.json"],

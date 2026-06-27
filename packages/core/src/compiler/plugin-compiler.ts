@@ -19,6 +19,7 @@ export interface AgentPluginManifest {
   generatedBy: "openskill-kit";
   generatedAt: string;
   compatibility: string[];
+  hostCompatibility: AgentPluginHostCompatibility[];
   capabilities: string[];
   skills: string[];
   entrypoints: {
@@ -68,6 +69,15 @@ export interface AgentPluginCommand {
   fallback: "cli";
 }
 
+export interface AgentPluginHostCompatibility {
+  host: "codex" | "claude-code" | "cursor" | "generic-mcp";
+  supportLevel: "supported" | "preview";
+  requires: string[];
+  configPath: string;
+  instructionSurface: string;
+  notes: string[];
+}
+
 export interface CompiledPluginStatus {
   schemaVersion: "openskill-kit.compiled-plugin-status.v1";
   ready: boolean;
@@ -86,6 +96,7 @@ export interface CompiledPluginStatus {
   commands: AgentPluginCommand[];
   skills: string[];
   capabilities: string[];
+  hostCompatibility: AgentPluginHostCompatibility[];
   approvalGates: string[];
   privacyExclusions: string[];
   missing: string[];
@@ -178,6 +189,7 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     commands: commandMap?.commands ?? manifest?.commands ?? [],
     skills: manifest?.skills ?? [],
     capabilities: manifest?.capabilities ?? [],
+    hostCompatibility: manifest?.hostCompatibility ?? [],
     approvalGates: manifest?.install.requiresExplicitApproval ?? [],
     privacyExclusions: manifest?.privacy.excludes ?? [],
     missing,
@@ -188,6 +200,7 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
         ? ["Re-run `openskill-kit compile --target plugin`; compiled plugin integrity check failed."]
       : [
         "Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.",
+        "Check `plugin.hostCompatibility` for the target harness requirements before applying host config.",
         "Open `install-guides/` for the target harness before writing any host config.",
         "Map `/osk ...` requests through `commands/commands.json`; prefer MCP tools and use CLI fallbacks only when MCP is unavailable.",
         "Start `openskill-kit-mcp` from the project root when the harness supports MCP.",
@@ -207,6 +220,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
     generatedBy: "openskill-kit",
     generatedAt: new Date().toISOString(),
     compatibility: ["agent-plugin", "mcp-stdio", "agents-md", "codex", "claude-code"],
+    hostCompatibility: pluginHostCompatibility(),
     capabilities: [
       "project-behavior-retrieval",
       "evidence-backed-preferences",
@@ -287,6 +301,43 @@ async function pluginSkillRefs(pluginDir: string): Promise<string[]> {
   const skillsDir = path.join(pluginDir, "skills");
   const entries = await fs.readdir(skillsDir, { withFileTypes: true }).catch(() => []);
   return entries.filter((entry) => entry.isDirectory()).map((entry) => `skills/${entry.name}`).sort();
+}
+
+function pluginHostCompatibility(): AgentPluginHostCompatibility[] {
+  return [
+    {
+      host: "codex",
+      supportLevel: "supported",
+      requires: ["stdio MCP client support", "project-local `.mcp.json` support", "repository AGENTS.md instruction surface"],
+      configPath: ".mcp.json",
+      instructionSurface: "AGENTS.md",
+      notes: ["Use project-local config first; never import user Codex memories unless the user supplies an explicit export file."]
+    },
+    {
+      host: "claude-code",
+      supportLevel: "supported",
+      requires: ["stdio MCP client support", "project-local MCP config support", "project CLAUDE.md or project skill/rule loading"],
+      configPath: ".mcp.json",
+      instructionSurface: "CLAUDE.md and .claude/rules/",
+      notes: ["Preview project rules before applying; user-level Claude memory is not a plugin target."]
+    },
+    {
+      host: "cursor",
+      supportLevel: "preview",
+      requires: ["Cursor MCP server config support", "project-local `.cursor/mcp.json` support", "manual confirmation for Cursor rule format"],
+      configPath: ".cursor/mcp.json",
+      instructionSurface: ".cursor/rules/",
+      notes: ["Cursor rule formats can vary; OpenSkillKit writes MCP config only through attach preview/apply."]
+    },
+    {
+      host: "generic-mcp",
+      supportLevel: "supported",
+      requires: ["stdio MCP client support", "working directory or OPENSKILLKIT_PROJECT_ROOT bound to the project root"],
+      configPath: ".mcp.json",
+      instructionSurface: "skills/ and commands/commands.json",
+      notes: ["Call osk_bootstrap_session first and compare descriptor hashes before trusting tool descriptors."]
+    }
+  ];
 }
 
 interface PluginInstallGuide {
@@ -443,6 +494,15 @@ function renderReadme(manifest: AgentPluginManifest): string {
     "## Host Guides",
     "",
     ...pluginInstallGuides().map((guide) => `- ${guide.host}: \`install-guides/${guide.file}\``),
+    "",
+    "## Host Compatibility",
+    "",
+    ...manifest.hostCompatibility.flatMap((host) => [
+      `- ${host.host} (${host.supportLevel})`,
+      `  - Config: \`${host.configPath}\``,
+      `  - Instructions: \`${host.instructionSurface}\``,
+      `  - Requires: ${host.requires.join("; ")}`
+    ]),
     "",
     "## Approval Gates",
     "",
