@@ -33,6 +33,12 @@ gates, and privacy exclusions. It does not copy raw events, raw prompts, raw
 diffs, interaction imports, private evidence blobs, review queues, or user
 memories.
 
+For harness compatibility, generated plugins also include:
+
+- `.agent-plugin/plugin.json`: same host-facing manifest under the conventional
+  plugin metadata directory.
+- `.mcp.json`: direct stdio MCP attachment for `openskill-kit-mcp`.
+
 Harness behavior should stay conservative:
 
 - Load skills and MCP descriptors read-only by default.

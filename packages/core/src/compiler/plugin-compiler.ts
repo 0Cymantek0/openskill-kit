@@ -54,8 +54,10 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "mcp"), path.join(pluginDir, "mcp"));
   const manifest = await buildManifest(pluginDir);
   await writeFileAtomic(path.join(pluginDir, "README.md"), renderReadme(manifest));
-  manifest.files = (await listFiles(pluginDir)).filter((file) => file !== "plugin.json").sort();
+  await writeJsonAtomic(path.join(pluginDir, ".mcp.json"), buildMcpAttachmentConfig());
+  manifest.files = [...new Set([...(await listFiles(pluginDir)).filter((file) => file !== "plugin.json"), ".agent-plugin/plugin.json"])].sort();
   await writeJsonAtomic(manifestPath, manifest);
+  await writeJsonAtomic(path.join(pluginDir, ".agent-plugin", "plugin.json"), manifest);
   const files = await listFiles(pluginDir);
   return { schemaVersion: "openskill-kit.plugin.v1", pluginDir, manifestPath, files };
 }
@@ -161,6 +163,16 @@ function renderReadme(manifest: AgentPluginManifest): string {
     "Never attach hidden benchmark answers, secrets, user/global memories, or raw interaction exports through this plugin.",
     ""
   ].join("\n");
+}
+
+function buildMcpAttachmentConfig(): unknown {
+  return {
+    mcpServers: {
+      "openskill-kit": {
+        command: "openskill-kit-mcp"
+      }
+    }
+  };
 }
 
 async function listFiles(root: string): Promise<string[]> {
