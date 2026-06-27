@@ -81,8 +81,8 @@
       "osk_get_agent_task_context"
     ],
     "attach": {
-      "previewCli": "openskill-kit agent attach-plugin --host generic-mcp --dry-run",
-      "applyCli": "openskill-kit agent attach-plugin --host generic-mcp --yes",
+      "previewCli": "openskill-kit agent attach-plugin --host opencode --dry-run",
+      "applyCli": "openskill-kit agent attach-plugin --host opencode --yes",
       "statusCli": "openskill-kit agent plugin-status --json"
     },
     "hostConfig": [

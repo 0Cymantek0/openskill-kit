@@ -378,7 +378,7 @@ function detectSurfaceIssues(surfaces: AgentSurface[]): AgentDetectionIssue[] {
       severity: "info",
       surfaceIds: hostMcpConfigs.map((surface) => surface.id),
       message: "Compiled OpenSkillKit plugin exists, but no project host MCP config is attached to `openskill-kit-mcp`.",
-      recommendation: "Run `openskill-kit agent attach-plugin --host generic-mcp --dry-run`, review the diff, then apply with `--yes` if desired."
+      recommendation: "Run `openskill-kit agent attach-plugin --host opencode --dry-run`, review the OpenCode project-local diff, then apply with `--yes` if desired. Use `--host generic-mcp` only for non-OpenCode MCP clients."
     });
   }
   if (conflictingConfigs.length) {
@@ -410,7 +410,7 @@ function nextActionsForDetection(surfaces: AgentSurface[], issues: AgentDetectio
   if (surfaces.some((surface) => surface.surfaceType === "hook-config")) actions.add("Run `openskill-kit agent doctor` and preview hook install before enabling hooks.");
   if (surfaces.some((surface) => surface.adapter === "mcp")) actions.add("Inspect existing MCP config before applying generated OpenSkillKit MCP config.");
   if (surfaces.some((surface) => surface.surfaceType === "config-file" && surface.scope === "project")) actions.add("Review project harness config files before choosing generated plugin attach target.");
-  if (issues.some((issue) => issue.id === "plugin-not-attached-to-host-mcp")) actions.add("Run `openskill-kit agent attach-plugin --host generic-mcp --dry-run` to preview host MCP attachment.");
+  if (issues.some((issue) => issue.id === "plugin-not-attached-to-host-mcp")) actions.add("Run `openskill-kit agent attach-plugin --host opencode --dry-run` to preview OpenCode-first host attachment.");
   if (issues.some((issue) => issue.id === "mcp-config-invalid-json")) actions.add("Fix invalid host MCP JSON before applying plugin attachment.");
   if (!actions.size) actions.add("Run `openskill-kit compile` after reviewing active behavior.");
   return [...actions];

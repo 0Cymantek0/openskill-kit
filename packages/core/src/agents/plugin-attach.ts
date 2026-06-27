@@ -8,6 +8,7 @@ import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 export const AgentPluginAttachHosts = ["opencode", "codex", "claude-code", "cursor", "generic-mcp"] as const;
 export type AgentPluginAttachHost = typeof AgentPluginAttachHosts[number];
 export const AGENT_PLUGIN_PROJECT_ROOT_ENV = "OPENSKILLKIT_PROJECT_ROOT";
+export const DEFAULT_AGENT_PLUGIN_ATTACH_HOST: AgentPluginAttachHost = "opencode";
 
 export interface AgentPluginAttachResult {
   schemaVersion: "openskill-kit.agent-plugin-attach.v1";
@@ -159,13 +160,13 @@ export async function getAgentPluginAttachStatus(projectRoot: string): Promise<A
   const attached = drifted.length === 0 && hosts.some((host) => host.status === "attached");
   const nextActions = drifted.length
     ? [
-      "Compiled plugin descriptors changed after host attachment; re-run `openskill-kit agent attach-plugin --host generic-mcp --dry-run` and apply after review.",
+      `Compiled plugin descriptors changed after host attachment; re-run \`openskill-kit agent attach-plugin --host ${DEFAULT_AGENT_PLUGIN_ATTACH_HOST} --dry-run\` or the drifted host and apply after review.`,
       "Restart or refresh the coding harness MCP server after re-attaching so tool descriptors match the compiled plugin."
     ]
     : attached
     ? ["Plugin host attachment is ready; MCP tools can use the bound project root without per-call projectRoot arguments."]
     : [
-      "Run `openskill-kit agent attach-plugin --host generic-mcp --dry-run` to preview host MCP attachment.",
+      `Run \`openskill-kit agent attach-plugin --host ${DEFAULT_AGENT_PLUGIN_ATTACH_HOST} --dry-run\` to preview OpenCode-first host attachment.`,
       "Apply with `--yes` only after reviewing the project-local MCP config diff."
     ];
   return {

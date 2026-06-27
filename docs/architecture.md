@@ -196,7 +196,8 @@ project has an attachable harness bundle before copying or enabling it.
 When a compiled plugin exists but project MCP config is missing, invalid, or
 points `openskill-kit` at a nonstandard command, detection reports the exact
 attach issue and directs operators to `openskill-kit agent attach-plugin
---host generic-mcp --dry-run`.
+--host opencode --dry-run` for the primary OpenCode path. Generic MCP remains
+available with `--host generic-mcp` for non-OpenCode MCP clients.
 Applied host MCP config includes `OPENSKILLKIT_PROJECT_ROOT`, so an attached
 harness can omit per-tool `projectRoot` arguments without relying on launch cwd.
 Codex attach uses the project `.codex/config.toml`

@@ -47,13 +47,13 @@ openskill-kit compile --target plugin
 Preview the host MCP config before writing anything:
 
 ```bash
-openskill-kit agent attach-plugin --host generic-mcp --dry-run
+openskill-kit agent attach-plugin --host opencode --dry-run
 ```
 
 Apply only after review:
 
 ```bash
-openskill-kit agent attach-plugin --host generic-mcp --yes
+openskill-kit agent attach-plugin --host opencode --yes
 ```
 
 That directory is attachable from the project root. Its `plugin.json` declares
@@ -69,7 +69,7 @@ For harness compatibility, generated plugins also include:
 - `plugin.json.installProfile`: machine-friendly attach contract for harnesses.
   It names the first MCP call, CLI fallback, MCP server command, required
   project-root env binding, command map, approval-gated tools, read-only
-  readiness tools, generic attach preview/apply/status commands, and per-host
+  readiness tools, OpenCode-first attach preview/apply/status commands, and per-host
   config format plus exact preview/apply/status commands under `hostConfig`.
 - `plugin.json.hostCompatibility`: structured Codex, Claude Code, Cursor, and
   generic MCP compatibility records with support level, expected config path,

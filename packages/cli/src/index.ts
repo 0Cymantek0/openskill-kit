@@ -153,11 +153,15 @@ program.command("status")
           `Plugin commands: ${status.compiled.pluginStatus.commands.length}`,
           `Plugin command map: ${status.compiled.pluginStatus.commandMapPath}`,
           `Plugin host attached: ${status.compiled.pluginAttachment.attached}`,
-          `Plugin host status: ${status.compiled.pluginAttachment.hosts.map((host) => `${host.host}=${host.status}`).join(", ")}`
+          `Plugin host status: ${status.compiled.pluginAttachment.hosts.map((host) => `${host.host}=${host.status}`).join(", ")}`,
+          `Next: ${status.compiled.pluginAttachment.nextActions.join(" ")}`
         ].join("\n")
         : status.compiled.pluginStatus.integrityIssues.length
           ? `Plugin integrity issues: ${status.compiled.pluginStatus.integrityIssues.join("; ")}`
-          : `Plugin missing: ${status.compiled.pluginStatus.missing.join(", ")}`
+          : [
+            `Plugin missing: ${status.compiled.pluginStatus.missing.join(", ")}`,
+            `Next: ${status.compiled.pluginStatus.nextActions.join(" ")}`
+          ].join("\n")
     ].join("\n"));
   });
 

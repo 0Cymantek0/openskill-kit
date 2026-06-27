@@ -405,8 +405,8 @@ function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]):
     approvalRequiredTools: pluginCommands().filter((item) => item.approvalRequired && item.mcpTool).map((item) => item.mcpTool!),
     readOnlyFirstTools: ["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile", "osk_get_agent_task_context"],
     attach: {
-      previewCli: "openskill-kit agent attach-plugin --host generic-mcp --dry-run",
-      applyCli: "openskill-kit agent attach-plugin --host generic-mcp --yes",
+      previewCli: "openskill-kit agent attach-plugin --host opencode --dry-run",
+      applyCli: "openskill-kit agent attach-plugin --host opencode --yes",
       statusCli: "openskill-kit agent plugin-status --json"
     },
     hostConfig: hostCompatibility.map((host) => ({

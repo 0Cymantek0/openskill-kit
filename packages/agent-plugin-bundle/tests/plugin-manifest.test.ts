@@ -22,6 +22,8 @@ describe("agent plugin manifest", () => {
     expect(manifest.installProfile.firstCall).toEqual({ mcpTool: "osk_bootstrap_session", cliFallback: "openskill-kit status --json" });
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(manifest.installProfile.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
+    expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host opencode --dry-run");
+    expect(manifest.installProfile.attach.applyCli).toBe("openskill-kit agent attach-plugin --host opencode --yes");
     expect(manifest.installProfile.hostConfig).toEqual(expect.arrayContaining([
       expect.objectContaining({
         host: "opencode",

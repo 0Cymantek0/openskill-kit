@@ -119,7 +119,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.installProfile.mcp.command).toBe("openskill-kit-mcp");
     expect(manifest.installProfile.mcp.defaultProfile).toBe("public");
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
-    expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host generic-mcp --dry-run");
+    expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host opencode --dry-run");
     expect(manifest.installProfile.hostConfig).toEqual(expect.arrayContaining([
       expect.objectContaining({
         host: "opencode",

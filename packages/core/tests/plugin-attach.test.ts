@@ -166,6 +166,18 @@ describe("agent plugin attach planner", () => {
     expect(status.hosts.find((host) => host.host === "opencode")?.status).toBe("attached");
   });
 
+  it("uses OpenCode-first guidance when compiled plugin is not attached", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode-default", "Prefer OpenCode as primary harness attach target", "workflow")]);
+    await attachAgentPlugin(root, { host: "opencode", dryRun: true });
+
+    const status = await getAgentPluginAttachStatus(root);
+
+    expect(status.attached).toBe(false);
+    expect(status.nextActions.join(" ")).toContain("--host opencode --dry-run");
+    expect(status.nextActions.join(" ")).not.toContain("--host generic-mcp --dry-run");
+  });
+
   it("reports Codex config root binding and command conflicts", async () => {
     const root = await tempProject();
     await mkdir(path.join(root, ".codex"), { recursive: true });
