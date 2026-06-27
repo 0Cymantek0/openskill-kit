@@ -226,6 +226,10 @@ describe("OpenWorld local research", () => {
     });
     expect(harness.harness.status).toBe("pass");
     expect(harness.harness.hiddenOracleProof).toBe(false);
+    expect(harness.harness.benchmarkReadiness).toMatchObject({
+      status: "not-configured",
+      hiddenOracleProof: false
+    });
     expect(harness.harness.deniedPathProof.osBoundaryEnforced).toBe(false);
     expect(harness.harness.deniedPathProof.scannedArtifactCount).toBeGreaterThan(0);
     expect(JSON.stringify(harness.harness.deniedPaths)).not.toContain("hidden/oracle.txt");
@@ -367,6 +371,37 @@ describe("OpenWorld local research", () => {
     expect(harness.harness.deniedPathProof.leakedReferenceCount).toBe(1);
     expect(harness.harness.leaks[0]?.artifactPath).toContain("reports/leaky.md");
     expect(JSON.stringify(harness.harness.deniedPaths)).not.toContain("hidden/oracle.txt");
+  });
+
+  it("records hidden-oracle benchmark readiness without claiming benchmark proof", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-openworld-benchmark-readiness-"));
+    const task = await initOpenWorldTask(root, {
+      title: "Benchmark readiness",
+      prompt: "Record external benchmark metadata without reading oracle contents.",
+      forbiddenPaths: ["hidden/oracle.txt"],
+      now: new Date("2026-06-27T03:10:00.000Z")
+    });
+    const harness = await buildOpenWorldHiddenOracleHarness(root, task.task.id, {
+      benchmarkName: "sample-hidden-suite",
+      benchmarkResultPath: "external-results/sample-summary.json",
+      now: new Date("2026-06-27T03:11:00.000Z")
+    });
+
+    expect(harness.harness.hiddenOracleProof).toBe(false);
+    expect(harness.harness.benchmarkReadiness).toMatchObject({
+      status: "external-result-referenced",
+      benchmarkName: "sample-hidden-suite",
+      hiddenOracleProof: false
+    });
+    expect(harness.harness.benchmarkReadiness.resultPathHash).toMatch(/^[a-f0-9]{16}$/);
+    expect(harness.harness.benchmarkReadiness.requirementsForProof).toEqual(expect.arrayContaining([
+      "isolated target evaluation runner executed after candidate freeze",
+      "result summary imported without raw oracle content"
+    ]));
+    const markdown = await readFile(harness.markdownPath, "utf8");
+    expect(markdown).toContain("Benchmark readiness: external-result-referenced");
+    expect(markdown).toContain("Hidden-oracle proof: no");
+    expect(markdown).not.toContain("hidden/oracle.txt");
   });
 
   it("blocks virtual suite artifacts before writing verifier scripts", async () => {

@@ -32,7 +32,7 @@ Manual audit:
 - OpenWorld `run-verifier --split visible` executes generated cases through local-process or caller-provided Docker sandbox mode and writes a result JSON.
 - OpenWorld `refine` writes an EvolutionRun, records candidate skill ids, runs the candidate repair loop on visible failures, stops early on actionable visible failures, and runs holdout only after visible pass.
 - OpenWorld `eval-report` labels proof level as artifact-verifier and says hidden-oracle proof is false.
-- OpenWorld `hidden-oracle-harness` scans generated artifacts for denied path exposure without reading oracle contents and does not claim benchmark proof.
+- OpenWorld `hidden-oracle-harness` scans generated artifacts for denied path exposure without reading oracle contents, may record non-proof benchmark readiness metadata, and does not claim benchmark proof.
 - OpenWorld `report --write` collects sources, anchors, suites, verifier executions, candidate repair runs, EvolutionRuns, eval reports, hidden-oracle harnesses, and next actions in one task report.
 - OpenWorld `promote-review` creates only a semantic review proposal from passed runs and never activates behavior directly.
 - `status --explain` gives useful next action text.

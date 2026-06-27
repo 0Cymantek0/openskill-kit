@@ -1359,13 +1359,15 @@ export function createOpenSkillMcpServer(): McpServer {
         projectRoot: projectRootSchema,
         taskId: z.string().min(1),
         suiteId: z.string().min(1).optional(),
-        deniedPaths: z.array(z.string().min(1)).default([])
+        deniedPaths: z.array(z.string().min(1)).default([]),
+        benchmarkName: z.string().min(1).optional(),
+        benchmarkResultPath: z.string().min(1).optional()
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, taskId, suiteId, deniedPaths }) => {
+    async ({ projectRoot, taskId, suiteId, deniedPaths, benchmarkName, benchmarkResultPath }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await buildOpenWorldHiddenOracleHarness(root, taskId, { suiteId, deniedPaths }), root);
+      return toolResult(await buildOpenWorldHiddenOracleHarness(root, taskId, { suiteId, deniedPaths, benchmarkName, benchmarkResultPath }), root);
     }
   );
 

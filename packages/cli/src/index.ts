@@ -550,11 +550,15 @@ openworld.command("hidden-oracle-harness")
   .requiredOption("--task-id <id>", "Task id")
   .option("--suite-id <id>", "Verifier suite id")
   .option("--denied-path <path>", "Extra denied oracle path to hash and scan for", collectOption, [])
+  .option("--benchmark-name <name>", "Optional external benchmark name for readiness metadata")
+  .option("--benchmark-result-path <path>", "Optional external benchmark result summary path reference; content is not read")
   .option("--json", "Print JSON")
   .action(async (options) => {
     const result = await buildOpenWorldHiddenOracleHarness(process.cwd(), options.taskId, {
       suiteId: options.suiteId,
-      deniedPaths: options.deniedPath
+      deniedPaths: options.deniedPath,
+      benchmarkName: options.benchmarkName,
+      benchmarkResultPath: options.benchmarkResultPath
     });
     output(options.json, result, `OpenWorld hidden-oracle harness ${result.harness.status}: ${result.harness.proofLevel}\n${result.harnessPath}\n${result.markdownPath}`);
     process.exitCode = result.harness.status === "fail" ? 1 : 0;

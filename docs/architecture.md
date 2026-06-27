@@ -380,6 +380,11 @@ executions for forbidden path exposure, and records whether leaked references
 were found. In local-process mode it explicitly reports that OS-level path
 denial is not enforced, so this is static denied-path exposure proof, not
 benchmark evidence.
+The harness can also record benchmark readiness metadata such as an external
+benchmark name or result-summary path hash, but this remains non-proof. It never
+reads oracle files, never imports raw hidden answers, and keeps
+`hiddenOracleProof=false` until a real isolated benchmark runner and safe result
+import path exist.
 
 `openworld report --write` collects the task, source registry entries, Anchor
 Cards, verifier suites, verifier executions, candidate skills, candidate repair

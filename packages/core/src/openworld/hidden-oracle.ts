@@ -10,6 +10,8 @@ const SCAN_EXTENSIONS = new Set([".json", ".md", ".txt", ".cjs", ".js"]);
 export interface BuildOpenWorldHiddenOracleHarnessOptions {
   suiteId?: string;
   deniedPaths?: string[];
+  benchmarkName?: string;
+  benchmarkResultPath?: string;
   now?: Date;
 }
 
@@ -29,6 +31,7 @@ export async function buildOpenWorldHiddenOracleHarness(
   const task = await readOpenWorldTask(root, taskId);
   const now = options.now ?? new Date();
   const deniedInputs = [...new Set([...(task.forbiddenPaths ?? []), ...(options.deniedPaths ?? [])].map((item) => item.trim()).filter(Boolean))];
+  const benchmarkReadiness = buildBenchmarkReadiness(root, options);
   const deniedPaths = deniedInputs.map((deniedPath, index) => {
     const normalized = normalizePathText(deniedPath);
     const resolved = path.resolve(root, deniedPath);
@@ -75,12 +78,14 @@ export async function buildOpenWorldHiddenOracleHarness(
       osBoundaryEnforced: false,
       status: leaks.length ? "fail" : deniedPaths.length ? "pass" : "not-enforced"
     },
+    benchmarkReadiness,
     deniedPaths: deniedPaths.map((item) => item.record),
     scannedArtifacts: files.map((file) => file.relativePath),
     leaks,
     limitations: [
       "This harness never reads denied oracle file contents.",
       "This is static denied-path exposure proof over generated OpenWorld artifacts, not hidden-oracle benchmark proof.",
+      "Benchmark readiness metadata is not a benchmark result and never changes hiddenOracleProof.",
       "local-process sandbox mode does not enforce OS-level path denial; containerized denial remains future work.",
       "Control artifacts such as task records, leakage audits, and research plans may contain configured forbidden path metadata and are not scanned as runtime/generation outputs."
     ]
@@ -105,6 +110,7 @@ export function renderOpenWorldHiddenOracleHarness(harness: OpenWorldHiddenOracl
     `Status: ${harness.status}`,
     `Proof level: ${harness.proofLevel}`,
     `Hidden-oracle proof: no`,
+    `Benchmark readiness: ${harness.benchmarkReadiness.status}`,
     `OS path boundary enforced: ${harness.deniedPathProof.osBoundaryEnforced ? "yes" : "no"}`,
     "",
     "## Denied Path Proof",
@@ -113,6 +119,17 @@ export function renderOpenWorldHiddenOracleHarness(harness: OpenWorldHiddenOracl
     `- Scanned artifacts: ${harness.deniedPathProof.scannedArtifactCount}`,
     `- Leaked references: ${harness.deniedPathProof.leakedReferenceCount}`,
     `- Status: ${harness.deniedPathProof.status}`,
+    "",
+    "## Benchmark Readiness",
+    "",
+    `- Status: ${harness.benchmarkReadiness.status}`,
+    `- Benchmark: ${harness.benchmarkReadiness.benchmarkName ?? "none"}`,
+    `- Result path hash: ${harness.benchmarkReadiness.resultPathHash ?? "none"}`,
+    `- Hidden-oracle proof: no`,
+    "",
+    "Required before benchmark proof:",
+    "",
+    ...harness.benchmarkReadiness.requirementsForProof.map((item) => `- ${item}`),
     "",
     "## Leaks",
     "",
@@ -125,6 +142,24 @@ export function renderOpenWorldHiddenOracleHarness(harness: OpenWorldHiddenOracl
     ...harness.limitations.map((limitation) => `- ${limitation}`),
     ""
   ].join("\n");
+}
+
+function buildBenchmarkReadiness(root: string, options: BuildOpenWorldHiddenOracleHarnessOptions): OpenWorldHiddenOracleHarness["benchmarkReadiness"] {
+  const benchmarkName = options.benchmarkName?.trim() || undefined;
+  const resultPath = options.benchmarkResultPath?.trim() || undefined;
+  const resultPathHash = resultPath ? shortHash(path.resolve(root, resultPath)) : undefined;
+  return {
+    status: resultPath ? "external-result-referenced" : benchmarkName ? "configured-no-result" : "not-configured",
+    benchmarkName,
+    resultPathHash,
+    hiddenOracleProof: false,
+    requirementsForProof: [
+      "real benchmark task suite configured",
+      "oracle files denied from generation and refinement context",
+      "isolated target evaluation runner executed after candidate freeze",
+      "result summary imported without raw oracle content"
+    ]
+  };
 }
 
 async function collectScanFiles(root: string, taskId: string): Promise<Array<{ absolutePath: string; relativePath: string }>> {

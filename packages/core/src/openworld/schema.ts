@@ -555,6 +555,22 @@ export const OpenWorldHiddenOracleHarnessSchema = z.object({
     osBoundaryEnforced: z.boolean(),
     status: z.enum(["pass", "fail", "not-enforced"])
   }),
+  benchmarkReadiness: z.object({
+    status: z.enum(["not-configured", "configured-no-result", "external-result-referenced"]).default("not-configured"),
+    benchmarkName: z.string().optional(),
+    resultPathHash: z.string().optional(),
+    hiddenOracleProof: z.literal(false),
+    requirementsForProof: z.array(z.string().min(1)).default([])
+  }).default({
+    status: "not-configured",
+    hiddenOracleProof: false,
+    requirementsForProof: [
+      "real benchmark task suite configured",
+      "oracle files denied from generation and refinement context",
+      "isolated target evaluation runner executed after candidate freeze",
+      "result summary imported without raw oracle content"
+    ]
+  }),
   deniedPaths: z.array(z.object({
     id: z.string().min(1),
     pathHash: z.string().min(16),
