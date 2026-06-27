@@ -24,6 +24,7 @@ export interface AdaptiveStatus {
   importedInteractionEventCount: number;
   blockedInteractionImportCount: number;
   pendingReviewCount: number;
+  openWorld: OpenWorldStatusSummary;
   compiled: {
     contextPack: boolean;
     projectBehaviorSkill: boolean;
@@ -31,6 +32,27 @@ export interface AdaptiveStatus {
     plugin: boolean;
     pluginStatus: CompiledPluginStatus;
     pluginAttachment: AgentPluginAttachStatus;
+  };
+}
+
+export interface OpenWorldStatusSummary {
+  taskCount: number;
+  sourceCount: number;
+  evolutionRunCount: number;
+  evalReportCount: number;
+  hiddenOracleHarnessCount: number;
+  latest?: {
+    taskId?: string;
+    runId?: string;
+    reportId?: string;
+    status?: string;
+    proofLevel: string;
+    hiddenOracleProof: boolean;
+    generatedAt?: string;
+  };
+  proofBoundary: {
+    hiddenOracleProof: false;
+    message: string;
   };
 }
 
@@ -63,6 +85,7 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
   const interactionImports = await readInteractionImportRuns(root).catch(() => []);
   const pluginStatus = await getCompiledPluginStatus(root);
   const pluginAttachment = await getAgentPluginAttachStatus(root);
+  const openWorld = await summarizeOpenWorldStatus(root);
   return {
     schemaVersion: "openskill-kit.status.v1",
     initialized: Boolean(config),
@@ -81,6 +104,7 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
     importedInteractionEventCount: interactionImports.reduce((sum, run) => sum + run.appendedEventCount, 0),
     blockedInteractionImportCount: interactionImports.filter((run) => run.status === "blocked").length,
     pendingReviewCount: preferenceCandidates + workflowCandidates,
+    openWorld,
     compiled: {
       contextPack: await exists(path.join(root, ".openskill-kit", "compiled", "context-pack.md")),
       projectBehaviorSkill: await exists(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md")),
@@ -108,6 +132,10 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   if (status.signalCount === 0 && status.eventCount > 0) nextActions.push("Run learn or daemon to extract signals.");
   if (status.blockedInteractionImportCount > 0) nextActions.push("Inspect interactions imports; at least one import was blocked.");
   if (status.pendingReviewCount > 0) nextActions.push("Run review --queue, then accept or reject candidates and staged previews.");
+  if (status.openWorld.taskCount > 0) {
+    const proof = status.openWorld.latest?.proofLevel ?? "not-proof";
+    nextActions.push(`OpenWorld proof boundary: ${proof}; hiddenOracleProof=${status.openWorld.proofBoundary.hiddenOracleProof}.`);
+  }
   if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
   if (!status.compiled.plugin) nextActions.push("Run compile --target plugin to create an attachable coding-harness plugin bundle.");
   if (status.compiled.plugin && !status.compiled.pluginAttachment.attached) nextActions.push(...status.compiled.pluginAttachment.nextActions);
@@ -131,6 +159,64 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   };
 }
 
+async function summarizeOpenWorldStatus(root: string): Promise<OpenWorldStatusSummary> {
+  const openWorldRoot = path.join(root, ".openskill-kit", "openworld");
+  const tasksDir = path.join(openWorldRoot, "tasks");
+  const taskDirs = await fs.readdir(tasksDir, { withFileTypes: true }).catch(() => []);
+  const taskIds = taskDirs.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  const sourceIndex = await readJson(path.join(openWorldRoot, "source-index.json")).catch(() => undefined) as { entries?: unknown[] } | undefined;
+  const reports = await readJsonFiles(path.join(tasksDir), (file) => file.endsWith(".json") && file.includes(`${path.sep}reports${path.sep}`));
+  const evalReports = reports.filter((item): item is Record<string, unknown> => isRecord(item) && item.schemaVersion === "openskill-kit.openworld-eval-report.v1");
+  const harnesses = reports.filter((item): item is Record<string, unknown> => isRecord(item) && item.schemaVersion === "openskill-kit.openworld-hidden-oracle-harness.v1");
+  const runs = await readJsonFiles(path.join(root, ".openskill-kit", "evolution", "runs"), (file) => file.endsWith(`${path.sep}run.json`));
+  const evolutionRuns = runs.filter((item): item is Record<string, unknown> => isRecord(item) && item.schemaVersion === "openskill-kit.evolution-run.v1");
+  const latestEval = evalReports.sort((left, right) => String(right.generatedAt ?? "").localeCompare(String(left.generatedAt ?? "")))[0];
+  const latestRun = evolutionRuns.sort((left, right) => String(right.completedAt ?? right.startedAt ?? "").localeCompare(String(left.completedAt ?? left.startedAt ?? "")))[0];
+  return {
+    taskCount: taskIds.length,
+    sourceCount: Array.isArray(sourceIndex?.entries) ? sourceIndex.entries.length : 0,
+    evolutionRunCount: evolutionRuns.length,
+    evalReportCount: evalReports.length,
+    hiddenOracleHarnessCount: harnesses.length,
+    latest: latestEval ? {
+      taskId: stringValue(latestEval.taskId),
+      runId: stringValue(latestEval.runId),
+      reportId: stringValue(latestEval.id),
+      status: stringValue(latestEval.status),
+      proofLevel: stringValue(latestEval.proofLevel) ?? "not-proof",
+      hiddenOracleProof: latestEval.hiddenOracleProof === true,
+      generatedAt: stringValue(latestEval.generatedAt)
+    } : latestRun ? {
+      taskId: stringValue(latestRun.taskId),
+      runId: stringValue(latestRun.id),
+      status: stringValue(latestRun.status),
+      proofLevel: "not-proof",
+      hiddenOracleProof: false,
+      generatedAt: stringValue(latestRun.completedAt) ?? stringValue(latestRun.startedAt)
+    } : undefined,
+    proofBoundary: {
+      hiddenOracleProof: false,
+      message: "OpenWorld status reports artifact evidence only; hidden-oracle benchmark proof remains false unless an external isolated benchmark result is imported."
+    }
+  };
+}
+
+async function readJsonFiles(root: string, include: (file: string) => boolean): Promise<unknown[]> {
+  const files = await listFiles(root);
+  const selected = files.filter(include);
+  return Promise.all(selected.map((file) => readJson(file).catch(() => undefined))).then((items) => items.filter((item) => item !== undefined));
+}
+
+async function listFiles(root: string): Promise<string[]> {
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+  const nested = await Promise.all(entries.map(async (entry) => {
+    const file = path.join(root, entry.name);
+    if (entry.isDirectory()) return listFiles(file);
+    return [file];
+  }));
+  return nested.flat();
+}
+
 async function readJson(file: string): Promise<unknown> {
   return JSON.parse(await fs.readFile(file, "utf8"));
 }
@@ -151,4 +237,12 @@ async function exists(file: string): Promise<boolean> {
 
 async function mtime(file: string): Promise<number | undefined> {
   return fs.stat(file).then((stat) => stat.mtimeMs).catch(() => undefined);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }

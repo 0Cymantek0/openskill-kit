@@ -14,6 +14,8 @@ import {
   draftAnchorFromOpenWorldSource,
   executeOpenWorldResearchPlan,
   generateOpenWorldCandidateSkill,
+  getAdaptiveStatus,
+  explainAdaptiveStatus,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   initOpenWorldTask,
@@ -220,6 +222,26 @@ describe("OpenWorld local research", () => {
     expect(report.report.metrics.visiblePassRate).toBe(1);
     expect(report.report.metrics.holdoutPassRate).toBe(1);
     expect(await readFile(report.markdownPath, "utf8")).toContain("Hidden-oracle proof: no");
+    const status = await getAdaptiveStatus(root);
+    expect(status.openWorld).toMatchObject({
+      taskCount: 1,
+      sourceCount: 1,
+      evolutionRunCount: 1,
+      evalReportCount: 1,
+      hiddenOracleHarnessCount: 0,
+      latest: {
+        taskId: task.task.id,
+        runId: refined.id,
+        reportId: report.report.id,
+        proofLevel: "artifact-verifier",
+        hiddenOracleProof: false
+      },
+      proofBoundary: {
+        hiddenOracleProof: false
+      }
+    });
+    const explainedStatus = await explainAdaptiveStatus(root);
+    expect(explainedStatus.nextActions).toContain("OpenWorld proof boundary: artifact-verifier; hiddenOracleProof=false.");
     const harness = await buildOpenWorldHiddenOracleHarness(root, task.task.id, {
       suiteId: suite.suite.id,
       now: new Date("2026-06-26T01:04:46.000Z")
