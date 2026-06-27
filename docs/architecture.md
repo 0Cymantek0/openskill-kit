@@ -182,6 +182,12 @@ block metadata, and confidence. User/global surfaces are opt-in through
 and agent memories are never imported silently; detected session exports use
 `explicit-import` read policy and point operators to `interactions import`.
 
+Generated plugin attach files are reported as low-risk OpenSkillKit artifacts:
+`.openskill-kit/compiled/plugin/plugin.json`,
+`.openskill-kit/compiled/plugin/.agent-plugin/plugin.json`, and
+`.openskill-kit/compiled/plugin/.mcp.json`. This lets operators confirm the
+project has an attachable harness bundle before copying or enabling it.
+
 ## Interaction Imports
 
 `openskill-kit interactions import <file>` previews JSON, JSONL, markdown, or

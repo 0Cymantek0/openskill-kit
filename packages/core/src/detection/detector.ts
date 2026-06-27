@@ -75,6 +75,9 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
     config(projectRoot, ".windsurfrules", "other", ["Detected editor-agent rules; write support remains preview-only."]),
     generated(projectRoot, ".openskill-kit/compiled/context-pack.md", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/mcp/server-config.json", "mcp-config"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/plugin.json", "compiled-artifact"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/.agent-plugin/plugin.json", "compiled-artifact"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/.mcp.json", "mcp-config"),
     hook(projectRoot, ".agents/hooks/openskill-kit.json", "project"),
     hook(projectRoot, ".openskill-kit/compiled/hooks/hooks.json", "project")
   ];
