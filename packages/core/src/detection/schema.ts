@@ -10,6 +10,7 @@ export const AgentSurfaceSchema = z.object({
     "override-file",
     "rule-file",
     "rule-directory",
+    "config-file",
     "mcp-config",
     "skill",
     "skill-directory",

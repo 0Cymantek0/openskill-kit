@@ -69,10 +69,13 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
     instruction(projectRoot, "CLAUDE.md", "claude-code", "managed-block", ["Claude project memory surface."]),
     instruction(projectRoot, ".claude/CLAUDE.md", "claude-code", "managed-block", ["Claude project memory surface."]),
     instruction(projectRoot, "CLAUDE.local.md", "claude-code", "never", ["Local Claude memory is personal; preview/import only."]),
+    mcpConfig(projectRoot, ".claude/settings.json", "mcp", ["Claude Code project settings; review MCP servers before attaching OpenSkillKit."]),
     config(projectRoot, ".mcp.json", "mcp", ["Project MCP config."]),
     config(projectRoot, ".cursor/mcp.json", "mcp", ["Cursor MCP config."]),
-    config(projectRoot, ".cursorrules", "cursor", ["Legacy Cursor rules; adapter write support remains preview-only."]),
-    config(projectRoot, ".windsurfrules", "other", ["Detected editor-agent rules; write support remains preview-only."]),
+    configFile(projectRoot, ".codex/config.toml", "codex", ["Project Codex config; detected for harness awareness, never parsed as JSON."]),
+    config(projectRoot, "continue/config.json", "mcp", ["Continue project config; review MCP server entries before attaching OpenSkillKit."]),
+    configFile(projectRoot, ".cursorrules", "cursor", ["Legacy Cursor rules; adapter write support remains preview-only."]),
+    configFile(projectRoot, ".windsurfrules", "other", ["Detected editor-agent rules; write support remains preview-only."]),
     generated(projectRoot, ".openskill-kit/compiled/context-pack.md", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/mcp/server-config.json", "mcp-config"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/plugin.json", "compiled-artifact"),
@@ -91,6 +94,7 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
   specs.push(...(await skillSpecs(projectRoot, ".claude/skills", "project")));
   specs.push(...(await skillSpecs(projectRoot, ".codex/skills", "project")));
   specs.push(...(await interactionExportSpecs(projectRoot)));
+  specs.push(directory(projectRoot, ".roo", "other", "rule-directory", "preview-only", "medium", "project", "metadata-only", ["Roo project rules/config directory; metadata-only until an explicit adapter is added."]));
   specs.push(directory(projectRoot, ".openskill-kit/compiled/skills", "openskill-kit", "skill-directory", "generated-only", "low"));
   return specs;
 }
@@ -99,7 +103,7 @@ function userSurfaceSpecs(homeDir: string): SurfaceSpec[] {
   return [
     instruction(homeDir, ".codex/AGENTS.md", "codex", "explicit-apply", ["User Codex instructions; metadata-only by default."], "user", "metadata-only", "high"),
     instruction(homeDir, ".codex/AGENTS.override.md", "codex", "never", ["User Codex override; never write by default."], "user", "metadata-only", "high"),
-    config(homeDir, ".codex/config.toml", "codex", ["User Codex config; metadata-only by default."], "user", "metadata-only", "never", "high"),
+    configFile(homeDir, ".codex/config.toml", "codex", ["User Codex config; metadata-only by default."], "user", "metadata-only", "never", "high"),
     directory(homeDir, ".codex/memories", "codex", "memory-store", "never", "high", "user", "metadata-only", ["Codex memories detected as metadata only; never imported silently."]),
     instruction(homeDir, ".claude/CLAUDE.md", "claude-code", "explicit-apply", ["User Claude memory; metadata-only by default."], "user", "metadata-only", "high"),
     directory(homeDir, ".agents/skills", "skills", "skill-directory", "explicit-apply", "medium", "user", "metadata-only"),
@@ -392,6 +396,7 @@ function nextActionsForDetection(surfaces: AgentSurface[], issues: AgentDetectio
   if (surfaces.some((surface) => surface.writePolicy === "managed-block")) actions.add("Run `openskill-kit agent install-manifests --target project --dry-run` before writing managed instruction blocks.");
   if (surfaces.some((surface) => surface.surfaceType === "hook-config")) actions.add("Run `openskill-kit agent doctor` and preview hook install before enabling hooks.");
   if (surfaces.some((surface) => surface.adapter === "mcp")) actions.add("Inspect existing MCP config before applying generated OpenSkillKit MCP config.");
+  if (surfaces.some((surface) => surface.surfaceType === "config-file" && surface.scope === "project")) actions.add("Review project harness config files before choosing generated plugin attach target.");
   if (issues.some((issue) => issue.id === "plugin-not-attached-to-host-mcp")) actions.add("Run `openskill-kit agent attach-plugin --host generic-mcp --dry-run` to preview host MCP attachment.");
   if (issues.some((issue) => issue.id === "mcp-config-invalid-json")) actions.add("Fix invalid host MCP JSON before applying plugin attachment.");
   if (!actions.size) actions.add("Run `openskill-kit compile` after reviewing active behavior.");
@@ -444,6 +449,14 @@ function instruction(root: string, relative: string, adapter: AgentSurface["adap
 
 function config(root: string, relative: string, adapter: AgentSurface["adapter"], notes: string[] = [], scope: AgentSurface["scope"] = "project", readPolicy: AgentSurface["readPolicy"] = "safe-read", writePolicy: AgentSurface["writePolicy"] = "preview-only", privacyRisk: AgentSurface["privacyRisk"] = "medium"): SurfaceSpec {
   return { adapter, surfaceType: "mcp-config", scope, target: path.join(root, relative), readPolicy, writePolicy, privacyRisk, confidence: 0.86, notes };
+}
+
+function mcpConfig(root: string, relative: string, adapter: AgentSurface["adapter"], notes: string[] = [], scope: AgentSurface["scope"] = "project", readPolicy: AgentSurface["readPolicy"] = "safe-read", writePolicy: AgentSurface["writePolicy"] = "preview-only", privacyRisk: AgentSurface["privacyRisk"] = "medium"): SurfaceSpec {
+  return config(root, relative, adapter, notes, scope, readPolicy, writePolicy, privacyRisk);
+}
+
+function configFile(root: string, relative: string, adapter: AgentSurface["adapter"], notes: string[] = [], scope: AgentSurface["scope"] = "project", readPolicy: AgentSurface["readPolicy"] = "safe-read", writePolicy: AgentSurface["writePolicy"] = "preview-only", privacyRisk: AgentSurface["privacyRisk"] = "medium"): SurfaceSpec {
+  return { adapter, surfaceType: "config-file", scope, target: path.join(root, relative), readPolicy, writePolicy, privacyRisk, confidence: 0.82, notes };
 }
 
 function generated(root: string, relative: string, surfaceType: AgentSurface["surfaceType"]): SurfaceSpec {

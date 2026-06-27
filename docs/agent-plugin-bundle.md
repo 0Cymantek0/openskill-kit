@@ -92,6 +92,11 @@ For harness compatibility, generated plugins also include:
 
 Harness behavior should stay conservative:
 
+- Run `openskill-kit detect` before attaching. It inventories existing project
+  harness config such as `.mcp.json`, `.cursor/mcp.json`,
+  `.claude/settings.json`, `continue/config.json`, `.codex/config.toml`, and
+  `.roo/` so hosts can choose a safe attach target with the real workspace
+  footprint in view.
 - Load skills and MCP descriptors read-only by default.
 - Read `plugin.json.installProfile` before parsing prose guides. It is the
   stable machine contract for first call, MCP command, env binding, command

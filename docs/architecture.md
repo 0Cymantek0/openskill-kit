@@ -178,7 +178,12 @@ corrupt markers or a mismatched hash.
 instruction files, Claude/Cursor rules, MCP configs, skills, hooks, and
 possible session/export files with read/write policy, privacy risk, managed
 block metadata, MCP server names, OpenSkillKit attachment state, remote-server
-counts, and confidence. User/global surfaces are opt-in through
+counts, and confidence. Existing harness config discovery includes project
+`.mcp.json`, `.cursor/mcp.json`, `.claude/settings.json`,
+`continue/config.json`, `.codex/config.toml`, and `.roo/` so attach planning
+can see the real host footprint before writing any generated config.
+Non-JSON config files such as Codex TOML are reported as `config-file`, not
+invalid MCP JSON. User/global surfaces are opt-in through
 `--include-user-surfaces` and remain metadata-only by default. Raw session logs
 and agent memories are never imported silently; detected session exports use
 `explicit-import` read policy and point operators to `interactions import`.

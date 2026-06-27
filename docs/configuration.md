@@ -40,6 +40,12 @@ home-directory Codex, Claude, and skill locations as metadata-only records.
 Detected user memories and override files are never written or imported
 silently. Project session/export candidates are reported with `explicit-import`
 read policy so operators can preview them through `interactions import`.
+Project harness config discovery covers `.mcp.json`, `.cursor/mcp.json`,
+`.claude/settings.json`, `continue/config.json`, `.codex/config.toml`, and
+`.roo/`. JSON MCP-like configs are parsed for server names, remote server
+counts, and OpenSkillKit attachment state. Codex TOML and rule directories are
+metadata surfaces only, so they inform attach planning without creating false
+JSON parse blockers.
 
 ## Interaction imports
 

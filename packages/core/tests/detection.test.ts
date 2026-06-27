@@ -17,8 +17,20 @@ describe("agent environment detection", () => {
     await writeText(root, "packages/api/AGENTS.md", "Nested instructions\n");
     await writeText(root, "CLAUDE.md", "Claude project memory\n");
     await writeText(root, ".claude/rules/api.md", "API rule\n");
+    await writeText(root, ".claude/settings.json", JSON.stringify({
+      mcpServers: {
+        "claude-project": { command: "node", args: ["server.js"] }
+      }
+    }, null, 2));
     await writeText(root, ".mcp.json", "{\"mcpServers\":{}}\n");
     await writeText(root, ".cursor/rules/frontend.mdc", "Cursor rule\n");
+    await writeText(root, ".codex/config.toml", "[mcp_servers.openskill-kit]\ncommand = \"openskill-kit-mcp\"\n");
+    await writeText(root, "continue/config.json", JSON.stringify({
+      mcpServers: {
+        continueLocal: { command: "openskill-kit-mcp" }
+      }
+    }, null, 2));
+    await writeText(root, ".roo/rules.md", "Roo rule\n");
     await writeText(root, ".agents/skills/review/SKILL.md", "---\nname: review\n---\n");
     await writeText(root, ".agents/hooks/openskill-kit.json", "{}\n");
     await writeText(root, ".openskill-kit/compiled/plugin/plugin.json", "{\"schemaVersion\":\"openskill-kit.agent-plugin.v1\"}\n");
@@ -37,6 +49,15 @@ describe("agent environment detection", () => {
     expect(projectMcp?.metadata.mcpConfigValid).toBe(true);
     expect(projectMcp?.metadata.mcpServerNames).toEqual([]);
     expect(projectMcp?.metadata.openskillKitAttached).toBe(false);
+    const claudeSettings = report.surfaces.find((surface) => surface.relativePath === ".claude/settings.json");
+    expect(claudeSettings?.adapter).toBe("mcp");
+    expect(claudeSettings?.metadata.mcpServerNames).toEqual(["claude-project"]);
+    const codexConfig = report.surfaces.find((surface) => surface.relativePath === ".codex/config.toml");
+    expect(codexConfig?.surfaceType).toBe("config-file");
+    expect(codexConfig?.metadata.mcpConfigValid).toBeUndefined();
+    const continueConfig = report.surfaces.find((surface) => surface.relativePath === "continue/config.json");
+    expect(continueConfig?.metadata.mcpServerNames).toEqual(["continueLocal"]);
+    expect(report.surfaces.some((surface) => surface.relativePath === ".roo" && surface.surfaceType === "rule-directory" && surface.readPolicy === "metadata-only")).toBe(true);
     expect(report.surfaces.some((surface) => surface.adapter === "skills" && surface.surfaceType === "skill")).toBe(true);
     expect(report.surfaces.some((surface) => surface.adapter === "openskill-kit" && surface.relativePath === ".openskill-kit/compiled/plugin/plugin.json" && surface.writePolicy === "generated-only")).toBe(true);
     expect(report.surfaces.some((surface) => surface.adapter === "openskill-kit" && surface.relativePath === ".openskill-kit/compiled/plugin/.agent-plugin/plugin.json")).toBe(true);
@@ -52,6 +73,7 @@ describe("agent environment detection", () => {
     expect(report.issues.some((issue) => issue.id === "plugin-not-attached-to-host-mcp")).toBe(true);
     expect(report.nextActions.some((action) => action.includes("interactions import"))).toBe(true);
     expect(report.nextActions.some((action) => action.includes("agent attach-plugin"))).toBe(true);
+    expect(report.nextActions.some((action) => action.includes("project harness config files"))).toBe(true);
     expect(report.summary.previewOnly).toBeGreaterThan(0);
     expect(report.summary.issueCount).toBeGreaterThan(0);
     expect(report.summary.warningCount).toBeGreaterThan(0);
