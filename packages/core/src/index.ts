@@ -12,6 +12,7 @@ export * from "./verifier/verifier.js";
 export * from "./verifier/execution.js";
 export * from "./verifier/fixture.js";
 export * from "./verifier/pack.js";
+export * from "./verification/harness.js";
 export * from "./install/install.js";
 export * from "./registry/registry.js";
 export * from "./sandbox/policy.js";

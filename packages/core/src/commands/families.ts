@@ -242,7 +242,7 @@ export const OSK_PUBLIC_COMMAND_FAMILIES: OskCommandFamily[] = [
     subagents: ["osk-verifier"],
     artifactsRead: ["compiled artifacts", "verifier suites", "OpenWorld reports"],
     artifactsWrite: ["verification reports"],
-    workflowSteps: ["Check descriptor integrity and command bloat.", "Check leakage and proof labels.", "Run verifier/sandbox only with explicit mode."],
+    workflowSteps: ["Check descriptor integrity, command smell, OpenCode collisions, public MCP profile size, and generated artifact bloat.", "Check leakage and proof labels.", "Run verifier/sandbox only with explicit mode."],
     outputSummary: "Pass/fail checks, proof level, hiddenOracleProof flag, and remediation.",
     tests: ["artifact verifier does not claim hidden oracle proof", "raw prompts absent from compiled plugin"]
   }),

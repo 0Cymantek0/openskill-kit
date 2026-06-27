@@ -37,3 +37,5 @@ Compiled plugin files:
 - `.openskill-kit/compiled/plugin/mcp/descriptor-hashes.json`
 
 The descriptor hash must match before a harness trusts generated descriptors. If status reports `descriptor-drift`, re-run attach dry-run, apply after review, then restart the harness MCP server.
+
+`/osk verify` and `osk_verify_behavior` also run harness readiness checks over the compiled command map, public MCP profile, OpenCode command names, safety text, and generated command/skill size budgets.

@@ -163,7 +163,7 @@ Run integrity, privacy, verifier, and proof-boundary checks.
 
 Workflow:
 
-1. Check descriptor integrity and command bloat.
+1. Check descriptor integrity, command smell, OpenCode collisions, public MCP profile size, and generated artifact bloat.
 2. Check leakage and proof labels.
 3. Run verifier/sandbox only with explicit mode.
 

@@ -92,6 +92,7 @@ import {
   uninstallSkill,
   updatePreferenceGraph,
   writeOpenWorldLeakageAudit,
+  verifyHarnessReadiness,
   verifyProjectBehaviorPack,
   verifySkill,
   CompileTargets,
@@ -345,11 +346,23 @@ osk.command("evolve")
   });
 
 osk.command("verify")
-  .description("Score an OpenWorld verifier suite")
-  .requiredOption("--task-id <id>", "OpenWorld task id")
-  .requiredOption("--suite-id <id>", "Verifier suite id")
+  .description("Verify harness readiness or score an OpenWorld verifier suite")
+  .option("--task-id <id>", "OpenWorld task id")
+  .option("--suite-id <id>", "Verifier suite id")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (!options.taskId && !options.suiteId) {
+      const result = await verifyHarnessReadiness(process.cwd());
+      output(options.json, result, [
+        `Harness readiness ${result.status}`,
+        `Findings: ${result.summary.findings}; failures: ${result.summary.failures}; warnings: ${result.summary.warnings}`,
+        `Public MCP tools: ${result.summary.publicMcpToolCount ?? "missing"}/${result.limits.publicMcpToolCount}`,
+        `OpenCode commands: ${result.summary.opencodeCommandCount ?? "missing"}/${result.limits.publicCommandCount}`
+      ].join("\n"));
+      process.exitCode = result.status === "fail" ? 1 : 0;
+      return;
+    }
+    if (!options.taskId || !options.suiteId) throw new Error("--task-id and --suite-id must be supplied together for OpenWorld verifier quality.");
     const result = await assessOpenWorldVerifierQuality(process.cwd(), options.taskId, options.suiteId);
     output(options.json, result, `${result.report.status}: traceability=${result.report.metrics.traceabilityScore}`);
   });

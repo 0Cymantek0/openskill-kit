@@ -92,6 +92,7 @@ import {
   signProjectBehaviorPack,
   updatePreferenceGraph,
   validateMemoryIntegrity,
+  verifyHarnessReadiness,
   verifyProjectBehaviorPack,
   verifySkill,
   AgentPluginAttachHosts,
@@ -1305,6 +1306,7 @@ export function createOpenSkillMcpServer(): McpServer {
       const root = resolveProjectRoot(projectRoot);
       const memory = await validateMemoryIntegrity(root);
       const plugin = await getCompiledPluginStatus(root);
+      const harness = await verifyHarnessReadiness(root);
       const doctor = await runFullDoctor(root).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
       const openWorld = taskId && suiteId
         ? await assessOpenWorldVerifierQuality(root, taskId, suiteId, { write })
@@ -1313,6 +1315,7 @@ export function createOpenSkillMcpServer(): McpServer {
         schemaVersion: "openskill-kit.verify-behavior.v1",
         memory,
         plugin,
+        harness,
         doctor,
         openWorld,
         hiddenOracleProof: false,

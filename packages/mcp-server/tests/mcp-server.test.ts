@@ -224,6 +224,9 @@ describe("openskill-kit MCP server", () => {
       const verifiedParsed = JSON.parse(verified.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(verifiedParsed.schemaVersion).toBe("openskill-kit.verify-behavior.v1");
       expect(verifiedParsed.hiddenOracleProof).toBe(false);
+      expect(verifiedParsed.harness.schemaVersion).toBe("openskill-kit.harness-readiness-verification.v1");
+      expect(verifiedParsed.harness.summary.publicMcpToolCount).toBeLessThanOrEqual(12);
+      expect(verifiedParsed.harness.summary.opencodeCommandCount).toBe(12);
 
       const packed = await client.callTool({
         name: "osk_pack_behavior",
