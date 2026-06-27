@@ -73,6 +73,8 @@ For harness compatibility, generated plugins also include:
   generic MCP compatibility records with support level, expected config path,
   instruction surface, requirements, and safety notes.
 - `.mcp.json`: direct stdio MCP attachment for `openskill-kit-mcp`.
+- `model-routing.resolved.json` and `opencode/model-routing.json`: validated
+  project-local model-route projections. See `docs/model-routing.md`.
 - `mcp/descriptors.json` and `mcp/descriptor-hashes.json`: deterministic MCP
   tool descriptor catalog plus SHA-256 hashes so a harness can detect descriptor
   drift before trusting the tool surface.

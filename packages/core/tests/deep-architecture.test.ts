@@ -240,6 +240,48 @@ describe("deep architecture hardening", () => {
     expect(readme).toContain("Never attach hidden benchmark answers");
   });
 
+  it("validates and projects user-editable model routing into OpenCode agents", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("model-routing", "Prefer explicit learner model routing", "workflow", [])]);
+    await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.model-routing.v1",
+      defaultHarness: "opencode",
+      defaultModel: "default",
+      routes: {
+        learner: {
+          model: "opencode/gpt-5-test",
+          temperature: 0.2,
+          maxSteps: 31,
+          permissionsProfile: "learner-safe"
+        }
+      },
+      safety: {
+        requireUserApprovalForModelNotInHost: true,
+        allowNetworkModelsForPrivateSources: false
+      }
+    }, null, 2), "utf8");
+
+    await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const pluginRoot = path.join(root, ".openskill-kit", "compiled", "plugin");
+    const opencodeAgent = await readFile(path.join(pluginRoot, "opencode", "agents", "osk-learner.md"), "utf8");
+    const resolved = JSON.parse(await readFile(path.join(pluginRoot, "model-routing.resolved.json"), "utf8"));
+    expect(opencodeAgent).toContain("model: opencode/gpt-5-test");
+    expect(opencodeAgent).toContain("temperature: 0.2");
+    expect(opencodeAgent).toContain("steps: 31");
+    expect(resolved.routes.learner.model).toBe("opencode/gpt-5-test");
+    expect(resolved.routes.learner.temperature).toBe(0.2);
+
+    await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.model-routing.v1",
+      routes: {
+        learner: {
+          maxSteps: 500
+        }
+      }
+    }, null, 2), "utf8");
+    await expect(compileBehaviorLayer(root, { targets: ["plugin"] })).rejects.toThrow(/Invalid OpenSkillKit model routing/);
+  });
+
   it("regenerates compiled skills and plugin bundles without stale shards", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("testing-shard", "Prefer focused parser tests", "testing", ["src/parser"])]);
