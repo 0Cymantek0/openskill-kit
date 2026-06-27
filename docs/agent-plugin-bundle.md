@@ -121,6 +121,11 @@ Harness behavior should stay conservative:
   artifact tree. The task report includes `proofSummary` so hosts can show
   artifact-verifier readiness, missing evidence, and the hidden-oracle
   limitation without parsing Markdown.
+- Route `/osk openworld hidden oracle harness` to
+  `osk_openworld_hidden_oracle_harness` when a task has denied oracle paths or
+  benchmark-readiness metadata. This writes static denied-path exposure proof
+  and non-proof benchmark readiness only; it does not read oracle contents or
+  claim hidden-oracle benchmark success.
 - Route `/osk openworld promote review` to `osk_openworld_promote_review` only
   after explicit approval. Promotion creates a review-only proposal from a
   passed run; it does not activate behavior and does not claim hidden-oracle

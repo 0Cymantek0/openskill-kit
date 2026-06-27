@@ -250,6 +250,15 @@ Run bounded visible verifier refinement and final holdout check for a candidate 
 - Read-only: `no`
 - Explicit approval required: `no`
 
+### /osk openworld hidden oracle harness
+
+Write denied-path and benchmark-readiness harness metadata without reading oracle contents or claiming hidden-oracle proof.
+
+- MCP tool: `osk_openworld_hidden_oracle_harness`
+- CLI fallback: `openskill-kit openworld hidden-oracle-harness --task-id <task-id> --suite-id <suite-id>`
+- Read-only: `no`
+- Explicit approval required: `no`
+
 ### /osk openworld report
 
 Render task evidence, sources, anchors, verifier runs, eval reports, and remaining proof gaps.

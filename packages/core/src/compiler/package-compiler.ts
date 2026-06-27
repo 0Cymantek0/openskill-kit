@@ -149,6 +149,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_openworld_verifier_quality", "openworld", "local-write"),
   descriptor("osk_openworld_refine", "openworld", "local-write"),
   descriptor("osk_openworld_eval_report", "openworld", "local-write"),
+  descriptor("osk_openworld_hidden_oracle_harness", "openworld", "local-write"),
   descriptor("osk_openworld_task_report", "openworld", "local-write"),
   descriptor("osk_openworld_promote_review", "openworld", "approval-required", true),
   descriptor("osk_reset_state", "maintenance", "approval-required", true),

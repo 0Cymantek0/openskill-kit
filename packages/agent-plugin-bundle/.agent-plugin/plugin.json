@@ -396,6 +396,19 @@
         "fallback": "cli"
       },
       {
+        "command": "/osk openworld hidden oracle harness",
+        "aliases": [
+          "osk ow hidden oracle harness",
+          "openskill openworld hidden oracle harness"
+        ],
+        "description": "Write denied-path and benchmark-readiness harness metadata without reading oracle contents or claiming hidden-oracle proof.",
+        "mcpTool": "osk_openworld_hidden_oracle_harness",
+        "cli": "openskill-kit openworld hidden-oracle-harness --task-id <task-id> --suite-id <suite-id>",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
         "command": "/osk openworld report",
         "aliases": [
           "osk ow report",
