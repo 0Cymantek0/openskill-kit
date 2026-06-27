@@ -218,7 +218,7 @@ Plan leakage-audited local and explicit web source candidates for an OpenWorld t
 
 Build a leakage-audited visible/holdout verifier suite from Anchor Cards, preserving manual-review anchors and traceable local file assertions.
 
-- MCP tool: `none; use CLI fallback`
+- MCP tool: `osk_openworld_build_verifier`
 - CLI fallback: `openskill-kit openworld build-verifier --task-id <task-id> --anchor-id <anchor-id>`
 - Read-only: `no`
 - Explicit approval required: `no`

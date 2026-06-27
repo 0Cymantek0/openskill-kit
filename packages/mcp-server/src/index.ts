@@ -27,7 +27,9 @@ import {
   finishAgentTask,
   getCompiledPluginStatus,
   getAdaptiveStatus,
+  AnchorCardSchema,
   assessOpenWorldVerifierQuality,
+  buildVirtualSuiteFromAnchors,
   buildOpenWorldRetrievalAdapters,
   executeOpenWorldResearchPlan,
   generateOpenWorldCandidateSkill,
@@ -1186,6 +1188,29 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult({ index: await readOpenWorldSourceIndex(root), trust: await readOpenWorldTrustCache(root) }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_build_verifier",
+    {
+      title: "OpenSkillKit OpenWorld Build Verifier",
+      description: "Build a leakage-audited visible/holdout virtual verifier suite from Anchor Card ids.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        anchorIds: z.array(z.string().min(1)).min(1)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, anchorIds }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const fs = await import("node:fs/promises");
+      const anchors = await Promise.all(anchorIds.map(async (anchorId) => {
+        const file = path.join(root, ".openskill-kit", "openworld", "tasks", taskId, "anchors", `${anchorId}.json`);
+        return AnchorCardSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+      }));
+      return toolResult(await buildVirtualSuiteFromAnchors(root, taskId, anchors), root);
     }
   );
 

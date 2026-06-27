@@ -308,6 +308,7 @@
         "openskill openworld build verifier"
       ],
       "description": "Build a leakage-audited visible/holdout verifier suite from Anchor Cards, preserving manual-review anchors and traceable local file assertions.",
+      "mcpTool": "osk_openworld_build_verifier",
       "cli": "openskill-kit openworld build-verifier --task-id <task-id> --anchor-id <anchor-id>",
       "readOnly": false,
       "approvalRequired": false,

@@ -31,7 +31,7 @@ describe("agent plugin manifest", () => {
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk openworld doctor" && item.mcpTool === "osk_openworld_doctor" && item.readOnly === true)).toBe(true);
-    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld build verifier" && !item.mcpTool)).toBe(true);
+    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld build verifier" && item.mcpTool === "osk_openworld_build_verifier")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk openworld verifier quality" && item.mcpTool === "osk_openworld_verifier_quality" && item.readOnly === true)).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld run verifier" && item.mcpTool === "osk_openworld_run_verifier")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk openworld promote review" && item.mcpTool === "osk_openworld_promote_review" && item.approvalRequired === true)).toBe(true);
