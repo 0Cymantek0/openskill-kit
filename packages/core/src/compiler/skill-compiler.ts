@@ -1,3 +1,4 @@
+import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readProjectConfig } from "../events/store.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
@@ -21,6 +22,7 @@ export async function compileBehaviorSkills(projectRoot: string): Promise<Compil
   const active = graph.nodes.filter((node) => node.status === "active" || node.status === "locked");
   const activeWorkflows = workflowGraph.nodes.filter((node) => node.status === "active" || node.status === "locked");
   const skillsDir = path.join(root, ".openskill-kit", "compiled", "skills");
+  await fs.rm(skillsDir, { recursive: true, force: true });
   const projectBehaviorDir = path.join(skillsDir, "project-behavior");
   const skillBody = renderProjectBehaviorSkill(config.projectName, active, activeWorkflows);
   await writeFileAtomic(path.join(projectBehaviorDir, "SKILL.md"), skillBody);

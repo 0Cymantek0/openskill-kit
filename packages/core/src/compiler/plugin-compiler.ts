@@ -97,6 +97,7 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
   const root = path.resolve(projectRoot);
   const pluginDir = path.join(root, ".openskill-kit", "compiled", "plugin");
   const manifestPath = path.join(pluginDir, "plugin.json");
+  await fs.rm(pluginDir, { recursive: true, force: true });
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "skills"), path.join(pluginDir, "skills"));
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "behavior"), path.join(pluginDir, "behavior"));
   await copyIfExists(path.join(root, ".openskill-kit", "compiled", "hooks"), path.join(pluginDir, "hooks"));

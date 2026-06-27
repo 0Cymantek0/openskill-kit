@@ -142,6 +142,26 @@ describe("deep architecture hardening", () => {
     expect(readme).toContain("Never attach hidden benchmark answers");
   });
 
+  it("regenerates compiled skills and plugin bundles without stale shards", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("testing-shard", "Prefer focused parser tests", "testing", ["src/parser"])]);
+    await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const skillsDir = path.join(root, ".openskill-kit", "compiled", "skills");
+    const pluginDir = path.join(root, ".openskill-kit", "compiled", "plugin");
+    await expect(stat(path.join(skillsDir, "project-testing", "SKILL.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(pluginDir, "skills", "project-testing", "SKILL.md"))).resolves.toBeTruthy();
+
+    await writeGraph(root, [pref("general-only", "Prefer concise final summaries", "general", [])]);
+    await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const manifest = JSON.parse(await readFile(path.join(pluginDir, "plugin.json"), "utf8"));
+
+    await expect(stat(path.join(skillsDir, "project-testing", "SKILL.md"))).rejects.toThrow();
+    await expect(stat(path.join(pluginDir, "skills", "project-testing", "SKILL.md"))).rejects.toThrow();
+    expect(manifest.skills).not.toContain("skills/project-testing");
+    expect(manifest.files).not.toContain("skills/project-testing/SKILL.md");
+    expect(manifest.skills).toContain("skills/project-behavior");
+  });
+
   it("returns one-shot agent task context for coding harness plugins", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("context", "Prefer focused tests before final answer", "testing", ["src/parser"])]);
