@@ -2,9 +2,9 @@
 
 OpenSkillKit is intended to attach to an existing coding harness, not replace
 it. OpenCode is the primary full-feature target for command files, skills,
-learner subagent metadata, plugin hooks, and MCP. Codex, Claude Code, Cursor,
-and generic MCP clients stay supported through conservative preview-first
-attach paths.
+learner subagent metadata, project plugin hooks, and MCP. Codex, Claude Code,
+Cursor, and generic MCP clients stay supported through conservative
+preview-first attach paths.
 
 The public harness surface is 12 `/osk` command families: `init`, `status`,
 `task`, `learn`, `review`, `research`, `evolve`, `verify`, `compile`,
@@ -20,6 +20,8 @@ The plugin bundle gives a harness these local entrypoints:
   routes.
 - `install-guides/` for host-specific attach notes for Codex, Claude Code,
   Cursor, and generic MCP clients.
+- `opencode/plugins/` for OpenCode project plugin hooks copied into
+  `.opencode/plugins` without changing the user's `plugin` list.
 - `.agent-plugin/plugin.json` for the host-facing capability and privacy
   contract.
 

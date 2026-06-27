@@ -56,7 +56,7 @@ describe("osk CLI facade", () => {
     await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).resolves.toBeTruthy();
     await expect(stat(path.join(root, ".opencode", "skills", "osk-learning", "SKILL.md"))).resolves.toBeTruthy();
     let config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
-    expect(config.plugin).toEqual(expect.arrayContaining(["./custom.ts", ".opencode/plugins/openskillkit.ts"]));
+    expect(config.plugin).toEqual(["./custom.ts"]);
     expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
 
     const preview = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "uninstall", "--non-interactive", "--dry-run", "--json"], { cwd: root, windowsHide: true });

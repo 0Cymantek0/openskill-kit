@@ -393,8 +393,6 @@ async function planOpenCodeConfig(destination: string, command: string, projectR
   }
   const before = existing ?? "";
   const currentMcp = isRecord(parsed.mcp) ? parsed.mcp : {};
-  const currentPlugins = Array.isArray(parsed.plugin) ? parsed.plugin.filter((item): item is string => typeof item === "string") : [];
-  const nextPlugins = [...new Set([...currentPlugins, ".opencode/plugins/openskillkit.ts"])];
   const next: Record<string, unknown> = {
     ...parsed,
     mcp: {
@@ -407,8 +405,7 @@ async function planOpenCodeConfig(destination: string, command: string, projectR
           [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot
         }
       }
-    },
-    plugin: nextPlugins
+    }
   };
   const after = `${JSON.stringify(next, null, 2)}\n`;
   return {

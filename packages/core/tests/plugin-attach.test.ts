@@ -156,7 +156,7 @@ describe("agent plugin attach planner", () => {
     expect(attached.status).toBe("attached");
     const config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
     expect(config.keep).toBe(true);
-    expect(config.plugin).toEqual(expect.arrayContaining(["./custom.ts", ".opencode/plugins/openskillkit.ts"]));
+    expect(config.plugin).toEqual(["./custom.ts"]);
     expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
     expect(config.mcp["openskill-kit"].environment.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
     expect(await readFile(path.join(root, ".opencode", "commands", "osk-learn.md"), "utf8")).toContain("osk_plan_learning_sources");
