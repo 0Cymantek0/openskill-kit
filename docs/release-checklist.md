@@ -27,12 +27,13 @@ Manual audit:
 - OpenWorld `retrieval-adapters`, `source-plan`, and `execute-source-plan` expose adapter gates, ingest only leakage-audited recommended local candidates plus explicit vetted URLs, and write adapter-level execution traces.
 - OpenWorld `build-verifier` writes manifest, traceability map, visible/holdout executable cases, and blocks leaked verifier artifacts before writing scripts.
 - OpenWorld `candidate-skill` writes only review-only Anchor-grounded skill artifacts, validates package structure, runs safety scan, and never activates behavior.
+- OpenWorld `repair-candidate` writes candidate revisions, executes local sandbox repair probes, records repair runs, and never activates behavior.
 - OpenWorld `verifier-quality` scores traceability, determinism, holdout coverage, source trust, and leakage metadata without claiming hidden-oracle proof.
 - OpenWorld `run-verifier --split visible` executes generated cases through the sandbox runner and writes a result JSON.
-- OpenWorld `refine` writes an EvolutionRun, records candidate skill ids, writes candidate revision artifacts on visible failures, stops early on actionable visible failures, and runs holdout only after visible pass.
+- OpenWorld `refine` writes an EvolutionRun, records candidate skill ids, runs the candidate repair loop on visible failures, stops early on actionable visible failures, and runs holdout only after visible pass.
 - OpenWorld `eval-report` labels proof level as artifact-verifier and says hidden-oracle proof is false.
 - OpenWorld `hidden-oracle-harness` scans generated artifacts for denied path exposure without reading oracle contents and does not claim benchmark proof.
-- OpenWorld `report --write` collects sources, anchors, suites, verifier executions, EvolutionRuns, eval reports, hidden-oracle harnesses, and next actions in one task report.
+- OpenWorld `report --write` collects sources, anchors, suites, verifier executions, candidate repair runs, EvolutionRuns, eval reports, hidden-oracle harnesses, and next actions in one task report.
 - OpenWorld `promote-review` creates only a semantic review proposal from passed runs and never activates behavior directly.
 - `status --explain` gives useful next action text.
 - Generated packs do not include private event, signal, interaction import-run, review, eval-run, report, raw prompt, raw diff, or secret data.

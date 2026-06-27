@@ -59,6 +59,7 @@ import {
   routeBehavior,
   diffProjectBehaviorPacks,
   runAgentDoctor,
+  runOpenWorldCandidateRepairLoop,
   runBehaviorEval,
   runBehaviorCompareEval,
   runExternalAgentEval,
@@ -1043,6 +1044,36 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, taskId, anchorIds, suiteIds, name, write }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await generateOpenWorldCandidateSkill(root, taskId, { anchorIds, suiteIds, name, write }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_repair_candidate",
+    {
+      title: "OpenSkillKit OpenWorld Repair Candidate",
+      description: "Run a local sandbox repair loop for a review-only OpenWorld candidate skill revision.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        candidateSkillId: z.string().min(1),
+        suiteId: z.string().min(1).optional(),
+        failureType: z.enum(["missing-knowledge", "verifier-bug", "source-conflict", "skill-failure", "sandbox-error", "leakage", "overfit-risk", "unknown"]).optional(),
+        notes: z.array(z.string().min(1)).default([]),
+        maxRounds: z.number().int().min(1).max(5).default(1),
+        timeoutMs: z.number().int().min(1000).max(300000).default(30000)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, candidateSkillId, suiteId, failureType, notes, maxRounds, timeoutMs }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runOpenWorldCandidateRepairLoop(root, taskId, {
+        candidateSkillId,
+        suiteId,
+        failureType,
+        notes,
+        maxRounds,
+        timeoutMs
+      }), root);
     }
   );
 

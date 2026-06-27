@@ -34,13 +34,14 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "Verifier quality scoring", status: "available", message: "Verifier suites can be scored for traceability, determinism, holdout coverage, source trust, and leakage metadata." },
     { name: "Candidate skill artifacts", status: "available", message: "Anchor-grounded review-only SKILL.md candidates can be generated with leakage, validation, and safety gates." },
     { name: "Candidate skill revisions", status: "available", message: "Visible verifier failures can write candidate skill revision artifacts with diagnosis, validation, safety, and leakage metadata." },
+    { name: "Local candidate repair loop", status: "available", message: "Candidate revisions can be probed through the local-process sandbox and recorded as repair runs without activating behavior." },
     { name: "Bounded verifier refinement", status: "available", message: "Visible verifier rounds stop early on pass or actionable failure; holdout runs only after visible success and writes an EvolutionRun." },
     { name: "OpenWorld eval reports", status: "available", message: "EvolutionRun metrics can be rendered with explicit artifact-verifier proof level and hidden-oracle limitations." },
     { name: "Hidden-oracle denied-path harness", status: "available", message: "Generated runtime artifacts can be scanned for forbidden path exposure without reading oracle file contents; this is static proof, not benchmark proof." },
     { name: "Review-only promotion bridge", status: "available", message: "Passed OpenWorld runs can create semantic review proposals without activating behavior." },
     { name: "Autonomous web search", status: "missing", message: "No autonomous query planning or web/doc/repo search engine is implemented." },
     { name: "LLM skill generation", status: "missing", message: "No built-in model generation loop is implemented; candidate skill artifacts are deterministic and review-only." },
-    { name: "Containerized skill repair", status: "missing", message: "Candidate revisions are artifact-only; no containerized iterative skill repair loop is implemented." },
+    { name: "Containerized skill repair", status: "missing", message: "Repair runs use local-process sandbox mode; no containerized iterative skill repair boundary is implemented." },
     { name: "Hidden-oracle benchmark proof", status: "missing", message: "Existing evals and denied-path scans do not prove hidden-oracle benchmark improvement." }
   ];
   return {

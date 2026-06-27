@@ -389,6 +389,40 @@ export const OpenWorldCandidateSkillRevisionSchema = z.object({
   notes: z.array(z.string().min(1)).default([])
 });
 
+export const OpenWorldCandidateRepairRunSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.openworld-candidate-repair-run.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  candidateSkillId: z.string().min(1),
+  suiteId: z.string().min(1).optional(),
+  startedAt: z.string().datetime(),
+  completedAt: z.string().datetime(),
+  status: z.enum(["passed", "failed", "blocked"]),
+  sandboxMode: z.enum(["local-process", "docker"]),
+  maxRounds: z.number().int().min(1).max(5),
+  hiddenOracleProof: z.literal(false),
+  rounds: z.array(z.object({
+    index: z.number().int().min(0),
+    status: z.enum(["passed", "failed", "blocked"]),
+    failureType: z.enum(["missing-knowledge", "verifier-bug", "source-conflict", "skill-failure", "sandbox-error", "leakage", "overfit-risk", "unknown"]).optional(),
+    revisionId: z.string().min(1).optional(),
+    revisionPath: z.string().optional(),
+    probeScriptPath: z.string().optional(),
+    probeResultPath: z.string().optional(),
+    probeSummary: z.object({
+      pass: z.number().int().min(0).default(0),
+      fail: z.number().int().min(0).default(0),
+      blocked: z.number().int().min(0).default(0),
+      timeout: z.number().int().min(0).default(0)
+    }).default({ pass: 0, fail: 0, blocked: 0, timeout: 0 }),
+    notes: z.array(z.string().min(1)).default([])
+  })).default([]),
+  artifacts: z.object({
+    repairRunPath: z.string().optional()
+  }).default({}),
+  limitations: z.array(z.string().min(1)).default([])
+});
+
 export const OpenWorldLeakageFindingSchema = z.object({
   id: z.string().min(1),
   level: z.enum(["warn", "block"]),
@@ -532,6 +566,7 @@ export type OpenWorldVerifierQualityReport = z.infer<typeof OpenWorldVerifierQua
 export type SkillPlan = z.infer<typeof SkillPlanSchema>;
 export type OpenWorldCandidateSkill = z.infer<typeof OpenWorldCandidateSkillSchema>;
 export type OpenWorldCandidateSkillRevision = z.infer<typeof OpenWorldCandidateSkillRevisionSchema>;
+export type OpenWorldCandidateRepairRun = z.infer<typeof OpenWorldCandidateRepairRunSchema>;
 export type OpenWorldLeakageFinding = z.infer<typeof OpenWorldLeakageFindingSchema>;
 export type OpenWorldLeakageAudit = z.infer<typeof OpenWorldLeakageAuditSchema>;
 export type OpenWorldEvolutionRun = z.infer<typeof OpenWorldEvolutionRunSchema>;

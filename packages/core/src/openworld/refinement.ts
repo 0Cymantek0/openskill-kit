@@ -4,7 +4,7 @@ import path from "node:path";
 import { readOpenWorldTask, readVirtualTestSuite, writeOpenWorldEvolutionRun } from "./store.js";
 import { runVirtualTestSuite } from "./verifier-runner.js";
 import { assessOpenWorldVerifierQuality } from "./verifier-quality.js";
-import { reviseOpenWorldCandidateSkill } from "./candidate-skill.js";
+import { runOpenWorldCandidateRepairLoop } from "./candidate-repair.js";
 import {
   OpenWorldEvolutionRunSchema,
   type OpenWorldEvolutionRun,
@@ -89,16 +89,19 @@ export async function runOpenWorldRefinement(
       notes: diagnosis.notes
     };
     if (options.candidateSkillId && diagnosis.status !== "passed" && diagnosis.failureType !== "leakage") {
-      const revision = await reviseOpenWorldCandidateSkill(root, taskId, {
+      const repair = await runOpenWorldCandidateRepairLoop(root, taskId, {
         candidateSkillId: options.candidateSkillId,
-        roundIndex: index,
+        suiteId,
+        maxRounds: 1,
         failureType: diagnosis.failureType,
         notes: diagnosis.notes,
         now: new Date(startedAt.getTime() + index + 1)
       });
-      round.candidateRevisionId = revision.revision.id;
-      round.candidateRevisionPath = revision.revision.artifacts.revisionPath;
-      round.notes.push(`Candidate skill revision written: ${revision.revision.artifacts.revisionPath ?? revision.revision.id}.`);
+      const repairRound = repair.run.rounds[0];
+      round.candidateRevisionId = repairRound?.revisionId;
+      round.candidateRevisionPath = repairRound?.revisionPath;
+      round.notes.push(`Candidate repair run written: ${repair.run.artifacts.repairRunPath ?? repair.run.id}.`);
+      if (repairRound?.probeResultPath) round.notes.push(`Candidate repair probe result: ${repairRound.probeResultPath}.`);
     }
     rounds.push(round);
     if (diagnosis.status === "passed") {

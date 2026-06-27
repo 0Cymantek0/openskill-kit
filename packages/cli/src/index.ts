@@ -51,6 +51,7 @@ import {
   readOpenWorldTrustCache,
   promoteOpenWorldRunToReview,
   routeBehavior,
+  runOpenWorldCandidateRepairLoop,
   runOpenWorldRefinement,
   runVirtualTestSuite,
   runOpenWorldPython,
@@ -403,6 +404,29 @@ openworld.command("candidate-skill")
       result.candidate.artifacts.candidatePath ? `Candidate: ${result.candidate.artifacts.candidatePath}` : undefined
     ].filter(Boolean).join("\n"));
     process.exitCode = result.candidate.status === "blocked" ? 1 : 0;
+  });
+
+openworld.command("repair-candidate")
+  .description("Run a local sandbox repair loop for an OpenWorld candidate skill revision")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--candidate-id <id>", "Candidate skill id")
+  .option("--suite-id <id>", "Related virtual suite id")
+  .option("--failure-type <type>", "Failure type to record")
+  .option("--note <text>", "Repair diagnosis note", collectOption, [])
+  .option("--max-rounds <number>", "Maximum repair rounds", parseIntegerOption, 1)
+  .option("--timeout-ms <number>", "Probe timeout", parseIntegerOption, 30000)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await runOpenWorldCandidateRepairLoop(process.cwd(), options.taskId, {
+      candidateSkillId: options.candidateId,
+      suiteId: options.suiteId,
+      failureType: options.failureType,
+      notes: options.note,
+      maxRounds: options.maxRounds,
+      timeoutMs: options.timeoutMs
+    });
+    output(options.json, result, `OpenWorld candidate repair ${result.run.status}: ${result.run.rounds.length} round(s)\n${result.run.artifacts.repairRunPath ?? result.repairRunPath}`);
+    process.exitCode = result.run.status === "passed" ? 0 : 1;
   });
 
 openworld.command("run-verifier")

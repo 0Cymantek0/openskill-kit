@@ -6,6 +6,7 @@ import { assertOpenWorldArtifactPath } from "./leakage.js";
 import {
   AnchorCardSchema,
   OpenWorldCandidateSkillSchema,
+  OpenWorldCandidateRepairRunSchema,
   OpenWorldCandidateSkillRevisionSchema,
   OpenWorldEvolutionRunSchema,
   OpenWorldLeakageAuditSchema,
@@ -20,6 +21,7 @@ import {
   VirtualTestSuiteSchema,
   type AnchorCard,
   type OpenWorldCandidateSkill,
+  type OpenWorldCandidateRepairRun,
   type OpenWorldCandidateSkillRevision,
   type OpenWorldEvolutionRun,
   type OpenWorldLeakageAudit,
@@ -151,6 +153,13 @@ export async function readOpenWorldCandidateSkill(projectRoot: string, taskId: s
 export async function writeOpenWorldCandidateSkillRevision(projectRoot: string, revision: OpenWorldCandidateSkillRevision): Promise<string> {
   const parsed = OpenWorldCandidateSkillRevisionSchema.parse(revision);
   const file = taskArtifactPath(projectRoot, parsed.taskId, "candidates", parsed.candidateSkillId, "revisions", `${parsed.id}.json`);
+  await writeOpenWorldJson(projectRoot, file, parsed);
+  return file;
+}
+
+export async function writeOpenWorldCandidateRepairRun(projectRoot: string, run: OpenWorldCandidateRepairRun): Promise<string> {
+  const parsed = OpenWorldCandidateRepairRunSchema.parse(run);
+  const file = taskArtifactPath(projectRoot, parsed.taskId, "candidates", parsed.candidateSkillId, "repairs", `${parsed.id}.json`);
   await writeOpenWorldJson(projectRoot, file, parsed);
   return file;
 }

@@ -75,6 +75,7 @@ export * from "./openworld/research.js";
 export * from "./openworld/verifier-runner.js";
 export * from "./openworld/verifier-quality.js";
 export * from "./openworld/candidate-skill.js";
+export * from "./openworld/candidate-repair.js";
 export * from "./openworld/refinement.js";
 export * from "./openworld/eval-report.js";
 export * from "./openworld/promotion.js";

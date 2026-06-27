@@ -22,6 +22,7 @@ import {
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
   promoteOpenWorldRunToReview,
+  runOpenWorldCandidateRepairLoop,
   runOpenWorldRefinement,
   runVirtualTestSuite
 } from "../src/index.js";
@@ -143,6 +144,17 @@ describe("OpenWorld local research", () => {
     expect(candidateSkill.candidate.safety.status).toBe("pass");
     expect(candidateSkill.candidate.artifacts.skillPath).toContain("/candidates/");
     await expect(stat(candidateSkill.skillPath ?? "")).resolves.toBeTruthy();
+    const repair = await runOpenWorldCandidateRepairLoop(root, task.task.id, {
+      candidateSkillId: candidateSkill.candidate.id,
+      failureType: "unknown",
+      notes: ["Exercise local repair probe before refinement."],
+      now: new Date("2026-06-26T01:02:50.000Z")
+    });
+    expect(repair.run.status).toBe("passed");
+    expect(repair.run.sandboxMode).toBe("local-process");
+    expect(repair.run.rounds[0]?.revisionId).toContain("owskillrev_");
+    expect(repair.run.rounds[0]?.probeSummary.fail).toBe(0);
+    expect(repair.run.rounds[0]?.probeResultPath).toContain("repair-probe-result.json");
 
     const suite = await buildVirtualSuiteFromAnchors(root, task.task.id, anchors, new Date("2026-06-26T01:03:00.000Z"));
     expect(suite.suite.cases).toHaveLength(4);
@@ -197,6 +209,7 @@ describe("OpenWorld local research", () => {
     expect(taskReport.sources).toHaveLength(1);
     expect(taskReport.anchors).toHaveLength(4);
     expect(taskReport.candidateSkills).toHaveLength(1);
+    expect(taskReport.candidateRepairRuns.some((item) => item.id === repair.run.id)).toBe(true);
     expect(taskReport.suites).toHaveLength(1);
     expect(taskReport.qualityReports.length).toBeGreaterThan(0);
     expect(taskReport.executions.length).toBeGreaterThan(0);
@@ -235,6 +248,7 @@ describe("OpenWorld local research", () => {
     expect(failedRefinement.status).toBe("failed");
     expect(failedRefinement.rounds[0]?.failureType).toBe("source-conflict");
     expect(failedRefinement.rounds[0]?.candidateRevisionId).toContain("owskillrev_");
+    expect(failedRefinement.rounds[0]?.notes.some((note) => note.includes("Candidate repair run written"))).toBe(true);
     await expect(stat(path.join(root, failedRefinement.rounds[0]?.candidateRevisionPath ?? ""))).resolves.toBeTruthy();
     await expect(promoteOpenWorldRunToReview(root, failedRefinement.id)).rejects.toThrow(/only passed runs/);
   });

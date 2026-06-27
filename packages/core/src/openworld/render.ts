@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   AnchorCardSchema,
   OpenWorldCandidateSkillSchema,
+  OpenWorldCandidateRepairRunSchema,
   OpenWorldEvalReportSchema,
   OpenWorldEvolutionRunSchema,
   OpenWorldHiddenOracleHarnessSchema,
@@ -15,6 +16,7 @@ import {
   VirtualTestSuiteSchema,
   type AnchorCard,
   type OpenWorldCandidateSkill,
+  type OpenWorldCandidateRepairRun,
   type OpenWorldEvalReport,
   type OpenWorldEvolutionRun,
   type OpenWorldHiddenOracleHarness,
@@ -38,6 +40,7 @@ export interface BuildOpenWorldTaskReportResult {
   executions: VirtualTestSuiteExecution[];
   plans: SkillPlan[];
   candidateSkills: OpenWorldCandidateSkill[];
+  candidateRepairRuns: OpenWorldCandidateRepairRun[];
   audits: OpenWorldLeakageAudit[];
   researchExecutions: OpenWorldResearchExecution[];
   runs: OpenWorldEvolutionRun[];
@@ -59,6 +62,7 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
   const executions = await readVerifierExecutions(path.join(taskDir, "verifiers"));
   const plans = await readJsonFiles(path.join(taskDir, "plans"), (value) => SkillPlanSchema.parse(value));
   const candidateSkills = await readJsonFiles(path.join(taskDir, "candidates"), (value) => OpenWorldCandidateSkillSchema.parse(value));
+  const candidateRepairRuns = await readCandidateRepairRuns(path.join(taskDir, "candidates"));
   const audits = await readJsonFiles(path.join(taskDir, "audits"), (value) => OpenWorldLeakageAuditSchema.parse(value));
   const researchExecutions = await readJsonFiles(path.join(taskDir, "research", "executions"), (value) => OpenWorldResearchExecutionSchema.parse(value));
   const runs = await readEvolutionRuns(root, taskId);
@@ -66,7 +70,7 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
   const hiddenOracleHarnesses = await readJsonFiles(path.join(taskDir, "harness"), (value) => OpenWorldHiddenOracleHarnessSchema.parse(value));
   const qualityReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldVerifierQualityReportSchema.parse(value));
   const nextActions = inferNextActions({ task, sources, anchors, suites, runs, evalReports, hiddenOracleHarnesses, qualityReports });
-  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, candidateSkills, audits, researchExecutions, runs, evalReports, hiddenOracleHarnesses, qualityReports, nextActions });
+  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, candidateSkills, candidateRepairRuns, audits, researchExecutions, runs, evalReports, hiddenOracleHarnesses, qualityReports, nextActions });
   const markdownPath = options.write === true
     ? await writeOpenWorldTaskTextArtifact(root, taskId, ["reports", "task-report.md"], markdown)
     : undefined;
@@ -79,6 +83,7 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
     executions,
     plans,
     candidateSkills,
+    candidateRepairRuns,
     audits,
     researchExecutions,
     runs,
@@ -99,6 +104,7 @@ export function renderOpenWorldTaskReport(input: {
   executions?: VirtualTestSuiteExecution[];
   plans?: SkillPlan[];
   candidateSkills?: OpenWorldCandidateSkill[];
+  candidateRepairRuns?: OpenWorldCandidateRepairRun[];
   audits?: OpenWorldLeakageAudit[];
   researchExecutions?: OpenWorldResearchExecution[];
   runs?: OpenWorldEvolutionRun[];
@@ -113,6 +119,7 @@ export function renderOpenWorldTaskReport(input: {
   const executions = input.executions ?? [];
   const plans = input.plans ?? [];
   const candidateSkills = input.candidateSkills ?? [];
+  const candidateRepairRuns = input.candidateRepairRuns ?? [];
   const audits = input.audits ?? [];
   const researchExecutions = input.researchExecutions ?? [];
   const runs = input.runs ?? [];
@@ -142,6 +149,7 @@ export function renderOpenWorldTaskReport(input: {
       `- Anchors: ${anchors.length}`,
       `- Virtual suites: ${suites.length}`,
       `- Candidate skills: ${candidateSkills.length}`,
+      `- Candidate repair runs: ${candidateRepairRuns.length}`,
       `- Verifier executions: ${executions.length}`,
       `- Evolution runs: ${runs.length}`,
       `- Eval reports: ${evalReports.length}`,
@@ -194,6 +202,13 @@ export function renderOpenWorldTaskReport(input: {
       candidate.status,
       String(candidate.anchorIds.length),
       `${candidate.safety.status} ${candidate.safety.score}`
+    ])),
+    ...table("Candidate Repair Runs", ["ID", "Candidate", "Status", "Mode", "Rounds"], candidateRepairRuns.map((repair) => [
+      repair.id,
+      repair.candidateSkillId,
+      repair.status,
+      repair.sandboxMode,
+      String(repair.rounds.length)
     ])),
     ...table("Research Executions", ["ID", "Plan", "Status", "Ingested", "Errors"], researchExecutions.map((execution) => [
       execution.id,
@@ -311,6 +326,14 @@ async function readVerifierExecutions(verifiersDir: string): Promise<VirtualTest
     .filter((entry) => entry.isDirectory())
     .map((entry) => readJsonFiles(path.join(verifiersDir, entry.name, "results"), (value) => VirtualTestSuiteExecutionSchema.parse(value))));
   return nested.flat().sort((left, right) => right.executedAt.localeCompare(left.executedAt));
+}
+
+async function readCandidateRepairRuns(candidatesDir: string): Promise<OpenWorldCandidateRepairRun[]> {
+  const entries = await fs.readdir(candidatesDir, { withFileTypes: true }).catch(() => []);
+  const nested = await Promise.all(entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => readJsonFiles(path.join(candidatesDir, entry.name, "repairs"), (value) => OpenWorldCandidateRepairRunSchema.parse(value))));
+  return nested.flat().sort((left, right) => right.startedAt.localeCompare(left.startedAt));
 }
 
 async function readEvolutionRuns(projectRoot: string, taskId: string): Promise<OpenWorldEvolutionRun[]> {
