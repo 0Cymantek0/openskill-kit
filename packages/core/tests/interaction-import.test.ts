@@ -122,6 +122,85 @@ describe("interaction import", () => {
     expect(planned.warnings.join(" ")).toContain("Unknown interaction adapter");
     expect(await readFile(planned.artifacts.markdownPath, "utf8")).toContain("Adapter known: no");
   });
+
+  it("normalizes Claude Code nested message and tool records", async () => {
+    const root = await tempProject();
+    const source = path.join(root, "claude-export.jsonl");
+    await writeFile(source, [
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text: "Always keep Claude imports explicit and scoped." }] },
+        timestamp: "2026-06-27T08:00:00.000Z",
+        session_id: "claude-a"
+      }),
+      JSON.stringify({
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "text", text: "I will keep the import scoped." }] },
+        timestamp: "2026-06-27T08:01:00.000Z",
+        session_id: "claude-a"
+      }),
+      JSON.stringify({
+        type: "tool_result",
+        toolName: "Bash",
+        input: { command: "npm test" },
+        status: "pass",
+        timestamp: "2026-06-27T08:02:00.000Z",
+        session_id: "claude-a"
+      })
+    ].join("\n"), "utf8");
+
+    const imported = await importInteractionSource(root, source, {
+      adapter: "claude-code",
+      dryRun: false,
+      now: new Date("2026-06-27T08:30:00.000Z")
+    });
+
+    expect(imported.source.adapter).toBe("claude-code");
+    expect(imported.source.agentName).toBe("Claude Code");
+    expect(imported.appendedEventCount).toBe(3);
+    expect(imported.preview.map((event) => event.eventType)).toEqual(["user-prompt-submit", "assistant-message", "post-tool-use"]);
+    const events = await readEvents(root);
+    expect(events[0]?.sessionId).toBe("claude-a");
+    expect(events[0]?.normalized?.textSnippet).toContain("Claude imports explicit");
+    expect(events[2]?.commands[0]).toMatchObject({ command: "npm", args: ["test"], status: "pass" });
+    expect(await readFile(imported.artifacts.markdownPath, "utf8")).not.toContain("Always keep Claude imports explicit and scoped.");
+  });
+
+  it("normalizes Cursor chat, terminal, and file reference records", async () => {
+    const root = await tempProject();
+    const source = path.join(root, "cursor-export.jsonl");
+    await writeFile(source, [
+      JSON.stringify({
+        kind: "user_message",
+        text: "Prefer Cursor imports preserve project file references.",
+        conversation_id: "cursor-a",
+        files: [{ path: "src/app.ts" }],
+        timestamp: "2026-06-27T09:00:00.000Z"
+      }),
+      JSON.stringify({
+        kind: "terminal",
+        commandLine: "pnpm test",
+        status: "success",
+        conversation_id: "cursor-a",
+        timestamp: "2026-06-27T09:01:00.000Z"
+      })
+    ].join("\n"), "utf8");
+
+    const imported = await importInteractionSource(root, source, {
+      adapter: "cursor",
+      dryRun: false,
+      now: new Date("2026-06-27T09:30:00.000Z")
+    });
+
+    expect(imported.source.adapter).toBe("cursor");
+    expect(imported.source.agentName).toBe("Cursor");
+    expect(imported.appendedEventCount).toBe(2);
+    expect(imported.preview[0]).toMatchObject({ eventType: "user-prompt-submit", sessionId: "cursor-a", fileCount: 1 });
+    expect(imported.preview[1]).toMatchObject({ eventType: "post-tool-use", sessionId: "cursor-a", commandCount: 1 });
+    const events = await readEvents(root);
+    expect(events[0]?.files[0]).toMatchObject({ path: "src/app.ts", action: "unknown" });
+    expect(events[1]?.commands[0]).toMatchObject({ command: "pnpm", args: ["test"], status: "pass" });
+  });
 });
 
 async function tempProject(): Promise<string> {

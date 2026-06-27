@@ -117,20 +117,20 @@ const INTERACTION_ADAPTERS: InteractionAdapterDescriptor[] = [
     displayName: "Claude Code",
     status: "experimental",
     privacy: "explicit-import-only",
-    acceptedFormats: ["JSONL messages", "JSON arrays", "generic exported transcript objects", "plain text notes"],
+    acceptedFormats: ["JSONL messages", "JSON arrays", "nested message.content exports", "generic exported transcript objects", "plain text notes"],
     detectionHints: ["Prefer explicit Claude Code export files; generated CLAUDE.md and rules are instruction surfaces, not transcript imports."],
     defaultAgentName: "Claude Code",
-    notes: ["Current parser uses generic role/type normalization; Claude-specific telemetry remains conservative."]
+    notes: ["Normalizes role/message/content records, tool result events, and command-like tool inputs without storing raw transcript bodies."]
   },
   {
     id: "cursor",
     displayName: "Cursor",
     status: "experimental",
     privacy: "explicit-import-only",
-    acceptedFormats: ["JSONL messages", "JSON arrays", "generic exported transcript objects", "plain text notes"],
+    acceptedFormats: ["JSONL messages", "JSON arrays", "IDE chat transcript objects", "terminal command records", "plain text notes"],
     detectionHints: ["Prefer explicit Cursor export files; .cursor/rules are instruction surfaces, not transcript imports."],
     defaultAgentName: "Cursor",
-    notes: ["Current parser uses generic role/type normalization; IDE accept/reject telemetry remains conservative."]
+    notes: ["Normalizes user/assistant messages, terminal command records, and referenced file paths while keeping IDE accept/reject telemetry conservative."]
   }
 ];
 
@@ -284,10 +284,11 @@ function eventFromObject(object: unknown, index: number, fallbackSessionId: stri
     warnings.push(`Skipped non-object JSON entry at index ${index}.`);
     return [];
   }
-  const role = stringValue(object.role);
-  const type = stringValue(object.eventType) ?? stringValue(object.type) ?? stringValue(object.event);
+  const message = objectValue(object.message);
+  const role = stringValue(object.role) ?? stringValue(message?.role) ?? roleFromKind(object);
+  const type = stringValue(object.eventType) ?? stringValue(object.type) ?? stringValue(object.event) ?? stringValue(object.kind);
   const command = commandFromObject(object);
-  const content = stringValue(object.content) ?? stringValue(object.text) ?? stringValue(object.message) ?? stringValue(object.prompt);
+  const content = textFromValue(object.content) ?? stringValue(object.text) ?? textFromValue(message?.content) ?? stringValue(object.prompt) ?? stringValue(object.summary);
   const eventType = normalizeEventType(type, role, command !== undefined);
   if (!eventType) {
     warnings.push(`Skipped JSON entry at index ${index}; no supported role/type/command.`);
@@ -296,15 +297,15 @@ function eventFromObject(object: unknown, index: number, fallbackSessionId: stri
   return [baseEvent({
     eventType,
     index,
-    sessionId: stringValue(object.sessionId) ?? stringValue(object.session_id) ?? stringValue(object.conversationId) ?? fallbackSessionId,
-    timestamp: datetimeValue(object.timestamp) ?? datetimeValue(object.createdAt) ?? timestampFor(options.now ?? new Date(), index),
+    sessionId: sessionIdFromObject(object) ?? fallbackSessionId,
+    timestamp: datetimeValue(object.timestamp) ?? datetimeValue(object.createdAt) ?? datetimeValue(object.created_at) ?? timestampFor(options.now ?? new Date(), index),
     adapter: options.adapter ?? stringValue(object.adapter) ?? "manual-import",
     agentName: options.agentName ?? stringValue(object.agentName),
     intent: stringValue(object.intent) ?? snippet(content),
     text: content,
     command,
     commandStatus: commandStatus(object),
-    filePath: stringValue(object.file) ?? stringValue(object.path)
+    filePath: filePathFromObject(object)
   })];
 }
 
@@ -371,9 +372,20 @@ function baseEvent(input: {
 }
 
 function commandFromObject(object: Record<string, unknown>): { command: string; args: string[] } | undefined {
-  const command = stringValue(object.command) ?? stringValue(object.cmd);
+  const input = objectValue(object.input) ?? objectValue(object.params);
+  const tool = objectValue(object.tool) ?? objectValue(object.toolUse) ?? objectValue(object.tool_use);
+  const command =
+    stringValue(object.command) ??
+    stringValue(object.cmd) ??
+    stringValue(object.commandLine) ??
+    stringValue(object.terminalCommand) ??
+    stringValue(input?.command) ??
+    stringValue(input?.cmd) ??
+    stringValue(tool?.command) ??
+    stringValue(tool?.cmd);
   if (!command) return undefined;
-  const args = Array.isArray(object.args) ? object.args.filter((arg): arg is string => typeof arg === "string") : [];
+  const argsSource = Array.isArray(object.args) ? object.args : Array.isArray(input?.args) ? input.args : undefined;
+  const args = argsSource ? argsSource.filter((arg): arg is string => typeof arg === "string") : [];
   return args.length ? { command, args } : commandFromLine(command) ?? { command, args: [] };
 }
 
@@ -388,7 +400,12 @@ function commandFromLine(line: string): { command: string; args: string[] } | un
 
 function commandStatus(object: Record<string, unknown>): "pass" | "fail" | "blocked" | "timeout" | "unknown" {
   const status = stringValue(object.status) ?? stringValue(object.outcome);
-  if (status && ["pass", "fail", "blocked", "timeout", "unknown"].includes(status)) return status as "pass" | "fail" | "blocked" | "timeout" | "unknown";
+  if (status) {
+    const normalized = status.trim().toLowerCase();
+    if (["pass", "passed", "success", "succeeded", "ok"].includes(normalized)) return "pass";
+    if (["fail", "failed", "error"].includes(normalized)) return "fail";
+    if (["blocked", "timeout", "unknown"].includes(normalized)) return normalized as "blocked" | "timeout" | "unknown";
+  }
   const exitCode = typeof object.exitCode === "number" ? object.exitCode : undefined;
   if (exitCode === 0) return "pass";
   if (exitCode !== undefined) return "fail";
@@ -396,10 +413,14 @@ function commandStatus(object: Record<string, unknown>): "pass" | "fail" | "bloc
 }
 
 function normalizeEventType(type: string | undefined, role: string | undefined, hasCommand: boolean): OpenSkillEventInput["eventType"] | undefined {
-  if (type && EVENT_TYPES.has(type as OpenSkillEventInput["eventType"])) return type as OpenSkillEventInput["eventType"];
+  const normalizedType = type?.trim().toLowerCase().replace(/[_\s]+/g, "-");
+  if (normalizedType && EVENT_TYPES.has(normalizedType as OpenSkillEventInput["eventType"])) return normalizedType as OpenSkillEventInput["eventType"];
   if (hasCommand) return "post-tool-use";
-  if (role === "user") return "user-prompt-submit";
-  if (role === "assistant") return "assistant-message";
+  if (normalizedType && ["user", "user-message", "human", "prompt"].includes(normalizedType)) return "user-prompt-submit";
+  if (normalizedType && ["assistant", "assistant-message", "ai"].includes(normalizedType)) return "assistant-message";
+  if (normalizedType && ["tool", "tool-result", "tool-use", "terminal", "terminal-command", "shell"].includes(normalizedType)) return "post-tool-use";
+  if (role === "user" || role === "human") return "user-prompt-submit";
+  if (role === "assistant" || role === "ai") return "assistant-message";
   if (role === "tool") return "post-tool-use";
   return undefined;
 }
@@ -508,6 +529,60 @@ function datetimeValue(value: unknown): string | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return isObject(value) ? value : undefined;
+}
+
+function roleFromKind(object: Record<string, unknown>): string | undefined {
+  const kind = stringValue(object.kind) ?? stringValue(object.type);
+  if (!kind) return undefined;
+  const normalized = kind.trim().toLowerCase().replace(/[_\s]+/g, "-");
+  if (normalized.includes("user")) return "user";
+  if (normalized.includes("assistant")) return "assistant";
+  if (normalized.includes("tool") || normalized.includes("terminal")) return "tool";
+  return undefined;
+}
+
+function textFromValue(value: unknown): string | undefined {
+  const direct = stringValue(value);
+  if (direct) return direct;
+  if (Array.isArray(value)) {
+    const parts = value.map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (!isObject(item)) return undefined;
+      return stringValue(item.text) ?? stringValue(item.content) ?? stringValue(item.value);
+    }).filter((part): part is string => Boolean(part));
+    return parts.length ? parts.join("\n") : undefined;
+  }
+  if (isObject(value)) return stringValue(value.text) ?? stringValue(value.content) ?? stringValue(value.value);
+  return undefined;
+}
+
+function sessionIdFromObject(object: Record<string, unknown>): string | undefined {
+  return stringValue(object.sessionId) ??
+    stringValue(object.session_id) ??
+    stringValue(object.conversationId) ??
+    stringValue(object.conversation_id) ??
+    stringValue(object.chatId) ??
+    stringValue(object.threadId) ??
+    stringValue(object.thread_id);
+}
+
+function filePathFromObject(object: Record<string, unknown>): string | undefined {
+  const direct = stringValue(object.file) ?? stringValue(object.path) ?? stringValue(object.filePath) ?? stringValue(object.file_path);
+  if (direct) return direct;
+  const files = object.files;
+  if (!Array.isArray(files)) return undefined;
+  for (const file of files) {
+    if (typeof file === "string" && file.trim()) return file.trim();
+    if (isObject(file)) {
+      const filePath = stringValue(file.path) ?? stringValue(file.filePath) ?? stringValue(file.name);
+      if (filePath) return filePath;
+    }
+  }
+  return undefined;
 }
 
 function snippet(value: string | undefined): string | undefined {
