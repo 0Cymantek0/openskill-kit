@@ -246,6 +246,12 @@ ready Node cases through the local `execFile` sandbox with no shell expansion,
 network disabled in policy metadata, stripped environment, output caps, and a
 JSON execution record under `verifiers/<suite-id>/results/`.
 
+`openworld candidate-skill` writes a review-only SKILL.md package under
+`openworld/tasks/<task-id>/candidates/`. It is generated only from Anchor Cards,
+leakage-audits the skill text and anchor reference, validates the skill package,
+and runs the existing safety scanner. It is an artifact for verifier/refinement
+work and review, not active behavior and not LLM skill generation.
+
 `openworld verifier-quality` scores verifier suites before refinement. It checks
 case readiness, anchor coverage, visible/holdout split, source traceability,
 local deterministic command use, source trust, and leakage audit metadata. This

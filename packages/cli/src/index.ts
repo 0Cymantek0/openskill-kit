@@ -39,6 +39,7 @@ import {
   assessOpenWorldVerifierQuality,
   draftAnchorFromOpenWorldSource,
   executeOpenWorldResearchPlan,
+  generateOpenWorldCandidateSkill,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   planOpenWorldResearch,
@@ -361,6 +362,32 @@ openworld.command("build-verifier")
     }));
     const result = await buildVirtualSuiteFromAnchors(process.cwd(), options.taskId, anchors);
     output(options.json, result, `OpenWorld virtual suite ${result.suite.id}\n${result.suitePath}`);
+  });
+
+openworld.command("candidate-skill")
+  .description("Generate a review-only OpenWorld candidate skill from Anchor Cards")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--anchor-id <id>", "Anchor id", collectOption, [])
+  .option("--suite-id <id>", "Related virtual suite id", collectOption, [])
+  .option("--name <name>", "Candidate skill name")
+  .option("--no-write", "Do not write candidate artifacts")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await generateOpenWorldCandidateSkill(process.cwd(), options.taskId, {
+      anchorIds: options.anchorId,
+      suiteIds: options.suiteId,
+      name: options.name,
+      write: options.write !== false
+    });
+    output(options.json, result, [
+      `OpenWorld candidate skill ${result.candidate.id}: ${result.candidate.status}`,
+      `Skill: ${result.candidate.skillName}`,
+      `Anchors: ${result.candidate.anchorIds.length}`,
+      `Safety: ${result.candidate.safety.status} ${result.candidate.safety.score}`,
+      result.candidate.artifacts.skillPath ? `SKILL.md: ${result.candidate.artifacts.skillPath}` : undefined,
+      result.candidate.artifacts.candidatePath ? `Candidate: ${result.candidate.artifacts.candidatePath}` : undefined
+    ].filter(Boolean).join("\n"));
+    process.exitCode = result.candidate.status === "blocked" ? 1 : 0;
   });
 
 openworld.command("run-verifier")

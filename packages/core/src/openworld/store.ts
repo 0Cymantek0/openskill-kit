@@ -5,6 +5,7 @@ import { writeFileAtomic, withFileLock } from "../storage/atomic.js";
 import { assertOpenWorldArtifactPath } from "./leakage.js";
 import {
   AnchorCardSchema,
+  OpenWorldCandidateSkillSchema,
   OpenWorldEvolutionRunSchema,
   OpenWorldLeakageAuditSchema,
   OpenWorldResearchExecutionSchema,
@@ -17,6 +18,7 @@ import {
   VirtualTestSuiteExecutionSchema,
   VirtualTestSuiteSchema,
   type AnchorCard,
+  type OpenWorldCandidateSkill,
   type OpenWorldEvolutionRun,
   type OpenWorldLeakageAudit,
   type OpenWorldResearchExecution,
@@ -102,6 +104,10 @@ export async function writeAnchorCard(projectRoot: string, anchor: AnchorCard): 
   return writeTaskArtifact(projectRoot, parsed.taskId, "anchors", `${parsed.id}.json`, parsed);
 }
 
+export async function readAnchorCard(projectRoot: string, taskId: string, anchorId: string): Promise<AnchorCard> {
+  return AnchorCardSchema.parse(JSON.parse(await fs.readFile(taskArtifactPath(projectRoot, taskId, "anchors", `${anchorId}.json`), "utf8")));
+}
+
 export async function writeVirtualTestSuite(projectRoot: string, suite: VirtualTestSuite): Promise<string> {
   const parsed = VirtualTestSuiteSchema.parse(suite);
   return writeTaskArtifact(projectRoot, parsed.taskId, "verifiers", `${parsed.id}.json`, parsed);
@@ -129,6 +135,11 @@ export async function writeOpenWorldTaskTextArtifact(projectRoot: string, taskId
 export async function writeSkillPlan(projectRoot: string, plan: SkillPlan): Promise<string> {
   const parsed = SkillPlanSchema.parse(plan);
   return writeTaskArtifact(projectRoot, parsed.taskId, "plans", `${parsed.id}.json`, parsed);
+}
+
+export async function writeOpenWorldCandidateSkill(projectRoot: string, candidate: OpenWorldCandidateSkill): Promise<string> {
+  const parsed = OpenWorldCandidateSkillSchema.parse(candidate);
+  return writeTaskArtifact(projectRoot, parsed.taskId, "candidates", `${parsed.id}.json`, parsed);
 }
 
 export async function writeOpenWorldLeakageAudit(projectRoot: string, audit: OpenWorldLeakageAudit): Promise<string> {

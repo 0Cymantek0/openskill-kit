@@ -72,6 +72,7 @@ describe("behavior routing and OpenWorld capability truth", () => {
     expect(report.capabilities.some((capability) => capability.name === "Source plan execution" && capability.status === "available")).toBe(true);
     expect(report.capabilities.some((capability) => capability.name === "Local source ingestion" && capability.status === "available")).toBe(true);
     expect(report.capabilities.some((capability) => capability.name === "Verifier quality scoring" && capability.status === "available")).toBe(true);
+    expect(report.capabilities.some((capability) => capability.name === "Candidate skill artifacts" && capability.status === "available")).toBe(true);
     expect(report.capabilities.some((capability) => capability.name === "Hidden-oracle benchmark proof" && capability.status === "missing")).toBe(true);
     expect(report.nextActions.join(" ")).toContain("Do not claim paper-level OpenSkill behavior");
   });

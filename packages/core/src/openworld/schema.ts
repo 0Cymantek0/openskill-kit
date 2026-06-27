@@ -300,6 +300,38 @@ export const SkillPlanSchema = z.object({
   status: z.enum(["draft", "ready", "blocked"]).default("draft")
 });
 
+export const OpenWorldCandidateSkillSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.openworld-candidate-skill.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  createdAt: z.string().datetime(),
+  skillName: z.string().min(1),
+  status: z.enum(["ready", "warning", "blocked"]),
+  proofLevel: z.literal("candidate-artifact"),
+  hiddenOracleProof: z.literal(false),
+  sourceIds: z.array(z.string().min(1)).default([]),
+  anchorIds: z.array(z.string().min(1)).default([]),
+  suiteIds: z.array(z.string().min(1)).default([]),
+  artifacts: z.object({
+    skillDir: z.string().min(1),
+    skillPath: z.string().min(1),
+    anchorsReferencePath: z.string().optional(),
+    candidatePath: z.string().optional()
+  }),
+  validation: z.object({
+    issueCount: z.number().int().min(0),
+    errorCount: z.number().int().min(0),
+    warningCount: z.number().int().min(0)
+  }),
+  safety: z.object({
+    status: z.enum(["pass", "fail"]),
+    score: z.number().min(0).max(100),
+    findingCount: z.number().int().min(0)
+  }),
+  leakageAuditId: z.string().optional(),
+  limitations: z.array(z.string().min(1)).default([])
+});
+
 export const OpenWorldLeakageFindingSchema = z.object({
   id: z.string().min(1),
   level: z.enum(["warn", "block"]),
@@ -402,6 +434,7 @@ export type VirtualTestSuiteExecution = z.infer<typeof VirtualTestSuiteExecution
 export type OpenWorldVerifierQualityFinding = z.infer<typeof OpenWorldVerifierQualityFindingSchema>;
 export type OpenWorldVerifierQualityReport = z.infer<typeof OpenWorldVerifierQualityReportSchema>;
 export type SkillPlan = z.infer<typeof SkillPlanSchema>;
+export type OpenWorldCandidateSkill = z.infer<typeof OpenWorldCandidateSkillSchema>;
 export type OpenWorldLeakageFinding = z.infer<typeof OpenWorldLeakageFindingSchema>;
 export type OpenWorldLeakageAudit = z.infer<typeof OpenWorldLeakageAuditSchema>;
 export type OpenWorldEvolutionRun = z.infer<typeof OpenWorldEvolutionRunSchema>;

@@ -60,7 +60,7 @@ describe("adaptive behavior layer", () => {
     await expect(stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-testing", "SKILL.md"))).resolves.toBeTruthy();
     await expect(stat(compiled.pluginManifestPath)).resolves.toBeTruthy();
     const mcpConfig = JSON.parse(await readFile(compiled.mcpConfigPath!, "utf8"));
-    expect(mcpConfig.tools).toEqual(expect.arrayContaining(["osk_export_encrypted_behavior_pack", "osk_import_encrypted_behavior_pack", "osk_run_external_agent_eval", "osk_openworld_source_plan", "osk_openworld_execute_source_plan", "osk_openworld_verifier_quality"]));
+    expect(mcpConfig.tools).toEqual(expect.arrayContaining(["osk_export_encrypted_behavior_pack", "osk_import_encrypted_behavior_pack", "osk_run_external_agent_eval", "osk_openworld_source_plan", "osk_openworld_execute_source_plan", "osk_openworld_candidate_skill", "osk_openworld_verifier_quality"]));
 
     const skillMarkdown = await readFile(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"), "utf8");
     expect(skillMarkdown).toContain("## When to use");

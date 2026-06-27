@@ -23,6 +23,7 @@ import {
   getAdaptiveStatus,
   assessOpenWorldVerifierQuality,
   executeOpenWorldResearchPlan,
+  generateOpenWorldCandidateSkill,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   planOpenWorldResearch,
@@ -1000,6 +1001,27 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, taskId, suiteId, split, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runVirtualTestSuite(root, taskId, suiteId, { split, timeoutMs }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_candidate_skill",
+    {
+      title: "OpenSkillKit OpenWorld Candidate Skill",
+      description: "Generate a review-only OpenWorld candidate skill from Anchor Cards.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        anchorIds: z.array(z.string().min(1)).min(1),
+        suiteIds: z.array(z.string().min(1)).default([]),
+        name: z.string().min(1).optional(),
+        write: z.boolean().default(true)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, anchorIds, suiteIds, name, write }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await generateOpenWorldCandidateSkill(root, taskId, { anchorIds, suiteIds, name, write }), root);
     }
   );
 

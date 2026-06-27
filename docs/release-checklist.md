@@ -26,6 +26,7 @@ Manual audit:
 - OpenWorld source ingestion writes source-index/trust-cache and blocks forbidden identifiers before caching source text.
 - OpenWorld `execute-source-plan` ingests only leakage-audited recommended local candidates plus explicit vetted URLs and writes a research execution artifact.
 - OpenWorld `build-verifier` writes manifest, traceability map, visible/holdout executable cases, and blocks leaked verifier artifacts before writing scripts.
+- OpenWorld `candidate-skill` writes only review-only Anchor-grounded skill artifacts, validates package structure, runs safety scan, and never activates behavior.
 - OpenWorld `verifier-quality` scores traceability, determinism, holdout coverage, source trust, and leakage metadata without claiming hidden-oracle proof.
 - OpenWorld `run-verifier --split visible` executes generated cases through the sandbox runner and writes a result JSON.
 - OpenWorld `refine` writes an EvolutionRun, stops early on actionable visible failures, and runs holdout only after visible pass.

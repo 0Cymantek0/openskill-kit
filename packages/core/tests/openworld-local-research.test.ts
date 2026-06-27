@@ -11,6 +11,7 @@ import {
   buildReviewQueue,
   draftAnchorFromOpenWorldSource,
   executeOpenWorldResearchPlan,
+  generateOpenWorldCandidateSkill,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   initOpenWorldTask,
@@ -121,6 +122,17 @@ describe("OpenWorld local research", () => {
     }
     expect(anchors[0]?.claim).toContain("local-only retrieval");
 
+    const candidateSkill = await generateOpenWorldCandidateSkill(root, task.task.id, {
+      anchorIds: anchors.map((anchor) => anchor.id),
+      name: "local retrieval candidate",
+      now: new Date("2026-06-26T01:02:45.000Z")
+    });
+    expect(candidateSkill.candidate.status).toBe("ready");
+    expect(candidateSkill.candidate.hiddenOracleProof).toBe(false);
+    expect(candidateSkill.candidate.safety.status).toBe("pass");
+    expect(candidateSkill.candidate.artifacts.skillPath).toContain("/candidates/");
+    await expect(stat(candidateSkill.skillPath ?? "")).resolves.toBeTruthy();
+
     const suite = await buildVirtualSuiteFromAnchors(root, task.task.id, anchors, new Date("2026-06-26T01:03:00.000Z"));
     expect(suite.suite.cases).toHaveLength(4);
     expect(suite.suite.cases[0]?.split).toBe("visible");
@@ -161,6 +173,7 @@ describe("OpenWorld local research", () => {
     expect(taskReport.markdownPath).toContain("task-report.md");
     expect(taskReport.sources).toHaveLength(1);
     expect(taskReport.anchors).toHaveLength(4);
+    expect(taskReport.candidateSkills).toHaveLength(1);
     expect(taskReport.suites).toHaveLength(1);
     expect(taskReport.qualityReports.length).toBeGreaterThan(0);
     expect(taskReport.executions.length).toBeGreaterThan(0);
