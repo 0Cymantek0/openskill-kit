@@ -388,6 +388,22 @@ osk.command("pack")
     output(options.json, result, result.packPath);
   });
 
+osk.command("setup")
+  .description("Run the interactive setup wizard for OpenCode")
+  .option("--host <host>", "Harness host target", parseAgentPluginAttachHost, "opencode")
+  .option("--non-interactive", "Run without interactive prompt approvals", false)
+  .action(async (options) => {
+    await runSetupWizard(process.cwd(), options.host, options.nonInteractive === true);
+  });
+
+osk.command("uninstall")
+  .description("Run the interactive uninstaller wizard to revert config changes and files")
+  .option("--host <host>", "Harness host target", parseAgentPluginAttachHost, "opencode")
+  .option("--non-interactive", "Run without interactive prompt approvals", false)
+  .action(async (options) => {
+    await runUninstallWizard(process.cwd(), options.host, options.nonInteractive === true);
+  });
+
 const openworld = program.command("openworld")
   .description("Manage local-only OpenWorld evolution scaffold artifacts");
 
@@ -2030,4 +2046,248 @@ function sanitizeText(value: string): string {
   return value
     .replaceAll(cwd, ".")
     .replaceAll(path.normalize(cwd), ".");
+}
+
+async function runSetupWizard(projectRoot: string, host: string, nonInteractive: boolean): Promise<void> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log("\n========================================================================");
+    console.log("                      OPENSKILLKIT SETUP WIZARD");
+    console.log("========================================================================\n");
+    console.log("Welcome to the local behavior learning layer for AI coding agents.\n");
+    console.log("[ PRIVACY CHARTER ]");
+    console.log("- Local-First: No cloud dependencies, no model training, no data uploads.");
+    console.log("- Zero Leakage: Secret values and raw prompt/diff content are redacted.");
+    console.log("- Transparent: Staged behavior must be manually approved via /osk review.\n");
+    console.log("------------------------------------------------------------------------");
+    console.log(`Target Host: ${host}`);
+    console.log(`Project Root: ${projectRoot}`);
+    console.log("------------------------------------------------------------------------\n");
+
+    if (!nonInteractive) {
+      const confirmSetup = (await rl.question("Proceed with setup? (y/n): ")).trim().toLowerCase();
+      if (confirmSetup !== "y" && confirmSetup !== "yes") {
+        console.log("Setup cancelled by user.");
+        return;
+      }
+    }
+
+    console.log("\n[1/5] Bootstrapping project state...");
+    const initRes = await initAdaptiveProject({ projectRoot, projectName: undefined, force: false });
+    console.log(`  Status: ${initRes.status}`);
+
+    console.log("\n[2/5] Compiling behavior layer and plugin bundle...");
+    const compileRes = await compileBehaviorLayer(projectRoot, { targets: ["plugin"] });
+    console.log(`  Compiled: ${compileRes.compiledTargets.join(", ")}`);
+
+    console.log("\n[3/5] Previewing OpenCode plugin attach (dry-run)...");
+    const previewRes = await attachAgentPlugin(projectRoot, { host: host as AgentPluginAttachHost, dryRun: true, yes: false });
+    console.log("  Planned modifications:");
+    for (const msg of previewRes.messages) {
+      console.log(`    ${msg}`);
+    }
+
+    if (!nonInteractive) {
+      const confirmDeploy = (await rl.question("\nApply these changes to opencode.json and .opencode/? (y/n): ")).trim().toLowerCase();
+      if (confirmDeploy !== "y" && confirmDeploy !== "yes") {
+        console.log("Deployment cancelled. Staged files are compiled under .openskill-kit/compiled/plugin.");
+        return;
+      }
+    }
+
+    console.log("\n[4/5] Deploying plugin to project OpenCode config...");
+    const deployRes = await attachAgentPlugin(projectRoot, { host: host as AgentPluginAttachHost, dryRun: false, yes: true });
+    for (const msg of deployRes.messages) {
+      console.log(`    ${msg}`);
+    }
+
+    console.log("\n[5/5] Installing telemetry hooks and manifests...");
+    const hooksRes = await installAgentHooks({ projectRoot, target: "project", yes: true });
+    console.log(`  Hooks installed: ${hooksRes.status}`);
+
+    const manifestsRes = await installInstructionManifests(projectRoot, { target: "project", yes: true });
+    console.log(`  Manifests installed: ${manifestsRes.status}`);
+
+    console.log("\n========================================================================");
+    console.log("                      INSTALLATION COMPLETE!");
+    console.log("========================================================================\n");
+    console.log("OpenSkillKit successfully attached to OpenCode.\n");
+    console.log("[ STATUS REPORT ]");
+    const explained = await explainAdaptiveStatus(projectRoot);
+    console.log(`- Health: ${explained.status.initialized ? "Healthy" : "Needs Init"}`);
+    console.log(`- Attached Host: ${host}`);
+    console.log(`- Active Preferences: ${explained.status.activePreferenceCount}`);
+
+    console.log("\n[ NEXT STEPS ]");
+    console.log("1. Restart OpenCode to reload the new configuration.");
+    console.log("2. Run `/osk status` in OpenCode TUI to verify the connection.");
+    console.log("3. Start coding and call `/osk task context \"...\"` before editing files.\n");
+    console.log("========================================================================");
+  } finally {
+    rl.close();
+  }
+}
+
+async function runUninstallWizard(projectRoot: string, host: string, nonInteractive: boolean): Promise<void> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log("\n========================================================================");
+    console.log("                      OPENSKILLKIT UNINSTALLER");
+    console.log("========================================================================\n");
+    console.log(`This will safely revert OpenCode configuration patches and delete OpenSkillKit`);
+    console.log("generated command files, subagent configurations, and telemetry plugins.\n");
+    console.log("Unrelated user files and code changes will not be modified.\n");
+    console.log("------------------------------------------------------------------------");
+    console.log(`Target Host: ${host}`);
+    console.log(`Project Root: ${projectRoot}`);
+    console.log("------------------------------------------------------------------------\n");
+
+    if (!nonInteractive) {
+      const confirmUninstall = (await rl.question("Revert OpenCode settings and delete OSK plugin files? (y/n): ")).trim().toLowerCase();
+      if (confirmUninstall !== "y" && confirmUninstall !== "yes") {
+        console.log("Uninstallation aborted.");
+        return;
+      }
+    }
+
+    // 1. Revert configurations
+    console.log("\n[1/3] Reverting opencode.json config patches...");
+    const opencodeJsonPath = path.join(projectRoot, "opencode.json");
+    let revertedConfig = false;
+    try {
+      const content = await fs.readFile(opencodeJsonPath, "utf8");
+      const config = JSON.parse(content);
+      
+      if (config.mcp && config.mcp["openskill-kit"]) {
+        delete config.mcp["openskill-kit"];
+        if (Object.keys(config.mcp).length === 0) {
+          delete config.mcp;
+        }
+        revertedConfig = true;
+      }
+      
+      if (Array.isArray(config.plugin)) {
+        const initialLen = config.plugin.length;
+        config.plugin = config.plugin.filter((p: string) => p !== ".opencode/plugins/openskillkit.ts");
+        if (config.plugin.length !== initialLen) {
+          revertedConfig = true;
+        }
+        if (config.plugin.length === 0) {
+          delete config.plugin;
+        }
+      }
+      
+      if (config.command && config.command.osk) {
+        delete config.command.osk;
+        if (Object.keys(config.command).length === 0) {
+          delete config.command;
+        }
+        revertedConfig = true;
+      }
+
+      if (revertedConfig) {
+        await fs.writeFile(opencodeJsonPath, JSON.stringify(config, null, 2), "utf8");
+        console.log("  Successfully reverted opencode.json configuration.");
+      } else {
+        console.log("  opencode.json config was already clean.");
+      }
+    } catch (err: any) {
+      if (err.code === "ENOENT") {
+        console.log("  opencode.json config file not found. Skipping config reversion.");
+      } else {
+        console.log(`  Warning: Failed to update opencode.json config: ${err.message}`);
+      }
+    }
+
+    // 2. Delete generated files
+    console.log("\n[2/3] Deleting generated command, agent, and plugin files...");
+    const pathsToDelete = [
+      ".opencode/plugins/openskillkit.ts",
+      ".openskill-kit/compiled"
+    ];
+
+    // Delete command files
+    const commandsDir = path.join(projectRoot, ".opencode/commands");
+    try {
+      const files = await fs.readdir(commandsDir);
+      for (const file of files) {
+        if (file.startsWith("osk-") && file.endsWith(".md")) {
+          pathsToDelete.push(path.join(".opencode/commands", file));
+        }
+      }
+    } catch {}
+
+    // Delete agent files
+    const agentsDir = path.join(projectRoot, ".opencode/agents");
+    try {
+      const files = await fs.readdir(agentsDir);
+      for (const file of files) {
+        if (file.startsWith("osk-") && file.endsWith(".md")) {
+          pathsToDelete.push(path.join(".opencode/agents", file));
+        }
+      }
+    } catch {}
+
+    // Delete skill directories
+    const skillsDir = path.join(projectRoot, ".opencode/skills");
+    try {
+      const dirs = await fs.readdir(skillsDir);
+      for (const dir of dirs) {
+        if (dir.startsWith("osk-")) {
+          pathsToDelete.push(path.join(".opencode/skills", dir));
+        }
+      }
+    } catch {}
+
+    // Perform deletions
+    for (const relPath of pathsToDelete) {
+      const absPath = path.isAbsolute(relPath) ? relPath : path.join(projectRoot, relPath);
+      try {
+        await fs.rm(absPath, { recursive: true, force: true });
+        console.log(`  Removed: ${relPath}`);
+      } catch (err: any) {
+        console.log(`  Warning: Failed to delete ${relPath}: ${err.message}`);
+      }
+    }
+
+    // Uninstall manifests / hooks
+    console.log("\n[3/3] Uninstalling instruction manifests and hooks...");
+    try {
+      await uninstallInstructionManifests(projectRoot, { target: "project", yes: true });
+      console.log("  Successfully uninstalled instruction manifests.");
+    } catch (err: any) {
+      console.log(`  Warning: Failed to uninstall manifests: ${err.message}`);
+    }
+
+    // Prompt to delete database
+    let deletedDatabase = false;
+    if (!nonInteractive) {
+      const deleteDb = (await rl.question("\nDelete local behavior history database (.openskill-kit/)? (y/n): ")).trim().toLowerCase();
+      if (deleteDb === "y" || deleteDb === "yes") {
+        try {
+          await fs.rm(path.join(projectRoot, ".openskill-kit"), { recursive: true, force: true });
+          deletedDatabase = true;
+          console.log("  Removed local behavior history database.");
+        } catch (err: any) {
+          console.log(`  Warning: Failed to delete .openskill-kit: ${err.message}`);
+        }
+      } else {
+        console.log("  Preserved local behavior history database.");
+      }
+    }
+
+    console.log("\n========================================================================");
+    console.log("                     OPENSKILLKIT UNINSTALL COMPLETE");
+    console.log("========================================================================\n");
+    console.log("OpenSkillKit has been successfully removed from this project.\n");
+    if (deletedDatabase) {
+      console.log("- Status: Uninstalled (all files and database deleted)");
+    } else {
+      console.log("- Status: Uninstalled (config reverted, local history preserved)");
+    }
+    console.log("- Action: Restart OpenCode to finalize the removal.\n");
+    console.log("========================================================================");
+  } finally {
+    rl.close();
+  }
 }

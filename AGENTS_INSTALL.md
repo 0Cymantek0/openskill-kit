@@ -1,6 +1,6 @@
 # Agent Installation Guide: Automated Setup for AI Coding Agents
 
-This guide is designed for LLMs and autonomous coding agents (e.g., Claude Code, Codex, OpenCode subagents, Roo, Cline, etc.) who are requested by a user to install or set up OpenSkillKit in an OpenCode workspace.
+This guide is designed for LLMs and autonomous coding agents (e.g., Claude Code, Codex, OpenCode subagents,zcode, Roo, Cline, etc.) who are requested by a user to install or set up OpenSkillKit in an OpenCode workspace.
 
 If a user pastes the link to this repository and asks you to "set it up," follow the instructions below step-by-step to automate the setup process on their system.
 
