@@ -29,15 +29,11 @@ preview-first behavior.
 npm install
 npm run build
 
-npx openskill-kit init
-npx openskill-kit osk status
-npx openskill-kit osk task context --query "parser cleanup"
-npx openskill-kit osk task finish --summary "Parser cleanup verified." --command "npm test" --command-status pass
-npx openskill-kit osk learn
-npx openskill-kit review --activate-all
-npx openskill-kit osk compile
-npx openskill-kit agent attach-plugin --host opencode --dry-run
-npx openskill-kit agent attach-plugin --host opencode --yes
+# Run interactive setup wizard (bootstraps, compiles, previews and attaches to OpenCode)
+npx openskill-kit osk setup --host opencode
+
+# To safely uninstall and revert all configuration patches and generated files:
+npx openskill-kit osk uninstall --host opencode
 ```
 
 When attached through MCP, the harness should call `osk_bootstrap_session`
