@@ -79,6 +79,24 @@ describe("agent plugin attach planner", () => {
     expect(status.hosts.find((host) => host.host === "generic-mcp")?.status).toBe("wrong-command");
   });
 
+  it("marks host attachment stale when compiled descriptor hash drifts after attach", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("drift", "Prefer descriptor drift checks before trusting MCP tools", "security")]);
+    const attached = await attachAgentPlugin(root, { host: "generic-mcp", dryRun: false, yes: true });
+    const receipt = JSON.parse(await readFile(attached.receiptPath!, "utf8"));
+    receipt.pluginDescriptorsHash = "sha256:old-descriptor-hash";
+    await writeFile(attached.receiptPath!, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+
+    const status = await getAgentPluginAttachStatus(root);
+
+    const generic = status.hosts.find((host) => host.host === "generic-mcp");
+    expect(status.attached).toBe(false);
+    expect(generic?.status).toBe("descriptor-drift");
+    expect(generic?.attachedDescriptorHash).toBe("sha256:old-descriptor-hash");
+    expect(generic?.currentDescriptorHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(status.nextActions.join(" ")).toContain("descriptors changed");
+  });
+
   it("targets Cursor project MCP config when requested", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("cursor", "Prefer Cursor MCP attach previews", "workflow")]);

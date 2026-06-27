@@ -195,7 +195,10 @@ attach issue and directs operators to `openskill-kit agent attach-plugin
 Applied host MCP config includes `OPENSKILLKIT_PROJECT_ROOT`, so an attached
 harness can omit per-tool `projectRoot` arguments without relying on launch cwd.
 The same attachment health is exposed through status/bootstrap responses for
-agent UIs that need a direct ready/misconfigured signal.
+agent UIs that need a direct ready/misconfigured signal. Attachment receipts
+record the plugin version and MCP descriptor hash active at apply time; status
+reports `descriptor-drift` when current compiled descriptors no longer match the
+receipt, so hosts can force re-attach/restart before trusting stale tools.
 
 ## Interaction Imports
 

@@ -70,9 +70,14 @@ For harness compatibility, generated plugins also include:
   Applied config also sets `OPENSKILLKIT_PROJECT_ROOT` so MCP tools still bind
   to the project when a host launches the stdio server from another working
   directory.
+  Receipts store the compiled plugin version and MCP descriptor hash used at
+  attach time. If the compiled plugin descriptor hash changes later,
+  `osk_get_plugin_attach_status` reports `descriptor-drift` until the host
+  attachment is previewed and applied again.
   `openskill-kit status --json` and `osk_bootstrap_session` report
   `compiled.pluginAttachment` so hosts can show whether the plugin is attached,
-  root-bound, missing, invalid JSON, or pointed at the wrong command.
+  root-bound, missing, invalid JSON, pointed at the wrong command, or stale
+  against current descriptors.
 
 Harness behavior should stay conservative:
 
@@ -82,6 +87,9 @@ Harness behavior should stay conservative:
 - Treat any `plugin.integrityIssues` returned from `osk_bootstrap_session` or
   `openskill-kit status --json` as attach-blocking; regenerate with
   `openskill-kit compile --target plugin`.
+- Treat `compiled.pluginAttachment.hosts[*].status == "descriptor-drift"` as
+  attach-stale; preview and re-apply host attachment, then restart or refresh
+  the harness MCP server.
 - Start `openskill-kit-mcp` from the project root with stdio.
 - Call `osk_bootstrap_session` first; it reports whether the compiled plugin is
   ready, where to attach it, which skills/capabilities are exposed, and which

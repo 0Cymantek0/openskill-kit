@@ -39,9 +39,12 @@ export interface AgentPluginAttachStatus {
 export interface AgentPluginHostAttachStatus {
   host: AgentPluginAttachHost;
   destination: string;
-  status: "attached" | "missing" | "invalid-json" | "needs-root-binding" | "wrong-command";
+  status: "attached" | "missing" | "invalid-json" | "needs-root-binding" | "wrong-command" | "descriptor-drift";
   command?: string;
   projectRootBound: boolean;
+  pluginVersion?: string;
+  attachedDescriptorHash?: string;
+  currentDescriptorHash?: string;
   issue?: string;
 }
 
@@ -52,6 +55,9 @@ interface McpConfig {
 
 interface AttachReceipt {
   attachedAt?: string;
+  host?: AgentPluginAttachHost;
+  pluginVersion?: string;
+  pluginDescriptorsHash?: string;
   [key: string]: unknown;
 }
 
@@ -108,6 +114,8 @@ export async function attachAgentPlugin(
     attachedAt: new Date().toISOString(),
     host,
     pluginDir: path.relative(root, plugin.pluginDir).replace(/\\/g, "/"),
+    pluginVersion: plugin.manifest?.version,
+    pluginDescriptorsHash: plugin.mcpDescriptorsHash,
     files: files.map((file) => ({
       destination: path.relative(root, file.destination).replace(/\\/g, "/"),
       action: file.action
@@ -127,10 +135,17 @@ export async function attachAgentPlugin(
 
 export async function getAgentPluginAttachStatus(projectRoot: string): Promise<AgentPluginAttachStatus> {
   const root = path.resolve(projectRoot);
-  const hosts = await Promise.all(AgentPluginAttachHosts.map(async (host) => inspectHostAttach(root, host)));
   const receipts = await listAttachReceipts(root);
-  const attached = hosts.some((host) => host.status === "attached");
-  const nextActions = attached
+  const plugin = await getCompiledPluginStatus(root);
+  const hosts = await Promise.all(AgentPluginAttachHosts.map(async (host) => inspectHostAttach(root, host, plugin, receipts)));
+  const drifted = hosts.filter((host) => host.status === "descriptor-drift");
+  const attached = drifted.length === 0 && hosts.some((host) => host.status === "attached");
+  const nextActions = drifted.length
+    ? [
+      "Compiled plugin descriptors changed after host attachment; re-run `openskill-kit agent attach-plugin --host generic-mcp --dry-run` and apply after review.",
+      "Restart or refresh the coding harness MCP server after re-attaching so tool descriptors match the compiled plugin."
+    ]
+    : attached
     ? ["Plugin host attachment is ready; MCP tools can use the bound project root without per-call projectRoot arguments."]
     : [
       "Run `openskill-kit agent attach-plugin --host generic-mcp --dry-run` to preview host MCP attachment.",
@@ -151,7 +166,7 @@ function hostConfigTargets(root: string, host: AgentPluginAttachHost): string[] 
   return [path.join(root, ".mcp.json")];
 }
 
-async function inspectHostAttach(root: string, host: AgentPluginAttachHost): Promise<AgentPluginHostAttachStatus> {
+async function inspectHostAttach(root: string, host: AgentPluginAttachHost, plugin: CompiledPluginStatus, receipts: Array<{ path: string; receipt: AttachReceipt }>): Promise<AgentPluginHostAttachStatus> {
   const destination = hostConfigTargets(root, host)[0]!;
   const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
   if (existing === undefined) return { host, destination, status: "missing", projectRootBound: false, issue: "Host MCP config missing" };
@@ -187,7 +202,24 @@ async function inspectHostAttach(root: string, host: AgentPluginAttachHost): Pro
       issue: `${AGENT_PLUGIN_PROJECT_ROOT_ENV} is not bound to this project`
     };
   }
-  return { host, destination, status: "attached", command, projectRootBound };
+  const receipt = receipts.find((item) => item.receipt.host === host);
+  const attachedDescriptorHash = typeof receipt?.receipt.pluginDescriptorsHash === "string" ? receipt.receipt.pluginDescriptorsHash : undefined;
+  const currentDescriptorHash = plugin.mcpDescriptorsHash;
+  const pluginVersion = typeof receipt?.receipt.pluginVersion === "string" ? receipt.receipt.pluginVersion : plugin.manifest?.version;
+  if (attachedDescriptorHash && currentDescriptorHash && attachedDescriptorHash !== currentDescriptorHash) {
+    return {
+      host,
+      destination,
+      status: "descriptor-drift",
+      command,
+      projectRootBound,
+      pluginVersion,
+      attachedDescriptorHash,
+      currentDescriptorHash,
+      issue: "Host attachment receipt descriptor hash differs from current compiled plugin descriptors"
+    };
+  }
+  return { host, destination, status: "attached", command, projectRootBound, pluginVersion, attachedDescriptorHash, currentDescriptorHash };
 }
 
 async function listAttachReceipts(root: string): Promise<Array<{ path: string; receipt: AttachReceipt }>> {
