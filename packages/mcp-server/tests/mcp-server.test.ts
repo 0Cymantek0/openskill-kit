@@ -42,6 +42,8 @@ describe("openskill-kit MCP server", () => {
           "osk_compile_behavior_layer",
           "osk_agent_doctor",
           "osk_install_agent_hooks",
+          "osk_preview_plugin_attach",
+          "osk_apply_plugin_attach",
           "osk_run_lifecycle_once",
           "osk_openworld_retrieval_adapters",
           "osk_openworld_execute_source_plan",
@@ -97,6 +99,21 @@ describe("openskill-kit MCP server", () => {
       expect(bootReadyParsed.plugin.ready).toBe(true);
       expect(bootReadyParsed.plugin.skills).toEqual(expect.arrayContaining(["skills/project-behavior", "skills/project-testing"]));
       expect(bootReadyParsed.plugin.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
+
+      const attachPlan = await client.callTool({
+        name: "osk_preview_plugin_attach",
+        arguments: { projectRoot: root, host: "generic-mcp" }
+      });
+      const attachPlanParsed = JSON.parse(attachPlan.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(attachPlanParsed.status).toBe("planned");
+      expect(attachPlanParsed.files[0].destination).toContain(".mcp.json");
+
+      const attachApply = await client.callTool({
+        name: "osk_apply_plugin_attach",
+        arguments: { projectRoot: root, host: "generic-mcp", yes: true }
+      });
+      const attachApplyParsed = JSON.parse(attachApply.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(attachApplyParsed.status).toBe("attached");
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",

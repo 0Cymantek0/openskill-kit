@@ -91,9 +91,15 @@ if (!pluginManifest.files?.includes("install-guides/codex.md")) throw new Error(
 if (!pluginMcpHashes.approvalRequiredTools?.includes("osk_install_agent_hooks")) throw new Error("compiled plugin descriptor approvals incomplete");
 if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/")) throw new Error("compiled plugin privacy exclusions incomplete");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 11") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 12") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
+const pluginAttachPlan = await runJson(["agent", "attach-plugin", "--host", "generic-mcp", "--dry-run", "--json"]);
+if (pluginAttachPlan.status !== "planned" || !pluginAttachPlan.files?.some((file: { destination: string }) => file.destination.endsWith(".mcp.json"))) throw new Error("plugin attach dry-run failed");
+const pluginAttach = await runJson(["agent", "attach-plugin", "--host", "generic-mcp", "--yes", "--json"]);
+if (pluginAttach.status !== "attached") throw new Error("plugin attach apply failed");
+const hostMcp = await readJson(path.join(root, ".mcp.json"));
+if (hostMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("plugin attach did not write host MCP config");
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
 if (!prefs.items?.length || !prefs.compactMarkdown?.includes("run npm test")) throw new Error("preference retrieval failed");

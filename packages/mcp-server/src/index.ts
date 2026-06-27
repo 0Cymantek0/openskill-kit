@@ -9,6 +9,7 @@ import {
   appendEvent,
   applyPreferenceReview,
   applyWorkflowReview,
+  attachAgentPlugin,
   compileBehaviorLayer,
   detectAgentEnvironment,
   draftSkill,
@@ -80,6 +81,7 @@ import {
   validateMemoryIntegrity,
   verifyProjectBehaviorPack,
   verifySkill,
+  AgentPluginAttachHosts,
   CompileTargets,
   PreferenceCategories,
   SuggestedCompileTargets,
@@ -770,6 +772,34 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, target, dryRun, yes }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await installAgentHooks({ projectRoot: root, target, dryRun, yes }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_preview_plugin_attach",
+    {
+      title: "OpenSkillKit Preview Plugin Attach",
+      description: "Compile the plugin if needed and preview host MCP config changes for an existing coding harness.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, host: z.enum(AgentPluginAttachHosts).default("generic-mcp") }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, host }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await attachAgentPlugin(root, { host, dryRun: true }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_apply_plugin_attach",
+    {
+      title: "OpenSkillKit Apply Plugin Attach",
+      description: "Write host MCP config for the compiled OpenSkillKit plugin only after explicit approval.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, host: z.enum(AgentPluginAttachHosts).default("generic-mcp"), yes: z.boolean().default(false) }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, host, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await attachAgentPlugin(root, { host, dryRun: yes !== true, yes }), root);
     }
   );
 

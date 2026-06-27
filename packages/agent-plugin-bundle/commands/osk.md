@@ -50,6 +50,11 @@ import behavior packs without explicit user approval.
 - CLI fallback: `openskill-kit hooks install --dry-run`
 - Explicit approval required: `yes`
 
+### /osk attach plugin
+
+- MCP tool: `osk_preview_plugin_attach`
+- CLI fallback: `openskill-kit agent attach-plugin --host generic-mcp --dry-run`
+
 ### /osk run behavior eval
 
 - MCP tool: `osk_run_behavior_eval`

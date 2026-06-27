@@ -31,6 +31,18 @@ Generated project plugins live under `.openskill-kit/compiled/plugin/` after:
 openskill-kit compile --target plugin
 ```
 
+Preview the host MCP config before writing anything:
+
+```bash
+openskill-kit agent attach-plugin --host generic-mcp --dry-run
+```
+
+Apply only after review:
+
+```bash
+openskill-kit agent attach-plugin --host generic-mcp --yes
+```
+
 That directory is attachable from the project root. Its `plugin.json` declares
 skills, MCP runtime, hook preview path, behavior artifacts, explicit approval
 gates, and privacy exclusions. It does not copy raw events, raw prompts, raw
@@ -52,6 +64,9 @@ For harness compatibility, generated plugins also include:
   `install-guides/cursor.md`, and `install-guides/generic-mcp.md`: conservative
   host attach notes. They keep existing host config reviewable instead of
   silently writing global settings.
+- `openskill-kit agent attach-plugin`: a safe host-config planner that compiles
+  the plugin, preserves existing MCP servers, writes only project-local config
+  (`.mcp.json` or `.cursor/mcp.json`), and records an install receipt on apply.
 
 Harness behavior should stay conservative:
 
@@ -69,6 +84,8 @@ Harness behavior should stay conservative:
   CLI fallbacks only when the MCP backend is unavailable.
 - Read the matching `install-guides/` file before applying any host-specific
   config.
+- Use `osk_preview_plugin_attach` for MCP-based attach previews and
+  `osk_apply_plugin_attach` only after explicit approval.
 - Preview managed instruction files and hooks before applying.
 - Require explicit approval for global writes, hook execution, interaction
   imports, and behavior pack imports.

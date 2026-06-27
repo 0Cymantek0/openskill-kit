@@ -7,6 +7,7 @@ import {
   appendEvent,
   applyPreferenceReview,
   applyWorkflowReview,
+  attachAgentPlugin,
   compileBehaviorLayer,
   detectAgentEnvironment,
   draftSkill,
@@ -84,7 +85,9 @@ import {
   verifyProjectBehaviorPack,
   verifySkill,
   CompileTargets,
+  AgentPluginAttachHosts,
   type CompileTarget,
+  type AgentPluginAttachHost,
   type InstallTarget
 } from "@openskill-kit/core";
 
@@ -647,6 +650,22 @@ agent.command("uninstall-manifests")
   .action(async (options) => {
     const result = await uninstallInstructionManifests(process.cwd(), {
       target: parseManifestTarget(options.target),
+      dryRun: options.dryRun === true,
+      yes: options.yes === true
+    });
+    output(options.json, result, result.messages.join("\n"));
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+agent.command("attach-plugin")
+  .description("Preview or write host MCP config for the compiled OpenSkillKit plugin")
+  .option("--host <host>", "codex|claude-code|cursor|generic-mcp", "generic-mcp")
+  .option("--dry-run", "Plan without writing")
+  .option("--yes", "Non-interactive approval")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await attachAgentPlugin(process.cwd(), {
+      host: parseAgentPluginAttachHost(options.host),
       dryRun: options.dryRun === true,
       yes: options.yes === true
     });
@@ -1314,6 +1333,11 @@ function parseAgentHookTarget(value: string): "project" | "global" {
 function parseManifestTarget(value: string): "project" {
   if (value === "project") return value;
   throw new Error(`Invalid manifest target: ${value}`);
+}
+
+function parseAgentPluginAttachHost(value: string): AgentPluginAttachHost {
+  if ((AgentPluginAttachHosts as readonly string[]).includes(value)) return value as AgentPluginAttachHost;
+  throw new Error(`Invalid agent plugin attach host: ${value}. Expected one of: ${AgentPluginAttachHosts.join(", ")}`);
 }
 
 function parseCompileTarget(value: string): CompileTarget {

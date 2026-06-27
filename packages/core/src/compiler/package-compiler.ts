@@ -126,6 +126,8 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_run_external_agent_eval", "eval", "approval-required", true),
   descriptor("osk_agent_doctor", "doctor", "read-only"),
   descriptor("osk_install_agent_hooks", "hooks", "approval-required", true),
+  descriptor("osk_preview_plugin_attach", "plugin", "local-write"),
+  descriptor("osk_apply_plugin_attach", "plugin", "approval-required", true),
   descriptor("osk_run_lifecycle_once", "lifecycle", "local-write"),
   descriptor("osk_mine_workflows", "workflows", "local-write"),
   descriptor("osk_get_workflow_graph", "workflows", "read-only"),

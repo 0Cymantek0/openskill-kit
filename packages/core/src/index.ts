@@ -20,6 +20,7 @@ export * from "./doctor/doctor.js";
 export * from "./detection/schema.js";
 export * from "./detection/detector.js";
 export * from "./agents/agent.js";
+export * from "./agents/plugin-attach.js";
 export * from "./maintenance/maintenance.js";
 export * from "./config/schema.js";
 export * from "./config/migrations.js";

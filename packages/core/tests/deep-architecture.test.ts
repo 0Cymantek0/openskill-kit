@@ -66,6 +66,7 @@ describe("deep architecture hardening", () => {
     expect(status.commandMapPath).toBe(path.join(pluginRoot, "commands", "commands.json"));
     expect(status.installGuidesPath).toBe(path.join(pluginRoot, "install-guides"));
     expect(status.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
+    expect(status.commands.some((item) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
     expect(status.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
     expect(status.nextActions).toContain("Open `install-guides/` for the target harness before writing any host config.");
     expect(status.nextActions).toContain("Map `/osk ...` requests through `commands/commands.json`; prefer MCP tools and use CLI fallbacks only when MCP is unavailable.");
@@ -80,6 +81,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.entrypoints.commandGuide).toBe("commands/osk.md");
     expect(manifest.entrypoints.installGuides).toBe("install-guides");
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk update skills" && item.mcpTool === "osk_compile_behavior_layer" && item.cli === "openskill-kit compile --target agent-skills")).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach" && item.cli.includes("agent attach-plugin"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk evolve this skill" && !item.mcpTool && item.cli.includes("openskill-kit evolve"))).toBe(true);
     expect(manifest.integrity.descriptorHashes).toBe("mcp/descriptor-hashes.json");
     expect(manifest.integrity.descriptorsHash).toBe(mcpHashes.descriptorsHash);
@@ -97,8 +99,10 @@ describe("deep architecture hardening", () => {
     expect(mcpAttachment.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     expect(mcpConfig.descriptorsHash).toBe(mcpHashes.descriptorsHash);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_manifest_install" && tool.approvalRequired === true)).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_plugin_attach" && tool.approvalRequired === true)).toBe(true);
     expect(mcpHashes.tools["osk_bootstrap_session"]).toMatch(/^sha256:/);
     expect(mcpHashes.approvalRequiredTools).toContain("osk_install_agent_hooks");
+    expect(mcpHashes.approvalRequiredTools).toContain("osk_apply_plugin_attach");
     expect(readme).toContain("Start `openskill-kit-mcp`");
     expect(readme).toContain("Command map: `commands/commands.json`");
     expect(readme).toContain("Install guides: `install-guides`");
