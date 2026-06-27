@@ -1,10 +1,10 @@
 # Agent Plugin Bundle
 
 OpenSkillKit is intended to attach to an existing coding harness, not replace
-it. OpenCode is the primary full-feature target for command files, learner
-subagent metadata, plugin hooks, and MCP. Codex, Claude Code, Cursor, and
-generic MCP clients stay supported through conservative preview-first attach
-paths.
+it. OpenCode is the primary full-feature target for command files, skills,
+learner subagent metadata, plugin hooks, and MCP. Codex, Claude Code, Cursor,
+and generic MCP clients stay supported through conservative preview-first
+attach paths.
 
 The public harness surface is 12 `/osk` command families: `init`, `status`,
 `task`, `learn`, `review`, `research`, `evolve`, `verify`, `compile`,

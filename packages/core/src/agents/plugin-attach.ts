@@ -217,6 +217,7 @@ function hostConfigTargets(root: string, host: AgentPluginAttachHost, pluginDir?
     const generated = pluginDir ? [
       ...copyTargets(root, pluginDir, "opencode/commands", ".opencode/commands"),
       ...copyTargets(root, pluginDir, "opencode/agents", ".opencode/agents"),
+      ...copyTargets(root, pluginDir, "opencode/skills", ".opencode/skills"),
       ...copyTargets(root, pluginDir, "opencode/plugins", ".opencode/plugins"),
       ...copyTargets(root, pluginDir, "opencode/model-routing.json", ".opencode/model-routing.json")
     ] : [];

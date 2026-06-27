@@ -148,6 +148,7 @@ describe("agent plugin attach planner", () => {
     expect(planned.files.some((file) => file.destination === path.join(root, "opencode.json") && file.action === "update")).toBe(true);
     expect(planned.files.some((file) => file.destination === path.join(root, ".opencode", "commands", "osk-learn.md"))).toBe(true);
     expect(planned.files.some((file) => file.destination === path.join(root, ".opencode", "agents", "osk-learner.md"))).toBe(true);
+    expect(planned.files.some((file) => file.destination === path.join(root, ".opencode", "skills", "osk-learning", "SKILL.md"))).toBe(true);
     expect(planned.files.some((file) => file.destination === path.join(root, ".opencode", "plugins", "openskillkit.ts"))).toBe(true);
     await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
 
@@ -160,6 +161,7 @@ describe("agent plugin attach planner", () => {
     expect(config.mcp["openskill-kit"].environment.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
     expect(await readFile(path.join(root, ".opencode", "commands", "osk-learn.md"), "utf8")).toContain("osk_plan_learning_sources");
     expect(await readFile(path.join(root, ".opencode", "agents", "osk-learner.md"), "utf8")).toContain("question: allow");
+    expect(await readFile(path.join(root, ".opencode", "skills", "osk-learning", "SKILL.md"), "utf8")).toContain("Preview imports before apply.");
     const status = await getAgentPluginAttachStatus(root);
     expect(status.hosts.find((host) => host.host === "opencode")?.status).toBe("attached");
   });

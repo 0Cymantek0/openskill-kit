@@ -483,13 +483,13 @@ function pluginInstallGuides(): PluginInstallGuide[] {
       host: "OpenCode",
       steps: [
         "Compile the plugin with `openskill-kit compile --target plugin`.",
-        "Review generated `.opencode/commands`, `.opencode/agents`, and `.opencode/plugins` under the compiled plugin.",
+        "Review generated `.opencode/commands`, `.opencode/skills`, `.opencode/agents`, and `.opencode/plugins` under the compiled plugin.",
         "Use `openskill-kit agent attach-plugin --host opencode --dry-run` to preview `opencode.json` and `.opencode/*` project writes.",
         "Apply with `--yes` only after reviewing the diff, then restart OpenCode.",
         "Run `/osk status` before relying on learned behavior."
       ],
       notes: [
-        "OpenCode is the primary full-feature target for command files, learner subagent, plugin metadata hooks, and MCP.",
+        "OpenCode is the primary full-feature target for command files, skills, learner subagent, plugin metadata hooks, and MCP.",
         "Generated hooks store metadata only by default and never raw prompts or raw diffs."
       ]
     },
@@ -564,12 +564,16 @@ async function writeOpenCodeArtifacts(pluginDir: string, families: OskCommandFam
   const root = path.join(pluginDir, "opencode");
   const commandDir = path.join(root, "commands");
   const agentDir = path.join(root, "agents");
+  const skillDir = path.join(root, "skills");
   const pluginDirOut = path.join(root, "plugins");
   for (const family of families) {
     await writeFileAtomic(path.join(commandDir, family.commandFile), renderOpenCodeCommand(family));
   }
   for (const agent of openCodeAgents()) {
     await writeFileAtomic(path.join(agentDir, `${agent.id}.md`), renderOpenCodeAgent(agent));
+  }
+  for (const skill of openCodeSkills()) {
+    await writeFileAtomic(path.join(skillDir, skill.id, "SKILL.md"), renderOpenCodeSkill(skill));
   }
   await writeFileAtomic(path.join(pluginDirOut, "openskillkit.ts"), renderOpenCodePlugin());
   await writeJsonAtomic(path.join(root, "model-routing.json"), {
@@ -659,6 +663,100 @@ function renderOpenCodeAgent(agentSpec: OpenCodeAgentSpec): string {
     "",
     "Use OSK MCP facade tools first. Keep imports, host writes, sandbox runs, and behavior activation behind the approval gates described by the command file.",
     "Never store raw prompts, raw diffs, secrets, user/global memories, or hidden benchmark answers.",
+    ""
+  ].join("\n");
+}
+
+interface OpenCodeSkillSpec {
+  id: string;
+  description: string;
+  whenToUse: string;
+  workflow: string[];
+  safety: string[];
+}
+
+function openCodeSkills(): OpenCodeSkillSpec[] {
+  return [
+    {
+      id: "osk-operating-manual",
+      description: "Route OpenSkillKit command families, MCP calls, and CLI fallbacks safely.",
+      whenToUse: "Use for any `/osk ...` request, plugin attach decision, command-family routing, or OSK readiness question.",
+      workflow: [
+        "Call `osk_bootstrap_session` first when MCP is available.",
+        "Route public requests through `commands/commands.json` and the 12 command families.",
+        "Use CLI fallbacks only when MCP is unavailable.",
+        "Keep deploy/apply operations preview-first until the user approves."
+      ],
+      safety: [
+        "Do not read raw prompts, raw diffs, global memories, shell history, transcripts, or hidden oracle files silently.",
+        "Do not activate learned behavior without `/osk review`."
+      ]
+    },
+    {
+      id: "osk-learning",
+      description: "Plan and run preview-first OpenSkillKit learning from explicit safe sources.",
+      whenToUse: "Use for `/osk learn`, interaction import previews, current-session learning, review-note learning, terminal-history files, or git metadata learning.",
+      workflow: [
+        "List candidate learning sources and their privacy risk.",
+        "Ask the user which source to use unless the command already selected one.",
+        "Preview imports before apply.",
+        "Return a digest with events, signals, candidate preferences, and review next actions."
+      ],
+      safety: [
+        "Explicit imports require approval before events are appended.",
+        "Learning produces candidate or staged behavior only; review decides activation."
+      ]
+    },
+    {
+      id: "osk-review-gate",
+      description: "Keep OpenSkillKit behavior activation behind evidence review.",
+      whenToUse: "Use for `/osk review`, behavior activation, rejection, edit, merge, split, workflow decisions, and OpenWorld promotion review.",
+      workflow: [
+        "Read the review queue and evidence cards.",
+        "Explain risk, confidence, and compile impact before action.",
+        "Apply only the requested review action.",
+        "Recommend `/osk compile` after accepted behavior changes."
+      ],
+      safety: [
+        "Do not treat candidate skills or OpenWorld promotions as active behavior.",
+        "Do not merge or activate conflicting behavior without explicit review."
+      ]
+    },
+    {
+      id: "osk-openworld",
+      description: "Run OpenSkill-style research, evolution, verifier, and proof-boundary workflows.",
+      whenToUse: "Use for `/osk research`, `/osk evolve`, `/osk verify`, OpenWorld source plans, anchors, verifier suites, refinement, reports, and promotion proposals.",
+      workflow: [
+        "Start with leakage checks and source planning.",
+        "Use Source Cards and Anchor Cards for provenance.",
+        "Run verifier quality and refinement before promotion.",
+        "Report proof level and next review action clearly."
+      ],
+      safety: [
+        "Artifact-verifier success is not hidden-oracle benchmark proof.",
+        "Do not read denied oracle paths or hidden benchmark answers."
+      ]
+    }
+  ];
+}
+
+function renderOpenCodeSkill(skill: OpenCodeSkillSpec): string {
+  return [
+    "---",
+    `name: ${skill.id}`,
+    `description: ${skill.description}`,
+    "---",
+    "",
+    `# ${skill.id}`,
+    "",
+    "## When to use",
+    skill.whenToUse,
+    "",
+    "## Workflow",
+    ...skill.workflow.map((step, index) => `${index + 1}. ${step}`),
+    "",
+    "## Safety",
+    ...skill.safety.map((item) => `- ${item}`),
     ""
   ].join("\n");
 }

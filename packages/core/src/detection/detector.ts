@@ -95,11 +95,14 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
   specs.push(...(await filesInDir(projectRoot, ".claude/rules", "claude-code", "rule-file", "safe-read", "generated-only", "medium")));
   specs.push(...(await filesInDir(projectRoot, ".cursor/rules", "cursor", "rule-file", "safe-read", "preview-only", "medium")));
   specs.push(...(await filesInDir(projectRoot, ".opencode/commands", "opencode", "rule-file", "safe-read", "generated-only", "medium")));
+  specs.push(...(await skillSpecs(projectRoot, ".opencode/skills", "project")));
   specs.push(...(await filesInDir(projectRoot, ".opencode/agents", "opencode", "rule-file", "safe-read", "generated-only", "medium")));
   specs.push(...(await filesInDir(projectRoot, ".opencode/plugins", "opencode", "hook-config", "safe-read", "explicit-apply", "medium")));
   specs.push(...(await filesInDir(projectRoot, ".openskill-kit/compiled/plugin/opencode/commands", "openskill-kit", "compiled-artifact", "safe-read", "generated-only", "low")));
   specs.push(...(await filesInDir(projectRoot, ".openskill-kit/compiled/plugin/opencode/agents", "openskill-kit", "compiled-artifact", "safe-read", "generated-only", "low")));
-    specs.push(...(await skillSpecs(projectRoot, ".agents/skills", "project")));
+  specs.push(...(await filesInDir(projectRoot, ".openskill-kit/compiled/plugin/opencode/skills", "openskill-kit", "compiled-artifact", "safe-read", "generated-only", "low")));
+  specs.push(...(await filesInDir(projectRoot, ".openskill-kit/compiled/plugin/opencode/plugins", "openskill-kit", "compiled-artifact", "safe-read", "generated-only", "low")));
+  specs.push(...(await skillSpecs(projectRoot, ".agents/skills", "project")));
   specs.push(...(await skillSpecs(projectRoot, ".claude/skills", "project")));
   specs.push(...(await skillSpecs(projectRoot, ".codex/skills", "project")));
   specs.push(...(await interactionExportSpecs(projectRoot)));
