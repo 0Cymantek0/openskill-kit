@@ -166,6 +166,10 @@ describe("deep architecture hardening", () => {
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources" && item.approvalRequired === true)).toBe(true);
     expect(commandFamilies.publicFamilyCount).toBe(12);
     expect(commandFamilies.families.some((item: { publicCommand: string; commandFile: string }) => item.publicCommand === "/osk learn" && item.commandFile === "osk-learn.md")).toBe(true);
+    const opencodeCommandFiles = commandFamilies.families.map((item: { commandFile: string }) => item.commandFile);
+    const commonOpenCodeBuiltIns = new Set(["help.md", "init.md", "login.md", "logout.md", "models.md", "theme.md", "config.md", "exit.md", "quit.md"]);
+    expect(opencodeCommandFiles.every((file: string) => file.startsWith("osk-") && file.endsWith(".md"))).toBe(true);
+    expect(opencodeCommandFiles.some((file: string) => commonOpenCodeBuiltIns.has(file))).toBe(false);
     expect(commandGuide).toContain("Prefer MCP");
     expect(commandGuide).toContain("osk_plan_learning_sources");
     expect(commandGuide).toContain("OpenWorld routes are review-only");
