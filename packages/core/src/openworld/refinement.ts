@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readOpenWorldTask, readVirtualTestSuite, writeOpenWorldEvolutionRun } from "./store.js";
 import { runVirtualTestSuite } from "./verifier-runner.js";
+import { assessOpenWorldVerifierQuality } from "./verifier-quality.js";
 import {
   OpenWorldEvolutionRunSchema,
   type OpenWorldEvolutionRun,
@@ -31,6 +32,38 @@ export async function runOpenWorldRefinement(
   let status: OpenWorldEvolutionRun["status"] = "running";
   let wallClockMs = 0;
   const sourceIds = await readSuiteSourceIds(root, suite.artifacts.traceabilityMapPath);
+  const quality = await assessOpenWorldVerifierQuality(root, taskId, suiteId, { now: startedAt });
+  if (quality.report.status === "fail") {
+    const run = OpenWorldEvolutionRunSchema.parse({
+      schemaVersion: "openskill-kit.evolution-run.v1",
+      id: runId,
+      taskId: task.id,
+      startedAt: startedAt.toISOString(),
+      completedAt: new Date(startedAt.getTime() + 1).toISOString(),
+      status: "blocked",
+      maxRounds,
+      rounds: [{
+        index: 0,
+        status: "blocked",
+        verifierSuiteId: suiteId,
+        failureType: "verifier-bug",
+        notes: [
+          `Verifier quality failed; inspect ${quality.report.reportPath ?? quality.report.id}.`,
+          ...quality.report.findings.filter((finding) => finding.level === "fail").map((finding) => finding.message)
+        ]
+      }],
+      sourceIds,
+      anchorIds: suite.generatedFromAnchorIds,
+      virtualTestSuiteIds: [suiteId],
+      leakageAuditIds: suite.leakageAuditId ? [suite.leakageAuditId] : [],
+      cost: {
+        wallClockMs: 0,
+        estimatedTokens: 0
+      }
+    });
+    await writeOpenWorldEvolutionRun(root, run);
+    return run;
+  }
 
   for (let index = 0; index < maxRounds; index += 1) {
     const visible = await runVirtualTestSuite(root, taskId, suiteId, {

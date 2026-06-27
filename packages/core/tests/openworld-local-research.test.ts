@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   buildVirtualSuiteFromAnchors,
+  assessOpenWorldVerifierQuality,
   buildOpenWorldEvalReport,
   buildOpenWorldTaskReport,
   buildReviewQueue,
@@ -105,6 +106,14 @@ describe("OpenWorld local research", () => {
     await expect(stat(suite.manifestPath)).resolves.toBeTruthy();
     await expect(stat(suite.traceabilityMapPath)).resolves.toBeTruthy();
     expect(JSON.parse(await readFile(suite.manifestPath, "utf8")).holdout).toHaveLength(1);
+    const quality = await assessOpenWorldVerifierQuality(root, task.task.id, suite.suite.id, {
+      now: new Date("2026-06-26T01:03:30.000Z")
+    });
+    expect(quality.report.status).toBe("pass");
+    expect(quality.report.metrics.anchorCoverage).toBe(1);
+    expect(quality.report.metrics.determinismScore).toBe(1);
+    expect(quality.report.metrics.holdoutCount).toBe(1);
+    expect(quality.report.markdownPath).toContain("/reports/");
 
     const execution = await runVirtualTestSuite(root, task.task.id, suite.suite.id, {
       split: "all",
@@ -130,6 +139,7 @@ describe("OpenWorld local research", () => {
     expect(taskReport.sources).toHaveLength(1);
     expect(taskReport.anchors).toHaveLength(4);
     expect(taskReport.suites).toHaveLength(1);
+    expect(taskReport.qualityReports.length).toBeGreaterThan(0);
     expect(taskReport.executions.length).toBeGreaterThan(0);
     expect(taskReport.runs.some((run) => run.id === refined.id)).toBe(true);
     expect(taskReport.evalReports.some((evalReport) => evalReport.runId === refined.id)).toBe(true);
@@ -163,6 +173,43 @@ describe("OpenWorld local research", () => {
     expect(failedRefinement.status).toBe("failed");
     expect(failedRefinement.rounds[0]?.failureType).toBe("source-conflict");
     await expect(promoteOpenWorldRunToReview(root, failedRefinement.id)).rejects.toThrow(/only passed runs/);
+  });
+
+  it("warns when a verifier suite has no holdout split", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-openworld-quality-"));
+    await writeFile(path.join(root, "quality.md"), "Quality checks need traceable cached verifier anchors.\n", "utf8");
+    const task = await initOpenWorldTask(root, {
+      title: "Quality gate",
+      prompt: "Score verifier quality.",
+      now: new Date("2026-06-27T02:00:00.000Z")
+    });
+    const source = await ingestLocalOpenWorldSource(root, task.task.id, "quality.md", new Date("2026-06-27T02:01:00.000Z"));
+    const anchor = await draftAnchorFromOpenWorldSource(root, task.task.id, source.source.id, undefined, new Date("2026-06-27T02:02:00.000Z"));
+    const suite = await buildVirtualSuiteFromAnchors(root, task.task.id, [anchor.anchor], new Date("2026-06-27T02:03:00.000Z"));
+    const quality = await assessOpenWorldVerifierQuality(root, task.task.id, suite.suite.id, {
+      write: false,
+      now: new Date("2026-06-27T02:04:00.000Z")
+    });
+    expect(quality.report.status).toBe("warn");
+    expect(quality.report.findings.some((finding) => finding.id === "no-holdout-split")).toBe(true);
+    expect(quality.report.reportPath).toBeUndefined();
+
+    const badSuite = {
+      ...suite.suite,
+      cases: [{ ...suite.suite.cases[0]!, command: ["curl", "https://example.com"] }]
+    };
+    await writeFile(suite.suitePath, `${JSON.stringify(badSuite, null, 2)}\n`, "utf8");
+    const failedQuality = await assessOpenWorldVerifierQuality(root, task.task.id, suite.suite.id, {
+      write: false,
+      now: new Date("2026-06-27T02:05:00.000Z")
+    });
+    expect(failedQuality.report.status).toBe("fail");
+    expect(failedQuality.report.findings.some((finding) => finding.id === "case-not-deterministic")).toBe(true);
+    const blocked = await runOpenWorldRefinement(root, task.task.id, suite.suite.id, {
+      now: new Date("2026-06-27T02:06:00.000Z")
+    });
+    expect(blocked.status).toBe("blocked");
+    expect(blocked.rounds[0]?.failureType).toBe("verifier-bug");
   });
 
   it("blocks local sources that mention forbidden oracle paths", async () => {

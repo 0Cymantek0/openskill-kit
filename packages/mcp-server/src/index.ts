@@ -21,6 +21,7 @@ import {
   evolveSkill,
   explainAdaptiveStatus,
   getAdaptiveStatus,
+  assessOpenWorldVerifierQuality,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   planOpenWorldResearch,
@@ -962,6 +963,25 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, taskId, suiteId, split, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runVirtualTestSuite(root, taskId, suiteId, { split, timeoutMs }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_verifier_quality",
+    {
+      title: "OpenSkillKit OpenWorld Verifier Quality",
+      description: "Score an OpenWorld verifier suite for traceability, determinism, holdout coverage, and leakage metadata.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        suiteId: z.string().min(1),
+        write: z.boolean().default(true)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, taskId, suiteId, write }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await assessOpenWorldVerifierQuality(root, taskId, suiteId, { write }), root);
     }
   );
 

@@ -36,6 +36,7 @@ import {
   retrieveRelevantPreferences,
   auditOpenWorldLeakage,
   buildVirtualSuiteFromAnchors,
+  assessOpenWorldVerifierQuality,
   draftAnchorFromOpenWorldSource,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
@@ -335,6 +336,27 @@ openworld.command("run-verifier")
     });
     output(options.json, result, `OpenWorld verifier ${result.suiteId} ${result.split}: ${result.summary.pass} pass, ${result.summary.fail} fail, ${result.summary.blocked} blocked, ${result.summary.timeout} timeout, ${result.summary.skipped} skipped\n${result.resultPath ?? ""}`);
     process.exitCode = result.summary.fail || result.summary.blocked || result.summary.timeout ? 1 : 0;
+  });
+
+openworld.command("verifier-quality")
+  .description("Score an OpenWorld verifier suite for traceability, determinism, holdout coverage, and leakage metadata")
+  .requiredOption("--task-id <id>", "Task id")
+  .requiredOption("--suite-id <id>", "Virtual test suite id")
+  .option("--no-write", "Do not write report artifacts")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await assessOpenWorldVerifierQuality(process.cwd(), options.taskId, options.suiteId, {
+      write: options.write !== false
+    });
+    output(options.json, result, [
+      `OpenWorld verifier quality ${result.report.status}`,
+      `Cases: ${result.report.metrics.caseCount}; holdout: ${result.report.metrics.holdoutCount}`,
+      `Traceability: ${Math.round(result.report.metrics.traceabilityScore * 1000) / 10}%`,
+      `Determinism: ${Math.round(result.report.metrics.determinismScore * 1000) / 10}%`,
+      result.report.reportPath ? `Report: ${result.report.reportPath}` : undefined,
+      result.report.markdownPath ? `Markdown: ${result.report.markdownPath}` : undefined
+    ].filter(Boolean).join("\n"));
+    process.exitCode = result.report.status === "fail" ? 1 : 0;
   });
 
 openworld.command("refine")

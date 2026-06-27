@@ -45,6 +45,7 @@ npx openskill-kit openworld fetch-source --task-id <owtask_id> --url https://doc
 npx openskill-kit openworld sources
 npx openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
+npx openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite_id>
 npx openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 npx openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id>
 npx openskill-kit openworld eval-report --run-id <owrun_id>
@@ -74,10 +75,10 @@ Preference Nodes stay reviewable as normal project files.
 The OpenWorld layer now covers task records, leakage audits, local source
 discovery plans, source ingestion/cache, explicit web source fetches, Anchor
 Cards, visible/holdout virtual verifier generation, local sandbox execution of
-generated verifier scripts, bounded verifier refinement/eval report records,
-and review-only promotion proposals. It still does not perform autonomous web
-search, LLM skill generation, containerized candidate-skill repair, or
-hidden-oracle benchmark evaluation yet.
+generated verifier scripts, verifier quality scoring, bounded verifier
+refinement/eval report records, and review-only promotion proposals. It still
+does not perform autonomous web search, LLM skill generation, containerized
+candidate-skill repair, or hidden-oracle benchmark evaluation yet.
 
 ## Core Commands
 
@@ -137,6 +138,7 @@ openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.ex
 openskill-kit openworld sources
 openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
 openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
+openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite_id>
 openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id>
 openskill-kit openworld eval-report --run-id <owrun_id>
@@ -253,6 +255,7 @@ Key tools:
 - `osk_openworld_ingest_source`
 - `osk_openworld_sources`
 - `osk_openworld_run_verifier`
+- `osk_openworld_verifier_quality`
 - `osk_openworld_refine`
 - `osk_openworld_eval_report`
 - `osk_openworld_task_report`

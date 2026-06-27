@@ -240,6 +240,11 @@ ready Node cases through the local `execFile` sandbox with no shell expansion,
 network disabled in policy metadata, stripped environment, output caps, and a
 JSON execution record under `verifiers/<suite-id>/results/`.
 
+`openworld verifier-quality` scores verifier suites before refinement. It checks
+case readiness, anchor coverage, visible/holdout split, source traceability,
+local deterministic command use, source trust, and leakage audit metadata. This
+is a structural quality gate only; it still does not prove hidden-oracle success.
+
 `openworld refine` is the first bounded refinement controller. It runs visible
 verifiers up to three rounds by default, retries sandbox failures once, stops
 early on pass or actionable non-transient failure, and runs holdout only after a

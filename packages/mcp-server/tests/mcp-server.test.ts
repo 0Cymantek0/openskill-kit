@@ -42,7 +42,8 @@ describe("openskill-kit MCP server", () => {
           "osk_compile_behavior_layer",
           "osk_agent_doctor",
           "osk_install_agent_hooks",
-          "osk_run_lifecycle_once"
+          "osk_run_lifecycle_once",
+          "osk_openworld_verifier_quality"
         ])
       );
 

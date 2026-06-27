@@ -5,6 +5,7 @@ import {
   OpenWorldEvalReportSchema,
   OpenWorldEvolutionRunSchema,
   OpenWorldLeakageAuditSchema,
+  OpenWorldVerifierQualityReportSchema,
   OpenWorldSourceSchema,
   SkillPlanSchema,
   VirtualTestSuiteExecutionSchema,
@@ -13,6 +14,7 @@ import {
   type OpenWorldEvalReport,
   type OpenWorldEvolutionRun,
   type OpenWorldLeakageAudit,
+  type OpenWorldVerifierQualityReport,
   type OpenWorldSource,
   type OpenWorldTask,
   type SkillPlan,
@@ -32,6 +34,7 @@ export interface BuildOpenWorldTaskReportResult {
   audits: OpenWorldLeakageAudit[];
   runs: OpenWorldEvolutionRun[];
   evalReports: OpenWorldEvalReport[];
+  qualityReports: OpenWorldVerifierQualityReport[];
   nextActions: string[];
   markdown: string;
   markdownPath?: string;
@@ -49,8 +52,9 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
   const audits = await readJsonFiles(path.join(taskDir, "audits"), (value) => OpenWorldLeakageAuditSchema.parse(value));
   const runs = await readEvolutionRuns(root, taskId);
   const evalReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldEvalReportSchema.parse(value));
-  const nextActions = inferNextActions({ task, sources, anchors, suites, runs, evalReports });
-  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, audits, runs, evalReports, nextActions });
+  const qualityReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldVerifierQualityReportSchema.parse(value));
+  const nextActions = inferNextActions({ task, sources, anchors, suites, runs, evalReports, qualityReports });
+  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, audits, runs, evalReports, qualityReports, nextActions });
   const markdownPath = options.write === true
     ? await writeOpenWorldTaskTextArtifact(root, taskId, ["reports", "task-report.md"], markdown)
     : undefined;
@@ -65,6 +69,7 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
     audits,
     runs,
     evalReports,
+    qualityReports,
     nextActions,
     markdown,
     markdownPath
@@ -81,6 +86,7 @@ export function renderOpenWorldTaskReport(input: {
   audits?: OpenWorldLeakageAudit[];
   runs?: OpenWorldEvolutionRun[];
   evalReports?: OpenWorldEvalReport[];
+  qualityReports?: OpenWorldVerifierQualityReport[];
   nextActions?: string[];
 }): string {
   const sources = input.sources ?? [];
@@ -91,7 +97,8 @@ export function renderOpenWorldTaskReport(input: {
   const audits = input.audits ?? [];
   const runs = input.runs ?? [];
   const evalReports = input.evalReports ?? [];
-  const nextActions = input.nextActions ?? inferNextActions({ task: input.task, sources, anchors, suites, runs, evalReports });
+  const qualityReports = input.qualityReports ?? [];
+  const nextActions = input.nextActions ?? inferNextActions({ task: input.task, sources, anchors, suites, runs, evalReports, qualityReports });
   const lines = [
     `# OpenWorld Task: ${input.task.title}`,
     "",
@@ -116,6 +123,7 @@ export function renderOpenWorldTaskReport(input: {
       `- Verifier executions: ${executions.length}`,
       `- Evolution runs: ${runs.length}`,
       `- Eval reports: ${evalReports.length}`,
+      `- Verifier quality reports: ${qualityReports.length}`,
       `- Leakage audits: ${audits.length}`
     ]),
     ...table("Sources", ["ID", "Kind", "Trust", "Privacy", "URI"], sources.map((source) => [
@@ -146,6 +154,14 @@ export function renderOpenWorldTaskReport(input: {
       String(execution.summary.pass),
       String(execution.summary.fail),
       String(execution.summary.blocked + execution.summary.timeout)
+    ])),
+    ...table("Verifier Quality Reports", ["ID", "Suite", "Status", "Traceability", "Determinism", "Holdout"], qualityReports.map((report) => [
+      report.id,
+      report.suiteId,
+      report.status,
+      formatNumber(report.metrics.traceabilityScore),
+      formatNumber(report.metrics.determinismScore),
+      String(report.metrics.holdoutCount)
     ])),
     ...section("Skill Plans", plans.map((plan) => `- ${plan.id}: ${plan.status} (${plan.anchorIds.length} anchor(s), ${plan.sourceIds.length} source(s))`)),
     ...section("Leakage Audits", audits.map((audit) => `- ${audit.id}: ${audit.status} (${audit.findings.length} finding(s))`)),
@@ -208,10 +224,17 @@ function inferNextActions(input: {
   suites: VirtualTestSuite[];
   runs: OpenWorldEvolutionRun[];
   evalReports: OpenWorldEvalReport[];
+  qualityReports: OpenWorldVerifierQualityReport[];
 }): string[] {
   if (!input.sources.length) return [`Ingest project-local source with: openskill-kit openworld research --task-id ${input.task.id} --file <path>`];
   if (!input.anchors.length) return [`Draft anchors from trusted sources with: openskill-kit openworld anchors --task-id ${input.task.id} --source-id <source_id>`];
   if (!input.suites.length) return [`Build visible/holdout verifier with: openskill-kit openworld build-verifier --task-id ${input.task.id} --anchor-id <anchor_id>`];
+  const latestSuite = [...input.suites].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  if (latestSuite && !input.qualityReports.some((report) => report.suiteId === latestSuite.id)) return [`Score verifier quality with: openskill-kit openworld verifier-quality --task-id ${input.task.id} --suite-id ${latestSuite.id}`];
+  const latestQuality = latestSuite
+    ? [...input.qualityReports].filter((report) => report.suiteId === latestSuite.id).sort((left, right) => right.generatedAt.localeCompare(left.generatedAt))[0]
+    : undefined;
+  if (latestQuality && latestQuality.status === "fail") return [`Fix verifier quality findings in ${latestQuality.id} before refinement.`];
   if (!input.runs.length) return [`Run bounded refinement with: openskill-kit openworld refine --task-id ${input.task.id} --suite-id <suite_id>`];
   const latestRun = [...input.runs].sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
   if (!latestRun) return ["No next action inferred."];

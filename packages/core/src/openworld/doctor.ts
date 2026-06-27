@@ -29,6 +29,7 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "Source index and trust cache", status: "available", message: "OpenWorld source metadata, content hashes, cache paths, and trust scores are recorded." },
     { name: "Anchor Cards", status: "available", message: "Anchor Cards can be drafted from local sources." },
     { name: "Virtual verifier suite", status: "available", message: "Visible/holdout verifier manifests, traceability maps, executable Node cases, and sandbox execution records are supported." },
+    { name: "Verifier quality scoring", status: "available", message: "Verifier suites can be scored for traceability, determinism, holdout coverage, source trust, and leakage metadata." },
     { name: "Bounded verifier refinement", status: "available", message: "Visible verifier rounds stop early on pass or actionable failure; holdout runs only after visible success and writes an EvolutionRun." },
     { name: "OpenWorld eval reports", status: "available", message: "EvolutionRun metrics can be rendered with explicit artifact-verifier proof level and hidden-oracle limitations." },
     { name: "Review-only promotion bridge", status: "available", message: "Passed OpenWorld runs can create semantic review proposals without activating behavior." },

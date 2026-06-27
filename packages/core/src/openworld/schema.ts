@@ -216,6 +216,39 @@ export const VirtualTestSuiteExecutionSchema = z.object({
   resultPath: z.string().optional()
 });
 
+export const OpenWorldVerifierQualityFindingSchema = z.object({
+  id: z.string().min(1),
+  level: z.enum(["info", "warn", "fail"]),
+  caseId: z.string().optional(),
+  anchorId: z.string().optional(),
+  message: z.string().min(1),
+  recommendation: z.string().min(1)
+});
+
+export const OpenWorldVerifierQualityReportSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.openworld-verifier-quality.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  suiteId: z.string().min(1),
+  generatedAt: z.string().datetime(),
+  status: z.enum(["pass", "warn", "fail"]),
+  proofLevel: z.literal("verifier-quality"),
+  hiddenOracleProof: z.literal(false),
+  metrics: z.object({
+    caseCount: z.number().int().min(0),
+    visibleCount: z.number().int().min(0),
+    holdoutCount: z.number().int().min(0),
+    anchorCoverage: z.number().min(0).max(1),
+    sourceTrustAverage: z.number().min(0).max(1),
+    determinismScore: z.number().min(0).max(1),
+    traceabilityScore: z.number().min(0).max(1),
+    leakageAuditPresent: z.boolean()
+  }),
+  findings: z.array(OpenWorldVerifierQualityFindingSchema).default([]),
+  reportPath: z.string().optional(),
+  markdownPath: z.string().optional()
+});
+
 export const SkillPlanSchema = z.object({
   schemaVersion: z.literal("openskill-kit.skill-plan.v1"),
   id: z.string().min(1),
@@ -328,6 +361,8 @@ export type AnchorCard = z.infer<typeof AnchorCardSchema>;
 export type VirtualTestCase = z.infer<typeof VirtualTestCaseSchema>;
 export type VirtualTestSuite = z.infer<typeof VirtualTestSuiteSchema>;
 export type VirtualTestSuiteExecution = z.infer<typeof VirtualTestSuiteExecutionSchema>;
+export type OpenWorldVerifierQualityFinding = z.infer<typeof OpenWorldVerifierQualityFindingSchema>;
+export type OpenWorldVerifierQualityReport = z.infer<typeof OpenWorldVerifierQualityReportSchema>;
 export type SkillPlan = z.infer<typeof SkillPlanSchema>;
 export type OpenWorldLeakageFinding = z.infer<typeof OpenWorldLeakageFindingSchema>;
 export type OpenWorldLeakageAudit = z.infer<typeof OpenWorldLeakageAuditSchema>;
