@@ -21,6 +21,7 @@ npx openskill-kit observe --type user-prompt-submit --text "Always run npm test 
 npx openskill-kit learn
 npx openskill-kit review --activate-all
 npx openskill-kit compile
+npx openskill-kit compile --target plugin
 npx openskill-kit agent install-manifests --target project --dry-run
 npx openskill-kit agent uninstall-manifests --target project --dry-run
 npx openskill-kit daemon
@@ -64,6 +65,10 @@ preferences, activates them through Learning Review, compiles a Context Pack and
 `project-behavior` skill, then installs that skill into the project agent skill
 directory. Manifest install is separate and reviewable because it writes managed
 blocks into root agent instruction files.
+`compile --target plugin` also writes `.openskill-kit/compiled/plugin/`, an
+attachable bundle with `.agent-plugin/plugin.json`, `.mcp.json`, skills, MCP
+metadata, behavior artifacts, and explicit privacy gates for existing coding
+harnesses.
 
 ## How It Works
 

@@ -74,6 +74,13 @@ await stat(path.join(root, ".openskill-kit", "compiled", "context-pack.md"));
 await stat(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"));
 await stat(path.join(root, ".openskill-kit", "compiled", "behavior", "command-policy.md"));
 await stat(path.join(root, ".openskill-kit", "compiled", "behavior", "review-checklist.md"));
+const pluginManifest = await readJson(path.join(root, ".openskill-kit", "compiled", "plugin", "plugin.json"));
+const pluginAgentManifest = await readJson(path.join(root, ".openskill-kit", "compiled", "plugin", ".agent-plugin", "plugin.json"));
+const pluginMcp = await readJson(path.join(root, ".openskill-kit", "compiled", "plugin", ".mcp.json"));
+if (pluginManifest.schemaVersion !== "openskill-kit.agent-plugin.v1") throw new Error("compiled plugin manifest missing schema");
+if (pluginAgentManifest.name !== pluginManifest.name) throw new Error("compiled .agent-plugin manifest mismatch");
+if (pluginMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("compiled plugin MCP attachment missing");
+if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/")) throw new Error("compiled plugin privacy exclusions incomplete");
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
 if (!prefs.items?.length || !prefs.compactMarkdown?.includes("run npm test")) throw new Error("preference retrieval failed");
@@ -208,6 +215,11 @@ async function runText(args: string[]): Promise<string> {
     maxBuffer: 10 * 1024 * 1024
   });
   return stdout;
+}
+
+async function readJson(file: string): Promise<any> {
+  const { readFile } = await import("node:fs/promises");
+  return JSON.parse(await readFile(file, "utf8"));
 }
 
 async function expectCommandFailure(args: string[]): Promise<void> {
