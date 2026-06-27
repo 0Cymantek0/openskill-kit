@@ -118,6 +118,7 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
       "osk_get_workflow_graph",
       "osk_run_full_doctor",
       "osk_openworld_doctor",
+      "osk_openworld_source_plan",
       "osk_openworld_ingest_source",
       "osk_openworld_sources",
       "osk_openworld_run_verifier",
