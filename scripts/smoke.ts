@@ -100,6 +100,9 @@ const pluginAttach = await runJson(["agent", "attach-plugin", "--host", "generic
 if (pluginAttach.status !== "attached") throw new Error("plugin attach apply failed");
 const hostMcp = await readJson(path.join(root, ".mcp.json"));
 if (hostMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("plugin attach did not write host MCP config");
+const detectionAfterAttach = await runJson(["detect", "--json"]);
+const hostMcpSurface = detectionAfterAttach.surfaces?.find((surface: { relativePath?: string }) => surface.relativePath === ".mcp.json");
+if (hostMcpSurface?.metadata?.openskillKitAttached !== true) throw new Error("detection did not recognize OpenSkillKit MCP attachment");
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
 if (!prefs.items?.length || !prefs.compactMarkdown?.includes("run npm test")) throw new Error("preference retrieval failed");

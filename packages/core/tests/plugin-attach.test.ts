@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   attachAgentPlugin,
+  explainAdaptiveStatus,
   initAdaptiveProject,
   type PreferenceGraph,
   type PreferenceNode
@@ -63,6 +64,19 @@ describe("agent plugin attach planner", () => {
 
     expect(planned.status).toBe("planned");
     expect(planned.files[0]?.destination).toBe(path.join(root, ".cursor", "mcp.json"));
+  });
+
+  it("surfaces host attach readiness in status explain", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("status", "Prefer visible plugin readiness", "workflow")]);
+    await attachAgentPlugin(root, { host: "generic-mcp", dryRun: true });
+
+    const beforeAttach = await explainAdaptiveStatus(root);
+    expect(beforeAttach.nextActions.some((action) => action.includes("agent attach-plugin"))).toBe(true);
+
+    await attachAgentPlugin(root, { host: "generic-mcp", dryRun: false, yes: true });
+    const afterAttach = await explainAdaptiveStatus(root);
+    expect(afterAttach.nextActions.some((action) => action.includes("agent attach-plugin"))).toBe(false);
   });
 });
 

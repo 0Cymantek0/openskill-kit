@@ -320,7 +320,8 @@ scope/evidence/eval-aware calibration, progressive task/path-aware retrieval wit
 budget traces, encrypted privacy-safe sync envelopes,
 target-aware context/skill/manifest/hook/MCP/plugin compilation, standalone hook scripts,
 managed AGENTS/CLAUDE previews and installer, plugin output, MCP config
-generation, project skill install, Project Behavior Pack
+generation, host MCP attach preview/apply with detection of invalid/conflicting
+MCP configs, project skill install, Project Behavior Pack
 export/sign/verify/inspect/diff/review/apply, behavior evals, maintenance
 commands, import diff gates, external-agent eval prompt harness, CLI, MCP tools,
 tests, and smoke coverage.

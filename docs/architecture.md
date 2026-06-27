@@ -177,7 +177,8 @@ corrupt markers or a mismatched hash.
 `.openskill-kit/detection/reports/environment.md`. The detector reports project
 instruction files, Claude/Cursor rules, MCP configs, skills, hooks, and
 possible session/export files with read/write policy, privacy risk, managed
-block metadata, and confidence. User/global surfaces are opt-in through
+block metadata, MCP server names, OpenSkillKit attachment state, remote-server
+counts, and confidence. User/global surfaces are opt-in through
 `--include-user-surfaces` and remain metadata-only by default. Raw session logs
 and agent memories are never imported silently; detected session exports use
 `explicit-import` read policy and point operators to `interactions import`.
@@ -187,6 +188,10 @@ Generated plugin attach files are reported as low-risk OpenSkillKit artifacts:
 `.openskill-kit/compiled/plugin/.agent-plugin/plugin.json`, and
 `.openskill-kit/compiled/plugin/.mcp.json`. This lets operators confirm the
 project has an attachable harness bundle before copying or enabling it.
+When a compiled plugin exists but project MCP config is missing, invalid, or
+points `openskill-kit` at a nonstandard command, detection reports the exact
+attach issue and directs operators to `openskill-kit agent attach-plugin
+--host generic-mcp --dry-run`.
 
 ## Interaction Imports
 

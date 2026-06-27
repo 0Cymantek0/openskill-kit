@@ -178,6 +178,7 @@ async function surfaceFromSpec(projectRoot: string, spec: SurfaceSpec, detectedA
     ? await fs.readFile(spec.target, "utf8").catch(() => undefined)
     : undefined;
   const childCount = directory ? await countChildren(spec.target) : undefined;
+  const mcpMetadata = spec.surfaceType === "mcp-config" && content ? inspectMcpConfigContent(content) : {};
   const relativePath = path.isAbsolute(projectRoot)
     ? path.relative(projectRoot, spec.target).replace(/\\/g, "/")
     : undefined;
@@ -202,7 +203,8 @@ async function surfaceFromSpec(projectRoot: string, spec: SurfaceSpec, detectedA
       managedBlockPresent: content ? content.includes(MANAGED_BLOCK_START) && content.includes(MANAGED_BLOCK_END) : undefined,
       oskGenerated: content ? /openskill-kit/i.test(content) : spec.target.includes(`${path.sep}.openskill-kit${path.sep}`),
       directory,
-      childCount
+      childCount,
+      ...mcpMetadata
     },
     notes: spec.notes ?? []
   });
@@ -339,6 +341,48 @@ function detectSurfaceIssues(surfaces: AgentSurface[]): AgentDetectionIssue[] {
       recommendation: "Review MCP server commands and permissions before applying generated config changes."
     });
   }
+  const invalidMcpConfigs = mcpConfigs.filter((surface) => surface.metadata.mcpConfigValid === false);
+  if (invalidMcpConfigs.length) {
+    issues.push({
+      id: "mcp-config-invalid-json",
+      severity: "block",
+      surfaceIds: invalidMcpConfigs.map((surface) => surface.id),
+      message: `${invalidMcpConfigs.length} MCP config surface(s) could not be parsed as JSON.`,
+      recommendation: "Fix invalid JSON before running `openskill-kit agent attach-plugin --yes`; OpenSkillKit will not overwrite unreadable host config."
+    });
+  }
+  const pluginCompiled = surfaces.some((surface) => surface.adapter === "openskill-kit" && surface.relativePath === ".openskill-kit/compiled/plugin/plugin.json");
+  const hostMcpConfigs = mcpConfigs.filter((surface) => surface.scope === "project");
+  const attachedConfigs = hostMcpConfigs.filter((surface) => surface.metadata.openskillKitAttached === true);
+  const conflictingConfigs = hostMcpConfigs.filter((surface) => surface.metadata.openskillKitAttached === false && surface.metadata.openskillKitCommand);
+  if (pluginCompiled && !attachedConfigs.length) {
+    issues.push({
+      id: "plugin-not-attached-to-host-mcp",
+      severity: "info",
+      surfaceIds: hostMcpConfigs.map((surface) => surface.id),
+      message: "Compiled OpenSkillKit plugin exists, but no project host MCP config is attached to `openskill-kit-mcp`.",
+      recommendation: "Run `openskill-kit agent attach-plugin --host generic-mcp --dry-run`, review the diff, then apply with `--yes` if desired."
+    });
+  }
+  if (conflictingConfigs.length) {
+    issues.push({
+      id: "plugin-mcp-command-conflict",
+      severity: "warn",
+      surfaceIds: conflictingConfigs.map((surface) => surface.id),
+      message: `${conflictingConfigs.length} MCP config surface(s) define openskill-kit with a nonstandard command.`,
+      recommendation: "Review the existing openskill-kit MCP command before applying generated attachment config."
+    });
+  }
+  const remoteMcpConfigs = hostMcpConfigs.filter((surface) => (surface.metadata.mcpRemoteServerCount ?? 0) > 0);
+  if (remoteMcpConfigs.length) {
+    issues.push({
+      id: "mcp-remote-server-review",
+      severity: "warn",
+      surfaceIds: remoteMcpConfigs.map((surface) => surface.id),
+      message: `${remoteMcpConfigs.length} MCP config surface(s) include remote server definitions.`,
+      recommendation: "Review remote MCP servers separately; OpenSkillKit attachment should remain local stdio by default."
+    });
+  }
   return issues;
 }
 
@@ -348,8 +392,44 @@ function nextActionsForDetection(surfaces: AgentSurface[], issues: AgentDetectio
   if (surfaces.some((surface) => surface.writePolicy === "managed-block")) actions.add("Run `openskill-kit agent install-manifests --target project --dry-run` before writing managed instruction blocks.");
   if (surfaces.some((surface) => surface.surfaceType === "hook-config")) actions.add("Run `openskill-kit agent doctor` and preview hook install before enabling hooks.");
   if (surfaces.some((surface) => surface.adapter === "mcp")) actions.add("Inspect existing MCP config before applying generated OpenSkillKit MCP config.");
+  if (issues.some((issue) => issue.id === "plugin-not-attached-to-host-mcp")) actions.add("Run `openskill-kit agent attach-plugin --host generic-mcp --dry-run` to preview host MCP attachment.");
+  if (issues.some((issue) => issue.id === "mcp-config-invalid-json")) actions.add("Fix invalid host MCP JSON before applying plugin attachment.");
   if (!actions.size) actions.add("Run `openskill-kit compile` after reviewing active behavior.");
   return [...actions];
+}
+
+function inspectMcpConfigContent(content: string): Partial<AgentSurface["metadata"]> {
+  try {
+    const parsed = JSON.parse(content) as { mcpServers?: Record<string, unknown> };
+    const servers = parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.mcpServers && typeof parsed.mcpServers === "object" && !Array.isArray(parsed.mcpServers)
+      ? parsed.mcpServers
+      : {};
+    const names = Object.keys(servers).sort();
+    const openskillKitServer = isRecord(servers["openskill-kit"]) ? servers["openskill-kit"] : undefined;
+    const command = typeof openskillKitServer?.command === "string" ? openskillKitServer.command : undefined;
+    const remoteCount = Object.values(servers).filter((server) => {
+      if (!isRecord(server)) return false;
+      const url = typeof server.url === "string" ? server.url : undefined;
+      const transport = typeof server.transport === "string" ? server.transport : undefined;
+      return Boolean(url) || transport === "http" || transport === "sse";
+    }).length;
+    return {
+      mcpConfigValid: true,
+      mcpServerNames: names,
+      openskillKitAttached: command === "openskill-kit-mcp",
+      openskillKitCommand: command,
+      mcpRemoteServerCount: remoteCount
+    };
+  } catch {
+    return {
+      mcpConfigValid: false,
+      mcpIssue: "Invalid JSON"
+    };
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function countBy<T>(items: T[], fn: (item: T) => string): Record<string, number> {

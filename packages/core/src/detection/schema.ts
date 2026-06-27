@@ -34,7 +34,13 @@ export const AgentSurfaceSchema = z.object({
     managedBlockPresent: z.boolean().optional(),
     oskGenerated: z.boolean().optional(),
     directory: z.boolean().optional(),
-    childCount: z.number().int().min(0).optional()
+    childCount: z.number().int().min(0).optional(),
+    mcpConfigValid: z.boolean().optional(),
+    mcpServerNames: z.array(z.string()).optional(),
+    openskillKitAttached: z.boolean().optional(),
+    openskillKitCommand: z.string().optional(),
+    mcpRemoteServerCount: z.number().int().min(0).optional(),
+    mcpIssue: z.string().optional()
   }).default({}),
   notes: z.array(z.string()).default([])
 });
