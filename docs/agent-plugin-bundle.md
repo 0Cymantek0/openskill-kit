@@ -1,7 +1,12 @@
 # Agent Plugin Bundle
 
-Compatible agents read repository skills from `.agents/skills` and can
-distribute reusable skills through plugins.
+OpenSkillKit is intended to attach to an existing coding harness, not replace
+it. The plugin bundle gives that harness three local entrypoints:
+
+- `skills/` for repository-scoped skill instructions.
+- `.mcp.json` for the local `openskill-kit-mcp` stdio backend.
+- `.agent-plugin/plugin.json` for the host-facing capability and privacy
+  contract.
 
 Install a generated skill into the current project:
 
@@ -15,3 +20,23 @@ Each successful install writes an audit receipt under
 The local agent plugin bundle lives in `packages/agent-plugin-bundle` and includes an
 `openskill-kit` skill describing safe CLI usage. It also includes `.mcp.json`
 with an `openskill-kit-mcp` stdio server entry for local MCP-capable hosts.
+
+Generated project plugins live under `.openskill-kit/compiled/plugin/` after:
+
+```bash
+openskill-kit compile --target plugin
+```
+
+That directory is attachable from the project root. Its `plugin.json` declares
+skills, MCP runtime, hook preview path, behavior artifacts, explicit approval
+gates, and privacy exclusions. It does not copy raw events, raw prompts, raw
+diffs, interaction imports, private evidence blobs, review queues, or user
+memories.
+
+Harness behavior should stay conservative:
+
+- Load skills and MCP descriptors read-only by default.
+- Start `openskill-kit-mcp` from the project root with stdio.
+- Preview managed instruction files and hooks before applying.
+- Require explicit approval for global writes, hook execution, interaction
+  imports, and behavior pack imports.

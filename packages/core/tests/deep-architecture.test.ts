@@ -36,6 +36,28 @@ describe("deep architecture hardening", () => {
     expect(compiled.policyArtifactPaths).toEqual([]);
   });
 
+  it("compiles a self-describing agent plugin bundle for existing harnesses", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("plugin", "Prefer plugin-first harness attachment", "workflow", [])]);
+    const compiled = await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const pluginRoot = path.join(root, ".openskill-kit", "compiled", "plugin");
+    const manifest = JSON.parse(await readFile(path.join(pluginRoot, "plugin.json"), "utf8"));
+    const readme = await readFile(path.join(pluginRoot, "README.md"), "utf8");
+
+    expect(compiled.compiledTargets).toEqual(expect.arrayContaining(["plugin", "agent-skills", "mcp-resources", "hooks", "project-rules"]));
+    expect(manifest.schemaVersion).toBe("openskill-kit.agent-plugin.v1");
+    expect(manifest.compatibility).toEqual(expect.arrayContaining(["agent-plugin", "mcp-stdio", "codex", "claude-code"]));
+    expect(manifest.entrypoints.mcpServer.command).toBe("openskill-kit-mcp");
+    expect(manifest.entrypoints.mcpServer.transport).toBe("stdio");
+    expect(manifest.install.defaultMode).toBe("attach");
+    expect(manifest.install.requiresExplicitApproval).toContain("importing interaction exports or private memories");
+    expect(manifest.privacy.excludes).toContain(".openskill-kit/interactions/");
+    expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
+    expect(manifest.files).toEqual(expect.arrayContaining(["README.md", "mcp/server-config.json", "skills/project-behavior/SKILL.md"]));
+    expect(readme).toContain("Start `openskill-kit-mcp`");
+    expect(readme).toContain("Never attach hidden benchmark answers");
+  });
+
   it("generates and installs managed agent manifests while preserving user content", async () => {
     const root = await tempProject();
     await writeGraph(root, [

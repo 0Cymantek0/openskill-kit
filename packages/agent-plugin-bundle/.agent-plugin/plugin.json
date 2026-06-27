@@ -1,10 +1,48 @@
 {
+  "schemaVersion": "openskill-kit.agent-plugin.v1",
   "name": "openskill-kit",
   "version": "0.1.0",
-  "description": "Local agent plugin bundle for using OpenSkillKit safely.",
+  "displayName": "OpenSkillKit",
+  "description": "Local-first behavior memory, skill evolution, and MCP bridge for existing coding harnesses.",
+  "compatibility": [
+    "agent-plugin",
+    "mcp-stdio",
+    "codex",
+    "claude-code",
+    "agents-md"
+  ],
+  "capabilities": [
+    "skill-drafting",
+    "skill-audit",
+    "skill-evaluation",
+    "project-behavior-retrieval",
+    "local-mcp-tools",
+    "explicit-install-receipts"
+  ],
   "skills": [
     {
       "path": "skills/openskill-kit"
     }
-  ]
+  ],
+  "mcp": {
+    "config": ".mcp.json",
+    "server": "openskill-kit-mcp",
+    "transport": "stdio"
+  },
+  "privacy": {
+    "localFirst": true,
+    "requiresExplicitApproval": [
+      "global instruction writes",
+      "hook installation",
+      "interaction imports",
+      "behavior pack imports"
+    ],
+    "neverIncludes": [
+      "raw prompts",
+      "raw diffs",
+      "secrets",
+      "user memories",
+      "hidden benchmark answers"
+    ]
+  }
 }
