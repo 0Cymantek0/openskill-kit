@@ -179,6 +179,9 @@ describe("deep architecture hardening", () => {
     expect(commandGuide).toContain("openskill-kit interactions git-context");
     expect(commandGuide).toContain("OpenWorld routes are review-only");
     expect(commandGuide).toContain("openskill-kit status");
+    expect(readme).toContain("## Host Attach Matrix");
+    expect(readme).toContain("codex (supported, codex-toml)");
+    expect(readme).toContain("openskill-kit agent attach-plugin --host codex --dry-run");
     expect(codexGuide).toContain("AGENTS.md");
     expect(genericMcpGuide).toContain("osk_bootstrap_session");
     expect(mcpAttachment.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");

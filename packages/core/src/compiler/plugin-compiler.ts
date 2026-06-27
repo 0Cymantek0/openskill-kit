@@ -590,6 +590,16 @@ function renderReadme(manifest: AgentPluginManifest): string {
     `- Command routing: \`${manifest.installProfile.commandRouting.map}\``,
     `- Attach preview: \`${manifest.installProfile.attach.previewCli}\``,
     "",
+    "## Host Attach Matrix",
+    "",
+    ...manifest.installProfile.hostConfig.flatMap((host) => [
+      `- ${host.host} (${host.supportLevel}, ${host.configFormat})`,
+      `  - Config: \`${host.configPath}\``,
+      `  - Preview: \`${host.previewCli}\``,
+      `  - Apply: \`${host.applyCli}\``,
+      `  - Status: \`${host.statusCli}\``
+    ]),
+    "",
     "## Commands",
     "",
     "Treat `/osk ...` phrases as harness intents. Prefer the mapped MCP tool when available; otherwise run the CLI fallback from the project root.",
