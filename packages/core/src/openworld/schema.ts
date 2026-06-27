@@ -104,8 +104,8 @@ export const OpenWorldResearchQuerySchema = z.object({
 });
 
 export const OpenWorldRetrievalAdapterSchema = z.object({
-  id: z.enum(["local-project-files", "explicit-http-fetch", "explicit-http-cache"]),
-  kind: z.enum(["local-files", "http-fetch", "http-cache"]),
+  id: z.enum(["local-project-files", "explicit-http-fetch", "explicit-http-cache", "autonomous-docs-repo-discovery"]),
+  kind: z.enum(["local-files", "http-fetch", "http-cache", "docs-repo-discovery"]),
   title: z.string().min(1),
   status: z.enum(["enabled", "disabled"]),
   networkAccess: z.enum(["none", "explicit-http"]),
@@ -129,6 +129,7 @@ export const OpenWorldSourceCandidateSchema = z.object({
   score: z.number().min(0).max(1),
   status: z.enum(["recommended", "available", "blocked", "skipped"]),
   privacyClass: z.enum(OpenWorldPrivacyClasses),
+  adapterId: OpenWorldRetrievalAdapterSchema.shape.id.optional(),
   usableFor: z.array(z.enum(["skill", "virtual-test", "safety", "report"])).default(["skill", "virtual-test", "report"]),
   reasons: z.array(z.string().min(1)).default([]),
   leakageFindingIds: z.array(z.string().min(1)).default([]),

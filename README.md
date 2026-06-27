@@ -41,7 +41,7 @@ npx openskill-kit openworld leakage-check --query "docs for parser behavior" --f
 npx openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
 npx openskill-kit openworld source-plan --task-id <owtask_id> --path docs
 npx openskill-kit openworld retrieval-adapters --task-id <owtask_id>
-npx openskill-kit openworld execute-source-plan --task-id <owtask_id> --plan-id <owrplan_id>
+npx openskill-kit openworld execute-source-plan --task-id <owtask_id> --plan-id <owrplan_id> --include-autonomous-web
 npx openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
 npx openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
 npx openskill-kit openworld sources
@@ -79,15 +79,15 @@ Preference Nodes stay reviewable as normal project files.
 
 The OpenWorld layer now covers task records, leakage audits, local source
 discovery plans, source ingestion/cache, explicit web source fetches, Anchor
-Cards, named retrieval adapter contracts with allow-web gates and execution
-traces, source-plan execution artifacts, visible/holdout virtual verifier
+Cards, named retrieval adapter contracts with allow-web gates, deterministic
+package/language docs-repo URL discovery, execution traces, source-plan execution artifacts, visible/holdout virtual verifier
 generation, review-only candidate skill artifacts, local sandbox execution of
 generated verifier scripts, verifier quality scoring, bounded verifier
 refinement/eval report records, candidate revision artifacts, local-process
 sandbox repair probes, and review-only promotion proposals. It also has a static
 hidden-oracle denied-path harness that scans generated artifacts without reading
-oracle files. It still does not perform autonomous web search, built-in LLM
-skill generation, containerized candidate-skill repair, or hidden-oracle
+oracle files. It still does not perform broad search-engine-backed web crawling,
+built-in LLM skill generation, containerized candidate-skill repair, or hidden-oracle
 benchmark evaluation yet.
 
 ## Core Commands
@@ -144,7 +144,7 @@ openskill-kit openworld leakage-check --query "docs for parser behavior" --forbi
 openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
 openskill-kit openworld source-plan --task-id <owtask_id> --path docs
 openskill-kit openworld retrieval-adapters --task-id <owtask_id>
-openskill-kit openworld execute-source-plan --task-id <owtask_id> --plan-id <owrplan_id>
+openskill-kit openworld execute-source-plan --task-id <owtask_id> --plan-id <owrplan_id> --include-autonomous-web
 openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
 openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
 openskill-kit openworld sources

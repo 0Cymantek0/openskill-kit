@@ -24,7 +24,7 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "Task records", status: "available", message: "Local OpenWorld task records are supported." },
     { name: "Leakage barrier", status: "available", message: "Queries, paths, content, and artifacts can be scanned for forbidden identifiers." },
     { name: "Local source discovery plans", status: "available", message: "Project files can be ranked as source candidates with sanitized query plans and leakage-blocked candidates before ingestion." },
-    { name: "Retrieval adapter contracts", status: "available", message: "Local files, explicit URL cache ingestion, and explicit HTTP(S) fetches have named adapters with allow-web gates, network policy, limits, and safeguards." },
+    { name: "Retrieval adapter contracts", status: "available", message: "Local files, explicit URL cache ingestion, explicit HTTP(S) fetches, and deterministic docs/repo discovery have named adapters with allow-web gates, network policy, limits, and safeguards." },
     { name: "Source plan execution", status: "available", message: "Recommended local candidates and explicit vetted URLs can be ingested from a saved research plan with adapter-level execution traces." },
     { name: "Local source ingestion", status: "available", message: "Project-local files can become audited OpenWorld sources." },
     { name: "Explicit web source ingestion", status: "available", message: "HTTP(S) URLs can be fetched only when the task has allowWeb enabled; source text is leakage-audited before caching." },
@@ -39,7 +39,8 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "OpenWorld eval reports", status: "available", message: "EvolutionRun metrics can be rendered with explicit artifact-verifier proof level and hidden-oracle limitations." },
     { name: "Hidden-oracle denied-path harness", status: "available", message: "Generated runtime artifacts can be scanned for forbidden path exposure without reading oracle file contents; this is static proof, not benchmark proof." },
     { name: "Review-only promotion bridge", status: "available", message: "Passed OpenWorld runs can create semantic review proposals without activating behavior." },
-    { name: "Autonomous web search", status: "missing", message: "No autonomous query planning or web/doc/repo search engine is implemented." },
+    { name: "Autonomous docs/repo discovery", status: "available", message: "Package metadata and language hints can produce deterministic public docs/repo URL candidates; fetching requires explicit include-autonomous-web execution." },
+    { name: "Broad web search engine", status: "missing", message: "No general search-engine-backed web/doc/repo crawler is implemented." },
     { name: "LLM skill generation", status: "missing", message: "No built-in model generation loop is implemented; candidate skill artifacts are deterministic and review-only." },
     { name: "Containerized skill repair", status: "missing", message: "Repair runs use local-process sandbox mode; no containerized iterative skill repair boundary is implemented." },
     { name: "Hidden-oracle benchmark proof", status: "missing", message: "Existing evals and denied-path scans do not prove hidden-oracle benchmark improvement." }

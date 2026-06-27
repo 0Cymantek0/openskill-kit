@@ -22,6 +22,15 @@ import type { AnchorCard, OpenWorldLeakageAudit, OpenWorldResearchExecution, Ope
 
 const SOURCE_SKIP_DIRS = new Set([".git", ".openskill-kit", "node_modules", "dist", "coverage", "tmp", ".next", ".turbo"]);
 const SOURCE_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".json", ".jsonc", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".toml", ".yaml", ".yml"]);
+const LANGUAGE_DOC_URLS: Record<string, { title: string; url: string }> = {
+  javascript: { title: "MDN JavaScript reference", url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript" },
+  typescript: { title: "TypeScript documentation", url: "https://www.typescriptlang.org/docs/" },
+  node: { title: "Node.js API documentation", url: "https://nodejs.org/api/" },
+  nodejs: { title: "Node.js API documentation", url: "https://nodejs.org/api/" },
+  python: { title: "Python documentation", url: "https://docs.python.org/3/" },
+  react: { title: "React reference", url: "https://react.dev/reference/react" },
+  vitest: { title: "Vitest guide", url: "https://vitest.dev/guide/" }
+};
 
 export interface IngestLocalSourceResult {
   schemaVersion: "openskill-kit.openworld-local-source.v1";
@@ -93,6 +102,7 @@ export interface PlanOpenWorldResearchOptions {
   maxFilesScanned?: number;
   maxFileBytes?: number;
   includeWebQueries?: boolean;
+  includeAutonomousWebCandidates?: boolean;
   write?: boolean;
   now?: Date;
 }
@@ -144,6 +154,21 @@ export function buildOpenWorldRetrievalAdapters(task: Pick<OpenWorldTask, "allow
       timeoutMs,
       reasons: task.allowWeb ? ["Task allows explicit public web sources; URL must be passed by operator."] : ["Task allowWeb is false."],
       safeguards: ["HTTP(S) only", "Operator-provided URL only", "Content-type allowlist", "Timeout and byte limit", "Leakage audit before cache write"]
+    },
+    {
+      id: "autonomous-docs-repo-discovery",
+      kind: "docs-repo-discovery",
+      title: "Autonomous docs/repo URL discovery",
+      status: task.allowWeb ? "enabled" : "disabled",
+      networkAccess: "explicit-http",
+      requiresAllowWeb: true,
+      inputPrivacyClasses: ["shareable", "openworld-public"],
+      outputPrivacyClass: "openworld-public",
+      maxSources: 5,
+      maxBytes,
+      timeoutMs,
+      reasons: task.allowWeb ? ["Task allows deterministic public docs/repo URL discovery from package metadata and language hints."] : ["Task allowWeb is false."],
+      safeguards: ["No search-engine dependency", "Only deterministic package/language URL candidates", "HTTP(S) only", "Timeout and byte limit", "Leakage audit before cache write", "Execution requires include-autonomous-web"]
     }
   ];
 }
@@ -190,11 +215,20 @@ export async function planOpenWorldResearch(projectRoot: string, taskId: string,
       score,
       status: blocked ? "blocked" : score >= 0.35 ? "recommended" : "available",
       privacyClass: "project-private",
+      adapterId: "local-project-files",
       usableFor: ["skill", "virtual-test", "report"],
       reasons: candidateReasons(relative, sample, score, seedPaths, blocked),
       leakageFindingIds: audit.findings.map((finding) => finding.id),
       ingestCommand: blocked ? undefined : `openskill-kit openworld research --task-id ${taskId} --file ${quoteArg(relative)}`
     });
+  }
+
+  const autonomousWebCandidates = task.allowWeb && options.includeAutonomousWebCandidates !== false
+    ? await discoverAutonomousWebCandidates(root, task, searchTokens, now)
+    : [];
+  for (const candidate of autonomousWebCandidates) {
+    candidateInputs.push({ source: candidate.uri, surface: "query", value: candidate.uri });
+    candidates.push(candidate);
   }
 
   const sorted = candidates
@@ -206,14 +240,17 @@ export async function planOpenWorldResearch(projectRoot: string, taskId: string,
     ...sorted.filter((candidate) => candidate.status !== "recommended").slice(0, Math.max(0, maxCandidates - recommended.length))
   ];
   const audit = auditOpenWorldLeakage(candidateInputs, task, now);
+  const planId = `owrplan_${shortHash(`${taskId}:${now.toISOString()}:${topCandidates.map((candidate) => candidate.uri).join(",")}`)}`;
   const recommendedNextCommands = [
     ...topCandidates.filter((candidate) => candidate.status !== "blocked" && candidate.ingestCommand).slice(0, 5).map((candidate) => candidate.ingestCommand!),
     ...(task.allowWeb && queryPlan.some((query) => query.status !== "blocked")
       ? [`openskill-kit openworld fetch-source --task-id ${taskId} --url <trusted-doc-url> --content-file <cached-text-file>`]
       : []),
+    ...(task.allowWeb && topCandidates.some((candidate) => candidate.adapterId === "autonomous-docs-repo-discovery" && candidate.status !== "blocked")
+      ? [`openskill-kit openworld execute-source-plan --task-id ${taskId} --plan-id ${planId} --include-autonomous-web`]
+      : []),
     ...(!task.allowWeb ? ["Re-run init-task with --allow-web only if external public sources are explicitly acceptable."] : [])
   ];
-  const planId = `owrplan_${shortHash(`${taskId}:${now.toISOString()}:${topCandidates.map((candidate) => candidate.uri).join(",")}`)}`;
   const draft = OpenWorldResearchPlanSchema.parse({
     schemaVersion: "openskill-kit.openworld-research-plan.v1",
     id: planId,
@@ -257,6 +294,8 @@ export interface ExecuteOpenWorldResearchPlanOptions {
   plan?: OpenWorldResearchPlan;
   includeAvailable?: boolean;
   maxLocalSources?: number;
+  includeAutonomousWeb?: boolean;
+  maxAutonomousWebSources?: number;
   explicitWebSources?: ExecuteOpenWorldResearchPlanWebSource[];
   dryRun?: boolean;
   write?: boolean;
@@ -284,6 +323,7 @@ export async function executeOpenWorldResearchPlan(
   if (plan.taskId !== taskId) throw new Error(`OpenWorld research plan ${plan.id} belongs to task ${plan.taskId}, not ${taskId}.`);
 
   const localLimit = Math.max(0, Math.min(options.maxLocalSources ?? 5, 25));
+  const autonomousLimit = Math.max(0, Math.min(options.maxAutonomousWebSources ?? 3, 10));
   const retrievalAdapters = plan.retrievalAdapters.length
     ? plan.retrievalAdapters
     : buildOpenWorldRetrievalAdapters(task, { maxLocalSources: localLimit, maxBytes: Math.max(...explicitWebSources.map((source) => source.maxBytes ?? 1_000_000), 1_000_000), timeoutMs: Math.max(...explicitWebSources.map((source) => source.timeoutMs ?? 12_000), 12_000) });
@@ -292,6 +332,13 @@ export async function executeOpenWorldResearchPlan(
     .filter((candidate) => candidate.status !== "blocked")
     .filter((candidate) => isLocalCandidate(candidate))
     .slice(0, localLimit);
+  const autonomousWebCandidates = options.includeAutonomousWeb === true
+    ? plan.candidates
+      .filter((candidate) => candidate.status === "recommended" || (options.includeAvailable === true && candidate.status === "available"))
+      .filter((candidate) => candidate.status !== "blocked")
+      .filter((candidate) => candidate.adapterId === "autonomous-docs-repo-discovery" && candidate.locator.url)
+      .slice(0, autonomousLimit)
+    : [];
   const skipped = plan.candidates
     .filter((candidate) => candidate.status === "blocked")
     .map((candidate) => ({ uri: candidate.uri, reason: "Blocked by source-plan leakage audit." }));
@@ -304,6 +351,8 @@ export async function executeOpenWorldResearchPlan(
   let webCacheErrors = 0;
   let webFetchIngested = 0;
   let webFetchErrors = 0;
+  let autonomousWebIngested = 0;
+  let autonomousWebErrors = 0;
 
   for (const candidate of localCandidates) {
     if (dryRun) {
@@ -345,6 +394,25 @@ export async function executeOpenWorldResearchPlan(
     }
   }
 
+  for (const candidate of autonomousWebCandidates) {
+    if (dryRun) {
+      skipped.push({ uri: candidate.uri, reason: "Dry run; autonomous web candidate not ingested." });
+      continue;
+    }
+    try {
+      const result = await ingestWebOpenWorldSource(root, taskId, {
+        url: candidate.locator.url ?? candidate.uri,
+        title: candidate.title,
+        now
+      });
+      ingested.push(sourceExecutionEntry(result.source, result.audit.id));
+      autonomousWebIngested += 1;
+    } catch (error) {
+      errors.push({ uri: candidate.uri, message: error instanceof Error ? error.message : String(error) });
+      autonomousWebErrors += 1;
+    }
+  }
+
   for (const adapter of retrievalAdapters) {
     if (adapter.id === "local-project-files") {
       adapterResults.push({
@@ -359,22 +427,23 @@ export async function executeOpenWorldResearchPlan(
       continue;
     }
     const webSourcesForAdapter = explicitWebSources.filter((source) => adapter.id === "explicit-http-cache" ? typeof source.content === "string" : typeof source.content !== "string");
-    const adapterIngested = adapter.id === "explicit-http-cache" ? webCacheIngested : webFetchIngested;
-    const adapterErrors = adapter.id === "explicit-http-cache" ? webCacheErrors : webFetchErrors;
+    const plannedForAdapter = adapter.id === "autonomous-docs-repo-discovery" ? autonomousWebCandidates.length : webSourcesForAdapter.length;
+    const adapterIngested = adapter.id === "autonomous-docs-repo-discovery" ? autonomousWebIngested : adapter.id === "explicit-http-cache" ? webCacheIngested : webFetchIngested;
+    const adapterErrors = adapter.id === "autonomous-docs-repo-discovery" ? autonomousWebErrors : adapter.id === "explicit-http-cache" ? webCacheErrors : webFetchErrors;
     adapterResults.push({
       adapterId: adapter.id,
       status: adapter.status === "disabled"
         ? "blocked"
         : dryRun
           ? "planned"
-          : webSourcesForAdapter.length === 0
+          : plannedForAdapter === 0
             ? "skipped"
-            : adapterErrors
+          : adapterErrors
               ? adapterIngested ? "partial" : "error"
               : "completed",
-      plannedCount: webSourcesForAdapter.length,
+      plannedCount: plannedForAdapter,
       ingestedCount: dryRun ? 0 : adapterIngested,
-      skippedCount: dryRun ? webSourcesForAdapter.length : 0,
+      skippedCount: dryRun ? plannedForAdapter : 0,
       errorCount: adapterErrors,
       reasons: adapter.reasons
     });
@@ -400,7 +469,7 @@ export async function executeOpenWorldResearchPlan(
       ingestedCount: ingested.length,
       skippedCount: skipped.length,
       errorCount: errors.length,
-      explicitWebCount: explicitWebSources.length,
+      explicitWebCount: explicitWebSources.length + autonomousWebCandidates.length,
       adapterCount: adapterResults.length
     },
     adapterResults,
@@ -768,6 +837,111 @@ function buildResearchQueries(
       seen.add(key);
       return true;
     });
+}
+
+async function discoverAutonomousWebCandidates(root: string, task: OpenWorldTask, searchTokens: string[], now: Date): Promise<OpenWorldSourceCandidate[]> {
+  const raw: Array<{ url: string; title: string; source: string; kind?: OpenWorldSource["kind"]; score: number; reasons: string[] }> = [];
+  for (const language of task.languages) {
+    const doc = LANGUAGE_DOC_URLS[language.toLowerCase().replace(/[^a-z0-9]/g, "")];
+    if (doc) raw.push({ ...doc, source: `language:${language}`, kind: "official-docs", score: 0.78, reasons: [`Language hint '${language}' maps to known official documentation.`] });
+  }
+  const packageDocs = await discoverPackageWebHints(root, searchTokens);
+  raw.push(...packageDocs);
+  const seen = new Set<string>();
+  const candidates: OpenWorldSourceCandidate[] = [];
+  for (const item of raw) {
+    if (seen.has(item.url)) continue;
+    seen.add(item.url);
+    const audit = auditOpenWorldLeakage([
+      { source: item.source, surface: "query", value: item.url },
+      { source: item.source, surface: "query", value: item.title }
+    ], task, now);
+    const blocked = audit.findings.some((finding) => finding.level === "block");
+    candidates.push({
+      id: `owcand_${shortHash(`${task.id}:autonomous:${item.url}`)}`,
+      taskId: task.id,
+      kind: item.kind ?? classifyWebSource(new URL(item.url)),
+      uri: item.url,
+      title: item.title,
+      locator: { url: item.url },
+      score: item.score,
+      status: blocked ? "blocked" : item.score >= 0.55 ? "recommended" : "available",
+      privacyClass: "openworld-public",
+      adapterId: "autonomous-docs-repo-discovery",
+      usableFor: ["skill", "virtual-test", "report"],
+      reasons: [
+        ...item.reasons,
+        "Discovered deterministically from local task/package metadata; execution still requires --include-autonomous-web."
+      ],
+      leakageFindingIds: audit.findings.map((finding) => finding.id),
+      ingestCommand: blocked ? undefined : `openskill-kit openworld execute-source-plan --task-id ${task.id} --include-autonomous-web`
+    });
+  }
+  return candidates.sort((a, b) => b.score - a.score || a.uri.localeCompare(b.uri)).slice(0, 10);
+}
+
+async function discoverPackageWebHints(root: string, searchTokens: string[]): Promise<Array<{ url: string; title: string; source: string; kind?: OpenWorldSource["kind"]; score: number; reasons: string[] }>> {
+  const packageFiles = await discoverCandidateFiles(root, ["package.json"], 20);
+  const out: Array<{ url: string; title: string; source: string; kind?: OpenWorldSource["kind"]; score: number; reasons: string[] }> = [];
+  for (const file of packageFiles.filter((item) => path.basename(item) === "package.json")) {
+    const relative = path.relative(root, file).replace(/\\/g, "/");
+    const parsed = await fs.readFile(file, "utf8").then((text) => JSON.parse(text) as Record<string, unknown>).catch(() => undefined);
+    if (!parsed) continue;
+    const packageName = typeof parsed.name === "string" ? parsed.name : undefined;
+    const homepage = typeof parsed.homepage === "string" && isHttpUrl(parsed.homepage) ? parsed.homepage : undefined;
+    const repository = extractRepositoryUrl(parsed.repository);
+    if (homepage) {
+      out.push({ url: homepage, title: `${packageName ?? "package"} homepage`, source: relative, score: 0.74, reasons: [`Package ${relative} declares homepage.`] });
+    }
+    if (repository) {
+      out.push({ url: repository, title: `${packageName ?? "package"} repository`, source: relative, kind: "repository", score: 0.72, reasons: [`Package ${relative} declares repository.`] });
+    }
+    const deps = dependencyNames(parsed).filter((name) => packageMatchesTask(name, searchTokens)).slice(0, 6);
+    for (const dep of deps) {
+      out.push({
+        url: `https://www.npmjs.com/package/${encodeURIComponent(dep)}`,
+        title: `${dep} npm package docs`,
+        source: relative,
+        kind: "package-docs",
+        score: 0.62,
+        reasons: [`Dependency ${dep} overlaps task/package tokens.`]
+      });
+    }
+  }
+  return out;
+}
+
+function dependencyNames(packageJson: Record<string, unknown>): string[] {
+  const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+  const names = sections.flatMap((section) => {
+    const value = packageJson[section];
+    return value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value as Record<string, unknown>) : [];
+  });
+  return [...new Set(names)].sort();
+}
+
+function packageMatchesTask(name: string, tokens: string[]): boolean {
+  const normalized = tokenize(name.replace(/^@/, "").replace("/", " "));
+  return normalized.some((token) => tokens.includes(token)) || tokens.some((token) => normalized.includes(token));
+}
+
+function extractRepositoryUrl(value: unknown): string | undefined {
+  const raw = typeof value === "string" ? value : value && typeof value === "object" ? (value as { url?: unknown }).url : undefined;
+  if (typeof raw !== "string") return undefined;
+  const normalized = raw
+    .replace(/^git\+/, "")
+    .replace(/^git:\/\//, "https://")
+    .replace(/\.git$/, "");
+  return isHttpUrl(normalized) ? normalized : undefined;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 async function discoverCandidateFiles(root: string, seedPaths: string[], maxFiles: number): Promise<string[]> {

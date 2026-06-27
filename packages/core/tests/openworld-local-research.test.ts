@@ -53,9 +53,9 @@ describe("OpenWorld local research", () => {
     expect(plan.queryPlan.some((query) => query.status === "sanitized" && !query.sanitizedQuery.includes("hidden/oracle.txt"))).toBe(true);
     expect(plan.candidates.some((candidate) => candidate.uri === "docs/architecture.md" && candidate.status === "recommended")).toBe(true);
     expect(plan.candidates.some((candidate) => candidate.uri === "docs/leaked.md" && candidate.status === "blocked")).toBe(true);
-    expect(plan.retrievalAdapters.map((adapter) => adapter.id)).toEqual(["local-project-files", "explicit-http-cache", "explicit-http-fetch"]);
+    expect(plan.retrievalAdapters.map((adapter) => adapter.id)).toEqual(["local-project-files", "explicit-http-cache", "explicit-http-fetch", "autonomous-docs-repo-discovery"]);
     expect(plan.retrievalAdapters.find((adapter) => adapter.id === "explicit-http-fetch")?.status).toBe("enabled");
-    expect(plan.summary.enabledAdapterCount).toBe(3);
+    expect(plan.summary.enabledAdapterCount).toBe(4);
     expect(plan.recommendedNextCommands.some((command) => command.includes("openworld research") && command.includes("docs/architecture.md"))).toBe(true);
     expect(plan.recommendedNextCommands.some((command) => command.includes("fetch-source"))).toBe(true);
     expect(plan.planPath).toContain("/research/plans/");
@@ -85,7 +85,7 @@ describe("OpenWorld local research", () => {
     });
     expect(execution.execution.status).toBe("completed");
     expect(execution.execution.summary.ingestedCount).toBe(1);
-    expect(execution.execution.summary.adapterCount).toBe(3);
+    expect(execution.execution.summary.adapterCount).toBe(4);
     expect(execution.execution.adapterResults.some((result) => result.adapterId === "local-project-files" && result.status === "completed" && result.ingestedCount === 1)).toBe(true);
     expect(execution.execution.adapterResults.some((result) => result.adapterId === "explicit-http-fetch" && result.status === "skipped")).toBe(true);
     expect(execution.execution.ingested[0]?.uri).toBe("docs/architecture.md");
@@ -96,6 +96,7 @@ describe("OpenWorld local research", () => {
 
     const disabledAdapters = buildOpenWorldRetrievalAdapters({ allowWeb: false, privacyClass: "project-private" });
     expect(disabledAdapters.find((adapter) => adapter.id === "explicit-http-fetch")?.status).toBe("disabled");
+    expect(disabledAdapters.find((adapter) => adapter.id === "autonomous-docs-repo-discovery")?.status).toBe("disabled");
   });
 
   it("ingests local files, drafts anchors, and builds visible/holdout suite", async () => {
@@ -411,6 +412,61 @@ describe("OpenWorld local research", () => {
         maxBytes: 10,
         now: new Date("2026-06-26T02:02:00.000Z")
       })).rejects.toThrow(/too large/);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("discovers and fetches autonomous docs/repo candidates from package metadata only when requested", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-openworld-autonomous-web-"));
+    const server = createServer((request, response) => {
+      if (request.url === "/sdk") {
+        response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+        response.end("Autonomous package docs describe source-plan execution.\n");
+        return;
+      }
+      response.writeHead(404, { "content-type": "text/plain" });
+      response.end("missing");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server did not expose a port");
+      await writeFile(path.join(root, "package.json"), JSON.stringify({
+        name: "autonomous-docs-fixture",
+        homepage: `http://127.0.0.1:${address.port}/sdk`
+      }), "utf8");
+      const task = await initOpenWorldTask(root, {
+        title: "Autonomous package docs",
+        prompt: "Find package docs without operator URL entry.",
+        allowWeb: true,
+        now: new Date("2026-06-26T03:00:00.000Z")
+      });
+      const plan = await planOpenWorldResearch(root, task.task.id, {
+        maxCandidates: 5,
+        now: new Date("2026-06-26T03:01:00.000Z")
+      });
+      expect(plan.candidates.some((candidate) => candidate.adapterId === "autonomous-docs-repo-discovery" && candidate.locator.url?.endsWith("/sdk"))).toBe(true);
+
+      const dry = await executeOpenWorldResearchPlan(root, task.task.id, {
+        planId: plan.id,
+        maxLocalSources: 0,
+        dryRun: true,
+        now: new Date("2026-06-26T03:02:00.000Z")
+      });
+      expect(dry.execution.adapterResults.find((result) => result.adapterId === "autonomous-docs-repo-discovery")?.plannedCount).toBe(0);
+
+      const execution = await executeOpenWorldResearchPlan(root, task.task.id, {
+        planId: plan.id,
+        maxLocalSources: 0,
+        includeAutonomousWeb: true,
+        maxAutonomousWebSources: 1,
+        now: new Date("2026-06-26T03:03:00.000Z")
+      });
+      expect(execution.execution.status).toBe("completed");
+      expect(execution.execution.adapterResults.find((result) => result.adapterId === "autonomous-docs-repo-discovery")?.ingestedCount).toBe(1);
+      const index = await readOpenWorldSourceIndex(root);
+      expect(index.entries.some((entry) => entry.uri.endsWith("/sdk") && entry.privacyClass === "openworld-public")).toBe(true);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

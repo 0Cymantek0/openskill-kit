@@ -251,6 +251,7 @@ openworld.command("source-plan")
   .option("--path <path>", "Restrict candidate discovery to project path", collectOption, [])
   .option("--max-candidates <number>", "Maximum source candidates", parseIntegerOption, 8)
   .option("--max-files <number>", "Maximum files to scan", parseIntegerOption, 250)
+  .option("--no-autonomous-web-candidates", "Do not add deterministic docs/repo web candidates")
   .option("--no-write", "Do not write the plan artifact")
   .option("--json", "Print JSON")
   .action(async (options) => {
@@ -259,6 +260,7 @@ openworld.command("source-plan")
       paths: options.path,
       maxCandidates: options.maxCandidates,
       maxFilesScanned: options.maxFiles,
+      includeAutonomousWebCandidates: options.autonomousWebCandidates !== false,
       write: options.write !== false
     });
     output(options.json, result, [
@@ -288,6 +290,8 @@ openworld.command("execute-source-plan")
   .option("--plan-id <id>", "Research plan id; defaults to latest plan")
   .option("--include-available", "Also ingest available non-recommended local candidates")
   .option("--max-local <number>", "Maximum local sources to ingest", parseIntegerOption, 5)
+  .option("--include-autonomous-web", "Fetch deterministic docs/repo candidates from the source plan")
+  .option("--max-autonomous-web <number>", "Maximum autonomous web candidates to fetch", parseIntegerOption, 3)
   .option("--url <url>", "Explicit HTTP(S) source URL to register", collectOption, [])
   .option("--title <title>", "Title for explicit URL, aligned by order with --url", collectOption, [])
   .option("--content-file <path>", "Cached text for explicit URL, aligned by order with --url", collectOption, [])
@@ -308,6 +312,8 @@ openworld.command("execute-source-plan")
       planId: options.planId,
       includeAvailable: options.includeAvailable === true,
       maxLocalSources: options.maxLocal,
+      includeAutonomousWeb: options.includeAutonomousWeb === true,
+      maxAutonomousWebSources: options.maxAutonomousWeb,
       explicitWebSources,
       dryRun: options.dryRun === true,
       write: options.write !== false

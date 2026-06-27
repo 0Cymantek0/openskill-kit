@@ -904,13 +904,14 @@ export function createOpenSkillMcpServer(): McpServer {
         paths: z.array(z.string().min(1)).default([]),
         maxCandidates: z.number().int().min(1).max(25).default(8),
         maxFilesScanned: z.number().int().min(1).max(1000).default(250),
+        includeAutonomousWebCandidates: z.boolean().default(true),
         write: z.boolean().default(true)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, taskId, query, paths, maxCandidates, maxFilesScanned, write }) => {
+    async ({ projectRoot, taskId, query, paths, maxCandidates, maxFilesScanned, includeAutonomousWebCandidates, write }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await planOpenWorldResearch(root, taskId, { query, paths, maxCandidates, maxFilesScanned, write }), root);
+      return toolResult(await planOpenWorldResearch(root, taskId, { query, paths, maxCandidates, maxFilesScanned, includeAutonomousWebCandidates, write }), root);
     }
   );
 
@@ -967,6 +968,8 @@ export function createOpenSkillMcpServer(): McpServer {
         planId: z.string().min(1).optional(),
         includeAvailable: z.boolean().default(false),
         maxLocalSources: z.number().int().min(0).max(25).default(5),
+        includeAutonomousWeb: z.boolean().default(false),
+        maxAutonomousWebSources: z.number().int().min(0).max(10).default(3),
         explicitWebSources: z.array(z.object({
           url: z.string().url(),
           title: z.string().optional(),
@@ -979,12 +982,14 @@ export function createOpenSkillMcpServer(): McpServer {
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, taskId, planId, includeAvailable, maxLocalSources, explicitWebSources, dryRun, write }) => {
+    async ({ projectRoot, taskId, planId, includeAvailable, maxLocalSources, includeAutonomousWeb, maxAutonomousWebSources, explicitWebSources, dryRun, write }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await executeOpenWorldResearchPlan(root, taskId, {
         planId,
         includeAvailable,
         maxLocalSources,
+        includeAutonomousWeb,
+        maxAutonomousWebSources,
         explicitWebSources,
         dryRun,
         write

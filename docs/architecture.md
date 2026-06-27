@@ -220,11 +220,12 @@ They measure adherence, retrieval precision, command policy behavior, forbidden 
 The OpenWorld plane is added beside the TypeScript control plane. It must stay local-only and scaffold/MVP until real benchmarks exist.
 
 `openskill-kit openworld doctor` reports what is real today: task records,
-leakage checks, local source ingestion, named retrieval adapter contracts, and
-Anchor Cards are available; web retrieval is available only through explicit
-HTTP/cache adapters on tasks created with `--allow-web`; autonomous query
-planning/search, built-in LLM skill generation, sandboxed refinement, and
-hidden-oracle benchmark proof remain missing.
+leakage checks, local source ingestion, named retrieval adapter contracts,
+deterministic docs/repo URL discovery, and Anchor Cards are available; web
+retrieval is available through explicit HTTP/cache adapters and opt-in
+autonomous package/language URL candidates on tasks created with `--allow-web`;
+broad search-engine crawling, built-in LLM skill generation, containerized
+refinement, and hidden-oracle benchmark proof remain missing.
 
 OpenWorld source ingestion now updates `.openskill-kit/openworld/source-index.json`
 and `.openskill-kit/openworld/trust-cache.json`. Source text is cached under the
@@ -233,14 +234,17 @@ explainable metadata, not proof of correctness.
 
 `openworld retrieval-adapters` shows the current retrieval contract for a task:
 local project files are network-free, explicit URL cache ingestion is
-operator-provided text, and explicit HTTP fetches are HTTP(S)-only with
-allow-web, timeout, byte-limit, content-type, leakage-audit, and trust-cache
-guards. `openworld source-plan` embeds this contract in plan artifacts, and
-`openworld execute-source-plan` records per-adapter results while ingesting
-recommended local candidates up to a caller-set cap and explicit vetted URL
-sources with cached text or guarded fetches. Each run writes
+operator-provided text, explicit HTTP fetches are operator URL only, and
+autonomous docs/repo discovery derives deterministic public URL candidates from
+package metadata and language hints. All web adapters require allow-web,
+timeout, byte-limit, content-type, leakage-audit, and trust-cache guards.
+`openworld source-plan` embeds this contract in plan artifacts, and
+`openworld execute-source-plan --include-autonomous-web` records per-adapter
+results while ingesting recommended local candidates up to a caller-set cap,
+explicit vetted URL sources with cached text or guarded fetches, and opt-in
+autonomous docs/repo candidates. Each run writes
 `research/executions/<id>.json` and Markdown so operators can see which sources
-were ingested, skipped, or blocked. It is not autonomous web search.
+were ingested, skipped, or blocked. It is not broad search-engine crawling.
 
 Virtual verifier generation creates executable Node verifier files under each
 task's `verifiers/<suite-id>/visible` and `verifiers/<suite-id>/holdout`
