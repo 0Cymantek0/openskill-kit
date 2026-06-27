@@ -46,6 +46,7 @@ import {
   importInteractionSource,
   inspectGitLocalContext,
   planLearningSources,
+  runLearningPlan,
   explainInteractionImport,
   installSkill,
   listInteractionAdapters,
@@ -255,6 +256,33 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, sourceMode, selectedSourceIds }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await planLearningSources(root, { sourceMode, selectedSourceIds }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_run_learning_plan",
+    {
+      title: "OpenSkillKit Run Learning Plan",
+      description: "Run /osk learn from selected safe metadata and explicit import sources. Defaults to preview-only and never activates learned behavior.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        sourceMode: z.enum(["ask", "all-detected", "selected"]).default("selected"),
+        selectedSourceIds: z.array(z.string().min(1)).default([]),
+        previewOnly: z.boolean().default(true),
+        maxEvents: z.number().int().min(1).max(1000).default(250),
+        allowDuplicateImports: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, sourceMode, selectedSourceIds, previewOnly, maxEvents, allowDuplicateImports }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runLearningPlan(root, {
+        sourceMode,
+        selectedSourceIds,
+        previewOnly,
+        maxEvents,
+        allowDuplicateImports
+      }), root);
     }
   );
 

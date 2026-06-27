@@ -8,6 +8,7 @@ import {
   initAdaptiveProject,
   planLearningSources,
   pluginCommandProjections,
+  runLearningPlan,
   validateOskCommandFamilies
 } from "../src/index.js";
 
@@ -59,6 +60,38 @@ describe("OSK command family registry", () => {
     expect(plan.privacyPreview.join(" ")).toContain("No raw prompts");
     expect(plan.options.some((option) => option.policy === "explicit-import" && option.path?.endsWith("session-codex.jsonl"))).toBe(true);
     expect(plan.options.some((option) => option.policy === "blocked" && option.path?.includes(`${path.sep}.codex${path.sep}memories`))).toBe(true);
+  });
+
+  it("runs learning plans preview-first and keeps activation review-gated", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-learn-run-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "learn-run", now: new Date("2026-06-27T00:00:00.000Z") });
+    await writeText(root, "session-review-notes.md", "Always run focused parser tests before final answer.\n");
+    const plan = await planLearningSources(root, { sourceMode: "ask", now: new Date("2026-06-27T00:01:00.000Z") });
+    const explicit = plan.options.find((option) => option.policy === "explicit-import" && option.path?.endsWith("session-review-notes.md"))!;
+
+    const preview = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: [explicit.id],
+      previewOnly: true,
+      now: new Date("2026-06-27T00:02:00.000Z")
+    });
+    expect(preview.previewOnly).toBe(true);
+    expect(preview.importRuns[0]?.status).toBe("planned");
+    expect(preview.digest.eventsAppended).toBe(0);
+    expect(preview.lifecycle).toBeUndefined();
+
+    const applied = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: [explicit.id],
+      previewOnly: false,
+      now: new Date("2026-06-27T00:03:00.000Z")
+    });
+    expect(applied.previewOnly).toBe(false);
+    expect(applied.importRuns[0]?.status).toBe("imported");
+    expect(applied.digest.eventsAppended).toBeGreaterThan(0);
+    expect(applied.digest.signalsExtracted).toBeGreaterThan(0);
+    expect(applied.nextActions.join(" ")).toContain("/osk review");
+    expect(applied.privacy.join(" ")).toContain("remains candidate/staged");
   });
 });
 
