@@ -3,7 +3,7 @@ import { getAdaptiveStatus } from "../status/status.js";
 import { buildReviewQueue, type ReviewQueueResult } from "../preferences/proposals.js";
 import { retrieveRelevantPreferences } from "../preferences/retrieval.js";
 import { routeBehavior } from "../routing/router.js";
-import { getAgentPluginAttachStatus } from "./plugin-attach.js";
+import { getAgentPluginAttachStatus, getAgentPluginInstallProfile } from "./plugin-attach.js";
 
 export interface AgentTaskContextInput {
   projectRoot: string;
@@ -29,6 +29,7 @@ export interface AgentTaskContextResult {
     compiledContextPack: boolean;
   };
   plugin: Awaited<ReturnType<typeof getAgentPluginAttachStatus>>;
+  pluginInstallProfile: Awaited<ReturnType<typeof getAgentPluginInstallProfile>>;
   review: {
     pendingProposalCount: number;
     pendingPreferenceCount: number;
@@ -58,15 +59,16 @@ export async function getAgentTaskContext(input: AgentTaskContextInput): Promise
   const commands = normalizeList(input.commands ?? []);
   const query = input.query?.trim() || undefined;
   const limit = Math.max(1, Math.min(input.limit ?? 8, 20));
-  const [route, preferences, status, plugin, reviewQueue] = await Promise.all([
+  const [route, preferences, status, plugin, pluginInstallProfile, reviewQueue] = await Promise.all([
     routeBehavior({ projectRoot: root, query, paths, changedFiles, commands }),
     retrieveRelevantPreferences({ projectRoot: root, query, paths: [...paths, ...changedFiles], limit }),
     getAdaptiveStatus(root),
     getAgentPluginAttachStatus(root),
+    getAgentPluginInstallProfile(root),
     buildReviewQueue(root)
   ]);
   const review = summarizeReviewQueue(reviewQueue, limit);
-  const nextActions = buildNextActions(route, preferences.items.length, status.pendingReviewCount, plugin.attached, review);
+  const nextActions = buildNextActions(route, preferences.items.length, status.pendingReviewCount, plugin.attached, pluginInstallProfile.ready, review);
   const compactMarkdown = renderAgentTaskContextMarkdown({
     route,
     preferences,
@@ -77,6 +79,7 @@ export async function getAgentTaskContext(input: AgentTaskContextInput): Promise
       compiledContextPack: Boolean(status.compiled.contextPack)
     },
     plugin,
+    pluginInstallProfile,
     review,
     nextActions
   });
@@ -95,6 +98,7 @@ export async function getAgentTaskContext(input: AgentTaskContextInput): Promise
       compiledContextPack: Boolean(status.compiled.contextPack)
     },
     plugin,
+    pluginInstallProfile,
     review,
     compactMarkdown,
     nextActions
@@ -153,10 +157,12 @@ function buildNextActions(
   preferenceCount: number,
   pendingReviewCount: number,
   pluginAttached: boolean,
+  pluginInstallProfileReady: boolean,
   review: AgentTaskContextResult["review"]
 ): string[] {
   const actions = [
     pluginAttached ? undefined : "Attach the plugin host config before relying on MCP in this harness.",
+    pluginInstallProfileReady ? "Use pluginInstallProfile.profile for first-call, MCP env binding, command routing, and approval gates." : "Compile the plugin install profile before harness attachment.",
     preferenceCount > 0 ? "Apply only returned preferences relevant to this task and paths." : "No strong active preferences returned; proceed from repo truth and record useful corrections later.",
     route.decision === "openworld-research" ? "Use OpenWorld research only through leakage-audited sources and review gates." : undefined,
     route.gates.includes("review") || pendingReviewCount > 0 || review.totalPendingCount > 0 ? "Review pending behavior before promoting or compiling broader instructions." : undefined,
@@ -166,7 +172,7 @@ function buildNextActions(
   return [...new Set(actions)];
 }
 
-function renderAgentTaskContextMarkdown(input: Pick<AgentTaskContextResult, "route" | "preferences" | "status" | "plugin" | "review" | "nextActions">): string {
+function renderAgentTaskContextMarkdown(input: Pick<AgentTaskContextResult, "route" | "preferences" | "status" | "plugin" | "pluginInstallProfile" | "review" | "nextActions">): string {
   return [
     "## OpenSkillKit Task Context",
     "",
@@ -175,6 +181,8 @@ function renderAgentTaskContextMarkdown(input: Pick<AgentTaskContextResult, "rou
     `- Local coverage: ${input.route.localCoverage}`,
     `- Novelty: ${input.route.novelty.score}`,
     `- Plugin attached: ${input.plugin.attached}`,
+    `- Plugin install profile: ${input.pluginInstallProfile.ready ? "ready" : "missing"}`,
+    input.pluginInstallProfile.profile ? `- Plugin first call: ${input.pluginInstallProfile.profile.firstCall.mcpTool}` : "",
     `- Active preferences: ${input.status.activePreferenceCount}`,
     `- Pending review: ${input.review.totalPendingCount}`,
     "",

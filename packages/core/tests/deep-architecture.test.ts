@@ -254,14 +254,19 @@ describe("deep architecture hardening", () => {
     expect(["local-only", "project-evidence"]).toContain(context.route.decision);
     expect(context.preferences.items.some((item) => item.node.statement.includes("focused tests"))).toBe(true);
     expect(context.plugin.attached).toBe(false);
+    expect(context.pluginInstallProfile.ready).toBe(true);
+    expect(context.pluginInstallProfile.profile?.firstCall.mcpTool).toBe("osk_bootstrap_session");
     expect(context.review.pendingProposalCount).toBe(1);
     expect(context.review.pendingPreferenceCount).toBe(1);
     expect(context.review.totalPendingCount).toBe(2);
     expect(context.review.items.some((item) => item.kind === "semantic-proposal" && item.actionHint.includes("not active behavior"))).toBe(true);
     expect(context.review.items.some((item) => item.kind === "preference" && item.id === candidate.id && item.actionHint.includes("osk_apply_review_actions"))).toBe(true);
     expect(context.compactMarkdown).toContain("OpenSkillKit Task Context");
+    expect(context.compactMarkdown).toContain("Plugin install profile: ready");
+    expect(context.compactMarkdown).toContain("Plugin first call: osk_bootstrap_session");
     expect(context.compactMarkdown).toContain("Pending Review Items");
     expect(context.nextActions).toContain("Apply only returned preferences relevant to this task and paths.");
+    expect(context.nextActions).toContain("Use pluginInstallProfile.profile for first-call, MCP env binding, command routing, and approval gates.");
     expect(context.nextActions).toContain("Semantic proposals are review inputs only; run learning/update graph before applying review actions.");
   });
 

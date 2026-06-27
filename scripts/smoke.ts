@@ -145,7 +145,7 @@ const pluginHealthAttached = await runJson(["agent", "plugin-status", "--json"])
 if (pluginHealthAttached.attached !== true || !pluginHealthAttached.hosts?.some((host: { status: string }) => host.status === "attached")) throw new Error("plugin health command missing attached state");
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
 const taskContext = await runJson(["context", "--query", "run test before final", "--command", "npm test", "--json"]);
-if (taskContext.schemaVersion !== "openskill-kit.agent-task-context.v1" || !taskContext.compactMarkdown?.includes("OpenSkillKit Task Context") || taskContext.plugin?.attached !== true) {
+if (taskContext.schemaVersion !== "openskill-kit.agent-task-context.v1" || !taskContext.compactMarkdown?.includes("OpenSkillKit Task Context") || taskContext.plugin?.attached !== true || taskContext.pluginInstallProfile?.ready !== true || taskContext.pluginInstallProfile?.profile?.firstCall?.mcpTool !== "osk_bootstrap_session") {
   throw new Error("agent task context command failed");
 }
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
