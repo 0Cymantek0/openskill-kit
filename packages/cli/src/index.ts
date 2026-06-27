@@ -31,6 +31,7 @@ import {
   importProjectBehaviorPack,
   importEncryptedProjectBehaviorPack,
   importInteractionSource,
+  inspectGitLocalContext,
   explainInteractionImport,
   installSkill,
   listInteractionAdapters,
@@ -1250,6 +1251,27 @@ interactions.command("pool")
     output(options.json, result, result.records.length
       ? result.records.map((record) => `${record.id} ${record.adapter} ${record.eventType} commands=${record.commandCount} files=${record.fileCount}`).join("\n")
       : "No interaction pool records");
+  });
+
+interactions.command("git-context")
+  .description("Inspect local git branch, changed files, and aggregate diff metadata without raw diffs")
+  .option("--max-changed-files <number>", "Maximum changed files to return", parseIntegerOption, 80)
+  .option("--max-recent-commits <number>", "Maximum recent commit subjects to return", parseIntegerOption, 5)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await inspectGitLocalContext(process.cwd(), {
+      maxChangedFiles: options.maxChangedFiles,
+      maxRecentCommits: options.maxRecentCommits
+    });
+    output(options.json, result, [
+      `Git: ${result.repository.isGitRepository ? "yes" : "no"}`,
+      result.repository.branch ? `Branch: ${result.repository.branch}` : undefined,
+      result.repository.head ? `HEAD: ${result.repository.head}` : undefined,
+      `Changed files: ${result.summary.changedFileCount}`,
+      `Diff metadata: +${result.summary.addedLines} -${result.summary.removedLines}`,
+      ...result.changedFiles.slice(0, 12).map((file) => `- ${file.status} ${file.path}${file.added !== undefined || file.removed !== undefined ? ` (+${file.added ?? 0} -${file.removed ?? 0})` : ""}`),
+      ...result.warnings.map((warning) => `Warning: ${warning}`)
+    ].filter(Boolean).join("\n"));
   });
 
 const workflows = program.command("workflows")

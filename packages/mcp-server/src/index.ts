@@ -41,6 +41,7 @@ import {
   importProjectBehaviorPack,
   importEncryptedProjectBehaviorPack,
   importInteractionSource,
+  inspectGitLocalContext,
   explainInteractionImport,
   installSkill,
   listInteractionAdapters,
@@ -274,6 +275,24 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await readInteractionPool(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_git_local_context",
+    {
+      title: "OpenSkillKit Git Local Context",
+      description: "Return metadata-only local git branch, changed files, aggregate diff stats, and recent commits without raw diffs.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        maxChangedFiles: z.number().int().min(1).max(500).default(80),
+        maxRecentCommits: z.number().int().min(0).max(50).default(5)
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, maxChangedFiles, maxRecentCommits }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await inspectGitLocalContext(root, { maxChangedFiles, maxRecentCommits }), root);
     }
   );
 

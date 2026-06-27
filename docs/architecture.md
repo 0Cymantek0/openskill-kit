@@ -214,6 +214,13 @@ metadata-only records to `.openskill-kit/interactions/pool.jsonl`; CLI
 `interactions pool` and MCP `osk_get_interaction_pool` expose that normalized
 cross-agent event index without raw transcript content.
 
+`interactions git-context` and MCP `osk_get_git_local_context` expose the
+`git-local` metadata adapter for harnesses that need local repo state. It
+returns branch, HEAD, upstream/ahead-behind metadata, changed file names,
+aggregate numstat counts, and recent commit subjects. It never includes raw
+diffs, file contents, or commit bodies, and its adapter privacy is
+`metadata-only`.
+
 ## Harness Outcome Telemetry
 
 `finish-task` and MCP `osk_finish_agent_task` record accepted, rejected, edited,

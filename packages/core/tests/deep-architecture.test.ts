@@ -76,6 +76,7 @@ describe("deep architecture hardening", () => {
     expect(status.commands.some((item) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.readOnly === true)).toBe(true);
+    expect(status.commands.some((item) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status")).toBe(true);
     expect(status.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
@@ -100,6 +101,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.cli.includes("interactions imports") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.cli.includes("interactions explain") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.cli.includes("interactions pool") && item.readOnly === true)).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.cli.includes("interactions git-context") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach" && item.cli.includes("agent attach-plugin"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status" && item.cli.includes("agent plugin-status"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk openworld doctor" && item.mcpTool === "osk_openworld_doctor" && item.readOnly === true)).toBe(true);
@@ -118,11 +120,13 @@ describe("deep architecture hardening", () => {
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.readOnly === true)).toBe(true);
+    expect(commandMap.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk openworld promote review" && item.mcpTool === "osk_openworld_promote_review" && item.approvalRequired === true)).toBe(true);
     expect(commandGuide).toContain("Prefer MCP");
     expect(commandGuide).toContain("openskill-kit interactions import <path>");
     expect(commandGuide).toContain("openskill-kit interactions explain <run-id>");
     expect(commandGuide).toContain("openskill-kit interactions pool");
+    expect(commandGuide).toContain("openskill-kit interactions git-context");
     expect(commandGuide).toContain("OpenWorld routes are review-only");
     expect(commandGuide).toContain("openskill-kit status");
     expect(codexGuide).toContain("AGENTS.md");
@@ -139,6 +143,7 @@ describe("deep architecture hardening", () => {
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_list_interaction_imports" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_explain_interaction_import" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_interaction_pool" && tool.writeRisk === "read-only")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_git_local_context" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_openworld_doctor" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_openworld_promote_review" && tool.approvalRequired === true)).toBe(true);
     expect(mcpHashes.tools["osk_bootstrap_session"]).toMatch(/^sha256:/);

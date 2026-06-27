@@ -83,7 +83,7 @@ export interface InteractionAdapterDescriptor {
   id: string;
   displayName: string;
   status: "available" | "experimental";
-  privacy: "explicit-import-only";
+  privacy: "explicit-import-only" | "metadata-only";
   acceptedFormats: string[];
   detectionHints: string[];
   defaultAgentName?: string;
@@ -194,6 +194,16 @@ const INTERACTION_ADAPTERS: InteractionAdapterDescriptor[] = [
     detectionHints: ["Prefer explicit Cursor export files; .cursor/rules are instruction surfaces, not transcript imports."],
     defaultAgentName: "Cursor",
     notes: ["Normalizes user/assistant messages, terminal command records, and referenced file paths while keeping IDE accept/reject telemetry conservative."]
+  },
+  {
+    id: "git-local",
+    displayName: "Local git metadata",
+    status: "available",
+    privacy: "metadata-only",
+    acceptedFormats: ["git status metadata", "git numstat metadata", "recent commit subjects"],
+    detectionHints: ["Use interactions git-context to inspect branch, changed files, aggregate diff stats, and recent commit subjects without raw diffs."],
+    defaultAgentName: "Git",
+    notes: ["Read-only adapter; never imports raw diffs, raw file contents, or commit bodies."]
   }
 ];
 

@@ -57,6 +57,11 @@ activates behavior; they do not prove hidden-oracle benchmark performance.
 - MCP tool: `osk_get_interaction_pool`
 - CLI fallback: `openskill-kit interactions pool`
 
+### /osk git context
+
+- MCP tool: `osk_get_git_local_context`
+- CLI fallback: `openskill-kit interactions git-context`
+
 ### /osk learn from this session
 
 - MCP tool: `osk_learn_from_session`

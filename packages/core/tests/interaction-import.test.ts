@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { execFile } from "node:child_process";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import {
   extractSignals,
   explainInteractionImport,
   getAdaptiveStatus,
   importInteractionSource,
   initAdaptiveProject,
+  inspectGitLocalContext,
   listInteractionAdapters,
   readEvents,
   readInteractionImportRuns,
@@ -16,12 +19,41 @@ import {
   updatePreferenceGraph
 } from "../src/index.js";
 
+const execFileAsync = promisify(execFile);
+
 describe("interaction import", () => {
   it("describes supported adapters for harness-driven imports", () => {
     const adapters = listInteractionAdapters();
-    expect(adapters.map((adapter) => adapter.id)).toEqual(["manual-import", "codex", "claude-code", "cursor"]);
-    expect(adapters.every((adapter) => adapter.privacy === "explicit-import-only")).toBe(true);
+    expect(adapters.map((adapter) => adapter.id)).toEqual(["manual-import", "codex", "claude-code", "cursor", "git-local"]);
+    expect(adapters.filter((adapter) => adapter.id !== "git-local").every((adapter) => adapter.privacy === "explicit-import-only")).toBe(true);
+    expect(adapters.find((adapter) => adapter.id === "git-local")?.privacy).toBe("metadata-only");
     expect(adapters.find((adapter) => adapter.id === "codex")?.acceptedFormats).toContain("JSONL messages");
+  });
+
+  it("inspects local git metadata without exposing raw diffs", async () => {
+    const root = await tempProject();
+    await git(root, ["init"]);
+    await git(root, ["config", "user.email", "tester@example.com"]);
+    await git(root, ["config", "user.name", "OpenSkillKit Test"]);
+    await writeFile(path.join(root, "README.md"), "initial\n", "utf8");
+    await git(root, ["add", "README.md"]);
+    await git(root, ["commit", "-m", "initial commit"]);
+    await writeFile(path.join(root, "README.md"), "initial\nRAW_DIFF_SENTINEL\n", "utf8");
+    await writeFile(path.join(root, "new-file.ts"), "export const value = 1;\n", "utf8");
+
+    const context = await inspectGitLocalContext(root, { maxRecentCommits: 3 });
+
+    expect(context.schemaVersion).toBe("openskill-kit.git-local-context.v1");
+    expect(context.adapter).toMatchObject({ id: "git-local", privacy: "metadata-only", rawDiffIncluded: false });
+    expect(context.repository.isGitRepository).toBe(true);
+    expect(context.repository.head).toMatch(/^[0-9a-f]{7,12}$/);
+    expect(context.summary.changedFileCount).toBeGreaterThanOrEqual(2);
+    expect(context.summary.addedLines).toBeGreaterThan(0);
+    expect(context.changedFiles.some((file) => file.path === "README.md" && file.status === "modified")).toBe(true);
+    expect(context.changedFiles.some((file) => file.path === "new-file.ts" && file.status === "untracked")).toBe(true);
+    expect(context.recentCommits[0]?.subject).toBe("initial commit");
+    expect(JSON.stringify(context)).not.toContain("export const value");
+    expect(JSON.stringify(context)).not.toContain("RAW_DIFF_SENTINEL");
   });
 
   it("previews and imports cross-agent exports without copying raw source logs", async () => {
@@ -228,4 +260,8 @@ async function tempProject(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "osk-interactions-"));
   await initAdaptiveProject({ projectRoot: root, projectName: "interactions", now: new Date("2026-06-27T00:00:00.000Z") });
   return root;
+}
+
+async function git(cwd: string, args: string[]): Promise<void> {
+  await execFileAsync("git", args, { cwd, windowsHide: true });
 }

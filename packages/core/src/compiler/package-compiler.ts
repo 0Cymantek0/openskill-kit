@@ -98,6 +98,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_list_interaction_imports", "interactions", "read-only"),
   descriptor("osk_explain_interaction_import", "interactions", "read-only"),
   descriptor("osk_get_interaction_pool", "interactions", "read-only"),
+  descriptor("osk_get_git_local_context", "interactions", "read-only"),
   descriptor("osk_get_context_pack", "retrieval", "read-only"),
   descriptor("osk_get_relevant_preferences", "retrieval", "read-only"),
   descriptor("osk_route_behavior", "routing", "read-only"),

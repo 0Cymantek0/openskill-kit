@@ -93,6 +93,16 @@
       "fallback": "cli"
     },
     {
+      "command": "/osk git context",
+      "aliases": ["osk git", "openskill git context"],
+      "description": "Inspect local branch, changed files, aggregate diff stats, and recent commits without raw diffs or file contents.",
+      "mcpTool": "osk_get_git_local_context",
+      "cli": "openskill-kit interactions git-context",
+      "readOnly": true,
+      "approvalRequired": false,
+      "fallback": "cli"
+    },
+    {
       "command": "/osk learn from this session",
       "aliases": ["osk learn", "learn this session"],
       "description": "Extract candidate preferences from captured local events after user approval for any import source.",
