@@ -41,6 +41,16 @@ export const AgentSurfaceSchema = z.object({
 
 export type AgentSurface = z.infer<typeof AgentSurfaceSchema>;
 
+export const AgentDetectionIssueSchema = z.object({
+  id: z.string().min(1),
+  severity: z.enum(["info", "warn", "block"]),
+  surfaceIds: z.array(z.string().min(1)).default([]),
+  message: z.string().min(1),
+  recommendation: z.string().min(1)
+});
+
+export type AgentDetectionIssue = z.infer<typeof AgentDetectionIssueSchema>;
+
 export const AgentEnvironmentDetectionReportSchema = z.object({
   schemaVersion: z.literal("openskill-kit.agent-environment-detection.v1"),
   projectRoot: z.string().min(1),
@@ -55,8 +65,13 @@ export const AgentEnvironmentDetectionReportSchema = z.object({
     writableManagedBlocks: z.number().int().min(0),
     previewOnly: z.number().int().min(0),
     metadataOnly: z.number().int().min(0),
-    highPrivacyRisk: z.number().int().min(0)
+    highPrivacyRisk: z.number().int().min(0),
+    issueCount: z.number().int().min(0),
+    warningCount: z.number().int().min(0),
+    blockedCount: z.number().int().min(0)
   }),
+  issues: z.array(AgentDetectionIssueSchema).default([]),
+  nextActions: z.array(z.string().min(1)).default([]),
   artifacts: z.object({
     surfacesPath: z.string().optional(),
     lastScanPath: z.string().optional(),

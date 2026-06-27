@@ -181,7 +181,8 @@ compile/privacy preview, `wa/wr/wl/wd N` for workflow candidate decisions, and
 - Interaction imports default to dry-run, write source-hash summaries, and do
   not copy raw session exports into OpenSkillKit artifacts.
 - Detection flags possible session/export files as high-risk explicit-import
-  surfaces; it does not import them silently.
+  surfaces, reports hook/override/MCP risks, and gives safe next actions; it
+  does not import them silently.
 - Invalid custom redaction regexes are reported by `doctor --full` and skipped
   during event capture.
 - Evidence Cards explain learned preferences without storing raw private prompts.

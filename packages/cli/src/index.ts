@@ -143,6 +143,7 @@ program.command("detect")
       `Managed-block writable: ${result.summary.writableManagedBlocks}`,
       `Preview-only: ${result.summary.previewOnly}`,
       `Metadata-only: ${result.summary.metadataOnly}`,
+      `Issues: ${result.summary.issueCount} (${result.summary.warningCount} warning)`,
       result.artifacts.reportPath ? `Report: ${result.artifacts.reportPath}` : undefined
     ].filter(Boolean).join("\n"));
   });

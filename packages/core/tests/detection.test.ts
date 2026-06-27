@@ -33,11 +33,19 @@ describe("agent environment detection", () => {
     const interactionExports = report.surfaces.filter((surface) => surface.surfaceType === "interaction-export");
     expect(interactionExports).toHaveLength(2);
     expect(interactionExports.every((surface) => surface.readPolicy === "explicit-import" && surface.writePolicy === "never" && surface.privacyRisk === "high")).toBe(true);
+    expect(report.issues.some((issue) => issue.id === "interaction-export-explicit-import" && issue.severity === "warn")).toBe(true);
+    expect(report.issues.some((issue) => issue.id === "hook-execution-surface" && issue.severity === "warn")).toBe(true);
+    expect(report.issues.some((issue) => issue.id === "mcp-config-review")).toBe(true);
+    expect(report.nextActions.some((action) => action.includes("interactions import"))).toBe(true);
     expect(report.summary.previewOnly).toBeGreaterThan(0);
+    expect(report.summary.issueCount).toBeGreaterThan(0);
+    expect(report.summary.warningCount).toBeGreaterThan(0);
     await stat(report.artifacts.surfacesPath!);
     await stat(report.artifacts.lastScanPath!);
     const markdown = await readFile(report.artifacts.reportPath!, "utf8");
     expect(markdown).toContain("OpenSkillKit Agent Environment Detection");
+    expect(markdown).toContain("## Issues");
+    expect(markdown).toContain("## Next Actions");
   });
 
   it("keeps user agent surfaces metadata-only unless explicitly requested", async () => {
@@ -57,6 +65,7 @@ describe("agent environment detection", () => {
     expect(userSurfaces.length).toBeGreaterThanOrEqual(3);
     expect(userSurfaces.every((surface) => surface.readPolicy === "metadata-only")).toBe(true);
     expect(userSurfaces.some((surface) => surface.surfaceType === "memory-store" && surface.writePolicy === "never")).toBe(true);
+    expect(report.issues.some((issue) => issue.id === "user-private-metadata-only" && issue.severity === "info")).toBe(true);
     expect(report.summary.highPrivacyRisk).toBeGreaterThanOrEqual(2);
   });
 });

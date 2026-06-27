@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { MANAGED_BLOCK_END, MANAGED_BLOCK_START } from "../compiler/instruction-compiler.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
-import { AgentEnvironmentDetectionReportSchema, AgentSurfaceSchema, type AgentEnvironmentDetectionReport, type AgentSurface } from "./schema.js";
+import { AgentEnvironmentDetectionReportSchema, AgentSurfaceSchema, type AgentDetectionIssue, type AgentEnvironmentDetectionReport, type AgentSurface } from "./schema.js";
 
 export interface DetectAgentEnvironmentOptions {
   includeUserSurfaces?: boolean;
@@ -45,6 +45,7 @@ export async function detectAgentEnvironment(projectRootInput: string, options: 
     }
   }
 
+  const issues = detectSurfaceIssues(surfaces);
   const report = AgentEnvironmentDetectionReportSchema.parse({
     schemaVersion: "openskill-kit.agent-environment-detection.v1",
     projectRoot,
@@ -52,7 +53,9 @@ export async function detectAgentEnvironment(projectRootInput: string, options: 
     includeUserSurfaces: options.includeUserSurfaces === true,
     includeSensitivePreview: options.includeSensitivePreview === true,
     surfaces: surfaces.sort((a, b) => a.adapter.localeCompare(b.adapter) || a.path.localeCompare(b.path)),
-    summary: summarize(surfaces),
+    summary: summarize(surfaces, issues),
+    issues,
+    nextActions: nextActionsForDetection(surfaces, issues),
     artifacts: {}
   });
 
@@ -230,6 +233,7 @@ function renderDetectionMarkdown(report: AgentEnvironmentDetectionReport): strin
     `- Preview-only: ${report.summary.previewOnly}`,
     `- Metadata-only: ${report.summary.metadataOnly}`,
     `- High privacy risk: ${report.summary.highPrivacyRisk}`,
+    `- Issues: ${report.summary.issueCount} (${report.summary.warningCount} warning, ${report.summary.blockedCount} block)`,
     "",
     "## Surfaces",
     ""
@@ -241,11 +245,19 @@ function renderDetectionMarkdown(report: AgentEnvironmentDetectionReport): strin
     if (surface.metadata.managedBlockPresent !== undefined) lines.push(`  - managed block: ${surface.metadata.managedBlockPresent ? "yes" : "no"}`);
     for (const note of surface.notes) lines.push(`  - ${note}`);
   }
+  lines.push("", "## Issues", "");
+  if (!report.issues.length) lines.push("No detection issues.", "");
+  for (const issue of report.issues) {
+    lines.push(`- [${issue.severity}] ${issue.message}`);
+    lines.push(`  - recommendation: ${issue.recommendation}`);
+  }
+  lines.push("", "## Next Actions", "");
+  for (const action of report.nextActions) lines.push(`- ${action}`);
   lines.push("");
   return lines.join("\n");
 }
 
-function summarize(surfaces: AgentSurface[]): AgentEnvironmentDetectionReport["summary"] {
+function summarize(surfaces: AgentSurface[], issues: AgentDetectionIssue[]): AgentEnvironmentDetectionReport["summary"] {
   return {
     total: surfaces.length,
     byAdapter: countBy(surfaces, (surface) => surface.adapter),
@@ -253,8 +265,86 @@ function summarize(surfaces: AgentSurface[]): AgentEnvironmentDetectionReport["s
     writableManagedBlocks: surfaces.filter((surface) => surface.writePolicy === "managed-block").length,
     previewOnly: surfaces.filter((surface) => surface.writePolicy === "preview-only").length,
     metadataOnly: surfaces.filter((surface) => surface.readPolicy === "metadata-only").length,
-    highPrivacyRisk: surfaces.filter((surface) => surface.privacyRisk === "high").length
+    highPrivacyRisk: surfaces.filter((surface) => surface.privacyRisk === "high").length,
+    issueCount: issues.length,
+    warningCount: issues.filter((issue) => issue.severity === "warn").length,
+    blockedCount: issues.filter((issue) => issue.severity === "block").length
   };
+}
+
+function detectSurfaceIssues(surfaces: AgentSurface[]): AgentDetectionIssue[] {
+  const issues: AgentDetectionIssue[] = [];
+  const interactionExports = surfaces.filter((surface) => surface.surfaceType === "interaction-export");
+  if (interactionExports.length) {
+    issues.push({
+      id: "interaction-export-explicit-import",
+      severity: "warn",
+      surfaceIds: interactionExports.map((surface) => surface.id),
+      message: `${interactionExports.length} possible session/export file(s) detected.`,
+      recommendation: "Use interactions import dry-run first; import only redacted events with explicit approval."
+    });
+  }
+  const overrides = surfaces.filter((surface) => surface.surfaceType === "override-file");
+  if (overrides.length) {
+    issues.push({
+      id: "override-instruction-surface",
+      severity: "warn",
+      surfaceIds: overrides.map((surface) => surface.id),
+      message: `${overrides.length} override instruction surface(s) detected.`,
+      recommendation: "Do not write override files automatically; keep OpenSkillKit output in managed project blocks."
+    });
+  }
+  const hooks = surfaces.filter((surface) => surface.surfaceType === "hook-config");
+  if (hooks.length) {
+    issues.push({
+      id: "hook-execution-surface",
+      severity: "warn",
+      surfaceIds: hooks.map((surface) => surface.id),
+      message: `${hooks.length} hook config surface(s) can affect command execution.`,
+      recommendation: "Preview hook manifests and require explicit install approval with receipts."
+    });
+  }
+  const userPrivate = surfaces.filter((surface) => surface.scope === "user" && surface.privacyRisk === "high");
+  if (userPrivate.length) {
+    issues.push({
+      id: "user-private-metadata-only",
+      severity: "info",
+      surfaceIds: userPrivate.map((surface) => surface.id),
+      message: `${userPrivate.length} high-risk user surface(s) detected as metadata-only.`,
+      recommendation: "Keep user memories/configs out of project imports unless a user explicitly previews and approves them."
+    });
+  }
+  const writableInstructions = surfaces.filter((surface) => surface.surfaceType === "instruction-file" && surface.writePolicy === "managed-block");
+  if (!writableInstructions.length) {
+    issues.push({
+      id: "no-managed-instruction-target",
+      severity: "info",
+      surfaceIds: [],
+      message: "No managed-block project instruction target detected.",
+      recommendation: "Run compile and preview manifest install before adding any project instruction file."
+    });
+  }
+  const mcpConfigs = surfaces.filter((surface) => surface.surfaceType === "mcp-config" && surface.adapter === "mcp");
+  if (mcpConfigs.length) {
+    issues.push({
+      id: "mcp-config-review",
+      severity: "info",
+      surfaceIds: mcpConfigs.map((surface) => surface.id),
+      message: `${mcpConfigs.length} MCP config surface(s) detected.`,
+      recommendation: "Review MCP server commands and permissions before applying generated config changes."
+    });
+  }
+  return issues;
+}
+
+function nextActionsForDetection(surfaces: AgentSurface[], issues: AgentDetectionIssue[]): string[] {
+  const actions = new Set<string>();
+  if (issues.some((issue) => issue.id === "interaction-export-explicit-import")) actions.add("Run `openskill-kit interactions import <file>` without `--yes` to preview redacted events.");
+  if (surfaces.some((surface) => surface.writePolicy === "managed-block")) actions.add("Run `openskill-kit agent install-manifests --target project --dry-run` before writing managed instruction blocks.");
+  if (surfaces.some((surface) => surface.surfaceType === "hook-config")) actions.add("Run `openskill-kit agent doctor` and preview hook install before enabling hooks.");
+  if (surfaces.some((surface) => surface.adapter === "mcp")) actions.add("Inspect existing MCP config before applying generated OpenSkillKit MCP config.");
+  if (!actions.size) actions.add("Run `openskill-kit compile` after reviewing active behavior.");
+  return [...actions];
 }
 
 function countBy<T>(items: T[], fn: (item: T) => string): Record<string, number> {
