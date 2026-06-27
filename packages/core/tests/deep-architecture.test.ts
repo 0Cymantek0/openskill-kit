@@ -49,6 +49,7 @@ describe("deep architecture hardening", () => {
     expect(compiled.compiledTargets).toEqual(expect.arrayContaining(["plugin", "agent-skills", "mcp-resources", "hooks", "project-rules"]));
     expect(manifest.schemaVersion).toBe("openskill-kit.agent-plugin.v1");
     expect(manifest.compatibility).toEqual(expect.arrayContaining(["agent-plugin", "mcp-stdio", "codex", "claude-code"]));
+    expect(manifest.skills).toEqual(expect.arrayContaining(["skills/project-behavior"]));
     expect(manifest.entrypoints.mcpServer.command).toBe("openskill-kit-mcp");
     expect(manifest.entrypoints.mcpServer.transport).toBe("stdio");
     expect(manifest.install.defaultMode).toBe("attach");

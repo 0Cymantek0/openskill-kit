@@ -19,6 +19,7 @@ interface AgentPluginManifest {
   generatedAt: string;
   compatibility: string[];
   capabilities: string[];
+  skills: string[];
   entrypoints: {
     skillDirectory: string;
     mcpConfig: string;
@@ -81,6 +82,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       "explicit-hook-install",
       "behavior-pack-review"
     ],
+    skills: await pluginSkillRefs(pluginDir),
     entrypoints: {
       skillDirectory: "skills",
       mcpConfig: "mcp/server-config.json",
@@ -132,6 +134,12 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
     },
     files: filesBeforeManifest.filter((file) => file !== "plugin.json").sort()
   };
+}
+
+async function pluginSkillRefs(pluginDir: string): Promise<string[]> {
+  const skillsDir = path.join(pluginDir, "skills");
+  const entries = await fs.readdir(skillsDir, { withFileTypes: true }).catch(() => []);
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => `skills/${entry.name}`).sort();
 }
 
 function renderReadme(manifest: AgentPluginManifest): string {
