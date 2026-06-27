@@ -76,6 +76,7 @@ describe("openskill-kit MCP server", () => {
           "osk_preview_plugin_attach",
           "osk_apply_plugin_attach",
           "osk_get_plugin_attach_status",
+          "osk_get_agent_task_context",
           "osk_run_lifecycle_once",
           "osk_openworld_retrieval_adapters",
           "osk_openworld_execute_source_plan",
@@ -164,6 +165,16 @@ describe("openskill-kit MCP server", () => {
       });
       const healthAttachedParsed = JSON.parse(healthAttached.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(healthAttachedParsed.attached).toBe(true);
+
+      const taskContext = await client.callTool({
+        name: "osk_get_agent_task_context",
+        arguments: { projectRoot: root, query: "finish with npm test", commands: ["npm test"] }
+      });
+      const taskContextParsed = JSON.parse(taskContext.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(taskContextParsed.schemaVersion).toBe("openskill-kit.agent-task-context.v1");
+      expect(taskContextParsed.compactMarkdown).toContain("OpenSkillKit Task Context");
+      expect(taskContextParsed.preferences.items.some((item: { node?: { statement?: string } }) => item.node?.statement?.includes("run npm test"))).toBe(true);
+      expect(taskContextParsed.plugin.attached).toBe(true);
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",

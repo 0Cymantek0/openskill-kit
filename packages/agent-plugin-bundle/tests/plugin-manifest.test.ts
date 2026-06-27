@@ -15,8 +15,9 @@ describe("agent plugin manifest", () => {
     expect(manifest.installGuides.hosts.codex).toBe("install-guides/codex.md");
     expect(manifest.installGuides.hosts["generic-mcp"]).toBe("install-guides/generic-mcp.md");
     expect(manifest.commands.map).toBe("commands/commands.json");
-    expect(manifest.commands.items).toHaveLength(13);
+    expect(manifest.commands.items).toHaveLength(14);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
+    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk context" && item.mcpTool === "osk_get_agent_task_context")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; approvalRequired: boolean }) => item.command === "/osk install hooks" && item.approvalRequired === true)).toBe(true);
@@ -25,7 +26,8 @@ describe("agent plugin manifest", () => {
     const mcp = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));
     expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     const commandMap = JSON.parse(readFileSync(path.join(root, "commands", "commands.json"), "utf8"));
-    expect(commandMap.commands).toHaveLength(13);
+    expect(commandMap.commands).toHaveLength(14);
+    expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk context" && item.cli.includes("openskill-kit context"))).toBe(true);
     expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk update skills" && item.cli === "openskill-kit compile --target agent-skills")).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk evolve this skill" && !item.mcpTool)).toBe(true);
     const commandGuide = readFileSync(path.join(root, "commands", "osk.md"), "utf8");

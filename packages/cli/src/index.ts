@@ -19,6 +19,7 @@ import {
   evolveSkill,
   explainAdaptiveStatus,
   getAdaptiveStatus,
+  getAgentTaskContext,
   explainPreferenceWithEvidence,
   installAgentHooks,
   getAgentPluginAttachStatus,
@@ -923,6 +924,26 @@ program.command("route")
       `Trace: ${plan.tracePath}`,
       ...plan.reasons
     ].join("\n"));
+  });
+
+program.command("context")
+  .description("Return one-shot agent task context: route, relevant behavior, plugin health, and next actions")
+  .option("--query <text>", "Task or question text")
+  .option("--path <path>", "Relevant path", collectOption, [])
+  .option("--changed-file <path>", "Changed file", collectOption, [])
+  .option("--command <command>", "Relevant command", collectOption, [])
+  .option("--limit <number>", "Maximum preferences", parseIntegerOption, 8)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const context = await getAgentTaskContext({
+      projectRoot: process.cwd(),
+      query: options.query,
+      paths: options.path,
+      changedFiles: options.changedFile,
+      commands: options.command,
+      limit: options.limit
+    });
+    output(options.json, context, context.compactMarkdown);
   });
 
 program.command("calibration")

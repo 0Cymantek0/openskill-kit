@@ -64,6 +64,16 @@
         "fallback": "cli"
       },
       {
+        "command": "/osk context",
+        "aliases": ["osk task context", "openskill context"],
+        "description": "Return route plan, relevant behavior, plugin health, review state, and next actions for the current coding task.",
+        "mcpTool": "osk_get_agent_task_context",
+        "cli": "openskill-kit context --query \"<task>\"",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
         "command": "/osk learn from this session",
         "aliases": ["osk learn", "learn this session"],
         "description": "Extract candidate preferences from captured local events after user approval for any import source.",

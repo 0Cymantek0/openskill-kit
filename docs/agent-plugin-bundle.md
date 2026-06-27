@@ -88,6 +88,10 @@ Harness behavior should stay conservative:
   approvals remain required.
 - Route `/osk ...` requests through `commands/commands.json`; prefer MCP and use
   CLI fallbacks only when the MCP backend is unavailable.
+- For normal coding tasks, route `/osk context` to
+  `osk_get_agent_task_context`; it returns the route plan, compact relevant
+  preferences, workflow matches, plugin health, review state, and next actions
+  in one harness-friendly response.
 - Read the matching `install-guides/` file before applying any host-specific
   config.
 - Use `osk_get_plugin_attach_status` for readiness checks,

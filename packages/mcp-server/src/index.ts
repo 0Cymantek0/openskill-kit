@@ -23,6 +23,7 @@ import {
   evolveSkill,
   explainAdaptiveStatus,
   getAgentPluginAttachStatus,
+  getAgentTaskContext,
   getCompiledPluginStatus,
   getAdaptiveStatus,
   assessOpenWorldVerifierQuality,
@@ -284,6 +285,27 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, query, paths, changedFiles, commands }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await routeBehavior({ projectRoot: root, query, paths, changedFiles, commands }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_agent_task_context",
+    {
+      title: "OpenSkillKit Agent Task Context",
+      description: "Return one-shot coding task context: route, relevant behavior, plugin health, review state, and next actions.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        query: z.string().optional(),
+        paths: z.array(z.string()).default([]),
+        changedFiles: z.array(z.string()).default([]),
+        commands: z.array(z.string()).default([]),
+        limit: z.number().int().min(1).max(20).default(8)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, query, paths, changedFiles, commands, limit }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, limit }), root);
     }
   );
 

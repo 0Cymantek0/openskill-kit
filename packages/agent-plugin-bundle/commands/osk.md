@@ -19,6 +19,11 @@ import behavior packs without explicit user approval.
 - MCP tool: `osk_bootstrap_session`
 - CLI fallback: `openskill-kit status`
 
+### /osk context
+
+- MCP tool: `osk_get_agent_task_context`
+- CLI fallback: `openskill-kit context --query "<task>"`
+
 ### /osk learn from this session
 
 - MCP tool: `osk_learn_from_session`

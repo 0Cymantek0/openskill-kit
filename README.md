@@ -127,6 +127,7 @@ openskill-kit explain <preference-id> --evidence
 openskill-kit calibration
 openskill-kit prefs --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit route --query "parser test change" --path src/parser/tokenizer.ts
+openskill-kit context --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit daemon
 openskill-kit agent doctor
 openskill-kit agent install-manifests --target project --dry-run
@@ -237,6 +238,7 @@ Key tools:
 - `osk_get_context_pack`
 - `osk_get_relevant_preferences`
 - `osk_route_behavior`
+- `osk_get_agent_task_context`
 - `osk_record_event`
 - `osk_propose_preference`
 - `osk_get_review_queue`

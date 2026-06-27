@@ -91,7 +91,7 @@ if (!pluginManifest.files?.includes("install-guides/codex.md")) throw new Error(
 if (!pluginMcpHashes.approvalRequiredTools?.includes("osk_install_agent_hooks")) throw new Error("compiled plugin descriptor approvals incomplete");
 if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/")) throw new Error("compiled plugin privacy exclusions incomplete");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 13") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 14") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
 if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");
@@ -112,6 +112,10 @@ if (!attachedStatusText.includes("Plugin host attached: true")) throw new Error(
 const pluginHealthAttached = await runJson(["agent", "plugin-status", "--json"]);
 if (pluginHealthAttached.attached !== true || !pluginHealthAttached.hosts?.some((host: { status: string }) => host.status === "attached")) throw new Error("plugin health command missing attached state");
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
+const taskContext = await runJson(["context", "--query", "run test before final", "--command", "npm test", "--json"]);
+if (taskContext.schemaVersion !== "openskill-kit.agent-task-context.v1" || !taskContext.compactMarkdown?.includes("OpenSkillKit Task Context") || taskContext.plugin?.attached !== true) {
+  throw new Error("agent task context command failed");
+}
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
 if (!prefs.items?.length || !prefs.compactMarkdown?.includes("run npm test")) throw new Error("preference retrieval failed");
 const lifecycle = await runJson(["daemon", "--json"]);
