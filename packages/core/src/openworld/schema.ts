@@ -332,6 +332,34 @@ export const OpenWorldCandidateSkillSchema = z.object({
   limitations: z.array(z.string().min(1)).default([])
 });
 
+export const OpenWorldCandidateSkillRevisionSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.openworld-candidate-skill-revision.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  candidateSkillId: z.string().min(1),
+  createdAt: z.string().datetime(),
+  status: z.enum(["ready", "warning", "blocked"]),
+  failureType: z.enum(["missing-knowledge", "verifier-bug", "source-conflict", "skill-failure", "sandbox-error", "leakage", "overfit-risk", "unknown"]).optional(),
+  diagnosis: z.string().min(1),
+  artifacts: z.object({
+    skillDir: z.string().min(1),
+    skillPath: z.string().min(1),
+    revisionPath: z.string().optional()
+  }),
+  validation: z.object({
+    issueCount: z.number().int().min(0),
+    errorCount: z.number().int().min(0),
+    warningCount: z.number().int().min(0)
+  }),
+  safety: z.object({
+    status: z.enum(["pass", "fail"]),
+    score: z.number().min(0).max(100),
+    findingCount: z.number().int().min(0)
+  }),
+  leakageAuditId: z.string().optional(),
+  notes: z.array(z.string().min(1)).default([])
+});
+
 export const OpenWorldLeakageFindingSchema = z.object({
   id: z.string().min(1),
   level: z.enum(["warn", "block"]),
@@ -372,6 +400,9 @@ export const OpenWorldEvolutionRunSchema = z.object({
     verifierResultPath: z.string().optional(),
     split: z.enum(["visible", "holdout", "all"]).optional(),
     skillPlanId: z.string().optional(),
+    candidateSkillId: z.string().optional(),
+    candidateRevisionId: z.string().optional(),
+    candidateRevisionPath: z.string().optional(),
     failureType: z.enum(["missing-knowledge", "verifier-bug", "source-conflict", "skill-failure", "sandbox-error", "leakage", "overfit-risk", "unknown"]).optional(),
     summary: z.object({
       pass: z.number().int().min(0),
@@ -385,6 +416,7 @@ export const OpenWorldEvolutionRunSchema = z.object({
   sourceIds: z.array(z.string().min(1)).default([]),
   anchorIds: z.array(z.string().min(1)).default([]),
   virtualTestSuiteIds: z.array(z.string().min(1)).default([]),
+  candidateSkillIds: z.array(z.string().min(1)).default([]),
   leakageAuditIds: z.array(z.string().min(1)).default([]),
   cost: z.object({
     wallClockMs: z.number().int().min(0).default(0),
@@ -435,6 +467,7 @@ export type OpenWorldVerifierQualityFinding = z.infer<typeof OpenWorldVerifierQu
 export type OpenWorldVerifierQualityReport = z.infer<typeof OpenWorldVerifierQualityReportSchema>;
 export type SkillPlan = z.infer<typeof SkillPlanSchema>;
 export type OpenWorldCandidateSkill = z.infer<typeof OpenWorldCandidateSkillSchema>;
+export type OpenWorldCandidateSkillRevision = z.infer<typeof OpenWorldCandidateSkillRevisionSchema>;
 export type OpenWorldLeakageFinding = z.infer<typeof OpenWorldLeakageFindingSchema>;
 export type OpenWorldLeakageAudit = z.infer<typeof OpenWorldLeakageAuditSchema>;
 export type OpenWorldEvolutionRun = z.infer<typeof OpenWorldEvolutionRunSchema>;

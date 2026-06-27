@@ -252,6 +252,12 @@ leakage-audits the skill text and anchor reference, validates the skill package,
 and runs the existing safety scanner. It is an artifact for verifier/refinement
 work and review, not active behavior and not LLM skill generation.
 
+When `openworld refine` receives `--candidate-id`, visible verifier failures now
+write candidate skill revision artifacts under the candidate's `revisions/`
+directory. Revisions append diagnosis notes, carry anchor references forward,
+and run the same leakage, validation, and safety gates. This is still artifact
+revision, not a containerized repair loop.
+
 `openworld verifier-quality` scores verifier suites before refinement. It checks
 case readiness, anchor coverage, visible/holdout split, source traceability,
 local deterministic command use, source trust, and leakage audit metadata. This
@@ -262,8 +268,8 @@ verifiers up to three rounds by default, retries sandbox failures once, stops
 early on pass or actionable non-transient failure, and runs holdout only after a
 visible pass. It writes an OpenWorld `EvolutionRun` with failure taxonomy,
 verifier result links, pass/fail summaries, source/anchor/suite references, and
-cost metadata. This is verifier-driven control flow, not full candidate-skill
-generation or automatic skill repair yet.
+cost metadata. This is verifier-driven control flow with candidate revision
+artifacts, not full containerized skill repair yet.
 
 `openworld eval-report` turns an `EvolutionRun` into JSON and Markdown metrics:
 visible/holdout pass rates, overfit risk, leakage audit count, run/result
@@ -272,8 +278,8 @@ references, wall-clock cost, and explicit limitations. The proof level is
 benchmark evidence.
 
 `openworld report --write` collects the task, source registry entries, Anchor
-Cards, verifier suites, verifier executions, skill plans, leakage audits,
-EvolutionRuns, eval reports, and inferred next actions into
+Cards, verifier suites, verifier executions, candidate skills, skill plans,
+leakage audits, EvolutionRuns, eval reports, and inferred next actions into
 `openworld/tasks/<task-id>/reports/task-report.md`. This gives operators and
 host agents one auditable status surface instead of requiring manual directory
 inspection. It still reports artifact-verifier evidence only and never promotes

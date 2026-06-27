@@ -29,7 +29,7 @@ Manual audit:
 - OpenWorld `candidate-skill` writes only review-only Anchor-grounded skill artifacts, validates package structure, runs safety scan, and never activates behavior.
 - OpenWorld `verifier-quality` scores traceability, determinism, holdout coverage, source trust, and leakage metadata without claiming hidden-oracle proof.
 - OpenWorld `run-verifier --split visible` executes generated cases through the sandbox runner and writes a result JSON.
-- OpenWorld `refine` writes an EvolutionRun, stops early on actionable visible failures, and runs holdout only after visible pass.
+- OpenWorld `refine` writes an EvolutionRun, records candidate skill ids, writes candidate revision artifacts on visible failures, stops early on actionable visible failures, and runs holdout only after visible pass.
 - OpenWorld `eval-report` labels proof level as artifact-verifier and says hidden-oracle proof is false.
 - OpenWorld `report --write` collects sources, anchors, suites, verifier executions, EvolutionRuns, eval reports, and next actions in one task report.
 - OpenWorld `promote-review` creates only a semantic review proposal from passed runs and never activates behavior directly.

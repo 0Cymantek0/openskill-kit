@@ -6,6 +6,7 @@ import { assertOpenWorldArtifactPath } from "./leakage.js";
 import {
   AnchorCardSchema,
   OpenWorldCandidateSkillSchema,
+  OpenWorldCandidateSkillRevisionSchema,
   OpenWorldEvolutionRunSchema,
   OpenWorldLeakageAuditSchema,
   OpenWorldResearchExecutionSchema,
@@ -19,6 +20,7 @@ import {
   VirtualTestSuiteSchema,
   type AnchorCard,
   type OpenWorldCandidateSkill,
+  type OpenWorldCandidateSkillRevision,
   type OpenWorldEvolutionRun,
   type OpenWorldLeakageAudit,
   type OpenWorldResearchExecution,
@@ -140,6 +142,17 @@ export async function writeSkillPlan(projectRoot: string, plan: SkillPlan): Prom
 export async function writeOpenWorldCandidateSkill(projectRoot: string, candidate: OpenWorldCandidateSkill): Promise<string> {
   const parsed = OpenWorldCandidateSkillSchema.parse(candidate);
   return writeTaskArtifact(projectRoot, parsed.taskId, "candidates", `${parsed.id}.json`, parsed);
+}
+
+export async function readOpenWorldCandidateSkill(projectRoot: string, taskId: string, candidateId: string): Promise<OpenWorldCandidateSkill> {
+  return OpenWorldCandidateSkillSchema.parse(JSON.parse(await fs.readFile(taskArtifactPath(projectRoot, taskId, "candidates", `${candidateId}.json`), "utf8")));
+}
+
+export async function writeOpenWorldCandidateSkillRevision(projectRoot: string, revision: OpenWorldCandidateSkillRevision): Promise<string> {
+  const parsed = OpenWorldCandidateSkillRevisionSchema.parse(revision);
+  const file = taskArtifactPath(projectRoot, parsed.taskId, "candidates", parsed.candidateSkillId, "revisions", `${parsed.id}.json`);
+  await writeOpenWorldJson(projectRoot, file, parsed);
+  return file;
 }
 
 export async function writeOpenWorldLeakageAudit(projectRoot: string, audit: OpenWorldLeakageAudit): Promise<string> {

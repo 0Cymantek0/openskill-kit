@@ -1,14 +1,25 @@
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
 import { validateSkillPackage } from "../skill/parser.js";
 import { slugifySkillName } from "../skill/schema.js";
 import { scanSkillPath } from "../safety/scanner.js";
 import { auditOpenWorldLeakage } from "./leakage.js";
-import { OpenWorldCandidateSkillSchema, type AnchorCard, type OpenWorldCandidateSkill, type OpenWorldTask } from "./schema.js";
+import {
+  OpenWorldCandidateSkillRevisionSchema,
+  OpenWorldCandidateSkillSchema,
+  type AnchorCard,
+  type OpenWorldCandidateSkill,
+  type OpenWorldCandidateSkillRevision,
+  type OpenWorldEvolutionRun,
+  type OpenWorldTask
+} from "./schema.js";
 import {
   readAnchorCard,
+  readOpenWorldCandidateSkill,
   readOpenWorldTask,
   writeOpenWorldCandidateSkill,
+  writeOpenWorldCandidateSkillRevision,
   writeOpenWorldLeakageAudit,
   writeOpenWorldTaskTextArtifact
 } from "./store.js";
@@ -133,6 +144,97 @@ export async function generateOpenWorldCandidateSkill(
   };
 }
 
+export interface ReviseOpenWorldCandidateSkillOptions {
+  candidateSkillId: string;
+  roundIndex: number;
+  failureType?: OpenWorldEvolutionRun["rounds"][number]["failureType"];
+  notes: string[];
+  now?: Date;
+}
+
+export interface ReviseOpenWorldCandidateSkillResult {
+  schemaVersion: "openskill-kit.openworld-candidate-skill-revision-result.v1";
+  revision: OpenWorldCandidateSkillRevision;
+  revisionPath?: string;
+  skillPath?: string;
+}
+
+export async function reviseOpenWorldCandidateSkill(
+  projectRoot: string,
+  taskId: string,
+  options: ReviseOpenWorldCandidateSkillOptions
+): Promise<ReviseOpenWorldCandidateSkillResult> {
+  const root = path.resolve(projectRoot);
+  const task = await readOpenWorldTask(root, taskId);
+  const candidate = await readOpenWorldCandidateSkill(root, taskId, options.candidateSkillId);
+  if (candidate.status === "blocked") throw new Error(`OpenWorld candidate skill ${candidate.id} is blocked and cannot be revised.`);
+  const now = options.now ?? new Date();
+  const revisionId = `owskillrev_${shortHash(`${candidate.id}:${options.roundIndex}:${now.toISOString()}`)}`;
+  const skillDir = path.join(".openskill-kit", "openworld", "tasks", taskId, "candidates", candidate.id, "revisions", revisionId, candidate.skillName).replace(/\\/g, "/");
+  const skillPath = path.join(skillDir, "SKILL.md").replace(/\\/g, "/");
+  const originalText = await fs.readFile(path.join(root, candidate.artifacts.skillPath), "utf8");
+  const revisedText = appendRevisionNotes(originalText, task, options);
+  const audit = auditOpenWorldLeakage([{ source: skillPath, surface: "artifact", value: revisedText }], task, now);
+  if (audit.status === "blocked") throw new Error(`OpenWorld candidate revision blocked by leakage audit: ${audit.findings.map((finding) => finding.id).join(", ")}`);
+  const auditPath = await writeOpenWorldLeakageAudit(root, audit);
+  const writtenSkillPath = await writeOpenWorldTaskTextArtifact(root, taskId, ["candidates", candidate.id, "revisions", revisionId, candidate.skillName, "SKILL.md"], revisedText);
+  const originalAnchorReference = candidate.artifacts.anchorsReferencePath
+    ? await fs.readFile(path.join(root, candidate.artifacts.anchorsReferencePath), "utf8").catch(() => "")
+    : "";
+  if (originalAnchorReference) {
+    await writeOpenWorldTaskTextArtifact(root, taskId, ["candidates", candidate.id, "revisions", revisionId, candidate.skillName, "references", "anchors.md"], originalAnchorReference);
+  }
+  const issues = await validateSkillPackage(path.dirname(writtenSkillPath));
+  const safety = await scanSkillPath(path.dirname(writtenSkillPath));
+  const errorCount = issues.filter((issue) => issue.severity === "error").length;
+  const warningCount = issues.filter((issue) => issue.severity === "warning").length;
+  const status = safety.status === "fail" || errorCount > 0 ? "blocked" : warningCount > 0 || audit.status === "warning" ? "warning" : "ready";
+  const draft = OpenWorldCandidateSkillRevisionSchema.parse({
+    schemaVersion: "openskill-kit.openworld-candidate-skill-revision.v1",
+    id: revisionId,
+    taskId,
+    candidateSkillId: candidate.id,
+    createdAt: now.toISOString(),
+    status,
+    failureType: options.failureType,
+    diagnosis: options.notes.join(" "),
+    artifacts: {
+      skillDir,
+      skillPath,
+      revisionPath: path.join(".openskill-kit", "openworld", "tasks", taskId, "candidates", candidate.id, "revisions", `${revisionId}.json`).replace(/\\/g, "/")
+    },
+    validation: {
+      issueCount: issues.length,
+      errorCount,
+      warningCount
+    },
+    safety: {
+      status: safety.status,
+      score: safety.score,
+      findingCount: safety.findings.length
+    },
+    leakageAuditId: audit.id,
+    notes: [
+      "Revision is a candidate artifact only; no active behavior changed.",
+      "Revision must pass verifier and review gates before promotion.",
+      `Leakage audit: ${path.relative(root, auditPath).replace(/\\/g, "/")}`
+    ]
+  });
+  const revisionPath = await writeOpenWorldCandidateSkillRevision(root, draft);
+  return {
+    schemaVersion: "openskill-kit.openworld-candidate-skill-revision-result.v1",
+    revision: OpenWorldCandidateSkillRevisionSchema.parse({
+      ...draft,
+      artifacts: {
+        ...draft.artifacts,
+        revisionPath: path.relative(root, revisionPath).replace(/\\/g, "/")
+      }
+    }),
+    revisionPath,
+    skillPath: writtenSkillPath
+  };
+}
+
 function renderCandidateSkill(input: { task: OpenWorldTask; skillName: string; anchors: AnchorCard[]; sourceIds: string[] }): string {
   const anchorLines = input.anchors.map((anchor) => `- ${anchor.id}: ${anchor.claim}`).join("\n");
   const pathLines = [...new Set(input.anchors.flatMap((anchor) => anchor.paths))].map((item) => `- \`${item}\``).join("\n") || "- No path-specific scope recorded.";
@@ -158,6 +260,14 @@ function renderAnchorReference(task: OpenWorldTask, anchors: AnchorCard[]): stri
       ""
     ])
   ].join("\n");
+}
+
+function appendRevisionNotes(
+  originalText: string,
+  task: OpenWorldTask,
+  options: ReviseOpenWorldCandidateSkillOptions
+): string {
+  return `${originalText.trimEnd()}\n\n## Refinement Notes\n\n- Task: ${task.id}\n- Round: ${options.roundIndex}\n- Failure type: ${options.failureType ?? "unknown"}\n${options.notes.map((note) => `- Diagnosis: ${note}`).join("\n")}\n- Next action: repair only source-grounded behavior; do not infer hidden target answers.\n- Promotion rule: review-only after verifier and eval report pass.\n`;
 }
 
 function limitations(): string[] {

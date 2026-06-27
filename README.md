@@ -49,7 +49,7 @@ npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <an
 npx openskill-kit openworld candidate-skill --task-id <owtask_id> --anchor-id <anchor_id>
 npx openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite_id>
 npx openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
-npx openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id>
+npx openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id> --candidate-id <owskill_id>
 npx openskill-kit openworld eval-report --run-id <owrun_id>
 npx openskill-kit openworld promote-review --run-id <owrun_id> --dry-run
 npx openskill-kit openworld report --task-id <owtask_id>
@@ -79,7 +79,8 @@ discovery plans, source ingestion/cache, explicit web source fetches, Anchor
 Cards, source-plan execution artifacts, visible/holdout virtual verifier
 generation, review-only candidate skill artifacts, local sandbox execution of
 generated verifier scripts, verifier quality scoring, bounded verifier
-refinement/eval report records, and review-only promotion proposals. It still
+refinement/eval report records, candidate revision artifacts, and review-only
+promotion proposals. It still
 does not perform autonomous web search, built-in LLM skill generation,
 containerized candidate-skill repair, or hidden-oracle benchmark evaluation yet.
 
@@ -145,7 +146,7 @@ openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor
 openskill-kit openworld candidate-skill --task-id <owtask_id> --anchor-id <anchor_id>
 openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite_id>
 openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
-openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id>
+openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id> --candidate-id <owskill_id>
 openskill-kit openworld eval-report --run-id <owrun_id>
 openskill-kit openworld promote-review --run-id <owrun_id>
 openskill-kit openworld report --task-id <owtask_id>

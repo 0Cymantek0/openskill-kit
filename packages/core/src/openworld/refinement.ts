@@ -4,6 +4,7 @@ import path from "node:path";
 import { readOpenWorldTask, readVirtualTestSuite, writeOpenWorldEvolutionRun } from "./store.js";
 import { runVirtualTestSuite } from "./verifier-runner.js";
 import { assessOpenWorldVerifierQuality } from "./verifier-quality.js";
+import { reviseOpenWorldCandidateSkill } from "./candidate-skill.js";
 import {
   OpenWorldEvolutionRunSchema,
   type OpenWorldEvolutionRun,
@@ -13,6 +14,7 @@ import {
 export interface RunOpenWorldRefinementOptions {
   maxRounds?: number;
   timeoutMs?: number;
+  candidateSkillId?: string;
   now?: Date;
 }
 
@@ -55,6 +57,7 @@ export async function runOpenWorldRefinement(
       sourceIds,
       anchorIds: suite.generatedFromAnchorIds,
       virtualTestSuiteIds: [suiteId],
+      candidateSkillIds: options.candidateSkillId ? [options.candidateSkillId] : [],
       leakageAuditIds: suite.leakageAuditId ? [suite.leakageAuditId] : [],
       cost: {
         wallClockMs: 0,
@@ -73,17 +76,31 @@ export async function runOpenWorldRefinement(
     });
     const diagnosis = diagnoseVirtualExecution(visible, "visible");
     wallClockMs += visible.results.reduce((sum, result) => sum + result.durationMs, 0);
-    rounds.push({
+    const round: OpenWorldEvolutionRun["rounds"][number] = {
       index,
       status: diagnosis.status,
       verifierSuiteId: suiteId,
       verifierExecutionId: visible.id,
       verifierResultPath: visible.resultPath,
       split: "visible",
+      candidateSkillId: options.candidateSkillId,
       failureType: diagnosis.failureType,
       summary: visible.summary,
       notes: diagnosis.notes
-    });
+    };
+    if (options.candidateSkillId && diagnosis.status !== "passed" && diagnosis.failureType !== "leakage") {
+      const revision = await reviseOpenWorldCandidateSkill(root, taskId, {
+        candidateSkillId: options.candidateSkillId,
+        roundIndex: index,
+        failureType: diagnosis.failureType,
+        notes: diagnosis.notes,
+        now: new Date(startedAt.getTime() + index + 1)
+      });
+      round.candidateRevisionId = revision.revision.id;
+      round.candidateRevisionPath = revision.revision.artifacts.revisionPath;
+      round.notes.push(`Candidate skill revision written: ${revision.revision.artifacts.revisionPath ?? revision.revision.id}.`);
+    }
+    rounds.push(round);
     if (diagnosis.status === "passed") {
       const holdout = await runVirtualTestSuite(root, taskId, suiteId, {
         split: "holdout",
@@ -99,6 +116,7 @@ export async function runOpenWorldRefinement(
         verifierExecutionId: holdout.id,
         verifierResultPath: holdout.resultPath,
         split: "holdout",
+        candidateSkillId: options.candidateSkillId,
         failureType: holdoutDiagnosis.status === "passed" ? undefined : "overfit-risk",
         summary: holdout.summary,
         notes: holdoutDiagnosis.status === "passed"
@@ -129,6 +147,7 @@ export async function runOpenWorldRefinement(
     sourceIds,
     anchorIds: suite.generatedFromAnchorIds,
     virtualTestSuiteIds: [suiteId],
+    candidateSkillIds: options.candidateSkillId ? [options.candidateSkillId] : [],
     leakageAuditIds: suite.leakageAuditId ? [suite.leakageAuditId] : [],
     cost: {
       wallClockMs,

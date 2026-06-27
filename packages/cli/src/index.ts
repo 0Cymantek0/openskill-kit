@@ -432,13 +432,15 @@ openworld.command("refine")
   .description("Run bounded OpenWorld visible refinement and final holdout check")
   .requiredOption("--task-id <id>", "Task id")
   .requiredOption("--suite-id <id>", "Virtual test suite id")
+  .option("--candidate-id <id>", "Candidate skill id to associate with refinement and revise on visible failure")
   .option("--max-rounds <number>", "Maximum visible refinement rounds", parseIntegerOption, 3)
   .option("--timeout-ms <number>", "Per-case timeout", parseIntegerOption, 30000)
   .option("--json", "Print JSON")
   .action(async (options) => {
     const result = await runOpenWorldRefinement(process.cwd(), options.taskId, options.suiteId, {
       maxRounds: options.maxRounds,
-      timeoutMs: options.timeoutMs
+      timeoutMs: options.timeoutMs,
+      candidateSkillId: options.candidateId
     });
     output(options.json, result, `OpenWorld refinement ${result.status}: ${result.rounds.length} round(s)\n${path.join(".openskill-kit", "evolution", "runs", result.id, "run.json")}`);
     process.exitCode = result.status === "passed" ? 0 : 1;

@@ -158,9 +158,11 @@ describe("OpenWorld local research", () => {
     expect(execution.resultPath).toContain("/results/");
 
     const refined = await runOpenWorldRefinement(root, task.task.id, suite.suite.id, {
+      candidateSkillId: candidateSkill.candidate.id,
       now: new Date("2026-06-26T01:04:30.000Z")
     });
     expect(refined.status).toBe("passed");
+    expect(refined.candidateSkillIds).toContain(candidateSkill.candidate.id);
     expect(refined.rounds.map((round) => round.split)).toEqual(["visible", "holdout"]);
     expect(refined.sourceIds).toContain(source.source.id);
     const report = await buildOpenWorldEvalReport(root, refined.id, new Date("2026-06-26T01:04:45.000Z"));
@@ -204,10 +206,13 @@ describe("OpenWorld local research", () => {
     });
     expect(failed.summary.fail).toBeGreaterThan(0);
     const failedRefinement = await runOpenWorldRefinement(root, task.task.id, suite.suite.id, {
+      candidateSkillId: candidateSkill.candidate.id,
       now: new Date("2026-06-26T01:06:00.000Z")
     });
     expect(failedRefinement.status).toBe("failed");
     expect(failedRefinement.rounds[0]?.failureType).toBe("source-conflict");
+    expect(failedRefinement.rounds[0]?.candidateRevisionId).toContain("owskillrev_");
+    await expect(stat(path.join(root, failedRefinement.rounds[0]?.candidateRevisionPath ?? ""))).resolves.toBeTruthy();
     await expect(promoteOpenWorldRunToReview(root, failedRefinement.id)).rejects.toThrow(/only passed runs/);
   });
 

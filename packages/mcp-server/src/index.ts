@@ -1053,14 +1053,15 @@ export function createOpenSkillMcpServer(): McpServer {
         projectRoot: projectRootSchema,
         taskId: z.string().min(1),
         suiteId: z.string().min(1),
+        candidateSkillId: z.string().min(1).optional(),
         maxRounds: z.number().int().min(1).max(5).default(3),
         timeoutMs: z.number().int().min(1000).max(300000).default(30000)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, taskId, suiteId, maxRounds, timeoutMs }) => {
+    async ({ projectRoot, taskId, suiteId, candidateSkillId, maxRounds, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await runOpenWorldRefinement(root, taskId, suiteId, { maxRounds, timeoutMs }), root);
+      return toolResult(await runOpenWorldRefinement(root, taskId, suiteId, { candidateSkillId, maxRounds, timeoutMs }), root);
     }
   );
 
