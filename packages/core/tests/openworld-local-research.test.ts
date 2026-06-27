@@ -221,7 +221,21 @@ describe("OpenWorld local research", () => {
     expect(taskReport.runs.some((run) => run.id === refined.id)).toBe(true);
     expect(taskReport.evalReports.some((evalReport) => evalReport.runId === refined.id)).toBe(true);
     expect(taskReport.hiddenOracleHarnesses.some((item) => item.id === harness.harness.id)).toBe(true);
+    expect(taskReport.proofSummary).toMatchObject({
+      status: "ready-for-review",
+      proofLevel: "artifact-verifier",
+      hiddenOracleProof: false,
+      promotionEligible: true,
+      latestRunId: refined.id,
+      visiblePassRate: 1,
+      holdoutPassRate: 1,
+      overfitRisk: false
+    });
+    expect(taskReport.proofSummary.satisfiedEvidence).toEqual(expect.arrayContaining(["visible verifier pass", "holdout verifier pass", "artifact eval report", "denied-path harness pass"]));
+    expect(taskReport.proofSummary.missingEvidence).toEqual([]);
     expect(taskReport.markdown).toContain("## Next Actions");
+    expect(taskReport.markdown).toContain("## Proof Summary");
+    expect(taskReport.markdown).toContain("- Promotion eligible: yes");
     expect(taskReport.markdown).toContain("## Hidden-Oracle Harnesses");
     expect(taskReport.markdown).toContain(`promote-review --run-id ${refined.id}`);
     expect(await readFile(taskReport.markdownPath ?? "", "utf8")).toContain("## Sources");
@@ -255,6 +269,11 @@ describe("OpenWorld local research", () => {
     expect(failedRefinement.rounds[0]?.candidateRevisionId).toContain("owskillrev_");
     expect(failedRefinement.rounds[0]?.notes.some((note) => note.includes("Candidate repair run written"))).toBe(true);
     await expect(stat(path.join(root, failedRefinement.rounds[0]?.candidateRevisionPath ?? ""))).resolves.toBeTruthy();
+    const failedTaskReport = await buildOpenWorldTaskReport(root, task.task.id);
+    expect(failedTaskReport.proofSummary.status).toBe("failed");
+    expect(failedTaskReport.proofSummary.promotionEligible).toBe(false);
+    expect(failedTaskReport.proofSummary.latestRunId).toBe(failedRefinement.id);
+    expect(failedTaskReport.proofSummary.missingEvidence).toEqual(expect.arrayContaining(["visible verifier pass", "holdout verifier pass"]));
     await expect(promoteOpenWorldRunToReview(root, failedRefinement.id)).rejects.toThrow(/only passed runs/);
   });
 

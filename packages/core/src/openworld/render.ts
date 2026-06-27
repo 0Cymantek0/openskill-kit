@@ -47,9 +47,30 @@ export interface BuildOpenWorldTaskReportResult {
   evalReports: OpenWorldEvalReport[];
   hiddenOracleHarnesses: OpenWorldHiddenOracleHarness[];
   qualityReports: OpenWorldVerifierQualityReport[];
+  proofSummary: OpenWorldProofSummary;
   nextActions: string[];
   markdown: string;
   markdownPath?: string;
+}
+
+export interface OpenWorldProofSummary {
+  schemaVersion: "openskill-kit.openworld-proof-summary.v1";
+  status: "missing-evidence" | "failed" | "ready-for-review";
+  proofLevel: "not-proof" | "artifact-verifier";
+  hiddenOracleProof: false;
+  promotionEligible: boolean;
+  latestRunId?: string;
+  latestEvalReportId?: string;
+  latestHarnessId?: string;
+  visiblePassRate?: number;
+  holdoutPassRate?: number;
+  visibleCaseCount: number;
+  holdoutCaseCount: number;
+  overfitRisk: boolean;
+  requiredEvidence: string[];
+  satisfiedEvidence: string[];
+  missingEvidence: string[];
+  limitations: string[];
 }
 
 export async function buildOpenWorldTaskReport(projectRoot: string, taskId: string, options: { write?: boolean } = {}): Promise<BuildOpenWorldTaskReportResult> {
@@ -69,8 +90,9 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
   const evalReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldEvalReportSchema.parse(value));
   const hiddenOracleHarnesses = await readJsonFiles(path.join(taskDir, "harness"), (value) => OpenWorldHiddenOracleHarnessSchema.parse(value));
   const qualityReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldVerifierQualityReportSchema.parse(value));
+  const proofSummary = buildOpenWorldProofSummary({ task, suites, runs, evalReports, hiddenOracleHarnesses, qualityReports });
   const nextActions = inferNextActions({ task, sources, anchors, suites, runs, evalReports, hiddenOracleHarnesses, qualityReports });
-  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, candidateSkills, candidateRepairRuns, audits, researchExecutions, runs, evalReports, hiddenOracleHarnesses, qualityReports, nextActions });
+  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, candidateSkills, candidateRepairRuns, audits, researchExecutions, runs, evalReports, hiddenOracleHarnesses, qualityReports, proofSummary, nextActions });
   const markdownPath = options.write === true
     ? await writeOpenWorldTaskTextArtifact(root, taskId, ["reports", "task-report.md"], markdown)
     : undefined;
@@ -90,6 +112,7 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
     evalReports,
     hiddenOracleHarnesses,
     qualityReports,
+    proofSummary,
     nextActions,
     markdown,
     markdownPath
@@ -111,6 +134,7 @@ export function renderOpenWorldTaskReport(input: {
   evalReports?: OpenWorldEvalReport[];
   hiddenOracleHarnesses?: OpenWorldHiddenOracleHarness[];
   qualityReports?: OpenWorldVerifierQualityReport[];
+  proofSummary?: OpenWorldProofSummary;
   nextActions?: string[];
 }): string {
   const sources = input.sources ?? [];
@@ -126,6 +150,7 @@ export function renderOpenWorldTaskReport(input: {
   const evalReports = input.evalReports ?? [];
   const hiddenOracleHarnesses = input.hiddenOracleHarnesses ?? [];
   const qualityReports = input.qualityReports ?? [];
+  const proofSummary = input.proofSummary ?? buildOpenWorldProofSummary({ task: input.task, suites, runs, evalReports, hiddenOracleHarnesses, qualityReports });
   const nextActions = input.nextActions ?? inferNextActions({ task: input.task, sources, anchors, suites, runs, evalReports, hiddenOracleHarnesses, qualityReports });
   const lines = [
     `# OpenWorld Task: ${input.task.title}`,
@@ -157,6 +182,23 @@ export function renderOpenWorldTaskReport(input: {
       `- Verifier quality reports: ${qualityReports.length}`,
       `- Research executions: ${researchExecutions.length}`,
       `- Leakage audits: ${audits.length}`
+    ]),
+    ...section("Proof Summary", [
+      `- Status: ${proofSummary.status}`,
+      `- Proof level: ${proofSummary.proofLevel}`,
+      `- Hidden-oracle proof: no`,
+      `- Promotion eligible: ${proofSummary.promotionEligible ? "yes" : "no"}`,
+      `- Latest run: ${proofSummary.latestRunId ?? "none"}`,
+      `- Latest eval report: ${proofSummary.latestEvalReportId ?? "none"}`,
+      `- Latest denied-path harness: ${proofSummary.latestHarnessId ?? "none"}`,
+      `- Visible pass rate: ${proofSummary.visiblePassRate === undefined ? "n/a" : formatNumber(proofSummary.visiblePassRate)}`,
+      `- Holdout pass rate: ${proofSummary.holdoutPassRate === undefined ? "n/a" : formatNumber(proofSummary.holdoutPassRate)}`,
+      `- Visible cases: ${proofSummary.visibleCaseCount}`,
+      `- Holdout cases: ${proofSummary.holdoutCaseCount}`,
+      `- Overfit risk: ${proofSummary.overfitRisk ? "yes" : "no"}`,
+      `- Satisfied evidence: ${proofSummary.satisfiedEvidence.length ? proofSummary.satisfiedEvidence.join("; ") : "none"}`,
+      `- Missing evidence: ${proofSummary.missingEvidence.length ? proofSummary.missingEvidence.join("; ") : "none"}`,
+      `- Limitations: ${proofSummary.limitations.join("; ")}`
     ]),
     ...table("Sources", ["ID", "Kind", "Trust", "Privacy", "URI"], sources.map((source) => [
       source.id,
@@ -275,6 +317,80 @@ function formatRunRate(run: OpenWorldEvolutionRun, split: "visible" | "holdout")
   const fail = rounds.reduce((total, round) => total + (round.summary?.fail ?? 0) + (round.summary?.blocked ?? 0) + (round.summary?.timeout ?? 0), 0);
   if (pass + fail === 0) return "n/a";
   return formatNumber(pass / (pass + fail));
+}
+
+function buildOpenWorldProofSummary(input: {
+  task: OpenWorldTask;
+  suites: VirtualTestSuite[];
+  runs: OpenWorldEvolutionRun[];
+  evalReports: OpenWorldEvalReport[];
+  hiddenOracleHarnesses: OpenWorldHiddenOracleHarness[];
+  qualityReports: OpenWorldVerifierQualityReport[];
+}): OpenWorldProofSummary {
+  const latestRun = [...input.runs].sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+  const latestSuite = latestRun?.virtualTestSuiteIds[0]
+    ? input.suites.find((suite) => suite.id === latestRun.virtualTestSuiteIds[0])
+    : [...input.suites].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  const latestEval = latestRun
+    ? [...input.evalReports].filter((report) => report.runId === latestRun.id).sort((left, right) => right.generatedAt.localeCompare(left.generatedAt))[0]
+    : undefined;
+  const latestHarness = [...input.hiddenOracleHarnesses].sort((left, right) => right.generatedAt.localeCompare(left.generatedAt))[0];
+  const latestQuality = latestSuite
+    ? [...input.qualityReports].filter((report) => report.suiteId === latestSuite.id).sort((left, right) => right.generatedAt.localeCompare(left.generatedAt))[0]
+    : undefined;
+  const visibleCaseCount = latestSuite?.cases.filter((testCase) => testCase.split === "visible").length ?? 0;
+  const holdoutCaseCount = latestSuite?.cases.filter((testCase) => testCase.split === "holdout").length ?? 0;
+  const visiblePassRate = latestEval?.metrics.visiblePassRate ?? runPassRate(latestRun, "visible");
+  const holdoutPassRate = latestEval?.metrics.holdoutPassRate ?? runPassRate(latestRun, "holdout");
+  const overfitRisk = Boolean(latestRun?.rounds.some((round) => round.failureType === "overfit-risk")) || latestEval?.metrics.overfitRisk === true;
+  const requiredEvidence = [
+    "visible verifier pass",
+    "holdout verifier pass",
+    "artifact eval report",
+    "quality report not failing",
+    ...(input.task.forbiddenPaths.length ? ["denied-path harness pass"] : [])
+  ];
+  const satisfiedEvidence = [
+    ...(latestRun?.status === "passed" && visiblePassRate === 1 ? ["visible verifier pass"] : []),
+    ...(latestRun?.status === "passed" && holdoutPassRate === 1 ? ["holdout verifier pass"] : []),
+    ...(latestEval?.status === "pass" && latestEval.proofLevel === "artifact-verifier" ? ["artifact eval report"] : []),
+    ...(latestQuality && latestQuality.status !== "fail" ? ["quality report not failing"] : []),
+    ...(input.task.forbiddenPaths.length && latestHarness?.status === "pass" ? ["denied-path harness pass"] : [])
+  ];
+  const missingEvidence = requiredEvidence.filter((item) => !satisfiedEvidence.includes(item));
+  const promotionEligible = Boolean(latestRun?.status === "passed" && latestEval?.status === "pass" && latestEval.proofLevel === "artifact-verifier" && !overfitRisk && !missingEvidence.length);
+  const failed = latestRun?.status === "failed" || latestRun?.status === "blocked" || overfitRisk || latestEval?.status === "fail" || latestQuality?.status === "fail" || latestHarness?.status === "fail";
+  return {
+    schemaVersion: "openskill-kit.openworld-proof-summary.v1",
+    status: promotionEligible ? "ready-for-review" : failed ? "failed" : "missing-evidence",
+    proofLevel: latestEval?.proofLevel === "artifact-verifier" ? "artifact-verifier" : "not-proof",
+    hiddenOracleProof: false,
+    promotionEligible,
+    latestRunId: latestRun?.id,
+    latestEvalReportId: latestEval?.id,
+    latestHarnessId: latestHarness?.id,
+    visiblePassRate,
+    holdoutPassRate,
+    visibleCaseCount,
+    holdoutCaseCount,
+    overfitRisk,
+    requiredEvidence,
+    satisfiedEvidence,
+    missingEvidence,
+    limitations: [
+      "Artifact-verifier proof is local OpenWorld evidence, not hidden-oracle benchmark proof.",
+      "Promotion remains review-only; no active behavior changes until normal review approval.",
+      ...(input.task.forbiddenPaths.length ? ["Denied-path harness scans generated artifacts without reading hidden oracle contents."] : [])
+    ]
+  };
+}
+
+function runPassRate(run: OpenWorldEvolutionRun | undefined, split: "visible" | "holdout"): number | undefined {
+  if (!run) return undefined;
+  const rounds = run.rounds.filter((round) => round.split === split && round.summary);
+  const pass = rounds.reduce((total, round) => total + (round.summary?.pass ?? 0), 0);
+  const fail = rounds.reduce((total, round) => total + (round.summary?.fail ?? 0) + (round.summary?.blocked ?? 0) + (round.summary?.timeout ?? 0), 0);
+  return pass + fail === 0 ? undefined : pass / (pass + fail);
 }
 
 function inferNextActions(input: {

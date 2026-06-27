@@ -101,7 +101,9 @@ Harness behavior should stay conservative:
   `/osk openworld source plan`, `/osk openworld refine`, and
   `/osk openworld report` through the mapped OpenWorld MCP tools so the harness
   can keep research, anchors, verifier runs, and proof limits in one local
-  artifact tree.
+  artifact tree. The task report includes `proofSummary` so hosts can show
+  artifact-verifier readiness, missing evidence, and the hidden-oracle
+  limitation without parsing Markdown.
 - Route `/osk openworld promote review` to `osk_openworld_promote_review` only
   after explicit approval. Promotion creates a review-only proposal from a
   passed run; it does not activate behavior and does not claim hidden-oracle
