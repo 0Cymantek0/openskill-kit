@@ -25,6 +25,8 @@ export interface InteractionImportRun {
     byteCount: number;
     lineCount: number;
     adapter: string;
+    adapterKnown: boolean;
+    adapterStatus: InteractionAdapterDescriptor["status"];
     agentName?: string;
   };
   dryRun: boolean;
@@ -49,6 +51,25 @@ export interface InteractionImportRun {
   };
 }
 
+export interface InteractionAdapterDescriptor {
+  id: string;
+  displayName: string;
+  status: "available" | "experimental";
+  privacy: "explicit-import-only";
+  acceptedFormats: string[];
+  detectionHints: string[];
+  defaultAgentName?: string;
+  notes: string[];
+}
+
+export interface InteractionAdapterValidation {
+  adapter: InteractionAdapterDescriptor;
+  known: boolean;
+  normalizedAdapter: string;
+  agentName?: string;
+  warnings: string[];
+}
+
 const EVENT_TYPES = new Set<OpenSkillEventInput["eventType"]>([
   "session-start",
   "instructions-loaded",
@@ -70,25 +91,73 @@ const EVENT_TYPES = new Set<OpenSkillEventInput["eventType"]>([
 ]);
 
 const MAX_SNIPPET_CHARS = 500;
+const INTERACTION_ADAPTERS: InteractionAdapterDescriptor[] = [
+  {
+    id: "manual-import",
+    displayName: "Manual import",
+    status: "available",
+    privacy: "explicit-import-only",
+    acceptedFormats: ["plain text", "markdown notes", "generic JSON", "generic JSONL"],
+    detectionHints: ["Use for curated notes, copied session summaries, and manually prepared exports."],
+    defaultAgentName: "Manual import",
+    notes: ["Plain text parsing only keeps preference-like lines and recognized command lines."]
+  },
+  {
+    id: "codex",
+    displayName: "Codex",
+    status: "available",
+    privacy: "explicit-import-only",
+    acceptedFormats: ["JSONL messages", "JSON arrays", "generic exported transcript objects", "plain text notes"],
+    detectionHints: ["Detected session/export files remain high-risk explicit imports; do not read Codex memories unless user supplies a file."],
+    defaultAgentName: "Codex",
+    notes: ["Supports role/content records and command/tool result objects without copying raw source logs."]
+  },
+  {
+    id: "claude-code",
+    displayName: "Claude Code",
+    status: "experimental",
+    privacy: "explicit-import-only",
+    acceptedFormats: ["JSONL messages", "JSON arrays", "generic exported transcript objects", "plain text notes"],
+    detectionHints: ["Prefer explicit Claude Code export files; generated CLAUDE.md and rules are instruction surfaces, not transcript imports."],
+    defaultAgentName: "Claude Code",
+    notes: ["Current parser uses generic role/type normalization; Claude-specific telemetry remains conservative."]
+  },
+  {
+    id: "cursor",
+    displayName: "Cursor",
+    status: "experimental",
+    privacy: "explicit-import-only",
+    acceptedFormats: ["JSONL messages", "JSON arrays", "generic exported transcript objects", "plain text notes"],
+    detectionHints: ["Prefer explicit Cursor export files; .cursor/rules are instruction surfaces, not transcript imports."],
+    defaultAgentName: "Cursor",
+    notes: ["Current parser uses generic role/type normalization; IDE accept/reject telemetry remains conservative."]
+  }
+];
+
+export function listInteractionAdapters(): InteractionAdapterDescriptor[] {
+  return INTERACTION_ADAPTERS.map((adapter) => ({ ...adapter, acceptedFormats: [...adapter.acceptedFormats], detectionHints: [...adapter.detectionHints], notes: [...adapter.notes] }));
+}
 
 export async function importInteractionSource(projectRootInput: string, sourcePathInput: string, options: ImportInteractionSourceOptions = {}): Promise<InteractionImportRun> {
   const root = path.resolve(projectRootInput);
   const sourcePath = path.resolve(sourcePathInput);
   const config = await readProjectConfig(root);
+  const adapterValidation = validateInteractionAdapter(options.adapter, options.agentName);
   const stat = await fs.stat(sourcePath).catch(() => undefined);
   if (!stat || !stat.isFile()) {
-    return writeImportRun(root, blockedRun(config.projectId, sourcePath, options, `Interaction source is not a file: ${sourcePath}`));
+    return writeImportRun(root, blockedRun(config.projectId, sourcePath, options, `Interaction source is not a file: ${sourcePath}`, adapterValidation));
   }
   const text = await fs.readFile(sourcePath, "utf8");
   const sourceHash = `sha256:${sha256(text)}`;
   const duplicate = options.allowDuplicate === true ? undefined : await findImportedDuplicate(root, sourceHash);
   if (duplicate && options.dryRun === false) {
-    return writeImportRun(root, blockedRun(config.projectId, sourcePath, options, `Source already imported by ${duplicate.id}`));
+    return writeImportRun(root, blockedRun(config.projectId, sourcePath, options, `Source already imported by ${duplicate.id}`, adapterValidation));
   }
-  const parsed = parseInteractionText(text, options, sourceHash);
+  const importOptions = { ...options, adapter: adapterValidation.normalizedAdapter, agentName: adapterValidation.agentName };
+  const parsed = parseInteractionText(text, importOptions, sourceHash);
   const maxEvents = options.maxEvents ?? 200;
   const limited = parsed.events.slice(0, maxEvents);
-  const warnings = [...parsed.warnings];
+  const warnings = [...adapterValidation.warnings, ...parsed.warnings];
   if (parsed.events.length > maxEvents) warnings.push(`Truncated parsed events from ${parsed.events.length} to maxEvents=${maxEvents}`);
   if (duplicate) warnings.push(`Source hash already imported by ${duplicate.id}; dry-run only unless allowDuplicate is true.`);
   const dryRun = options.dryRun !== false;
@@ -109,8 +178,10 @@ export async function importInteractionSource(projectRootInput: string, sourcePa
       hash: sourceHash,
       byteCount: stat.size,
       lineCount: text.split(/\r?\n/).length,
-      adapter: options.adapter ?? "manual-import",
-      agentName: options.agentName
+      adapter: adapterValidation.normalizedAdapter,
+      adapterKnown: adapterValidation.known,
+      adapterStatus: adapterValidation.adapter.status,
+      agentName: adapterValidation.agentName
     },
     dryRun,
     parsedEventCount: limited.length,
@@ -128,6 +199,33 @@ export async function importInteractionSource(projectRootInput: string, sourcePa
       markdownPath: ""
     }
   });
+}
+
+function validateInteractionAdapter(adapterInput: string | undefined, agentNameInput: string | undefined): InteractionAdapterValidation {
+  const normalizedAdapter = normalizeAdapterId(adapterInput ?? "manual-import");
+  const knownAdapter = INTERACTION_ADAPTERS.find((adapter) => adapter.id === normalizedAdapter);
+  const adapter = knownAdapter ?? {
+    id: normalizedAdapter,
+    displayName: normalizedAdapter,
+    status: "experimental" as const,
+    privacy: "explicit-import-only" as const,
+    acceptedFormats: ["generic JSON", "generic JSONL", "plain text notes"],
+    detectionHints: ["Unknown adapter uses generic parsing only."],
+    defaultAgentName: normalizedAdapter,
+    notes: ["Unknown adapter accepted for extension, but event normalization may be lossy."]
+  };
+  const warnings = knownAdapter ? [] : [`Unknown interaction adapter "${normalizedAdapter}"; using generic parser and explicit-import-only policy.`];
+  return {
+    adapter,
+    known: Boolean(knownAdapter),
+    normalizedAdapter,
+    agentName: agentNameInput ?? adapter.defaultAgentName,
+    warnings
+  };
+}
+
+function normalizeAdapterId(value: string): string {
+  return value.trim().toLowerCase().replace(/[_\s]+/g, "-");
 }
 
 export async function readInteractionImportRuns(projectRootInput: string): Promise<InteractionImportRun[]> {
@@ -344,6 +442,8 @@ function renderImportRunMarkdown(run: InteractionImportRun): string {
     `Status: ${run.status}`,
     `Source hash: ${run.source.hash}`,
     `Adapter: ${run.source.adapter}`,
+    `Adapter known: ${run.source.adapterKnown ? "yes" : "no"}`,
+    `Adapter status: ${run.source.adapterStatus}`,
     `Parsed events: ${run.parsedEventCount}`,
     `Appended events: ${run.appendedEventCount}`,
     "",
@@ -361,7 +461,7 @@ function renderImportRunMarkdown(run: InteractionImportRun): string {
   return lines.join("\n");
 }
 
-function blockedRun(projectId: string, sourcePath: string, options: ImportInteractionSourceOptions, message: string): InteractionImportRun {
+function blockedRun(projectId: string, sourcePath: string, options: ImportInteractionSourceOptions, message: string, adapterValidation = validateInteractionAdapter(options.adapter, options.agentName)): InteractionImportRun {
   return {
     schemaVersion: "openskill-kit.interaction-import-run.v1",
     id: importRunId(options.now ?? new Date(), message),
@@ -372,8 +472,10 @@ function blockedRun(projectId: string, sourcePath: string, options: ImportIntera
       hash: `sha256:${sha256(message)}`,
       byteCount: 0,
       lineCount: 0,
-      adapter: options.adapter ?? "manual-import",
-      agentName: options.agentName
+      adapter: adapterValidation.normalizedAdapter,
+      adapterKnown: adapterValidation.known,
+      adapterStatus: adapterValidation.adapter.status,
+      agentName: adapterValidation.agentName
     },
     dryRun: options.dryRun !== false,
     parsedEventCount: 0,
@@ -381,7 +483,7 @@ function blockedRun(projectId: string, sourcePath: string, options: ImportIntera
     skippedCount: 0,
     eventIds: [],
     preview: [],
-    warnings: [message],
+    warnings: [...adapterValidation.warnings, message],
     messages: [message],
     artifacts: {
       jsonPath: "",

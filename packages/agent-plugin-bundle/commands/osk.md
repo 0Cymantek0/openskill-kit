@@ -31,6 +31,11 @@ activates behavior; they do not prove hidden-oracle benchmark performance.
 - MCP tool: `osk_finish_agent_task`
 - CLI fallback: `openskill-kit finish-task --summary "<safe summary>"`
 
+### /osk import adapters
+
+- MCP tool: `osk_list_interaction_adapters`
+- CLI fallback: `openskill-kit interactions adapters`
+
 ### /osk import session
 
 - MCP tool: `osk_import_interaction_source`

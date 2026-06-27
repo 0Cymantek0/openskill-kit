@@ -70,6 +70,7 @@ describe("deep architecture hardening", () => {
     expect(status.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk context" && item.mcpTool === "osk_get_agent_task_context")).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk finish task" && item.mcpTool === "osk_finish_agent_task")).toBe(true);
+    expect(status.commands.some((item) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
@@ -91,6 +92,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk update skills" && item.mcpTool === "osk_compile_behavior_layer" && item.cli === "openskill-kit compile --target agent-skills")).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk context" && item.mcpTool === "osk_get_agent_task_context" && item.cli.includes("openskill-kit context"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk finish task" && item.mcpTool === "osk_finish_agent_task" && item.cli.includes("finish-task"))).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.cli.includes("interactions adapters") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; approvalRequired: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.cli.includes("interactions import") && item.approvalRequired === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.cli.includes("interactions imports") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach" && item.cli.includes("agent attach-plugin"))).toBe(true);
@@ -107,6 +109,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.files).toEqual(expect.arrayContaining([".agent-plugin/plugin.json", ".mcp.json", "README.md", "commands/commands.json", "commands/osk.md", "install-guides/codex.md", "install-guides/claude-code.md", "install-guides/cursor.md", "install-guides/generic-mcp.md", "mcp/server-config.json", "mcp/descriptors.json", "mcp/descriptor-hashes.json", "skills/project-behavior/SKILL.md"]));
     expect(packagedManifest).toEqual(manifest);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
+    expect(commandMap.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk openworld promote review" && item.mcpTool === "osk_openworld_promote_review" && item.approvalRequired === true)).toBe(true);
     expect(commandGuide).toContain("Prefer MCP");
@@ -123,6 +126,7 @@ describe("deep architecture hardening", () => {
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_agent_task_context" && tool.writeRisk === "local-write")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_finish_agent_task" && tool.writeRisk === "local-write")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_import_interaction_source" && tool.approvalRequired === true)).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_list_interaction_adapters" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_list_interaction_imports" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_openworld_doctor" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_openworld_promote_review" && tool.approvalRequired === true)).toBe(true);

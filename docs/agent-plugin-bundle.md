@@ -111,6 +111,9 @@ Harness behavior should stay conservative:
   Keep the first run as a preview/dry-run unless the user approves applying the
   import; the command exists so harness users do not have to discover raw CLI
   import names.
+- Route `/osk import adapters` to `osk_list_interaction_adapters` before import
+  when the harness needs the supported adapter list, accepted formats, adapter
+  status, and explicit-import-only privacy policy.
 - Route `/osk session imports` to `osk_list_interaction_imports` for import
   history. It is read-only and reports receipts without exposing raw source
   content.

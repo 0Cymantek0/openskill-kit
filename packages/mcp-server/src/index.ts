@@ -42,6 +42,7 @@ import {
   importEncryptedProjectBehaviorPack,
   importInteractionSource,
   installSkill,
+  listInteractionAdapters,
   inspectProjectBehaviorPack,
   loadSkillPackage,
   buildReviewQueue,
@@ -215,6 +216,20 @@ export function createOpenSkillMcpServer(): McpServer {
         allowDuplicate,
         dryRun: yes !== true
       }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_list_interaction_adapters",
+    {
+      title: "OpenSkillKit List Interaction Adapters",
+      description: "List supported cross-agent interaction import adapters, accepted formats, privacy policy, and status.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult({ schemaVersion: "openskill-kit.interaction-adapters.v1", adapters: listInteractionAdapters() }, root);
     }
   );
 

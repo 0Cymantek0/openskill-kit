@@ -32,6 +32,7 @@ import {
   importEncryptedProjectBehaviorPack,
   importInteractionSource,
   installSkill,
+  listInteractionAdapters,
   inspectProjectBehaviorPack,
   loadSkillPackage,
   buildReviewQueue,
@@ -1196,6 +1197,14 @@ interactions.command("import")
     });
     output(options.json, result, `${result.status}: parsed ${result.parsedEventCount}, appended ${result.appendedEventCount}\nReport: ${result.artifacts.markdownPath}`);
     process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+interactions.command("adapters")
+  .description("List supported interaction import adapters and privacy policy")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const adapters = listInteractionAdapters();
+    output(options.json, { schemaVersion: "openskill-kit.interaction-adapters.v1", adapters }, adapters.map((adapter) => `${adapter.id} ${adapter.status} privacy=${adapter.privacy} formats=${adapter.acceptedFormats.join(",")}`).join("\n"));
   });
 
 interactions.command("imports")

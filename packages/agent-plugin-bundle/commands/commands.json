@@ -43,6 +43,16 @@
       "fallback": "cli"
     },
     {
+      "command": "/osk import adapters",
+      "aliases": ["osk adapters", "openskill import adapters"],
+      "description": "List supported cross-agent import adapters, accepted formats, privacy policy, and adapter status.",
+      "mcpTool": "osk_list_interaction_adapters",
+      "cli": "openskill-kit interactions adapters",
+      "readOnly": true,
+      "approvalRequired": false,
+      "fallback": "cli"
+    },
+    {
       "command": "/osk import session",
       "aliases": ["osk import transcript", "openskill import session"],
       "description": "Preview or import a cross-agent session/export file as redacted local events; applying requires explicit approval.",

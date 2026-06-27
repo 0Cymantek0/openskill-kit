@@ -94,6 +94,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_detect_environment", "detection", "local-write"),
   descriptor("osk_get_agent_surfaces", "detection", "local-write"),
   descriptor("osk_import_interaction_source", "interactions", "approval-required", true),
+  descriptor("osk_list_interaction_adapters", "interactions", "read-only"),
   descriptor("osk_list_interaction_imports", "interactions", "read-only"),
   descriptor("osk_get_context_pack", "retrieval", "read-only"),
   descriptor("osk_get_relevant_preferences", "retrieval", "read-only"),

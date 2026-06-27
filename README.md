@@ -142,6 +142,7 @@ openskill-kit eval --compare-baseline
 openskill-kit eval --mode external-agent --dry-run
 openskill-kit status --explain
 openskill-kit detect
+openskill-kit interactions adapters
 openskill-kit interactions import ./session-export.jsonl
 openskill-kit interactions import ./session-export.jsonl --adapter codex --yes
 openskill-kit interactions imports
@@ -235,6 +236,7 @@ Key tools:
 - `osk_detect_environment`
 - `osk_get_agent_surfaces`
 - `osk_import_interaction_source`
+- `osk_list_interaction_adapters`
 - `osk_list_interaction_imports`
 - `osk_get_context_pack`
 - `osk_get_relevant_preferences`
@@ -311,7 +313,10 @@ or hidden benchmark answers as the summary.
 For cross-agent session learning, route `/osk import session` to
 `osk_import_interaction_source` and keep the first pass as a preview unless the
 user approves applying it. Route `/osk session imports` to
-`osk_list_interaction_imports` for read-only import receipts.
+`osk_list_interaction_imports` for read-only import receipts. Route
+`/osk import adapters` to `osk_list_interaction_adapters` before import when a
+harness needs accepted formats, adapter status, and the explicit-import-only
+privacy policy.
 
 For unfamiliar-domain skill work, route `/osk openworld doctor`,
 `/osk openworld source plan`, `/osk openworld refine`, and

@@ -7,6 +7,7 @@ import {
   getAdaptiveStatus,
   importInteractionSource,
   initAdaptiveProject,
+  listInteractionAdapters,
   readEvents,
   readInteractionImportRuns,
   runFullDoctor,
@@ -14,6 +15,13 @@ import {
 } from "../src/index.js";
 
 describe("interaction import", () => {
+  it("describes supported adapters for harness-driven imports", () => {
+    const adapters = listInteractionAdapters();
+    expect(adapters.map((adapter) => adapter.id)).toEqual(["manual-import", "codex", "claude-code", "cursor"]);
+    expect(adapters.every((adapter) => adapter.privacy === "explicit-import-only")).toBe(true);
+    expect(adapters.find((adapter) => adapter.id === "codex")?.acceptedFormats).toContain("JSONL messages");
+  });
+
   it("previews and imports cross-agent exports without copying raw source logs", async () => {
     const root = await tempProject();
     const source = path.join(root, "codex-export.jsonl");
@@ -30,6 +38,9 @@ describe("interaction import", () => {
     expect(planned.status).toBe("planned");
     expect(planned.parsedEventCount).toBe(2);
     expect(planned.appendedEventCount).toBe(0);
+    expect(planned.source.adapterKnown).toBe(true);
+    expect(planned.source.adapterStatus).toBe("available");
+    expect(planned.source.agentName).toBe("Codex");
     expect(await readEvents(root)).toHaveLength(0);
     expect(await readFile(planned.artifacts.markdownPath, "utf8")).not.toContain("sk-live-secret");
 
@@ -45,6 +56,7 @@ describe("interaction import", () => {
     expect(events).toHaveLength(2);
     expect(JSON.stringify(events)).not.toContain("sk-live-secret");
     expect(events[0]?.source.adapter).toBe("codex");
+    expect(events[0]?.source.agentName).toBe("Codex");
     expect(events[0]?.privacy.rawStored).toBe(false);
 
     const signals = await extractSignals(root, new Date("2026-06-27T05:02:00.000Z"));
@@ -91,6 +103,24 @@ describe("interaction import", () => {
     expect(events.map((event) => event.eventType)).toEqual(["user-prompt-submit", "post-tool-use"]);
     expect(events[1]?.commands[0]?.command).toBe("npm");
     expect(events[1]?.commands[0]?.args).toEqual(["run", "smoke"]);
+  });
+
+  it("allows unknown adapters but marks generic parsing as experimental", async () => {
+    const root = await tempProject();
+    const source = path.join(root, "unknown-export.jsonl");
+    await writeFile(source, JSON.stringify({ role: "user", content: "Always keep adapter imports explicit.", sessionId: "new-agent" }), "utf8");
+
+    const planned = await importInteractionSource(root, source, {
+      adapter: "New Agent",
+      now: new Date("2026-06-27T07:00:00.000Z")
+    });
+
+    expect(planned.status).toBe("planned");
+    expect(planned.source.adapter).toBe("new-agent");
+    expect(planned.source.adapterKnown).toBe(false);
+    expect(planned.source.adapterStatus).toBe("experimental");
+    expect(planned.warnings.join(" ")).toContain("Unknown interaction adapter");
+    expect(await readFile(planned.artifacts.markdownPath, "utf8")).toContain("Adapter known: no");
   });
 });
 
