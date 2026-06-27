@@ -1,8 +1,14 @@
 import { z } from "zod";
 import {
+  compileBehaviorLayer,
+  CompileTargets,
   draftSkill,
   evaluateSkill,
   evolveSkill,
+  explainAdaptiveStatus,
+  getAdaptiveStatus,
+  getCompiledPluginStatus,
+  initAdaptiveProject,
   installSkill,
   readRegistry,
   runDoctor,
@@ -15,6 +21,9 @@ import path from "node:path";
 const targetSchema = z.string().min(1);
 
 export const toolSchemas = {
+  bootstrap: z.object({ projectRoot: z.string().optional(), projectName: z.string().min(1).optional(), init: z.boolean().default(true) }),
+  status: z.object({ projectRoot: z.string().optional(), explain: z.boolean().default(false) }),
+  compile: z.object({ projectRoot: z.string().optional(), targets: z.array(z.enum(CompileTargets)).default(["plugin"]), includeStagedPreview: z.boolean().default(false) }),
   draft: z.object({ topic: z.string().min(1), projectRoot: z.string().optional(), evidenceFiles: z.array(z.string().min(1)).default([]), evidenceUrls: z.array(z.string().url()).default([]) }),
   evolve: z.object({
     topic: z.string().min(1),
@@ -38,6 +47,37 @@ export const toolSchemas = {
   list: z.object({ projectRoot: z.string().optional() }),
   doctor: z.object({ projectRoot: z.string().optional() })
 };
+
+export async function openskillKitBootstrap(args: z.infer<typeof toolSchemas.bootstrap>) {
+  const parsed = toolSchemas.bootstrap.parse(args);
+  const root = parsed.projectRoot ?? process.cwd();
+  const initResult = parsed.init ? await initAdaptiveProject({ projectRoot: root, projectName: parsed.projectName }) : undefined;
+  const status = await getAdaptiveStatus(root);
+  const plugin = await getCompiledPluginStatus(root);
+  return summarize("bootstrap", {
+    initResult,
+    status,
+    plugin,
+    nextActions: [
+      ...plugin.nextActions,
+      ...(status.pendingReviewCount > 0 ? ["Review pending behavior before compiling or attaching the plugin."] : [])
+    ]
+  });
+}
+
+export async function openskillKitStatus(args: z.infer<typeof toolSchemas.status>) {
+  const parsed = toolSchemas.status.parse(args);
+  const root = parsed.projectRoot ?? process.cwd();
+  return summarize(parsed.explain ? "status explain" : "status", parsed.explain ? await explainAdaptiveStatus(root) : await getAdaptiveStatus(root));
+}
+
+export async function openskillKitCompile(args: z.infer<typeof toolSchemas.compile>) {
+  const parsed = toolSchemas.compile.parse(args);
+  const root = parsed.projectRoot ?? process.cwd();
+  const compiled = await compileBehaviorLayer(root, { targets: parsed.targets, includeStagedPreview: parsed.includeStagedPreview });
+  const plugin = await getCompiledPluginStatus(root);
+  return summarize("compile", { compiled, plugin });
+}
 
 export async function openskillKitDraft(args: z.infer<typeof toolSchemas.draft>) {
   const parsed = toolSchemas.draft.parse(args);
