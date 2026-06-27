@@ -205,6 +205,12 @@ counts, while `doctor --full` warns when any interaction import is blocked.
 
 MCP results are sanitized before output so project and home paths do not leak unnecessarily.
 
+Compiled MCP artifacts include `mcp/descriptors.json` plus
+`mcp/descriptor-hashes.json`. The hash manifest records SHA-256 hashes for the
+full descriptor catalog and each tool descriptor, and lists tools that require
+explicit approval. Generated plugin manifests copy the descriptor hash so a host
+can detect tool descriptor drift before attaching or trusting the plugin.
+
 ## Behavior Packs And Sync
 
 Project Behavior Packs include project identity, schema compatibility, source metadata, generated artifact inventory, trust metadata, privacy statement, file hashes, and optional signing metadata. Import can write review artifacts before apply, block broad diffs, and exclude hooks unless `trustHooks` is explicit.

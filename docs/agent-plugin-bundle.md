@@ -38,10 +38,15 @@ For harness compatibility, generated plugins also include:
 - `.agent-plugin/plugin.json`: same host-facing manifest under the conventional
   plugin metadata directory.
 - `.mcp.json`: direct stdio MCP attachment for `openskill-kit-mcp`.
+- `mcp/descriptors.json` and `mcp/descriptor-hashes.json`: deterministic MCP
+  tool descriptor catalog plus SHA-256 hashes so a harness can detect descriptor
+  drift before trusting the tool surface.
 
 Harness behavior should stay conservative:
 
 - Load skills and MCP descriptors read-only by default.
+- Compare `plugin.json.integrity.descriptorsHash` with
+  `mcp/descriptor-hashes.json` before trusting tool descriptors.
 - Start `openskill-kit-mcp` from the project root with stdio.
 - Call `osk_bootstrap_session` first; it reports whether the compiled plugin is
   ready, where to attach it, which skills/capabilities are exposed, and which

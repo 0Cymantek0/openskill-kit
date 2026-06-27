@@ -77,9 +77,12 @@ await stat(path.join(root, ".openskill-kit", "compiled", "behavior", "review-che
 const pluginManifest = await readJson(path.join(root, ".openskill-kit", "compiled", "plugin", "plugin.json"));
 const pluginAgentManifest = await readJson(path.join(root, ".openskill-kit", "compiled", "plugin", ".agent-plugin", "plugin.json"));
 const pluginMcp = await readJson(path.join(root, ".openskill-kit", "compiled", "plugin", ".mcp.json"));
+const pluginMcpHashes = await readJson(path.join(root, ".openskill-kit", "compiled", "plugin", "mcp", "descriptor-hashes.json"));
 if (pluginManifest.schemaVersion !== "openskill-kit.agent-plugin.v1") throw new Error("compiled plugin manifest missing schema");
 if (pluginAgentManifest.name !== pluginManifest.name) throw new Error("compiled .agent-plugin manifest mismatch");
 if (pluginMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("compiled plugin MCP attachment missing");
+if (pluginManifest.integrity?.descriptorsHash !== pluginMcpHashes.descriptorsHash) throw new Error("compiled plugin descriptor hash mismatch");
+if (!pluginMcpHashes.approvalRequiredTools?.includes("osk_install_agent_hooks")) throw new Error("compiled plugin descriptor approvals incomplete");
 if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/")) throw new Error("compiled plugin privacy exclusions incomplete");
 const statusText = await runText(["status"]);
 if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp")) {

@@ -23,6 +23,8 @@ export interface AgentPluginManifest {
   entrypoints: {
     skillDirectory: string;
     mcpConfig: string;
+    mcpDescriptors: string;
+    mcpDescriptorHashes: string;
     mcpServer: {
       command: string;
       transport: "stdio";
@@ -42,6 +44,11 @@ export interface AgentPluginManifest {
     neverIncludes: string[];
     notes: string[];
   };
+  integrity: {
+    algorithm: "sha256";
+    descriptorHashes: string;
+    descriptorsHash?: string;
+  };
   files: string[];
 }
 
@@ -52,7 +59,10 @@ export interface CompiledPluginStatus {
   manifestPath: string;
   agentPluginManifestPath: string;
   mcpAttachmentPath: string;
+  mcpDescriptorPath: string;
+  mcpDescriptorHashPath: string;
   mcpServerCommand: string;
+  mcpDescriptorsHash?: string;
   manifest?: AgentPluginManifest;
   skills: string[];
   capabilities: string[];
@@ -86,16 +96,22 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
   const manifestPath = path.join(pluginDir, "plugin.json");
   const agentPluginManifestPath = path.join(pluginDir, ".agent-plugin", "plugin.json");
   const mcpAttachmentPath = path.join(pluginDir, ".mcp.json");
+  const mcpDescriptorPath = path.join(pluginDir, "mcp", "descriptors.json");
+  const mcpDescriptorHashPath = path.join(pluginDir, "mcp", "descriptor-hashes.json");
   const manifest = await readJson<AgentPluginManifest>(manifestPath).catch(() => undefined);
   const agentManifestExists = await exists(agentPluginManifestPath);
   const mcpAttachment = await readJson<{ mcpServers?: Record<string, { command?: string }> }>(mcpAttachmentPath).catch(() => undefined);
+  const mcpHashes = await readJson<{ descriptorsHash?: string }>(mcpDescriptorHashPath).catch(() => undefined);
+  const mcpDescriptorsExist = await exists(mcpDescriptorPath);
   const mcpServerConfigExists = await exists(path.join(pluginDir, "mcp", "server-config.json"));
   const missing = [
     ...(manifest ? [] : ["plugin.json"]),
     ...(agentManifestExists ? [] : [".agent-plugin/plugin.json"]),
     ...(mcpAttachment ? [] : [".mcp.json"]),
     ...(!manifest?.skills?.length ? ["skills"] : []),
-    ...(mcpServerConfigExists ? [] : ["mcp/server-config.json"])
+    ...(mcpServerConfigExists ? [] : ["mcp/server-config.json"]),
+    ...(mcpDescriptorsExist ? [] : ["mcp/descriptors.json"]),
+    ...(mcpHashes ? [] : ["mcp/descriptor-hashes.json"])
   ];
   return {
     schemaVersion: "openskill-kit.compiled-plugin-status.v1",
@@ -104,7 +120,10 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     manifestPath,
     agentPluginManifestPath,
     mcpAttachmentPath,
+    mcpDescriptorPath,
+    mcpDescriptorHashPath,
     mcpServerCommand: mcpAttachment?.mcpServers?.["openskill-kit"]?.command ?? manifest?.entrypoints.mcpServer.command ?? "openskill-kit-mcp",
+    mcpDescriptorsHash: mcpHashes?.descriptorsHash ?? manifest?.integrity.descriptorsHash,
     manifest,
     skills: manifest?.skills ?? [],
     capabilities: manifest?.capabilities ?? [],
@@ -144,6 +163,8 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
     entrypoints: {
       skillDirectory: "skills",
       mcpConfig: "mcp/server-config.json",
+      mcpDescriptors: "mcp/descriptors.json",
+      mcpDescriptorHashes: "mcp/descriptor-hashes.json",
       mcpServer: {
         command: "openskill-kit-mcp",
         transport: "stdio",
@@ -190,6 +211,11 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
         "Private workflow evidence stays in project state and is not copied into this plugin output."
       ]
     },
+    integrity: {
+      algorithm: "sha256",
+      descriptorHashes: "mcp/descriptor-hashes.json",
+      descriptorsHash: await readJson<{ descriptorsHash?: string }>(path.join(pluginDir, "mcp", "descriptor-hashes.json")).then((value) => value.descriptorsHash).catch(() => undefined)
+    },
     files: filesBeforeManifest.filter((file) => file !== "plugin.json").sort()
   };
 }
@@ -214,6 +240,8 @@ function renderReadme(manifest: AgentPluginManifest): string {
     "",
     `- Skills: \`${manifest.entrypoints.skillDirectory}\``,
     `- MCP config: \`${manifest.entrypoints.mcpConfig}\``,
+    `- MCP descriptors: \`${manifest.entrypoints.mcpDescriptors}\``,
+    `- MCP descriptor hashes: \`${manifest.entrypoints.mcpDescriptorHashes}\``,
     `- MCP server: \`${manifest.entrypoints.mcpServer.command}\` (${manifest.entrypoints.mcpServer.transport})`,
     `- Hooks: \`${manifest.entrypoints.hooks}\``,
     `- Behavior artifacts: \`${manifest.entrypoints.behavior}\``,
