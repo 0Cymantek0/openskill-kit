@@ -163,7 +163,8 @@ Harness behavior should stay conservative:
   can keep research, anchors, verifier runs, and proof limits in one local
   artifact tree. The task report includes `proofSummary` so hosts can show
   artifact-verifier readiness, missing evidence, and the hidden-oracle
-  limitation without parsing Markdown.
+  limitation without parsing Markdown. Use `docs/openworld/proof-levels.md` for
+  user-facing proof wording.
 - Route `/osk openworld hidden oracle harness` to
   `osk_openworld_hidden_oracle_harness` when a task has denied oracle paths or
   benchmark-readiness metadata. This writes static denied-path exposure proof

@@ -378,7 +378,9 @@ artifacts and local or caller-provided Docker repair probes.
 `openworld eval-report` turns an `EvolutionRun` into JSON and Markdown metrics:
 visible/holdout pass rates, overfit risk, leakage audit count, run/result
 references, wall-clock cost, and explicit limitations. The proof level is
-`artifact-verifier`; hidden-oracle benchmark proof remains false.
+`artifact-verifier`; hidden-oracle benchmark proof remains false. See
+[`docs/openworld/proof-levels.md`](openworld/proof-levels.md) for the operator
+copy and proof-boundary contract.
 
 `openworld hidden-oracle-harness` writes JSON and Markdown denied-path reports
 under `openworld/tasks/<task-id>/harness/`. It hashes configured forbidden paths,

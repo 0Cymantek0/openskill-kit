@@ -249,7 +249,8 @@ For unfamiliar-domain skill work, route `/osk openworld doctor`,
 `/osk openworld report` to the OpenWorld MCP tools. Route
 `/osk openworld promote review` to `osk_openworld_promote_review` only after
 explicit approval; it creates a review-only proposal and never activates
-behavior or claims hidden-oracle benchmark proof.
+behavior or claims hidden-oracle benchmark proof. Proof wording lives in
+[`docs/openworld/proof-levels.md`](docs/openworld/proof-levels.md).
 
 ## Project Owner Workflow
 
