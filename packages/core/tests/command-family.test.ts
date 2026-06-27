@@ -8,6 +8,8 @@ import {
   initAdaptiveProject,
   planLearningSources,
   pluginCommandProjections,
+  renderOskCommandsMarkdown,
+  renderOskLearnMarkdown,
   runLearningPlan,
   validateOskCommandFamilies
 } from "../src/index.js";
@@ -40,6 +42,16 @@ describe("OSK command family registry", () => {
     expect(commands.find((item) => item.command === "/osk learn")?.mcpTool).toBe("osk_plan_learning_sources");
     expect(commands.find((item) => item.command === "/osk deploy")?.approvalRequired).toBe(true);
     expect(commands.find((item) => item.command === "/osk status")?.readOnly).toBe(true);
+  });
+
+  it("renders command docs from the public registry", () => {
+    const commands = renderOskCommandsMarkdown();
+    const learn = renderOskLearnMarkdown();
+    expect(commands).toContain("| `/osk learn` |");
+    expect(commands).toContain("Never store raw prompts by default.");
+    expect(commands).toContain("### /osk deploy");
+    expect(learn).toContain("openskill-kit osk learn --all-detected");
+    expect(learn).toContain("User/global memory stores");
   });
 
   it("plans learning sources without silently importing private stores", async () => {

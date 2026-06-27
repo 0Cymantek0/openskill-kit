@@ -33,6 +33,8 @@ import {
   importEncryptedProjectBehaviorPack,
   importInteractionSource,
   inspectGitLocalContext,
+  planLearningSources,
+  runLearningPlan,
   explainInteractionImport,
   installSkill,
   listInteractionAdapters,
@@ -94,6 +96,7 @@ import {
   verifySkill,
   CompileTargets,
   AgentPluginAttachHosts,
+  OSK_PUBLIC_COMMAND_FAMILIES,
   type CompileTarget,
   type AgentPluginAttachHost,
   type InstallTarget
@@ -186,6 +189,203 @@ program.command("detect")
       `Issues: ${result.summary.issueCount} (${result.summary.warningCount} warning)`,
       result.artifacts.reportPath ? `Report: ${result.artifacts.reportPath}` : undefined
     ].filter(Boolean).join("\n"));
+  });
+
+const osk = program.command("osk")
+  .description("Run harness-native OpenSkillKit command-family workflows");
+
+osk.command("help")
+  .description("Show the 12 public OSK command families")
+  .option("--json", "Print JSON")
+  .action((options) => {
+    output(options.json, { schemaVersion: "openskill-kit.osk-help.v1", commands: OSK_PUBLIC_COMMAND_FAMILIES }, OSK_PUBLIC_COMMAND_FAMILIES
+      .map((family) => `${family.publicCommand.padEnd(13)} ${family.oneLine}`)
+      .join("\n"));
+  });
+
+osk.command("init")
+  .description("Initialize OSK state and show readiness")
+  .option("--project-name <name>", "Project display name")
+  .option("--force", "Rewrite adaptive config")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const init = await initAdaptiveProject({ projectRoot: process.cwd(), projectName: options.projectName, force: options.force === true });
+    const status = await getAdaptiveStatus(process.cwd());
+    output(options.json, { init, status }, [`${init.status} ${init.configPath}`, `Plugin ready: ${status.compiled.plugin}`, `Pending review: ${status.pendingReviewCount}`].join("\n"));
+  });
+
+osk.command("status")
+  .description("Show OSK status, plugin health, and attach state")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const explained = await explainAdaptiveStatus(process.cwd());
+    output(options.json, explained, explained.nextActions.join("\n"));
+  });
+
+const oskTask = osk.command("task")
+  .description("Load task context or finish safe task evidence");
+
+oskTask.command("context")
+  .argument("[query...]", "Task query")
+  .option("--path <path>", "Relevant path", collectOption, [])
+  .option("--changed-file <path>", "Changed file path", collectOption, [])
+  .option("--command <command>", "Relevant command", collectOption, [])
+  .option("--limit <number>", "Preference limit", parseIntegerOption, 8)
+  .option("--json", "Print JSON")
+  .action(async (queryParts: string[], options) => {
+    const result = await getAgentTaskContext({
+      projectRoot: process.cwd(),
+      query: queryParts.join(" ") || undefined,
+      paths: options.path,
+      changedFiles: options.changedFile,
+      commands: options.command,
+      limit: options.limit
+    });
+    output(options.json, result, result.compactMarkdown);
+  });
+
+oskTask.command("finish")
+  .requiredOption("--summary <summary>", "Safe task summary; no raw prompts or diffs")
+  .option("--session-id <id>", "Session id")
+  .option("--outcome <outcome>", "completed|accepted|rejected|edited", parseTaskOutcome, "completed")
+  .option("--outcome-reason <text>", "Short outcome reason")
+  .option("--file <path>", "Touched file path", collectOption, [])
+  .option("--command <command>", "Command run", collectOption, [])
+  .option("--command-status <status>", "pass|fail|blocked|timeout|unknown", parseCommandStatus, "unknown")
+  .option("--compile-safe", "Compile only if safe active behavior exists")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await finishAgentTask({
+      projectRoot: process.cwd(),
+      sessionId: options.sessionId,
+      summary: options.summary,
+      outcome: options.outcome,
+      outcomeReason: options.outcomeReason,
+      files: options.file,
+      commands: options.command,
+      commandStatus: options.commandStatus,
+      compileSafe: options.compileSafe === true
+    });
+    output(options.json, result, result.nextActions.join("\n"));
+  });
+
+osk.command("learn")
+  .description("Plan or run review-gated learning from selected sources")
+  .option("--source <id>", "Selected source id from plan", collectOption, [])
+  .option("--all-detected", "Select all safe detected sources")
+  .option("--apply", "Apply selected sources after preview approval")
+  .option("--max-events <number>", "Maximum events", parseIntegerOption, 250)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const sourceMode = options.source.length ? "selected" : options.allDetected === true ? "all-detected" : "ask";
+    const result = options.source.length || options.allDetected === true || options.apply === true
+      ? await runLearningPlan(process.cwd(), {
+        sourceMode,
+        selectedSourceIds: options.source,
+        previewOnly: options.apply !== true,
+        maxEvents: options.maxEvents
+      })
+      : await planLearningSources(process.cwd(), { sourceMode });
+    const text = "digest" in result
+      ? [
+        `Sources considered: ${result.digest.sourcesConsidered}`,
+        `Sources used: ${result.digest.sourcesUsed}`,
+        `Events appended: ${result.digest.eventsAppended}`,
+        `Signals extracted: ${result.digest.signalsExtracted}`,
+        `Candidate preferences: ${result.digest.candidatePreferences}`,
+        ...result.nextActions
+      ].join("\n")
+      : [
+        `Sources: ${result.summary.total} (${result.summary.safeMetadata} safe, ${result.summary.explicitImport} explicit, ${result.summary.blocked} blocked)`,
+        `Default selected: ${result.defaults.selectedSourceIds.join(", ") || "none"}`,
+        ...result.nextActions
+      ].join("\n");
+    output(options.json, result, text);
+  });
+
+osk.command("review")
+  .description("Open or write review queue")
+  .option("--write", "Write review queue and print path")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    if (options.write === true) {
+      const queue = await buildReviewQueue(process.cwd());
+      output(options.json, queue, queue.markdownPath);
+      return;
+    }
+    const result = await runReviewTui(process.cwd());
+    output(options.json, result, result.messages.join("\n"));
+  });
+
+osk.command("research")
+  .description("Plan OpenWorld sources for a task")
+  .requiredOption("--task-id <id>", "OpenWorld task id")
+  .option("--query <text>", "Extra query")
+  .option("--path <path>", "Relevant path", collectOption, [])
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await planOpenWorldResearch(process.cwd(), options.taskId, { query: options.query, paths: options.path });
+    output(options.json, result, result.recommendedNextCommands.join("\n"));
+  });
+
+osk.command("evolve")
+  .description("Run OpenWorld refinement for a candidate skill")
+  .requiredOption("--task-id <id>", "OpenWorld task id")
+  .requiredOption("--suite-id <id>", "Verifier suite id")
+  .option("--candidate-id <id>", "Candidate skill id")
+  .option("--max-rounds <number>", "Max refinement rounds", parseIntegerOption, 3)
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await runOpenWorldRefinement(process.cwd(), options.taskId, options.suiteId, { candidateSkillId: options.candidateId, maxRounds: options.maxRounds });
+    output(options.json, result, `${result.status}: ${result.id}`);
+  });
+
+osk.command("verify")
+  .description("Score an OpenWorld verifier suite")
+  .requiredOption("--task-id <id>", "OpenWorld task id")
+  .requiredOption("--suite-id <id>", "Verifier suite id")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await assessOpenWorldVerifierQuality(process.cwd(), options.taskId, options.suiteId);
+    output(options.json, result, `${result.report.status}: traceability=${result.report.metrics.traceabilityScore}`);
+  });
+
+osk.command("compile")
+  .description("Compile active reviewed behavior")
+  .option("--target <target>", "Compile target", collectOption, [])
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const targets = options.target.length ? options.target.map(parseCompileTarget) : ["plugin"] as CompileTarget[];
+    const result = await compileBehaviorLayer(process.cwd(), { targets });
+    output(options.json, result, `Compiled: ${result.compiledTargets.join(", ")}`);
+  });
+
+osk.command("deploy")
+  .description("Preview or apply harness attachment")
+  .option("--host <host>", "Attach host", parseAgentPluginAttachHost, "opencode")
+  .option("--yes", "Apply after reviewing dry-run")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await attachAgentPlugin(process.cwd(), { host: options.host, dryRun: options.yes !== true, yes: options.yes === true });
+    output(options.json, result, result.messages.join("\n"));
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
+osk.command("eval")
+  .description("Run behavior replay eval")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await runBehaviorEval({ projectRoot: process.cwd() });
+    output(options.json, result, `${result.status}: ${result.passCount}/${result.scenarioCount} passed`);
+    process.exitCode = result.status === "fail" ? 1 : 0;
+  });
+
+osk.command("pack")
+  .description("Export active behavior pack")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await exportProjectBehaviorPack(process.cwd());
+    output(options.json, result, result.packPath);
   });
 
 const openworld = program.command("openworld")

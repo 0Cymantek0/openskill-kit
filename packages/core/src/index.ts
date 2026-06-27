@@ -54,6 +54,7 @@ export * from "./workflows/miner.js";
 export * from "./workflows/review.js";
 export * from "./schema/constants.js";
 export * from "./commands/families.js";
+export * from "./commands/docs.js";
 export * from "./compiler/context-pack.js";
 export * from "./compiler/skill-compiler.js";
 export * from "./compiler/dynamic-skill-compiler.js";
