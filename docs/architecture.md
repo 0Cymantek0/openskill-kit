@@ -192,6 +192,8 @@ When a compiled plugin exists but project MCP config is missing, invalid, or
 points `openskill-kit` at a nonstandard command, detection reports the exact
 attach issue and directs operators to `openskill-kit agent attach-plugin
 --host generic-mcp --dry-run`.
+Applied host MCP config includes `OPENSKILLKIT_PROJECT_ROOT`, so an attached
+harness can omit per-tool `projectRoot` arguments without relying on launch cwd.
 
 ## Interaction Imports
 

@@ -67,6 +67,9 @@ For harness compatibility, generated plugins also include:
 - `openskill-kit agent attach-plugin`: a safe host-config planner that compiles
   the plugin, preserves existing MCP servers, writes only project-local config
   (`.mcp.json` or `.cursor/mcp.json`), and records an install receipt on apply.
+  Applied config also sets `OPENSKILLKIT_PROJECT_ROOT` so MCP tools still bind
+  to the project when a host launches the stdio server from another working
+  directory.
 
 Harness behavior should stay conservative:
 

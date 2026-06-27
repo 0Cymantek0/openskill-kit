@@ -6,6 +6,7 @@ import { writeJsonAtomic } from "../storage/atomic.js";
 
 export const AgentPluginAttachHosts = ["codex", "claude-code", "cursor", "generic-mcp"] as const;
 export type AgentPluginAttachHost = typeof AgentPluginAttachHosts[number];
+export const AGENT_PLUGIN_PROJECT_ROOT_ENV = "OPENSKILLKIT_PROJECT_ROOT";
 
 export interface AgentPluginAttachResult {
   schemaVersion: "openskill-kit.agent-plugin-attach.v1";
@@ -45,7 +46,7 @@ export async function attachAgentPlugin(
   if (!plugin.ready) {
     return blocked(root, host, plugin, [`Plugin is not ready: ${[...plugin.missing, ...plugin.integrityIssues].join(", ")}`]);
   }
-  const files = await Promise.all(hostConfigTargets(root, host).map((destination) => planMcpConfig(destination, plugin.mcpServerCommand)));
+  const files = await Promise.all(hostConfigTargets(root, host).map((destination) => planMcpConfig(destination, plugin.mcpServerCommand, root)));
   const blockedFiles = files.filter((file) => file.action === "blocked");
   if (blockedFiles.length) {
     return {
@@ -106,7 +107,7 @@ function hostConfigTargets(root: string, host: AgentPluginAttachHost): string[] 
   return [path.join(root, ".mcp.json")];
 }
 
-async function planMcpConfig(destination: string, command: string): Promise<AgentPluginAttachFile> {
+async function planMcpConfig(destination: string, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {
   const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
   let parsed: McpConfig = {};
   if (existing?.trim()) {
@@ -126,7 +127,12 @@ async function planMcpConfig(destination: string, command: string): Promise<Agen
     ...parsed,
     mcpServers: {
       ...(isRecord(parsed.mcpServers) ? parsed.mcpServers : {}),
-      "openskill-kit": { command }
+      "openskill-kit": {
+        command,
+        env: {
+          [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot
+        }
+      }
     }
   };
   const after = `${JSON.stringify(next, null, 2)}\n`;

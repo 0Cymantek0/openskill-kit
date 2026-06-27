@@ -22,7 +22,7 @@ describe("agent plugin attach planner", () => {
     expect(planned.plugin.ready).toBe(true);
     expect(planned.files[0]?.action).toBe("create");
     expect(planned.files[0]?.destination).toBe(path.join(root, ".mcp.json"));
-    expect(planned.files[0]?.preview).toEqual({ mcpServers: { "openskill-kit": { command: "openskill-kit-mcp" } } });
+    expect(planned.files[0]?.preview).toEqual({ mcpServers: { "openskill-kit": { command: "openskill-kit-mcp", env: { OPENSKILLKIT_PROJECT_ROOT: root } } } });
     await expect(stat(path.join(root, ".mcp.json"))).rejects.toThrow();
   });
 
@@ -41,6 +41,7 @@ describe("agent plugin attach planner", () => {
     expect(mcp.keep).toBe(true);
     expect(mcp.mcpServers.existing.command).toBe("existing-mcp");
     expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
+    expect(mcp.mcpServers["openskill-kit"].env.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
   });
 
   it("blocks invalid host config JSON without overwriting it", async () => {

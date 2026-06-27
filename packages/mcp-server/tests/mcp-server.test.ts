@@ -8,6 +8,37 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
 describe("openskill-kit MCP server", () => {
+  it("uses OPENSKILLKIT_PROJECT_ROOT when host omits projectRoot", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-env-root-"));
+    const launcherCwd = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-launcher-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-env-root-fixture" }), "utf8");
+
+    const client = new Client({ name: "openskill-kit-env-root-test", version: "0.1.0" }, { capabilities: {} });
+    const inheritedEnv = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"), path.join(repoRoot, "packages", "mcp-server", "src", "index.ts")],
+      cwd: launcherCwd,
+      env: { ...inheritedEnv, OPENSKILLKIT_PROJECT_ROOT: root },
+      stderr: "pipe"
+    });
+
+    try {
+      await client.connect(transport);
+      const boot = await client.callTool({
+        name: "osk_bootstrap_session",
+        arguments: { init: true }
+      });
+      const bootText = boot.content.find((item) => item.type === "text")?.text;
+      const parsed = JSON.parse(bootText ?? "{}");
+      expect(parsed.initResult.configPath).toContain(".openskill-kit");
+      await expect(readFile(path.join(root, ".openskill-kit", "config.json"), "utf8")).resolves.toContain("mcp-env-root-fixture");
+      await expect(readFile(path.join(launcherCwd, ".openskill-kit", "config.json"), "utf8")).rejects.toThrow();
+    } finally {
+      await client.close();
+    }
+  });
+
   it("lists tools and drafts a skill through stdio transport", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-fixture" }), "utf8");

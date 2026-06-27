@@ -100,6 +100,7 @@ const pluginAttach = await runJson(["agent", "attach-plugin", "--host", "generic
 if (pluginAttach.status !== "attached") throw new Error("plugin attach apply failed");
 const hostMcp = await readJson(path.join(root, ".mcp.json"));
 if (hostMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("plugin attach did not write host MCP config");
+if (hostMcp.mcpServers?.["openskill-kit"]?.env?.OPENSKILLKIT_PROJECT_ROOT !== root) throw new Error("plugin attach did not bind MCP project root");
 const detectionAfterAttach = await runJson(["detect", "--json"]);
 const hostMcpSurface = detectionAfterAttach.surfaces?.find((surface: { relativePath?: string }) => surface.relativePath === ".mcp.json");
 if (hostMcpSurface?.metadata?.openskillKitAttached !== true) throw new Error("detection did not recognize OpenSkillKit MCP attachment");

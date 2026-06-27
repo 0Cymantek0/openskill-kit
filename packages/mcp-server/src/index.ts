@@ -9,6 +9,7 @@ import {
   appendEvent,
   applyPreferenceReview,
   applyWorkflowReview,
+  AGENT_PLUGIN_PROJECT_ROOT_ENV,
   attachAgentPlugin,
   compileBehaviorLayer,
   detectAgentEnvironment,
@@ -1407,7 +1408,7 @@ export async function startStdioServer(): Promise<void> {
 }
 
 function resolveProjectRoot(value: string | undefined): string {
-  return path.resolve(value ?? process.cwd());
+  return path.resolve(value ?? process.env[AGENT_PLUGIN_PROJECT_ROOT_ENV] ?? process.cwd());
 }
 
 function resolvePath(value: string, projectRoot: string): string {
