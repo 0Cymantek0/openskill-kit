@@ -74,6 +74,16 @@
         "fallback": "cli"
       },
       {
+        "command": "/osk finish task",
+        "aliases": ["osk task done", "openskill finish task"],
+        "description": "Record safe task outcome evidence, run learning, write session summaries, and return review next actions.",
+        "mcpTool": "osk_finish_agent_task",
+        "cli": "openskill-kit finish-task --summary \"<safe summary>\"",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
         "command": "/osk learn from this session",
         "aliases": ["osk learn", "learn this session"],
         "description": "Extract candidate preferences from captured local events after user approval for any import source.",

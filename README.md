@@ -128,6 +128,7 @@ openskill-kit calibration
 openskill-kit prefs --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit route --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit context --query "parser test change" --path src/parser/tokenizer.ts
+openskill-kit finish-task --summary "Prefer focused parser tests before final response." --command "npm test" --command-status pass
 openskill-kit daemon
 openskill-kit agent doctor
 openskill-kit agent install-manifests --target project --dry-run
@@ -239,6 +240,7 @@ Key tools:
 - `osk_get_relevant_preferences`
 - `osk_route_behavior`
 - `osk_get_agent_task_context`
+- `osk_finish_agent_task`
 - `osk_record_event`
 - `osk_propose_preference`
 - `osk_get_review_queue`
@@ -299,6 +301,12 @@ remain available for compatibility.
 returns initialization status plus compiled plugin readiness, attach path,
 published skills/capabilities, MCP command, privacy exclusions, approval gates,
 and next actions.
+
+For normal coding work, call `osk_get_agent_task_context` before editing and
+`osk_finish_agent_task` after verification. The finish call records a safe
+task summary, commands, touched files, and outcome, then runs the same learning
+and review queue path as the CLI. Do not send raw prompts, raw diffs, secrets,
+or hidden benchmark answers as the summary.
 
 ## Project Owner Workflow
 

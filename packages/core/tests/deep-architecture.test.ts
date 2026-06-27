@@ -10,6 +10,7 @@ import {
   explainPreferenceWithEvidence,
   explainAdaptiveStatus,
   getAgentTaskContext,
+  finishAgentTask,
   getCompiledPluginStatus,
   initAdaptiveProject,
   readEvidenceCards,
@@ -68,6 +69,7 @@ describe("deep architecture hardening", () => {
     expect(status.installGuidesPath).toBe(path.join(pluginRoot, "install-guides"));
     expect(status.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk context" && item.mcpTool === "osk_get_agent_task_context")).toBe(true);
+    expect(status.commands.some((item) => item.command === "/osk finish task" && item.mcpTool === "osk_finish_agent_task")).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach")).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status")).toBe(true);
     expect(status.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
@@ -85,6 +87,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.entrypoints.installGuides).toBe("install-guides");
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk update skills" && item.mcpTool === "osk_compile_behavior_layer" && item.cli === "openskill-kit compile --target agent-skills")).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk context" && item.mcpTool === "osk_get_agent_task_context" && item.cli.includes("openskill-kit context"))).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk finish task" && item.mcpTool === "osk_finish_agent_task" && item.cli.includes("finish-task"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach" && item.cli.includes("agent attach-plugin"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status" && item.cli.includes("agent plugin-status"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk evolve this skill" && !item.mcpTool && item.cli.includes("openskill-kit evolve"))).toBe(true);
@@ -107,6 +110,7 @@ describe("deep architecture hardening", () => {
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_plugin_attach" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_plugin_attach_status" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_agent_task_context" && tool.writeRisk === "local-write")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_finish_agent_task" && tool.writeRisk === "local-write")).toBe(true);
     expect(mcpHashes.tools["osk_bootstrap_session"]).toMatch(/^sha256:/);
     expect(mcpHashes.approvalRequiredTools).toContain("osk_install_agent_hooks");
     expect(mcpHashes.approvalRequiredTools).toContain("osk_apply_plugin_attach");
@@ -135,6 +139,28 @@ describe("deep architecture hardening", () => {
     expect(context.plugin.attached).toBe(false);
     expect(context.compactMarkdown).toContain("OpenSkillKit Task Context");
     expect(context.nextActions).toContain("Apply only returned preferences relevant to this task and paths.");
+  });
+
+  it("finishes agent tasks by recording safe evidence and learning review candidates", async () => {
+    const root = await tempProject();
+    const result = await finishAgentTask({
+      projectRoot: root,
+      sessionId: "finish-test",
+      summary: "Always run focused parser tests before final response.",
+      outcome: "accepted",
+      files: ["src/parser/index.ts"],
+      commands: ["npm test"],
+      commandStatus: "pass"
+    });
+
+    expect(result.schemaVersion).toBe("openskill-kit.agent-task-finish.v1");
+    expect(result.eventIds).toHaveLength(4);
+    expect(result.lifecycle?.signals.signalCount).toBeGreaterThan(0);
+    expect(result.lifecycle?.summaryPaths[0]).toContain("finish-test");
+    expect(result.review?.pendingPreferenceCount).toBeGreaterThan(0);
+    expect(result.nextActions.some((action) => action.includes("Review pending behavior"))).toBe(true);
+    const graph = await readPreferenceGraph(root);
+    expect(graph.nodes.some((node) => node.statement.includes("focused parser tests"))).toBe(true);
   });
 
   it("marks compiled plugin unready when MCP descriptors are tampered", async () => {

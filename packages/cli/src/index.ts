@@ -20,6 +20,7 @@ import {
   explainAdaptiveStatus,
   getAdaptiveStatus,
   getAgentTaskContext,
+  finishAgentTask,
   explainPreferenceWithEvidence,
   installAgentHooks,
   getAgentPluginAttachStatus,
@@ -946,6 +947,39 @@ program.command("context")
     output(options.json, context, context.compactMarkdown);
   });
 
+program.command("finish-task")
+  .description("Record safe task outcome evidence, run learning, and return review next actions for a coding harness")
+  .requiredOption("--summary <text>", "Short safe summary of what happened; no raw prompts, raw diffs, secrets, or hidden answers")
+  .option("--session <id>", "Session id", "agent-task")
+  .option("--outcome <outcome>", "completed|accepted|rejected|edited", "completed")
+  .option("--file <path>", "Touched file path", collectOption, [])
+  .option("--command <command>", "Verification or tool command", collectOption, [])
+  .option("--command-status <status>", "pass|fail|blocked|timeout|unknown", "unknown")
+  .option("--no-learn", "Record events without running learning")
+  .option("--compile-safe", "Compile active behavior only when lifecycle sees no conflicts")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await finishAgentTask({
+      projectRoot: process.cwd(),
+      sessionId: options.session,
+      summary: options.summary,
+      outcome: parseTaskOutcome(options.outcome),
+      files: options.file,
+      commands: options.command,
+      commandStatus: parseCommandStatus(options.commandStatus),
+      learn: options.learn !== false,
+      compileSafe: options.compileSafe === true
+    });
+    output(options.json, result, [
+      `Finished task: ${result.outcome}`,
+      `Session: ${result.sessionId}`,
+      `Events: ${result.eventIds.length}`,
+      result.lifecycle ? `Signals: ${result.lifecycle.signals.signalCount}` : "Learning skipped",
+      result.review ? `Pending review: ${result.review.pendingPreferenceCount + result.review.pendingWorkflowCount}` : undefined,
+      ...result.nextActions
+    ].filter(Boolean).join("\n"));
+  });
+
 program.command("calibration")
   .description("Show review calibration reliability by category and extractor")
   .option("--json", "Print JSON")
@@ -1380,6 +1414,16 @@ function parseAgentPluginAttachHost(value: string): AgentPluginAttachHost {
 function parseCompileTarget(value: string): CompileTarget {
   if ((CompileTargets as readonly string[]).includes(value)) return value as CompileTarget;
   throw new Error(`Invalid compile target: ${value}. Expected one of: ${CompileTargets.join(", ")}`);
+}
+
+function parseTaskOutcome(value: string): "completed" | "accepted" | "rejected" | "edited" {
+  if (value === "completed" || value === "accepted" || value === "rejected" || value === "edited") return value;
+  throw new Error(`Invalid task outcome: ${value}. Expected completed, accepted, rejected, or edited.`);
+}
+
+function parseCommandStatus(value: string): "pass" | "fail" | "blocked" | "timeout" | "unknown" {
+  if (value === "pass" || value === "fail" || value === "blocked" || value === "timeout" || value === "unknown") return value;
+  throw new Error(`Invalid command status: ${value}. Expected pass, fail, blocked, timeout, or unknown.`);
 }
 
 function collectOption(value: string, previous: string[]): string[] {

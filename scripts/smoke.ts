@@ -91,7 +91,7 @@ if (!pluginManifest.files?.includes("install-guides/codex.md")) throw new Error(
 if (!pluginMcpHashes.approvalRequiredTools?.includes("osk_install_agent_hooks")) throw new Error("compiled plugin descriptor approvals incomplete");
 if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/")) throw new Error("compiled plugin privacy exclusions incomplete");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 14") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 15") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
 if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");
@@ -118,6 +118,10 @@ if (taskContext.schemaVersion !== "openskill-kit.agent-task-context.v1" || !task
 }
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
 if (!prefs.items?.length || !prefs.compactMarkdown?.includes("run npm test")) throw new Error("preference retrieval failed");
+const finishedTask = await runJson(["finish-task", "--session", "smoke-finish", "--summary", "Always run npm test before final response.", "--outcome", "accepted", "--command", "npm test", "--command-status", "pass", "--json"]);
+if (finishedTask.schemaVersion !== "openskill-kit.agent-task-finish.v1" || finishedTask.eventIds?.length < 4 || !finishedTask.lifecycle?.summaryPaths?.length) {
+  throw new Error("agent finish task command failed");
+}
 const lifecycle = await runJson(["daemon", "--json"]);
 if (lifecycle.processedEventCount < 1 || !lifecycle.summaryPaths?.length) throw new Error("lifecycle daemon run failed");
 const agentDoctor = await runJson(["agent", "doctor", "--json"]);

@@ -99,6 +99,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_get_relevant_preferences", "retrieval", "read-only"),
   descriptor("osk_route_behavior", "routing", "read-only"),
   descriptor("osk_get_agent_task_context", "routing", "local-write"),
+  descriptor("osk_finish_agent_task", "observation", "local-write"),
   descriptor("osk_record_event", "observation", "local-write"),
   descriptor("osk_learn_from_session", "learning", "local-write"),
   descriptor("osk_compile_behavior_layer", "compile", "local-write"),

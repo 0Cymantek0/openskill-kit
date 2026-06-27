@@ -24,6 +24,7 @@ import {
   explainAdaptiveStatus,
   getAgentPluginAttachStatus,
   getAgentTaskContext,
+  finishAgentTask,
   getCompiledPluginStatus,
   getAdaptiveStatus,
   assessOpenWorldVerifierQuality,
@@ -306,6 +307,30 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, query, paths, changedFiles, commands, limit }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, limit }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_finish_agent_task",
+    {
+      title: "OpenSkillKit Finish Agent Task",
+      description: "Record safe task completion evidence, run learning, write session summaries, and return review next actions.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        sessionId: z.string().min(1).default("agent-task"),
+        summary: z.string().min(1).max(2000),
+        outcome: z.enum(["completed", "accepted", "rejected", "edited"]).default("completed"),
+        files: z.array(z.string().min(1)).default([]),
+        commands: z.array(z.string().min(1)).default([]),
+        commandStatus: z.enum(["pass", "fail", "blocked", "timeout", "unknown"]).default("unknown"),
+        learn: z.boolean().default(true),
+        compileSafe: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, sessionId, summary, outcome, files, commands, commandStatus, learn, compileSafe }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await finishAgentTask({ projectRoot: root, sessionId, summary, outcome, files, commands, commandStatus, learn, compileSafe }), root);
     }
   );
 

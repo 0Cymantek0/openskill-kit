@@ -77,6 +77,7 @@ describe("openskill-kit MCP server", () => {
           "osk_apply_plugin_attach",
           "osk_get_plugin_attach_status",
           "osk_get_agent_task_context",
+          "osk_finish_agent_task",
           "osk_run_lifecycle_once",
           "osk_openworld_retrieval_adapters",
           "osk_openworld_execute_source_plan",
@@ -175,6 +176,22 @@ describe("openskill-kit MCP server", () => {
       expect(taskContextParsed.compactMarkdown).toContain("OpenSkillKit Task Context");
       expect(taskContextParsed.preferences.items.some((item: { node?: { statement?: string } }) => item.node?.statement?.includes("run npm test"))).toBe(true);
       expect(taskContextParsed.plugin.attached).toBe(true);
+
+      const finished = await client.callTool({
+        name: "osk_finish_agent_task",
+        arguments: {
+          projectRoot: root,
+          sessionId: "mcp-finish",
+          summary: "Always run npm test before final response.",
+          outcome: "accepted",
+          commands: ["npm test"],
+          commandStatus: "pass"
+        }
+      });
+      const finishedParsed = JSON.parse(finished.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(finishedParsed.schemaVersion).toBe("openskill-kit.agent-task-finish.v1");
+      expect(finishedParsed.eventIds.length).toBeGreaterThanOrEqual(4);
+      expect(finishedParsed.lifecycle.signals.signalCount).toBeGreaterThan(0);
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",

@@ -92,6 +92,11 @@ Harness behavior should stay conservative:
   `osk_get_agent_task_context`; it returns the route plan, compact relevant
   preferences, workflow matches, plugin health, review state, and next actions
   in one harness-friendly response.
+- At task end, route `/osk finish task` to `osk_finish_agent_task` with a short
+  safe summary, touched files, verification commands, command status, and
+  outcome. It records redacted local evidence, writes session summaries, runs
+  learning, and returns review next actions. Do not pass raw prompts, raw diffs,
+  secrets, or hidden benchmark answers.
 - Read the matching `install-guides/` file before applying any host-specific
   config.
 - Use `osk_get_plugin_attach_status` for readiness checks,
