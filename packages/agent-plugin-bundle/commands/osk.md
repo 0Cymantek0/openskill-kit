@@ -6,6 +6,8 @@ unavailable, run the CLI fallback from the project root.
 
 Do not enable hooks, write global instructions, import private interactions, or
 import behavior packs without explicit user approval.
+OpenWorld routes are review-only unless an explicit review action later
+activates behavior; they do not prove hidden-oracle benchmark performance.
 
 ## Commands
 
@@ -85,6 +87,32 @@ import behavior packs without explicit user approval.
 
 - MCP tool: `osk_run_behavior_eval`
 - CLI fallback: `openskill-kit eval`
+
+### /osk openworld doctor
+
+- MCP tool: `osk_openworld_doctor`
+- CLI fallback: `openskill-kit openworld doctor`
+
+### /osk openworld source plan
+
+- MCP tool: `osk_openworld_source_plan`
+- CLI fallback: `openskill-kit openworld source-plan --task-id <task-id>`
+
+### /osk openworld refine
+
+- MCP tool: `osk_openworld_refine`
+- CLI fallback: `openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>`
+
+### /osk openworld report
+
+- MCP tool: `osk_openworld_task_report`
+- CLI fallback: `openskill-kit openworld report --task-id <task-id> --write`
+
+### /osk openworld promote review
+
+- MCP tool: `osk_openworld_promote_review`
+- CLI fallback: `openskill-kit openworld promote-review --run-id <run-id> --dry-run`
+- Explicit approval required: `yes`
 
 ### /osk evolve this skill
 

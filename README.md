@@ -313,6 +313,13 @@ For cross-agent session learning, route `/osk import session` to
 user approves applying it. Route `/osk session imports` to
 `osk_list_interaction_imports` for read-only import receipts.
 
+For unfamiliar-domain skill work, route `/osk openworld doctor`,
+`/osk openworld source plan`, `/osk openworld refine`, and
+`/osk openworld report` to the OpenWorld MCP tools. Route
+`/osk openworld promote review` to `osk_openworld_promote_review` only after
+explicit approval; it creates a review-only proposal and never activates
+behavior or claims hidden-oracle benchmark proof.
+
 ## Project Owner Workflow
 
 1. Initialize the project.

@@ -79,6 +79,7 @@ describe("deep architecture hardening", () => {
     expect(status.nextActions).toContain("Map `/osk ...` requests through `commands/commands.json`; prefer MCP tools and use CLI fallbacks only when MCP is unavailable.");
     expect(manifest.schemaVersion).toBe("openskill-kit.agent-plugin.v1");
     expect(manifest.compatibility).toEqual(expect.arrayContaining(["agent-plugin", "mcp-stdio", "codex", "claude-code"]));
+    expect(manifest.capabilities).toContain("openworld-review-promotion");
     expect(manifest.skills).toEqual(expect.arrayContaining(["skills/project-behavior"]));
     expect(manifest.entrypoints.mcpServer.command).toBe("openskill-kit-mcp");
     expect(manifest.entrypoints.mcpServer.transport).toBe("stdio");
@@ -94,6 +95,8 @@ describe("deep architecture hardening", () => {
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.cli.includes("interactions imports") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk attach plugin" && item.mcpTool === "osk_preview_plugin_attach" && item.cli.includes("agent attach-plugin"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk plugin health" && item.mcpTool === "osk_get_plugin_attach_status" && item.cli.includes("agent plugin-status"))).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk openworld doctor" && item.mcpTool === "osk_openworld_doctor" && item.readOnly === true)).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; approvalRequired: boolean }) => item.command === "/osk openworld promote review" && item.mcpTool === "osk_openworld_promote_review" && item.cli.includes("promote-review") && item.approvalRequired === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk evolve this skill" && !item.mcpTool && item.cli.includes("openskill-kit evolve"))).toBe(true);
     expect(manifest.integrity.descriptorHashes).toBe("mcp/descriptor-hashes.json");
     expect(manifest.integrity.descriptorsHash).toBe(mcpHashes.descriptorsHash);
@@ -105,8 +108,10 @@ describe("deep architecture hardening", () => {
     expect(packagedManifest).toEqual(manifest);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
+    expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk openworld promote review" && item.mcpTool === "osk_openworld_promote_review" && item.approvalRequired === true)).toBe(true);
     expect(commandGuide).toContain("Prefer MCP");
     expect(commandGuide).toContain("openskill-kit interactions import <path>");
+    expect(commandGuide).toContain("OpenWorld routes are review-only");
     expect(commandGuide).toContain("openskill-kit status");
     expect(codexGuide).toContain("AGENTS.md");
     expect(genericMcpGuide).toContain("osk_bootstrap_session");
@@ -119,10 +124,13 @@ describe("deep architecture hardening", () => {
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_finish_agent_task" && tool.writeRisk === "local-write")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_import_interaction_source" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_list_interaction_imports" && tool.writeRisk === "read-only")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_openworld_doctor" && tool.writeRisk === "read-only")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_openworld_promote_review" && tool.approvalRequired === true)).toBe(true);
     expect(mcpHashes.tools["osk_bootstrap_session"]).toMatch(/^sha256:/);
     expect(mcpHashes.approvalRequiredTools).toContain("osk_install_agent_hooks");
     expect(mcpHashes.approvalRequiredTools).toContain("osk_apply_plugin_attach");
     expect(mcpHashes.approvalRequiredTools).toContain("osk_import_interaction_source");
+    expect(mcpHashes.approvalRequiredTools).toContain("osk_openworld_promote_review");
     expect(readme).toContain("Start `openskill-kit-mcp`");
     expect(readme).toContain("Command map: `commands/commands.json`");
     expect(readme).toContain("Install guides: `install-guides`");

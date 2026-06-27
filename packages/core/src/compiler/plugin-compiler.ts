@@ -212,7 +212,8 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       "managed-instruction-preview",
       "local-mcp-tools",
       "explicit-hook-install",
-      "behavior-pack-review"
+      "behavior-pack-review",
+      "openworld-review-promotion"
     ],
     skills: await pluginSkillRefs(pluginDir),
     entrypoints: {
@@ -377,6 +378,11 @@ function pluginCommands(): AgentPluginCommand[] {
     command("/osk attach plugin", ["osk attach", "attach openskill plugin"], "Preview host MCP config needed to attach this plugin to an existing coding harness; applying requires explicit approval.", "osk_preview_plugin_attach", "openskill-kit agent attach-plugin --host generic-mcp --dry-run", false, false),
     command("/osk plugin health", ["osk plugin status", "openskill plugin health"], "Show host attachment health for the compiled plugin, including root binding, invalid JSON, and command conflicts.", "osk_get_plugin_attach_status", "openskill-kit agent plugin-status", true, false),
     command("/osk run behavior eval", ["osk eval", "behavior eval"], "Run local behavior replay/evaluation gates and return artifact paths.", "osk_run_behavior_eval", "openskill-kit eval", false, false),
+    command("/osk openworld doctor", ["osk ow doctor", "openskill openworld doctor"], "Show which OpenWorld capabilities are real today and which remain unproven.", "osk_openworld_doctor", "openskill-kit openworld doctor", true, false),
+    command("/osk openworld source plan", ["osk ow source plan", "openskill openworld source plan"], "Plan leakage-audited local and explicit web source candidates for an OpenWorld task.", "osk_openworld_source_plan", "openskill-kit openworld source-plan --task-id <task-id>", false, false),
+    command("/osk openworld refine", ["osk ow refine", "openskill openworld refine"], "Run bounded visible verifier refinement and final holdout check for a candidate skill.", "osk_openworld_refine", "openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>", false, false),
+    command("/osk openworld report", ["osk ow report", "openskill openworld report"], "Render task evidence, sources, anchors, verifier runs, eval reports, and remaining proof gaps.", "osk_openworld_task_report", "openskill-kit openworld report --task-id <task-id> --write", false, false),
+    command("/osk openworld promote review", ["osk ow promote review", "openskill openworld promote review"], "Create a review-only proposal from a passed OpenWorld run; it never activates behavior directly.", "osk_openworld_promote_review", "openskill-kit openworld promote-review --run-id <run-id> --dry-run", false, true),
     command("/osk evolve this skill", ["osk evolve", "evolve skill"], "Draft, verify, and evaluate a reusable skill from local evidence.", undefined, "openskill-kit evolve \"<topic>\" --no-llm", false, false),
     command("/osk sync project behavior pack", ["osk pack", "sync behavior pack"], "Export or import behavior packs only through review, verification, and trust gates.", "osk_export_behavior_pack", "openskill-kit pack export", false, true)
   ];
@@ -469,6 +475,7 @@ function renderCommandGuide(manifest: AgentPluginManifest): string {
     "When a user writes an `/osk ...` phrase, treat it as an intent for this plugin. Prefer MCP because it returns structured status and readiness data. If MCP is unavailable, run the CLI fallback from the project root.",
     "",
     "Do not enable hooks, write global instructions, import private interactions, or import behavior packs without explicit user approval.",
+    "OpenWorld routes are review-only unless an explicit review action later activates behavior; they do not prove hidden-oracle benchmark performance.",
     "",
     "## Commands",
     "",

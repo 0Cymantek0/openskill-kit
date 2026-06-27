@@ -97,6 +97,15 @@ Harness behavior should stay conservative:
   outcome. It records redacted local evidence, writes session summaries, runs
   learning, and returns review next actions. Do not pass raw prompts, raw diffs,
   secrets, or hidden benchmark answers.
+- For unfamiliar-domain work, route `/osk openworld doctor`,
+  `/osk openworld source plan`, `/osk openworld refine`, and
+  `/osk openworld report` through the mapped OpenWorld MCP tools so the harness
+  can keep research, anchors, verifier runs, and proof limits in one local
+  artifact tree.
+- Route `/osk openworld promote review` to `osk_openworld_promote_review` only
+  after explicit approval. Promotion creates a review-only proposal from a
+  passed run; it does not activate behavior and does not claim hidden-oracle
+  benchmark proof.
 - Route `/osk import session` to `osk_import_interaction_source` when the user
   explicitly wants to ingest a Codex, Claude, Cursor, or manual session export.
   Keep the first run as a preview/dry-run unless the user approves applying the

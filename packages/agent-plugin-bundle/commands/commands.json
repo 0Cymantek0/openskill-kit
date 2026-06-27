@@ -153,6 +153,56 @@
       "fallback": "cli"
     },
     {
+      "command": "/osk openworld doctor",
+      "aliases": ["osk ow doctor", "openskill openworld doctor"],
+      "description": "Show which OpenWorld capabilities are real today and which remain unproven.",
+      "mcpTool": "osk_openworld_doctor",
+      "cli": "openskill-kit openworld doctor",
+      "readOnly": true,
+      "approvalRequired": false,
+      "fallback": "cli"
+    },
+    {
+      "command": "/osk openworld source plan",
+      "aliases": ["osk ow source plan", "openskill openworld source plan"],
+      "description": "Plan leakage-audited local and explicit web source candidates for an OpenWorld task.",
+      "mcpTool": "osk_openworld_source_plan",
+      "cli": "openskill-kit openworld source-plan --task-id <task-id>",
+      "readOnly": false,
+      "approvalRequired": false,
+      "fallback": "cli"
+    },
+    {
+      "command": "/osk openworld refine",
+      "aliases": ["osk ow refine", "openskill openworld refine"],
+      "description": "Run bounded visible verifier refinement and final holdout check for a candidate skill.",
+      "mcpTool": "osk_openworld_refine",
+      "cli": "openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>",
+      "readOnly": false,
+      "approvalRequired": false,
+      "fallback": "cli"
+    },
+    {
+      "command": "/osk openworld report",
+      "aliases": ["osk ow report", "openskill openworld report"],
+      "description": "Render task evidence, sources, anchors, verifier runs, eval reports, and remaining proof gaps.",
+      "mcpTool": "osk_openworld_task_report",
+      "cli": "openskill-kit openworld report --task-id <task-id> --write",
+      "readOnly": false,
+      "approvalRequired": false,
+      "fallback": "cli"
+    },
+    {
+      "command": "/osk openworld promote review",
+      "aliases": ["osk ow promote review", "openskill openworld promote review"],
+      "description": "Create a review-only proposal from a passed OpenWorld run; it never activates behavior directly.",
+      "mcpTool": "osk_openworld_promote_review",
+      "cli": "openskill-kit openworld promote-review --run-id <run-id> --dry-run",
+      "readOnly": false,
+      "approvalRequired": true,
+      "fallback": "cli"
+    },
+    {
       "command": "/osk evolve this skill",
       "aliases": ["osk evolve", "evolve skill"],
       "description": "Draft, verify, and evaluate a reusable skill from local evidence.",
