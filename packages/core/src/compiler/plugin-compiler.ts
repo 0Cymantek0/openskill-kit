@@ -93,7 +93,11 @@ export interface AgentPluginInstallProfile {
   hostConfig: Array<{
     host: AgentPluginHostCompatibility["host"];
     configPath: string;
+    configFormat: "codex-toml" | "mcp-json";
     supportLevel: AgentPluginHostCompatibility["supportLevel"];
+    previewCli: string;
+    applyCli: string;
+    statusCli: string;
   }>;
 }
 
@@ -376,7 +380,11 @@ function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]):
     hostConfig: hostCompatibility.map((host) => ({
       host: host.host,
       configPath: host.configPath,
-      supportLevel: host.supportLevel
+      configFormat: host.host === "codex" ? "codex-toml" : "mcp-json",
+      supportLevel: host.supportLevel,
+      previewCli: `openskill-kit agent attach-plugin --host ${host.host} --dry-run`,
+      applyCli: `openskill-kit agent attach-plugin --host ${host.host} --yes`,
+      statusCli: "openskill-kit agent plugin-status --json"
     }))
   };
 }

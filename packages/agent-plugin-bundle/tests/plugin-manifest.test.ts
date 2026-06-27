@@ -22,7 +22,15 @@ describe("agent plugin manifest", () => {
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(manifest.installProfile.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
     expect(manifest.installProfile.hostConfig).toEqual(expect.arrayContaining([
-      expect.objectContaining({ host: "codex", configPath: ".codex/config.toml", supportLevel: "supported" })
+      expect.objectContaining({
+        host: "codex",
+        configPath: ".codex/config.toml",
+        configFormat: "codex-toml",
+        supportLevel: "supported",
+        previewCli: "openskill-kit agent attach-plugin --host codex --dry-run",
+        applyCli: "openskill-kit agent attach-plugin --host codex --yes",
+        statusCli: "openskill-kit agent plugin-status --json"
+      })
     ]));
     expect(manifest.installProfile.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_install_agent_hooks", "osk_import_interaction_source", "osk_openworld_promote_review"]));
     expect(manifest.installProfile.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile"]));

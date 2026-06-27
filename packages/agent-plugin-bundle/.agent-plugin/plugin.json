@@ -89,22 +89,38 @@
       {
         "host": "codex",
         "configPath": ".codex/config.toml",
-        "supportLevel": "supported"
+        "configFormat": "codex-toml",
+        "supportLevel": "supported",
+        "previewCli": "openskill-kit agent attach-plugin --host codex --dry-run",
+        "applyCli": "openskill-kit agent attach-plugin --host codex --yes",
+        "statusCli": "openskill-kit agent plugin-status --json"
       },
       {
         "host": "claude-code",
         "configPath": ".mcp.json",
-        "supportLevel": "supported"
+        "configFormat": "mcp-json",
+        "supportLevel": "supported",
+        "previewCli": "openskill-kit agent attach-plugin --host claude-code --dry-run",
+        "applyCli": "openskill-kit agent attach-plugin --host claude-code --yes",
+        "statusCli": "openskill-kit agent plugin-status --json"
       },
       {
         "host": "cursor",
         "configPath": ".cursor/mcp.json",
-        "supportLevel": "preview"
+        "configFormat": "mcp-json",
+        "supportLevel": "preview",
+        "previewCli": "openskill-kit agent attach-plugin --host cursor --dry-run",
+        "applyCli": "openskill-kit agent attach-plugin --host cursor --yes",
+        "statusCli": "openskill-kit agent plugin-status --json"
       },
       {
         "host": "generic-mcp",
         "configPath": ".mcp.json",
-        "supportLevel": "supported"
+        "configFormat": "mcp-json",
+        "supportLevel": "supported",
+        "previewCli": "openskill-kit agent attach-plugin --host generic-mcp --dry-run",
+        "applyCli": "openskill-kit agent attach-plugin --host generic-mcp --yes",
+        "statusCli": "openskill-kit agent plugin-status --json"
       }
     ]
   },
