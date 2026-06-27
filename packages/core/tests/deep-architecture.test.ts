@@ -282,6 +282,17 @@ describe("deep architecture hardening", () => {
     await expect(compileBehaviorLayer(root, { targets: ["plugin"] })).rejects.toThrow(/Invalid OpenSkillKit model routing/);
   });
 
+  it("keeps generated OpenCode launch artifacts on the golden path", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("golden", "Prefer golden OpenCode artifact coverage", "workflow", [])]);
+    await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const pluginRoot = path.join(root, ".openskill-kit", "compiled", "plugin");
+    const fixture = JSON.parse(await readFile(path.resolve("packages/core/tests/fixtures/opencode-golden.json"), "utf8")) as { files: Record<string, string> };
+    for (const [relative, expected] of Object.entries(fixture.files)) {
+      expect(await readFile(path.join(pluginRoot, relative), "utf8")).toBe(expected);
+    }
+  });
+
   it("regenerates compiled skills and plugin bundles without stale shards", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("testing-shard", "Prefer focused parser tests", "testing", ["src/parser"])]);
