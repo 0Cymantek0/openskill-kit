@@ -97,6 +97,14 @@ Harness behavior should stay conservative:
   outcome. It records redacted local evidence, writes session summaries, runs
   learning, and returns review next actions. Do not pass raw prompts, raw diffs,
   secrets, or hidden benchmark answers.
+- Route `/osk import session` to `osk_import_interaction_source` when the user
+  explicitly wants to ingest a Codex, Claude, Cursor, or manual session export.
+  Keep the first run as a preview/dry-run unless the user approves applying the
+  import; the command exists so harness users do not have to discover raw CLI
+  import names.
+- Route `/osk session imports` to `osk_list_interaction_imports` for import
+  history. It is read-only and reports receipts without exposing raw source
+  content.
 - Read the matching `install-guides/` file before applying any host-specific
   config.
 - Use `osk_get_plugin_attach_status` for readiness checks,

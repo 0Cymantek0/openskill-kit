@@ -84,6 +84,26 @@
         "fallback": "cli"
       },
       {
+        "command": "/osk import session",
+        "aliases": ["osk import transcript", "openskill import session"],
+        "description": "Preview or import a cross-agent session/export file as redacted local events; applying requires explicit approval.",
+        "mcpTool": "osk_import_interaction_source",
+        "cli": "openskill-kit interactions import <path>",
+        "readOnly": false,
+        "approvalRequired": true,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk session imports",
+        "aliases": ["osk imports", "openskill imports"],
+        "description": "List previous interaction import runs without raw source content.",
+        "mcpTool": "osk_list_interaction_imports",
+        "cli": "openskill-kit interactions imports",
+        "readOnly": true,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
         "command": "/osk learn from this session",
         "aliases": ["osk learn", "learn this session"],
         "description": "Extract candidate preferences from captured local events after user approval for any import source.",

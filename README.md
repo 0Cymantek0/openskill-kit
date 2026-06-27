@@ -308,6 +308,11 @@ task summary, commands, touched files, and outcome, then runs the same learning
 and review queue path as the CLI. Do not send raw prompts, raw diffs, secrets,
 or hidden benchmark answers as the summary.
 
+For cross-agent session learning, route `/osk import session` to
+`osk_import_interaction_source` and keep the first pass as a preview unless the
+user approves applying it. Route `/osk session imports` to
+`osk_list_interaction_imports` for read-only import receipts.
+
 ## Project Owner Workflow
 
 1. Initialize the project.

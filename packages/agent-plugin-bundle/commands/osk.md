@@ -29,6 +29,17 @@ import behavior packs without explicit user approval.
 - MCP tool: `osk_finish_agent_task`
 - CLI fallback: `openskill-kit finish-task --summary "<safe summary>"`
 
+### /osk import session
+
+- MCP tool: `osk_import_interaction_source`
+- CLI fallback: `openskill-kit interactions import <path>`
+- Explicit approval required: `yes`
+
+### /osk session imports
+
+- MCP tool: `osk_list_interaction_imports`
+- CLI fallback: `openskill-kit interactions imports`
+
 ### /osk learn from this session
 
 - MCP tool: `osk_learn_from_session`

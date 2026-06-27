@@ -86,12 +86,15 @@ if (pluginAgentManifest.name !== pluginManifest.name) throw new Error("compiled 
 if (pluginMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("compiled plugin MCP attachment missing");
 if (pluginManifest.integrity?.descriptorsHash !== pluginMcpHashes.descriptorsHash) throw new Error("compiled plugin descriptor hash mismatch");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")) throw new Error("compiled plugin command map missing status route");
+if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing approved session import route");
+if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.readOnly === true)) throw new Error("compiled plugin command map missing session import history route");
 if (!pluginManifest.files?.includes("commands/commands.json")) throw new Error("compiled plugin manifest missing command map file");
 if (!pluginManifest.files?.includes("install-guides/codex.md")) throw new Error("compiled plugin manifest missing Codex guide");
 if (!pluginMcpHashes.approvalRequiredTools?.includes("osk_install_agent_hooks")) throw new Error("compiled plugin descriptor approvals incomplete");
+if (!pluginMcpHashes.approvalRequiredTools?.includes("osk_import_interaction_source")) throw new Error("compiled plugin import descriptor approval missing");
 if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/")) throw new Error("compiled plugin privacy exclusions incomplete");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 15") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 17") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
 if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");
