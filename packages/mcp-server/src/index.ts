@@ -45,6 +45,7 @@ import {
   importEncryptedProjectBehaviorPack,
   importInteractionSource,
   inspectGitLocalContext,
+  planLearningSources,
   explainInteractionImport,
   installSkill,
   listInteractionAdapters,
@@ -236,6 +237,24 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult({ schemaVersion: "openskill-kit.interaction-adapters.v1", adapters: listInteractionAdapters() }, root);
+    }
+  );
+
+  server.registerTool(
+    "osk_plan_learning_sources",
+    {
+      title: "OpenSkillKit Plan Learning Sources",
+      description: "Plan safe, explicit, and blocked learning sources for /osk learn without importing raw memories, transcripts, prompts, diffs, or shell history.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        sourceMode: z.enum(["ask", "all-detected", "selected"]).default("ask"),
+        selectedSourceIds: z.array(z.string().min(1)).default([])
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, sourceMode, selectedSourceIds }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await planLearningSources(root, { sourceMode, selectedSourceIds }), root);
     }
   );
 

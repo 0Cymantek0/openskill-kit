@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { OSK_PUBLIC_COMMAND_FAMILIES, pluginCommandProjections, type OskCommandFamily } from "../commands/families.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
 export interface CompilePluginResult {
@@ -93,7 +94,7 @@ export interface AgentPluginInstallProfile {
   hostConfig: Array<{
     host: AgentPluginHostCompatibility["host"];
     configPath: string;
-    configFormat: "codex-toml" | "mcp-json";
+    configFormat: "codex-toml" | "mcp-json" | "opencode-json";
     supportLevel: AgentPluginHostCompatibility["supportLevel"];
     previewCli: string;
     applyCli: string;
@@ -110,10 +111,12 @@ export interface AgentPluginCommand {
   readOnly: boolean;
   approvalRequired: boolean;
   fallback: "cli";
+  visibility?: string;
+  familyId?: string;
 }
 
 export interface AgentPluginHostCompatibility {
-  host: "codex" | "claude-code" | "cursor" | "generic-mcp";
+  host: "opencode" | "codex" | "claude-code" | "cursor" | "generic-mcp";
   supportLevel: "supported" | "preview";
   requires: string[];
   configPath: string;
@@ -161,9 +164,16 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
   await writeJsonAtomic(path.join(pluginDir, "commands", "commands.json"), {
     schemaVersion: "openskill-kit.command-map.v1",
     routing: "prefer MCP tools when available; otherwise run the CLI fallback from the project root",
+    publicFamilyCount: OSK_PUBLIC_COMMAND_FAMILIES.length,
     commands: manifest.commands
   });
   await writeFileAtomic(path.join(pluginDir, "commands", "osk.md"), renderCommandGuide(manifest));
+  await writeJsonAtomic(path.join(pluginDir, "commands", "families.json"), {
+    schemaVersion: "openskill-kit.command-families.v1",
+    publicFamilyCount: OSK_PUBLIC_COMMAND_FAMILIES.length,
+    families: OSK_PUBLIC_COMMAND_FAMILIES
+  });
+  await writeOpenCodeArtifacts(pluginDir, OSK_PUBLIC_COMMAND_FAMILIES);
   for (const guide of pluginInstallGuides()) {
     await writeFileAtomic(path.join(pluginDir, "install-guides", guide.file), renderInstallGuide(guide));
   }
@@ -264,7 +274,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
     description: "Attachable local-first behavior layer for existing coding harnesses.",
     generatedBy: "openskill-kit",
     generatedAt: new Date().toISOString(),
-    compatibility: ["agent-plugin", "mcp-stdio", "agents-md", "codex", "claude-code"],
+    compatibility: ["agent-plugin", "mcp-stdio", "agents-md", "opencode", "codex", "claude-code"],
     hostCompatibility: pluginHostCompatibility(),
     capabilities: [
       "project-behavior-retrieval",
@@ -298,7 +308,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       defaultMode: "attach",
       steps: [
         "Attach this directory as a local plugin from the project root.",
-        "Read the matching file under `install-guides/` for Codex, Claude Code, Cursor, or generic MCP hosts.",
+        "Read the matching file under `install-guides/` for OpenCode, Codex, Claude Code, Cursor, or generic MCP hosts.",
         "Load `skills/` as repository-scoped skills.",
         "Map `/osk ...` requests using `commands/commands.json`; prefer MCP tools and fall back to CLI commands.",
         "Start `openskill-kit-mcp` with stdio from the project root when the harness supports MCP.",
@@ -380,7 +390,7 @@ function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]):
     hostConfig: hostCompatibility.map((host) => ({
       host: host.host,
       configPath: host.configPath,
-      configFormat: host.host === "codex" ? "codex-toml" : "mcp-json",
+      configFormat: host.host === "codex" ? "codex-toml" : host.host === "opencode" ? "opencode-json" : "mcp-json",
       supportLevel: host.supportLevel,
       previewCli: `openskill-kit agent attach-plugin --host ${host.host} --dry-run`,
       applyCli: `openskill-kit agent attach-plugin --host ${host.host} --yes`,
@@ -397,6 +407,17 @@ async function pluginSkillRefs(pluginDir: string): Promise<string[]> {
 
 function pluginHostCompatibility(): AgentPluginHostCompatibility[] {
   return [
+    {
+      host: "opencode",
+      supportLevel: "supported",
+      requires: ["project `.opencode/commands` support", "project `.opencode/plugins` support", "project `.opencode/skills` support", "stdio MCP client support", "agent/subagent config support"],
+      configPath: "opencode.json",
+      instructionSurface: ".opencode/commands, .opencode/skills, .opencode/agents, .opencode/plugins, AGENTS.md",
+      notes: [
+        "Primary launch target; full feature set lives here first.",
+        "OpenSkillKit writes project-local OpenCode config only after dry-run preview."
+      ]
+    },
     {
       host: "codex",
       supportLevel: "supported",
@@ -442,6 +463,22 @@ interface PluginInstallGuide {
 
 function pluginInstallGuides(): PluginInstallGuide[] {
   return [
+    {
+      file: "opencode.md",
+      title: "OpenCode Attach Guide",
+      host: "OpenCode",
+      steps: [
+        "Compile the plugin with `openskill-kit compile --target plugin`.",
+        "Review generated `.opencode/commands`, `.opencode/agents`, and `.opencode/plugins` under the compiled plugin.",
+        "Use `openskill-kit agent attach-plugin --host opencode --dry-run` to preview `opencode.json` and `.opencode/*` project writes.",
+        "Apply with `--yes` only after reviewing the diff, then restart OpenCode.",
+        "Run `/osk status` before relying on learned behavior."
+      ],
+      notes: [
+        "OpenCode is the primary full-feature target for command files, learner subagent, plugin metadata hooks, and MCP.",
+        "Generated hooks store metadata only by default and never raw prompts or raw diffs."
+      ]
+    },
     {
       file: "codex.md",
       title: "Codex Attach Guide",
@@ -506,54 +543,146 @@ function pluginInstallGuides(): PluginInstallGuide[] {
 }
 
 function pluginCommands(): AgentPluginCommand[] {
+  return pluginCommandProjections().map((item) => ({ ...item }));
+}
+
+async function writeOpenCodeArtifacts(pluginDir: string, families: OskCommandFamily[]): Promise<void> {
+  const root = path.join(pluginDir, "opencode");
+  const commandDir = path.join(root, "commands");
+  const agentDir = path.join(root, "agents");
+  const pluginDirOut = path.join(root, "plugins");
+  for (const family of families) {
+    await writeFileAtomic(path.join(commandDir, family.commandFile), renderOpenCodeCommand(family));
+  }
+  for (const agent of openCodeAgents()) {
+    await writeFileAtomic(path.join(agentDir, `${agent.id}.md`), renderOpenCodeAgent(agent));
+  }
+  await writeFileAtomic(path.join(pluginDirOut, "openskillkit.ts"), renderOpenCodePlugin());
+  await writeJsonAtomic(path.join(root, "model-routing.json"), {
+    schemaVersion: "openskill-kit.model-routing.v1",
+    defaultAgent: "osk-router",
+    agents: Object.fromEntries(openCodeAgents().map((agent) => [agent.id, {
+      mode: "subagent",
+      model: agent.model,
+      permissions: agent.permissions
+    }]))
+  });
+}
+
+function renderOpenCodeCommand(family: OskCommandFamily): string {
+  const agent = family.subagents[0] ?? "osk-router";
   return [
-    command("/osk init", ["openskill init", "bootstrap openskill"], "Initialize or bootstrap project behavior state and report plugin readiness.", "osk_bootstrap_session", "openskill-kit init && openskill-kit status", false, false),
-    command("/osk status", ["osk status", "openskill status"], "Show learned behavior, compiled artifacts, plugin readiness, and next actions.", "osk_bootstrap_session", "openskill-kit status", true, false),
-    command("/osk context", ["osk task context", "openskill context"], "Return route plan, relevant behavior, plugin health, review state, and next actions for the current coding task.", "osk_get_agent_task_context", "openskill-kit context --query \"<task>\"", false, false),
-    command("/osk finish task", ["osk task done", "openskill finish task"], "Record safe task outcome evidence, run learning, write session summaries, and return review next actions.", "osk_finish_agent_task", "openskill-kit finish-task --summary \"<safe summary>\"", false, false),
-    command("/osk import adapters", ["osk adapters", "openskill import adapters"], "List supported cross-agent import adapters, accepted formats, privacy policy, and adapter status.", "osk_list_interaction_adapters", "openskill-kit interactions adapters", true, false),
-    command("/osk import session", ["osk import transcript", "openskill import session"], "Preview or import a cross-agent session/export file as redacted local events; applying requires explicit approval.", "osk_import_interaction_source", "openskill-kit interactions import <path>", false, true),
-    command("/osk import review", ["osk import review comments", "openskill import review"], "Preview or import a local review-comment file as redacted review feedback events; applying requires explicit approval.", "osk_import_interaction_source", "openskill-kit interactions import-review <path>", false, true),
-    command("/osk import terminal", ["osk import terminal history", "openskill import terminal"], "Preview or import an explicit terminal history file as allowlisted command metadata only; applying requires explicit approval.", "osk_import_interaction_source", "openskill-kit interactions import-terminal <path>", false, true),
-    command("/osk session imports", ["osk imports", "openskill imports"], "List previous interaction import runs without raw source content.", "osk_list_interaction_imports", "openskill-kit interactions imports", true, false),
-    command("/osk explain import", ["osk import explain", "openskill explain import"], "Explain one interaction import receipt, privacy state, and learning next actions without reading raw source content.", "osk_explain_interaction_import", "openskill-kit interactions explain <run-id>", true, false),
-    command("/osk interaction pool", ["osk interactions pool", "openskill interaction pool"], "List normalized cross-agent interaction metadata records without raw source content.", "osk_get_interaction_pool", "openskill-kit interactions pool", true, false),
-    command("/osk git context", ["osk git", "openskill git context"], "Inspect local branch, changed files, aggregate diff stats, and recent commits without raw diffs or file contents.", "osk_get_git_local_context", "openskill-kit interactions git-context", true, false),
-    command("/osk learn from this session", ["osk learn", "learn this session"], "Extract candidate preferences from captured local events after user approval for any import source.", "osk_learn_from_session", "openskill-kit learn", false, false),
-    command("/osk explain why you learned this", ["osk explain", "explain preference"], "Explain a learned preference through sanitized evidence cards.", "osk_explain_preference", "openskill-kit explain <preference-id>", true, false),
-    command("/osk review pending behavior", ["osk review", "review behavior"], "Open the review queue for candidate behavior before activation.", "osk_get_review_queue", "openskill-kit review", false, false),
-    command("/osk update skills", ["osk compile skills", "update project skills"], "Compile project-scoped skills from active behavior.", "osk_compile_behavior_layer", "openskill-kit compile --target agent-skills", false, false),
-    command("/osk update AGENTS.md", ["osk update agents", "compile project rules"], "Preview managed AGENTS/CLAUDE instruction updates.", "osk_compile_behavior_layer", "openskill-kit compile --target project-rules", false, false),
-    command("/osk install hooks", ["osk hooks", "install openskill hooks"], "Preview or install local hooks; requires explicit user approval before enabling execution.", "osk_install_agent_hooks", "openskill-kit hooks install --dry-run", false, true),
-    command("/osk attach plugin", ["osk attach", "attach openskill plugin"], "Preview host MCP config needed to attach this plugin to an existing coding harness; applying requires explicit approval.", "osk_preview_plugin_attach", "openskill-kit agent attach-plugin --host generic-mcp --dry-run", false, false),
-    command("/osk plugin health", ["osk plugin status", "openskill plugin health"], "Show host attachment health for the compiled plugin, including root binding, invalid JSON, and command conflicts.", "osk_get_plugin_attach_status", "openskill-kit agent plugin-status", true, false),
-    command("/osk plugin install profile", ["osk install profile", "openskill plugin install profile"], "Return the machine-readable install contract for existing coding harnesses: first call, MCP command, env binding, command map, and approval gates.", "osk_get_plugin_install_profile", "openskill-kit agent plugin-install-profile", true, false),
-    command("/osk run behavior eval", ["osk eval", "behavior eval"], "Run local behavior replay/evaluation gates and return artifact paths.", "osk_run_behavior_eval", "openskill-kit eval", false, false),
-    command("/osk openworld doctor", ["osk ow doctor", "openskill openworld doctor"], "Show which OpenWorld capabilities are real today and which remain unproven.", "osk_openworld_doctor", "openskill-kit openworld doctor", true, false),
-    command("/osk openworld source plan", ["osk ow source plan", "openskill openworld source plan"], "Plan leakage-audited local and explicit web source candidates for an OpenWorld task.", "osk_openworld_source_plan", "openskill-kit openworld source-plan --task-id <task-id>", false, false),
-    command("/osk openworld build verifier", ["osk ow build verifier", "openskill openworld build verifier"], "Build a leakage-audited visible/holdout verifier suite from Anchor Cards, preserving manual-review anchors and traceable local file assertions.", "osk_openworld_build_verifier", "openskill-kit openworld build-verifier --task-id <task-id> --anchor-id <anchor-id>", false, false),
-    command("/osk openworld verifier quality", ["osk ow verifier quality", "openskill openworld verifier quality"], "Score a generated OpenWorld verifier suite for traceability, determinism, holdout coverage, source trust, and leakage metadata.", "osk_openworld_verifier_quality", "openskill-kit openworld verifier-quality --task-id <task-id> --suite-id <suite-id>", true, false),
-    command("/osk openworld run verifier", ["osk ow run verifier", "openskill openworld run verifier"], "Run a generated OpenWorld verifier split through local-process or opt-in Docker sandbox mode and write execution results.", "osk_openworld_run_verifier", "openskill-kit openworld run-verifier --task-id <task-id> --suite-id <suite-id> --split visible", false, false),
-    command("/osk openworld refine", ["osk ow refine", "openskill openworld refine"], "Run bounded visible verifier refinement and final holdout check for a candidate skill.", "osk_openworld_refine", "openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>", false, false),
-    command("/osk openworld hidden oracle harness", ["osk ow hidden oracle harness", "openskill openworld hidden oracle harness"], "Write denied-path and benchmark-readiness harness metadata without reading oracle contents or claiming hidden-oracle proof.", "osk_openworld_hidden_oracle_harness", "openskill-kit openworld hidden-oracle-harness --task-id <task-id> --suite-id <suite-id>", false, false),
-    command("/osk openworld report", ["osk ow report", "openskill openworld report"], "Render task evidence, sources, anchors, verifier runs, eval reports, and remaining proof gaps.", "osk_openworld_task_report", "openskill-kit openworld report --task-id <task-id> --write", false, false),
-    command("/osk openworld promote review", ["osk ow promote review", "openskill openworld promote review"], "Create a review-only proposal from a passed OpenWorld run; it never activates behavior directly.", "osk_openworld_promote_review", "openskill-kit openworld promote-review --run-id <run-id> --dry-run", false, true),
-    command("/osk evolve this skill", ["osk evolve", "evolve skill"], "Draft, verify, and evaluate a reusable skill from local evidence.", undefined, "openskill-kit evolve \"<topic>\" --no-llm", false, false),
-    command("/osk sync project behavior pack", ["osk pack", "sync behavior pack"], "Export or import behavior packs only through review, verification, and trust gates.", "osk_export_behavior_pack", "openskill-kit pack export", false, true)
+    "---",
+    `description: ${JSON.stringify(family.oneLine)}`,
+    `agent: ${agent}`,
+    "subtask: true",
+    "---",
+    "",
+    `# ${family.publicCommand}`,
+    "",
+    family.userIntent,
+    "",
+    "## First Call",
+    "",
+    family.mcpTool
+      ? `Call MCP tool \`${family.mcpTool}\` first. If MCP unavailable, run \`${family.cli}\` from project root.`
+      : `Run \`${family.cli}\` from project root.`,
+    "",
+    "## Workflow",
+    "",
+    ...family.workflowSteps.map((step, index) => `${index + 1}. ${step}`),
+    "",
+    "## Safety",
+    "",
+    `Approval required: ${family.approvalRequired ? "yes" : "no"}.`,
+    ...family.neverReads.map((item) => `- Never read ${item}.`),
+    ...family.neverWrites.map((item) => `- Never write ${item}.`),
+    "",
+    "## Return",
+    "",
+    family.outputSummary,
+    ""
+  ].join("\n");
+}
+
+interface OpenCodeAgentSpec {
+  id: string;
+  description: string;
+  model: string;
+  permissions: Record<string, "allow" | "ask" | "deny">;
+}
+
+function openCodeAgents(): OpenCodeAgentSpec[] {
+  return [
+    agent("osk-router", "Route OSK commands, read status, and keep context compact.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "deny", question: "ask", webfetch: "deny", websearch: "deny" }),
+    agent("osk-learner", "Plan explicit learning sources and run review-gated learning.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "allow", webfetch: "deny", websearch: "deny" }),
+    agent("osk-reviewer", "Explain and apply behavior review decisions.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "allow", webfetch: "deny", websearch: "deny" }),
+    agent("osk-researcher", "Plan OpenWorld sources and anchors under leakage policy.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "ask", websearch: "deny" }),
+    agent("osk-evolver", "Generate and refine review-only candidate skills.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
+    agent("osk-verifier", "Run integrity, privacy, verifier, and proof-boundary checks.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
+    agent("osk-evaluator", "Run replay and external-agent eval workflows.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
+    agent("osk-docs", "Polish generated OSK documentation with approval for docs edits.", "default", { read: "allow", list: "allow", grep: "allow", edit: "ask", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" })
   ];
 }
 
-function command(commandText: string, aliases: string[], description: string, mcpTool: string | undefined, cli: string, readOnly: boolean, approvalRequired: boolean): AgentPluginCommand {
-  return {
-    command: commandText,
-    aliases,
-    description,
-    mcpTool,
-    cli,
-    readOnly,
-    approvalRequired,
-    fallback: "cli"
-  };
+function agent(id: string, description: string, model: string, permissions: OpenCodeAgentSpec["permissions"]): OpenCodeAgentSpec {
+  return { id, description, model, permissions };
+}
+
+function renderOpenCodeAgent(agentSpec: OpenCodeAgentSpec): string {
+  return [
+    "---",
+    `description: ${JSON.stringify(agentSpec.description)}`,
+    `model: ${agentSpec.model}`,
+    "mode: subagent",
+    "permissions:",
+    ...Object.entries(agentSpec.permissions).map(([key, value]) => `  ${key}: ${value}`),
+    "---",
+    "",
+    `# ${agentSpec.id}`,
+    "",
+    agentSpec.description,
+    "",
+    "Use OSK MCP facade tools first. Keep imports, host writes, sandbox runs, and behavior activation behind the approval gates described by the command file.",
+    "Never store raw prompts, raw diffs, secrets, user/global memories, or hidden benchmark answers.",
+    ""
+  ].join("\n");
+}
+
+function renderOpenCodePlugin(): string {
+  return [
+    "import { App } from \"opencode\";",
+    "",
+    "export const OpenSkillKitPlugin = async ({ app }: { app: App }) => {",
+    "  const emit = async (eventType: string, metadata: Record<string, unknown>) => {",
+    "    // Metadata-only by default. Raw prompts, raw diffs, tool output, and secrets stay out.",
+    "    app.log?.info?.(\"openskill-kit\", { eventType, metadata });",
+    "  };",
+    "",
+    "  app.on?.(\"session.created\", async (event: unknown) => emit(\"session-start\", safe(event)));",
+    "  app.on?.(\"tool.execute.before\", async (event: unknown) => emit(\"pre-tool-use\", safe(event)));",
+    "  app.on?.(\"tool.execute.after\", async (event: unknown) => emit(\"post-tool-use\", safe(event)));",
+    "  app.on?.(\"file.edited\", async (event: unknown) => emit(\"file-changed\", safe(event)));",
+    "  app.on?.(\"permission.asked\", async (event: unknown) => emit(\"permission-request\", safe(event)));",
+    "  app.on?.(\"permission.replied\", async (event: unknown) => emit(\"permission-decision\", safe(event)));",
+    "  app.on?.(\"session.diff\", async (event: unknown) => emit(\"diff-stats\", safe(event)));",
+    "  app.on?.(\"session.idle\", async (event: unknown) => emit(\"finish-task-suggestion\", safe(event)));",
+    "  app.on?.(\"tui.command.execute\", async (event: unknown) => emit(\"command-intent\", safe(event)));",
+    "};",
+    "",
+    "function safe(event: unknown): Record<string, unknown> {",
+    "  if (!event || typeof event !== \"object\") return {};",
+    "  const source = event as Record<string, unknown>;",
+    "  const out: Record<string, unknown> = {};",
+    "  for (const key of [\"id\", \"type\", \"tool\", \"command\", \"path\", \"status\", \"decision\", \"timestamp\"]) {",
+    "    if (key in source) out[key] = source[key];",
+    "  }",
+    "  return out;",
+    "}",
+    "",
+    "export default OpenSkillKitPlugin;",
+    ""
+  ].join("\n");
 }
 
 function renderReadme(manifest: AgentPluginManifest): string {

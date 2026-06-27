@@ -72,6 +72,7 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
     mcpConfig(projectRoot, ".claude/settings.json", "mcp", ["Claude Code project settings; review MCP servers before attaching OpenSkillKit."]),
     config(projectRoot, ".mcp.json", "mcp", ["Project MCP config."]),
     config(projectRoot, ".cursor/mcp.json", "mcp", ["Cursor MCP config."]),
+    configFile(projectRoot, "opencode.json", "opencode", ["OpenCode project config; attachment remains project-local and preview-first."]),
     configFile(projectRoot, ".codex/config.toml", "codex", ["Project Codex config; detected for harness awareness, never parsed as JSON."]),
     config(projectRoot, "continue/config.json", "mcp", ["Continue project config; review MCP server entries before attaching OpenSkillKit."]),
     configFile(projectRoot, ".cursorrules", "cursor", ["Legacy Cursor rules; adapter write support remains preview-only."]),
@@ -83,6 +84,9 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
     generated(projectRoot, ".openskill-kit/compiled/plugin/.mcp.json", "mcp-config"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/commands/commands.json", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/commands/osk.md", "compiled-artifact"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/commands/families.json", "compiled-artifact"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/opencode/model-routing.json", "compiled-artifact"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/opencode/plugins/openskillkit.ts", "compiled-artifact"),
     hook(projectRoot, ".agents/hooks/openskill-kit.json", "project"),
     hook(projectRoot, ".openskill-kit/compiled/hooks/hooks.json", "project")
   ];
@@ -90,7 +94,12 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
   specs.push(...(await nestedInstructionSpecs(projectRoot)));
   specs.push(...(await filesInDir(projectRoot, ".claude/rules", "claude-code", "rule-file", "safe-read", "generated-only", "medium")));
   specs.push(...(await filesInDir(projectRoot, ".cursor/rules", "cursor", "rule-file", "safe-read", "preview-only", "medium")));
-  specs.push(...(await skillSpecs(projectRoot, ".agents/skills", "project")));
+  specs.push(...(await filesInDir(projectRoot, ".opencode/commands", "opencode", "rule-file", "safe-read", "generated-only", "medium")));
+  specs.push(...(await filesInDir(projectRoot, ".opencode/agents", "opencode", "rule-file", "safe-read", "generated-only", "medium")));
+  specs.push(...(await filesInDir(projectRoot, ".opencode/plugins", "opencode", "hook-config", "safe-read", "explicit-apply", "medium")));
+  specs.push(...(await filesInDir(projectRoot, ".openskill-kit/compiled/plugin/opencode/commands", "openskill-kit", "compiled-artifact", "safe-read", "generated-only", "low")));
+  specs.push(...(await filesInDir(projectRoot, ".openskill-kit/compiled/plugin/opencode/agents", "openskill-kit", "compiled-artifact", "safe-read", "generated-only", "low")));
+    specs.push(...(await skillSpecs(projectRoot, ".agents/skills", "project")));
   specs.push(...(await skillSpecs(projectRoot, ".claude/skills", "project")));
   specs.push(...(await skillSpecs(projectRoot, ".codex/skills", "project")));
   specs.push(...(await interactionExportSpecs(projectRoot)));

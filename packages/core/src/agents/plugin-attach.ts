@@ -1,10 +1,11 @@
 import { promises as fs } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { compileBehaviorLayer } from "../compiler/package-compiler.js";
 import { getCompiledPluginStatus, type AgentPluginInstallProfile, type CompiledPluginStatus } from "../compiler/plugin-compiler.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
-export const AgentPluginAttachHosts = ["codex", "claude-code", "cursor", "generic-mcp"] as const;
+export const AgentPluginAttachHosts = ["opencode", "codex", "claude-code", "cursor", "generic-mcp"] as const;
 export type AgentPluginAttachHost = typeof AgentPluginAttachHosts[number];
 export const AGENT_PLUGIN_PROJECT_ROOT_ENV = "OPENSKILLKIT_PROJECT_ROOT";
 
@@ -72,7 +73,8 @@ interface AttachReceipt {
 
 interface HostConfigTarget {
   destination: string;
-  format: "json-mcp" | "codex-toml";
+  format: "json-mcp" | "codex-toml" | "opencode-json" | "copy";
+  source?: string;
 }
 
 export async function attachAgentPlugin(
@@ -89,7 +91,7 @@ export async function attachAgentPlugin(
   if (!plugin.ready) {
     return blocked(root, host, plugin, [`Plugin is not ready: ${[...plugin.missing, ...plugin.integrityIssues].join(", ")}`]);
   }
-  const files = await Promise.all(hostConfigTargets(root, host).map((target) => planHostConfig(target, plugin.mcpServerCommand, root)));
+  const files = await Promise.all(hostConfigTargets(root, host, plugin.pluginDir).map((target) => planHostConfig(target, plugin.mcpServerCommand, root)));
   const blockedFiles = files.filter((file) => file.action === "blocked");
   if (blockedFiles.length) {
     return {
@@ -210,10 +212,41 @@ export async function getAgentPluginInstallProfile(projectRoot: string): Promise
   };
 }
 
-function hostConfigTargets(root: string, host: AgentPluginAttachHost): HostConfigTarget[] {
+function hostConfigTargets(root: string, host: AgentPluginAttachHost, pluginDir?: string): HostConfigTarget[] {
+  if (host === "opencode") {
+    const generated = pluginDir ? [
+      ...copyTargets(root, pluginDir, "opencode/commands", ".opencode/commands"),
+      ...copyTargets(root, pluginDir, "opencode/agents", ".opencode/agents"),
+      ...copyTargets(root, pluginDir, "opencode/plugins", ".opencode/plugins"),
+      ...copyTargets(root, pluginDir, "opencode/model-routing.json", ".opencode/model-routing.json")
+    ] : [];
+    return [{ destination: path.join(root, "opencode.json"), format: "opencode-json" }, ...generated];
+  }
   if (host === "codex") return [{ destination: path.join(root, ".codex", "config.toml"), format: "codex-toml" }];
   if (host === "cursor") return [{ destination: path.join(root, ".cursor", "mcp.json"), format: "json-mcp" }];
   return [{ destination: path.join(root, ".mcp.json"), format: "json-mcp" }];
+}
+
+function copyTargets(root: string, pluginDir: string, sourceRelative: string, destinationRelative: string): HostConfigTarget[] {
+  const source = path.join(pluginDir, sourceRelative);
+  if (!existsSync(source)) return [];
+  if (statSync(source).isFile()) {
+    return [{ source, destination: path.join(root, destinationRelative), format: "copy" }];
+  }
+  const out: HostConfigTarget[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else out.push({
+        source: full,
+        destination: path.join(root, destinationRelative, path.relative(source, full)),
+        format: "copy"
+      });
+    }
+  };
+  walk(source);
+  return out;
 }
 
 async function inspectHostAttach(root: string, host: AgentPluginAttachHost, plugin: CompiledPluginStatus, receipts: Array<{ path: string; receipt: AttachReceipt }>): Promise<AgentPluginHostAttachStatus> {
@@ -222,6 +255,7 @@ async function inspectHostAttach(root: string, host: AgentPluginAttachHost, plug
   const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
   if (existing === undefined) return { host, destination, status: "missing", projectRootBound: false, issue: "Host MCP config missing" };
   if (target.format === "codex-toml") return inspectAttachedServer(root, host, destination, parseCodexTomlMcpServer(existing, root), plugin, receipts);
+  if (target.format === "opencode-json") return inspectOpenCodeConfig(root, host, destination, existing, plugin, receipts);
   let parsed: McpConfig;
   try {
     parsed = JSON.parse(existing) as McpConfig;
@@ -299,6 +333,8 @@ async function listAttachReceipts(root: string): Promise<Array<{ path: string; r
 
 async function planHostConfig(target: HostConfigTarget, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {
   if (target.format === "codex-toml") return planCodexTomlConfig(target.destination, command, projectRoot);
+  if (target.format === "opencode-json") return planOpenCodeConfig(target.destination, command, projectRoot);
+  if (target.format === "copy") return planCopyFile(target);
   return planMcpConfig(target.destination, command, projectRoot);
 }
 
@@ -337,6 +373,87 @@ async function planMcpConfig(destination: string, command: string, projectRoot: 
     preview: next,
     diff: unifiedDiff(destination, before, after)
   };
+}
+
+async function planOpenCodeConfig(destination: string, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {
+  const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
+  let parsed: Record<string, unknown> = {};
+  if (existing?.trim()) {
+    try {
+      parsed = JSON.parse(existing) as Record<string, unknown>;
+    } catch {
+      return {
+        destination,
+        action: "blocked",
+        issue: "Existing OpenCode config is not valid JSON",
+        diff: unifiedDiff(destination, existing, existing)
+      };
+    }
+  }
+  const before = existing ?? "";
+  const currentMcp = isRecord(parsed.mcp) ? parsed.mcp : {};
+  const currentPlugins = Array.isArray(parsed.plugin) ? parsed.plugin.filter((item): item is string => typeof item === "string") : [];
+  const nextPlugins = [...new Set([...currentPlugins, ".opencode/plugins/openskillkit.ts"])];
+  const next: Record<string, unknown> = {
+    ...parsed,
+    mcp: {
+      ...currentMcp,
+      "openskill-kit": {
+        type: "local",
+        command: [command],
+        enabled: true,
+        environment: {
+          [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot
+        }
+      }
+    },
+    plugin: nextPlugins
+  };
+  const after = `${JSON.stringify(next, null, 2)}\n`;
+  return {
+    destination,
+    action: existing === undefined ? "create" : before === after ? "unchanged" : "update",
+    preview: next,
+    diff: unifiedDiff(destination, before, after)
+  };
+}
+
+async function planCopyFile(target: HostConfigTarget): Promise<AgentPluginAttachFile> {
+  if (!target.source) return { destination: target.destination, action: "blocked", issue: "Missing generated source file" };
+  const existing = await fs.readFile(target.destination, "utf8").catch(() => undefined);
+  const next = await fs.readFile(target.source, "utf8");
+  return {
+    destination: target.destination,
+    action: existing === undefined ? "create" : existing === next ? "unchanged" : "update",
+    preview: next,
+    diff: unifiedDiff(target.destination, existing ?? "", next)
+  };
+}
+
+function inspectOpenCodeConfig(
+  root: string,
+  host: AgentPluginAttachHost,
+  destination: string,
+  existing: string,
+  plugin: CompiledPluginStatus,
+  receipts: Array<{ path: string; receipt: AttachReceipt }>
+): AgentPluginHostAttachStatus {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(existing) as Record<string, unknown>;
+  } catch {
+    return { host, destination, status: "invalid-json", projectRootBound: false, issue: "OpenCode config is not valid JSON" };
+  }
+  const mcp = isRecord(parsed.mcp) ? parsed.mcp : {};
+  const server = isRecord(mcp["openskill-kit"]) ? mcp["openskill-kit"] : undefined;
+  const commandValue = server?.command;
+  const command = Array.isArray(commandValue) && typeof commandValue[0] === "string"
+    ? commandValue[0]
+    : typeof commandValue === "string"
+      ? commandValue
+      : undefined;
+  const environment = isRecord(server?.environment) ? server.environment : {};
+  return inspectAttachedServer(root, host, destination, { command, projectRootBound: environment[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root }, plugin, receipts);
 }
 
 async function planCodexTomlConfig(destination: string, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {

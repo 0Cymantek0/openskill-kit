@@ -137,6 +137,33 @@ describe("agent plugin attach planner", () => {
     expect(planned.files[0]?.destination).toBe(path.join(root, ".cursor", "mcp.json"));
   });
 
+  it("previews and applies OpenCode config plus generated command artifacts", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode", "Prefer OpenCode command files for OSK workflows", "workflow")]);
+    await writeFile(path.join(root, "opencode.json"), `${JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2)}\n`, "utf8");
+
+    const planned = await attachAgentPlugin(root, { host: "opencode", dryRun: true });
+
+    expect(planned.status).toBe("planned");
+    expect(planned.files.some((file) => file.destination === path.join(root, "opencode.json") && file.action === "update")).toBe(true);
+    expect(planned.files.some((file) => file.destination === path.join(root, ".opencode", "commands", "osk-learn.md"))).toBe(true);
+    expect(planned.files.some((file) => file.destination === path.join(root, ".opencode", "agents", "osk-learner.md"))).toBe(true);
+    expect(planned.files.some((file) => file.destination === path.join(root, ".opencode", "plugins", "openskillkit.ts"))).toBe(true);
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
+
+    const attached = await attachAgentPlugin(root, { host: "opencode", dryRun: false, yes: true });
+    expect(attached.status).toBe("attached");
+    const config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
+    expect(config.keep).toBe(true);
+    expect(config.plugin).toEqual(expect.arrayContaining(["./custom.ts", ".opencode/plugins/openskillkit.ts"]));
+    expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
+    expect(config.mcp["openskill-kit"].environment.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
+    expect(await readFile(path.join(root, ".opencode", "commands", "osk-learn.md"), "utf8")).toContain("osk_plan_learning_sources");
+    expect(await readFile(path.join(root, ".opencode", "agents", "osk-learner.md"), "utf8")).toContain("question: allow");
+    const status = await getAgentPluginAttachStatus(root);
+    expect(status.hosts.find((host) => host.host === "opencode")?.status).toBe("attached");
+  });
+
   it("reports Codex config root binding and command conflicts", async () => {
     const root = await tempProject();
     await mkdir(path.join(root, ".codex"), { recursive: true });

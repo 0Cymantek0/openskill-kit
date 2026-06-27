@@ -4,7 +4,7 @@ export const AgentSurfaceSchema = z.object({
   schemaVersion: z.literal("openskill-kit.agent-surface.v1"),
   id: z.string().min(1),
   detectedAt: z.string().datetime(),
-  adapter: z.enum(["agents-md", "codex", "claude-code", "cursor", "mcp", "skills", "hooks", "openskill-kit", "other"]),
+  adapter: z.enum(["agents-md", "opencode", "codex", "claude-code", "cursor", "mcp", "skills", "hooks", "openskill-kit", "other"]),
   surfaceType: z.enum([
     "instruction-file",
     "override-file",

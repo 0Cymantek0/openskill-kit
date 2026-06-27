@@ -9,7 +9,7 @@ OpenWorld routes are review-only unless an explicit review action later activate
 
 ### /osk init
 
-Initialize or bootstrap project behavior state and report plugin readiness.
+Initialize project-local OSK state and preview harness attach.
 
 - MCP tool: `osk_bootstrap_session`
 - CLI fallback: `openskill-kit init && openskill-kit status`
@@ -18,286 +18,97 @@ Initialize or bootstrap project behavior state and report plugin readiness.
 
 ### /osk status
 
-Show learned behavior, compiled artifacts, plugin readiness, and next actions.
+Show behavior, review, plugin, and harness health.
 
 - MCP tool: `osk_bootstrap_session`
 - CLI fallback: `openskill-kit status`
 - Read-only: `yes`
 - Explicit approval required: `no`
 
-### /osk context
+### /osk task
 
-Return route plan, relevant behavior, plugin health, review state, and next actions for the current coding task.
+Load task context before work and record safe outcome after work.
 
 - MCP tool: `osk_get_agent_task_context`
 - CLI fallback: `openskill-kit context --query "<task>"`
 - Read-only: `no`
 - Explicit approval required: `no`
 
-### /osk finish task
+### /osk learn
 
-Record safe task outcome evidence, run learning, write session summaries, and return review next actions.
+Plan and run explicit, review-gated learning from selected sources.
 
-- MCP tool: `osk_finish_agent_task`
-- CLI fallback: `openskill-kit finish-task --summary "<safe summary>"`
-- Read-only: `no`
-- Explicit approval required: `no`
-
-### /osk import adapters
-
-List supported cross-agent import adapters, accepted formats, privacy policy, and adapter status.
-
-- MCP tool: `osk_list_interaction_adapters`
-- CLI fallback: `openskill-kit interactions adapters`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk import session
-
-Preview or import a cross-agent session/export file as redacted local events; applying requires explicit approval.
-
-- MCP tool: `osk_import_interaction_source`
-- CLI fallback: `openskill-kit interactions import <path>`
-- Read-only: `no`
-- Explicit approval required: `yes`
-
-### /osk import review
-
-Preview or import a local review-comment file as redacted review feedback events; applying requires explicit approval.
-
-- MCP tool: `osk_import_interaction_source`
-- CLI fallback: `openskill-kit interactions import-review <path>`
-- Read-only: `no`
-- Explicit approval required: `yes`
-
-### /osk import terminal
-
-Preview or import an explicit terminal history file as allowlisted command metadata only; applying requires explicit approval.
-
-- MCP tool: `osk_import_interaction_source`
-- CLI fallback: `openskill-kit interactions import-terminal <path>`
-- Read-only: `no`
-- Explicit approval required: `yes`
-
-### /osk session imports
-
-List previous interaction import runs without raw source content.
-
-- MCP tool: `osk_list_interaction_imports`
-- CLI fallback: `openskill-kit interactions imports`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk explain import
-
-Explain one interaction import receipt, privacy state, and learning next actions without reading raw source content.
-
-- MCP tool: `osk_explain_interaction_import`
-- CLI fallback: `openskill-kit interactions explain <run-id>`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk interaction pool
-
-List normalized cross-agent interaction metadata records without raw source content.
-
-- MCP tool: `osk_get_interaction_pool`
-- CLI fallback: `openskill-kit interactions pool`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk git context
-
-Inspect local branch, changed files, aggregate diff stats, and recent commits without raw diffs or file contents.
-
-- MCP tool: `osk_get_git_local_context`
-- CLI fallback: `openskill-kit interactions git-context`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk learn from this session
-
-Extract candidate preferences from captured local events after user approval for any import source.
-
-- MCP tool: `osk_learn_from_session`
+- MCP tool: `osk_plan_learning_sources`
 - CLI fallback: `openskill-kit learn`
 - Read-only: `no`
-- Explicit approval required: `no`
+- Explicit approval required: `yes`
 
-### /osk explain why you learned this
+### /osk review
 
-Explain a learned preference through sanitized evidence cards.
-
-- MCP tool: `osk_explain_preference`
-- CLI fallback: `openskill-kit explain <preference-id>`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk review pending behavior
-
-Open the review queue for candidate behavior before activation.
+Inspect and approve, reject, lock, or demote candidate behavior.
 
 - MCP tool: `osk_get_review_queue`
 - CLI fallback: `openskill-kit review`
 - Read-only: `no`
 - Explicit approval required: `no`
 
-### /osk update skills
+### /osk research
 
-Compile project-scoped skills from active behavior.
-
-- MCP tool: `osk_compile_behavior_layer`
-- CLI fallback: `openskill-kit compile --target agent-skills`
-- Read-only: `no`
-- Explicit approval required: `no`
-
-### /osk update AGENTS.md
-
-Preview managed AGENTS/CLAUDE instruction updates.
-
-- MCP tool: `osk_compile_behavior_layer`
-- CLI fallback: `openskill-kit compile --target project-rules`
-- Read-only: `no`
-- Explicit approval required: `no`
-
-### /osk install hooks
-
-Preview or install local hooks; requires explicit user approval before enabling execution.
-
-- MCP tool: `osk_install_agent_hooks`
-- CLI fallback: `openskill-kit hooks install --dry-run`
-- Read-only: `no`
-- Explicit approval required: `yes`
-
-### /osk attach plugin
-
-Preview host MCP config needed to attach this plugin to an existing coding harness; applying requires explicit approval.
-
-- MCP tool: `osk_preview_plugin_attach`
-- CLI fallback: `openskill-kit agent attach-plugin --host generic-mcp --dry-run`
-- Read-only: `no`
-- Explicit approval required: `no`
-
-### /osk plugin health
-
-Show host attachment health for the compiled plugin, including root binding, invalid JSON, and command conflicts.
-
-- MCP tool: `osk_get_plugin_attach_status`
-- CLI fallback: `openskill-kit agent plugin-status`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk plugin install profile
-
-Return the machine-readable install contract for existing coding harnesses: first call, MCP command, env binding, command map, and approval gates.
-
-- MCP tool: `osk_get_plugin_install_profile`
-- CLI fallback: `openskill-kit agent plugin-install-profile`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk run behavior eval
-
-Run local behavior replay/evaluation gates and return artifact paths.
-
-- MCP tool: `osk_run_behavior_eval`
-- CLI fallback: `openskill-kit eval`
-- Read-only: `no`
-- Explicit approval required: `no`
-
-### /osk openworld doctor
-
-Show which OpenWorld capabilities are real today and which remain unproven.
-
-- MCP tool: `osk_openworld_doctor`
-- CLI fallback: `openskill-kit openworld doctor`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk openworld source plan
-
-Plan leakage-audited local and explicit web source candidates for an OpenWorld task.
+Plan leakage-audited sources and anchors for unfamiliar tasks.
 
 - MCP tool: `osk_openworld_source_plan`
 - CLI fallback: `openskill-kit openworld source-plan --task-id <task-id>`
 - Read-only: `no`
 - Explicit approval required: `no`
 
-### /osk openworld build verifier
+### /osk evolve
 
-Build a leakage-audited visible/holdout verifier suite from Anchor Cards, preserving manual-review anchors and traceable local file assertions.
-
-- MCP tool: `osk_openworld_build_verifier`
-- CLI fallback: `openskill-kit openworld build-verifier --task-id <task-id> --anchor-id <anchor-id>`
-- Read-only: `no`
-- Explicit approval required: `no`
-
-### /osk openworld verifier quality
-
-Score a generated OpenWorld verifier suite for traceability, determinism, holdout coverage, source trust, and leakage metadata.
-
-- MCP tool: `osk_openworld_verifier_quality`
-- CLI fallback: `openskill-kit openworld verifier-quality --task-id <task-id> --suite-id <suite-id>`
-- Read-only: `yes`
-- Explicit approval required: `no`
-
-### /osk openworld run verifier
-
-Run a generated OpenWorld verifier split through local-process or opt-in Docker sandbox mode and write execution results.
-
-- MCP tool: `osk_openworld_run_verifier`
-- CLI fallback: `openskill-kit openworld run-verifier --task-id <task-id> --suite-id <suite-id> --split visible`
-- Read-only: `no`
-- Explicit approval required: `no`
-
-### /osk openworld refine
-
-Run bounded visible verifier refinement and final holdout check for a candidate skill.
+Generate review-only candidate skills from anchored OpenWorld evidence.
 
 - MCP tool: `osk_openworld_refine`
 - CLI fallback: `openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>`
 - Read-only: `no`
 - Explicit approval required: `no`
 
-### /osk openworld hidden oracle harness
+### /osk verify
 
-Write denied-path and benchmark-readiness harness metadata without reading oracle contents or claiming hidden-oracle proof.
+Run integrity, privacy, verifier, and proof-boundary checks.
 
-- MCP tool: `osk_openworld_hidden_oracle_harness`
-- CLI fallback: `openskill-kit openworld hidden-oracle-harness --task-id <task-id> --suite-id <suite-id>`
+- MCP tool: `osk_openworld_verifier_quality`
+- CLI fallback: `openskill-kit openworld verifier-quality --task-id <task-id> --suite-id <suite-id>`
 - Read-only: `no`
 - Explicit approval required: `no`
 
-### /osk openworld report
+### /osk compile
 
-Render task evidence, sources, anchors, verifier runs, eval reports, and remaining proof gaps.
+Compile active reviewed behavior into harness artifacts.
 
-- MCP tool: `osk_openworld_task_report`
-- CLI fallback: `openskill-kit openworld report --task-id <task-id> --write`
+- MCP tool: `osk_compile_behavior_layer`
+- CLI fallback: `openskill-kit compile --target plugin`
 - Read-only: `no`
 - Explicit approval required: `no`
 
-### /osk openworld promote review
+### /osk deploy
 
-Create a review-only proposal from a passed OpenWorld run; it never activates behavior directly.
+Preview or apply project-local harness attachment with receipts.
 
-- MCP tool: `osk_openworld_promote_review`
-- CLI fallback: `openskill-kit openworld promote-review --run-id <run-id> --dry-run`
+- MCP tool: `osk_preview_plugin_attach`
+- CLI fallback: `openskill-kit agent attach-plugin --host opencode --dry-run`
 - Read-only: `no`
 - Explicit approval required: `yes`
 
-### /osk evolve this skill
+### /osk eval
 
-Draft, verify, and evaluate a reusable skill from local evidence.
+Measure OSK behavior through replay or external-agent evals.
 
-- MCP tool: `none; use CLI fallback`
-- CLI fallback: `openskill-kit evolve "<topic>" --no-llm`
+- MCP tool: `osk_run_behavior_eval`
+- CLI fallback: `openskill-kit eval`
 - Read-only: `no`
 - Explicit approval required: `no`
 
-### /osk sync project behavior pack
+### /osk pack
 
-Export or import behavior packs only through review, verification, and trust gates.
+Export, verify, diff, sign, or import behavior packs through trust gates.
 
 - MCP tool: `osk_export_behavior_pack`
 - CLI fallback: `openskill-kit pack export`
