@@ -230,6 +230,12 @@ and `.openskill-kit/openworld/trust-cache.json`. Source text is cached under the
 task's `sources/cache/` directory after leakage audit. Trust scores are
 explainable metadata, not proof of correctness.
 
+`openworld execute-source-plan` applies a saved leakage-audited source plan. It
+ingests recommended local candidates up to a caller-set cap and can register
+explicit vetted URL sources with cached text or guarded fetches. Each run writes
+`research/executions/<id>.json` and Markdown so operators can see which sources
+were ingested, skipped, or blocked. It is not autonomous web search.
+
 Virtual verifier generation creates executable Node verifier files under each
 task's `verifiers/<suite-id>/visible` and `verifiers/<suite-id>/holdout`
 directories, plus `manifest.json` and `traceability-map.json`. The generated

@@ -40,6 +40,7 @@ npx openskill-kit openworld init-task --title "Verifier-first skill" --prompt "B
 npx openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
 npx openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
 npx openskill-kit openworld source-plan --task-id <owtask_id> --path docs
+npx openskill-kit openworld execute-source-plan --task-id <owtask_id> --plan-id <owrplan_id>
 npx openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
 npx openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
 npx openskill-kit openworld sources
@@ -74,8 +75,8 @@ Preference Nodes stay reviewable as normal project files.
 
 The OpenWorld layer now covers task records, leakage audits, local source
 discovery plans, source ingestion/cache, explicit web source fetches, Anchor
-Cards, visible/holdout virtual verifier generation, local sandbox execution of
-generated verifier scripts, verifier quality scoring, bounded verifier
+Cards, source-plan execution artifacts, visible/holdout virtual verifier
+generation, local sandbox execution of generated verifier scripts, verifier quality scoring, bounded verifier
 refinement/eval report records, and review-only promotion proposals. It still
 does not perform autonomous web search, LLM skill generation, containerized
 candidate-skill repair, or hidden-oracle benchmark evaluation yet.
@@ -133,6 +134,7 @@ openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build
 openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
 openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
 openskill-kit openworld source-plan --task-id <owtask_id> --path docs
+openskill-kit openworld execute-source-plan --task-id <owtask_id> --plan-id <owrplan_id>
 openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
 openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
 openskill-kit openworld sources
@@ -253,6 +255,7 @@ Key tools:
 - `osk_openworld_doctor`
 - `osk_openworld_source_plan`
 - `osk_openworld_ingest_source`
+- `osk_openworld_execute_source_plan`
 - `osk_openworld_sources`
 - `osk_openworld_run_verifier`
 - `osk_openworld_verifier_quality`

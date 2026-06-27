@@ -4,19 +4,21 @@ import { createHash } from "node:crypto";
 import { auditOpenWorldLeakage, sanitizeOpenWorldQuery } from "./leakage.js";
 import {
   makeOpenWorldSource,
+  readOpenWorldResearchPlan,
   readOpenWorldSource,
   readOpenWorldSourceContent,
   readOpenWorldTask,
   writeAnchorCard,
   writeOpenWorldLeakageAudit,
   writeOpenWorldResearchPlan,
+  writeOpenWorldResearchExecution,
   writeOpenWorldSource,
   writeOpenWorldSourceContent,
   writeOpenWorldTaskTextArtifact,
   writeVirtualTestSuite
 } from "./store.js";
-import { OpenWorldResearchPlanSchema } from "./schema.js";
-import type { AnchorCard, OpenWorldLeakageAudit, OpenWorldResearchPlan, OpenWorldSource, OpenWorldSourceCandidate, VirtualTestSuite } from "./schema.js";
+import { OpenWorldResearchExecutionSchema, OpenWorldResearchPlanSchema } from "./schema.js";
+import type { AnchorCard, OpenWorldLeakageAudit, OpenWorldResearchExecution, OpenWorldResearchPlan, OpenWorldSource, OpenWorldSourceCandidate, VirtualTestSuite } from "./schema.js";
 
 const SOURCE_SKIP_DIRS = new Set([".git", ".openskill-kit", "node_modules", "dist", "coverage", "tmp", ".next", ".turbo"]);
 const SOURCE_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".json", ".jsonc", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".toml", ".yaml", ".yml"]);
@@ -185,6 +187,170 @@ export async function planOpenWorldResearch(projectRoot: string, taskId: string,
     planPath: planPath ? path.relative(root, planPath).replace(/\\/g, "/") : undefined,
     recommendedNextCommands: draft.recommendedNextCommands
   });
+}
+
+export interface ExecuteOpenWorldResearchPlanWebSource {
+  url: string;
+  title?: string;
+  content?: string;
+  timeoutMs?: number;
+  maxBytes?: number;
+}
+
+export interface ExecuteOpenWorldResearchPlanOptions {
+  planId?: string;
+  plan?: OpenWorldResearchPlan;
+  includeAvailable?: boolean;
+  maxLocalSources?: number;
+  explicitWebSources?: ExecuteOpenWorldResearchPlanWebSource[];
+  dryRun?: boolean;
+  write?: boolean;
+  now?: Date;
+}
+
+export interface ExecuteOpenWorldResearchPlanResult {
+  schemaVersion: "openskill-kit.openworld-research-execution-result.v1";
+  execution: OpenWorldResearchExecution;
+  executionPath?: string;
+  markdownPath?: string;
+}
+
+export async function executeOpenWorldResearchPlan(
+  projectRoot: string,
+  taskId: string,
+  options: ExecuteOpenWorldResearchPlanOptions = {}
+): Promise<ExecuteOpenWorldResearchPlanResult> {
+  const root = path.resolve(projectRoot);
+  const task = await readOpenWorldTask(root, taskId);
+  const now = options.now ?? new Date();
+  const dryRun = options.dryRun === true;
+  const explicitWebSources = options.explicitWebSources ?? [];
+  const plan = options.plan ?? await readOpenWorldResearchPlan(root, taskId, options.planId);
+  if (plan.taskId !== taskId) throw new Error(`OpenWorld research plan ${plan.id} belongs to task ${plan.taskId}, not ${taskId}.`);
+
+  const localLimit = Math.max(0, Math.min(options.maxLocalSources ?? 5, 25));
+  const localCandidates = plan.candidates
+    .filter((candidate) => candidate.status === "recommended" || (options.includeAvailable === true && candidate.status === "available"))
+    .filter((candidate) => candidate.status !== "blocked")
+    .filter((candidate) => isLocalCandidate(candidate))
+    .slice(0, localLimit);
+  const skipped = plan.candidates
+    .filter((candidate) => candidate.status === "blocked")
+    .map((candidate) => ({ uri: candidate.uri, reason: "Blocked by source-plan leakage audit." }));
+  const ingested: OpenWorldResearchExecution["ingested"] = [];
+  const errors: OpenWorldResearchExecution["errors"] = [];
+
+  for (const candidate of localCandidates) {
+    if (dryRun) {
+      skipped.push({ uri: candidate.uri, reason: "Dry run; source not ingested." });
+      continue;
+    }
+    try {
+      const result = await ingestLocalOpenWorldSource(root, taskId, candidate.locator.path ?? candidate.uri, now);
+      ingested.push(sourceExecutionEntry(result.source, result.audit.id));
+    } catch (error) {
+      errors.push({ uri: candidate.uri, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  for (const webSource of explicitWebSources) {
+    if (dryRun) {
+      skipped.push({ uri: webSource.url, reason: "Dry run; explicit web source not ingested." });
+      continue;
+    }
+    try {
+      const result = await ingestWebOpenWorldSource(root, taskId, {
+        url: webSource.url,
+        title: webSource.title,
+        content: webSource.content,
+        timeoutMs: webSource.timeoutMs,
+        maxBytes: webSource.maxBytes,
+        now
+      });
+      ingested.push(sourceExecutionEntry(result.source, result.audit.id));
+    } catch (error) {
+      errors.push({ uri: webSource.url, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const status = dryRun
+    ? "planned"
+    : errors.length && ingested.length === 0
+      ? "blocked"
+      : errors.length
+        ? "partial"
+        : "completed";
+  const draft = OpenWorldResearchExecutionSchema.parse({
+    schemaVersion: "openskill-kit.openworld-research-execution.v1",
+    id: `owrexec_${shortHash(`${taskId}:${plan.id}:${now.toISOString()}:${ingested.map((item) => item.sourceId).join(",")}:${errors.length}`)}`,
+    taskId,
+    planId: plan.id,
+    executedAt: now.toISOString(),
+    status,
+    dryRun,
+    summary: {
+      plannedLocalCount: localCandidates.length,
+      ingestedCount: ingested.length,
+      skippedCount: skipped.length,
+      errorCount: errors.length,
+      explicitWebCount: explicitWebSources.length
+    },
+    ingested,
+    skipped,
+    errors,
+    sourceIds: ingested.map((item) => item.sourceId),
+    leakageAuditIds: [...new Set(ingested.map((item) => item.auditId).filter((value): value is string => Boolean(value)))]
+  });
+  if (options.write === false || dryRun) {
+    return { schemaVersion: "openskill-kit.openworld-research-execution-result.v1", execution: draft };
+  }
+  const executionPath = await writeOpenWorldResearchExecution(root, draft);
+  const markdownPath = await writeOpenWorldTaskTextArtifact(root, task.id, ["research", "executions", `${draft.id}.md`], renderOpenWorldResearchExecution(draft));
+  const execution = OpenWorldResearchExecutionSchema.parse({
+    ...draft,
+    executionPath: path.relative(root, executionPath).replace(/\\/g, "/"),
+    markdownPath: path.relative(root, markdownPath).replace(/\\/g, "/")
+  });
+  await writeOpenWorldResearchExecution(root, execution);
+  return { schemaVersion: "openskill-kit.openworld-research-execution-result.v1", execution, executionPath, markdownPath };
+}
+
+export function renderOpenWorldResearchExecution(execution: OpenWorldResearchExecution): string {
+  return [
+    `# OpenWorld Research Execution ${execution.id}`,
+    "",
+    `Task: ${execution.taskId}`,
+    `Plan: ${execution.planId}`,
+    `Status: ${execution.status}`,
+    `Dry run: ${execution.dryRun ? "yes" : "no"}`,
+    `Executed: ${execution.executedAt}`,
+    "",
+    "## Summary",
+    "",
+    `- Planned local sources: ${execution.summary.plannedLocalCount}`,
+    `- Explicit web sources: ${execution.summary.explicitWebCount}`,
+    `- Ingested: ${execution.summary.ingestedCount}`,
+    `- Skipped: ${execution.summary.skippedCount}`,
+    `- Errors: ${execution.summary.errorCount}`,
+    "",
+    "## Ingested Sources",
+    "",
+    ...(execution.ingested.length
+      ? execution.ingested.map((source) => `- ${source.sourceId} ${source.kind} trust=${source.trustScore} ${source.uri}`)
+      : ["None"]),
+    "",
+    "## Skipped",
+    "",
+    ...(execution.skipped.length
+      ? execution.skipped.map((item) => `- ${item.uri}: ${item.reason}`)
+      : ["None"]),
+    "",
+    "## Errors",
+    "",
+    ...(execution.errors.length
+      ? execution.errors.map((item) => `- ${item.uri ?? "source"}: ${item.message}`)
+      : ["None"])
+  ].join("\n") + "\n";
 }
 
 async function registerOpenWorldSource(
@@ -554,6 +720,22 @@ function statusWeight(status: OpenWorldSourceCandidate["status"]): number {
   if (status === "available") return 2;
   if (status === "blocked") return 1;
   return 0;
+}
+
+function isLocalCandidate(candidate: OpenWorldSourceCandidate): boolean {
+  if (candidate.locator.url || /^https?:\/\//i.test(candidate.uri)) return false;
+  return candidate.kind === "project-file" || candidate.kind === "local-doc" || candidate.kind === "package-docs";
+}
+
+function sourceExecutionEntry(source: OpenWorldSource, auditId?: string): OpenWorldResearchExecution["ingested"][number] {
+  return {
+    sourceId: source.id,
+    kind: source.kind,
+    uri: source.uri,
+    privacyClass: source.privacyClass,
+    trustScore: source.trust.score ?? 0.5,
+    auditId
+  };
 }
 
 function tokenize(value: string): string[] {

@@ -22,6 +22,7 @@ import {
   explainAdaptiveStatus,
   getAdaptiveStatus,
   assessOpenWorldVerifierQuality,
+  executeOpenWorldResearchPlan,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   planOpenWorldResearch,
@@ -929,6 +930,42 @@ export function createOpenSkillMcpServer(): McpServer {
       if (file) return toolResult(await ingestLocalOpenWorldSource(root, taskId, file), root);
       if (url) return toolResult(await ingestWebOpenWorldSource(root, taskId, { url, title, content }), root);
       throw new Error("file or url required.");
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_execute_source_plan",
+    {
+      title: "OpenSkillKit OpenWorld Execute Source Plan",
+      description: "Execute a leakage-audited OpenWorld source plan by ingesting recommended local sources and explicit vetted URLs.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        planId: z.string().min(1).optional(),
+        includeAvailable: z.boolean().default(false),
+        maxLocalSources: z.number().int().min(0).max(25).default(5),
+        explicitWebSources: z.array(z.object({
+          url: z.string().url(),
+          title: z.string().optional(),
+          content: z.string().optional(),
+          timeoutMs: z.number().int().min(1000).max(120000).optional(),
+          maxBytes: z.number().int().min(1000).max(2000000).optional()
+        })).default([]),
+        dryRun: z.boolean().default(false),
+        write: z.boolean().default(true)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, planId, includeAvailable, maxLocalSources, explicitWebSources, dryRun, write }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await executeOpenWorldResearchPlan(root, taskId, {
+        planId,
+        includeAvailable,
+        maxLocalSources,
+        explicitWebSources,
+        dryRun,
+        write
+      }), root);
     }
   );
 

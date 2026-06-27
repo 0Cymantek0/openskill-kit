@@ -69,6 +69,7 @@ describe("behavior routing and OpenWorld capability truth", () => {
     const report = await runOpenWorldDoctor(root);
     expect(report.status).toBe("warn");
     expect(report.capabilities.some((capability) => capability.name === "Local source discovery plans" && capability.status === "available")).toBe(true);
+    expect(report.capabilities.some((capability) => capability.name === "Source plan execution" && capability.status === "available")).toBe(true);
     expect(report.capabilities.some((capability) => capability.name === "Local source ingestion" && capability.status === "available")).toBe(true);
     expect(report.capabilities.some((capability) => capability.name === "Verifier quality scoring" && capability.status === "available")).toBe(true);
     expect(report.capabilities.some((capability) => capability.name === "Hidden-oracle benchmark proof" && capability.status === "missing")).toBe(true);

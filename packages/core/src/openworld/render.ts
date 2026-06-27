@@ -5,6 +5,7 @@ import {
   OpenWorldEvalReportSchema,
   OpenWorldEvolutionRunSchema,
   OpenWorldLeakageAuditSchema,
+  OpenWorldResearchExecutionSchema,
   OpenWorldVerifierQualityReportSchema,
   OpenWorldSourceSchema,
   SkillPlanSchema,
@@ -14,6 +15,7 @@ import {
   type OpenWorldEvalReport,
   type OpenWorldEvolutionRun,
   type OpenWorldLeakageAudit,
+  type OpenWorldResearchExecution,
   type OpenWorldVerifierQualityReport,
   type OpenWorldSource,
   type OpenWorldTask,
@@ -32,6 +34,7 @@ export interface BuildOpenWorldTaskReportResult {
   executions: VirtualTestSuiteExecution[];
   plans: SkillPlan[];
   audits: OpenWorldLeakageAudit[];
+  researchExecutions: OpenWorldResearchExecution[];
   runs: OpenWorldEvolutionRun[];
   evalReports: OpenWorldEvalReport[];
   qualityReports: OpenWorldVerifierQualityReport[];
@@ -50,11 +53,12 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
   const executions = await readVerifierExecutions(path.join(taskDir, "verifiers"));
   const plans = await readJsonFiles(path.join(taskDir, "plans"), (value) => SkillPlanSchema.parse(value));
   const audits = await readJsonFiles(path.join(taskDir, "audits"), (value) => OpenWorldLeakageAuditSchema.parse(value));
+  const researchExecutions = await readJsonFiles(path.join(taskDir, "research", "executions"), (value) => OpenWorldResearchExecutionSchema.parse(value));
   const runs = await readEvolutionRuns(root, taskId);
   const evalReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldEvalReportSchema.parse(value));
   const qualityReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldVerifierQualityReportSchema.parse(value));
   const nextActions = inferNextActions({ task, sources, anchors, suites, runs, evalReports, qualityReports });
-  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, audits, runs, evalReports, qualityReports, nextActions });
+  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, audits, researchExecutions, runs, evalReports, qualityReports, nextActions });
   const markdownPath = options.write === true
     ? await writeOpenWorldTaskTextArtifact(root, taskId, ["reports", "task-report.md"], markdown)
     : undefined;
@@ -67,6 +71,7 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
     executions,
     plans,
     audits,
+    researchExecutions,
     runs,
     evalReports,
     qualityReports,
@@ -84,6 +89,7 @@ export function renderOpenWorldTaskReport(input: {
   executions?: VirtualTestSuiteExecution[];
   plans?: SkillPlan[];
   audits?: OpenWorldLeakageAudit[];
+  researchExecutions?: OpenWorldResearchExecution[];
   runs?: OpenWorldEvolutionRun[];
   evalReports?: OpenWorldEvalReport[];
   qualityReports?: OpenWorldVerifierQualityReport[];
@@ -95,6 +101,7 @@ export function renderOpenWorldTaskReport(input: {
   const executions = input.executions ?? [];
   const plans = input.plans ?? [];
   const audits = input.audits ?? [];
+  const researchExecutions = input.researchExecutions ?? [];
   const runs = input.runs ?? [];
   const evalReports = input.evalReports ?? [];
   const qualityReports = input.qualityReports ?? [];
@@ -124,6 +131,7 @@ export function renderOpenWorldTaskReport(input: {
       `- Evolution runs: ${runs.length}`,
       `- Eval reports: ${evalReports.length}`,
       `- Verifier quality reports: ${qualityReports.length}`,
+      `- Research executions: ${researchExecutions.length}`,
       `- Leakage audits: ${audits.length}`
     ]),
     ...table("Sources", ["ID", "Kind", "Trust", "Privacy", "URI"], sources.map((source) => [
@@ -164,6 +172,13 @@ export function renderOpenWorldTaskReport(input: {
       String(report.metrics.holdoutCount)
     ])),
     ...section("Skill Plans", plans.map((plan) => `- ${plan.id}: ${plan.status} (${plan.anchorIds.length} anchor(s), ${plan.sourceIds.length} source(s))`)),
+    ...table("Research Executions", ["ID", "Plan", "Status", "Ingested", "Errors"], researchExecutions.map((execution) => [
+      execution.id,
+      execution.planId,
+      execution.status,
+      String(execution.summary.ingestedCount),
+      String(execution.summary.errorCount)
+    ])),
     ...section("Leakage Audits", audits.map((audit) => `- ${audit.id}: ${audit.status} (${audit.findings.length} finding(s))`)),
     ...table("Evolution Runs", ["ID", "Status", "Rounds", "Visible", "Holdout", "Overfit"], runs.map((run) => [
       run.id,

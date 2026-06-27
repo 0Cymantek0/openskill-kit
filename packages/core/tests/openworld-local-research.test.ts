@@ -10,6 +10,7 @@ import {
   buildOpenWorldTaskReport,
   buildReviewQueue,
   draftAnchorFromOpenWorldSource,
+  executeOpenWorldResearchPlan,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   initOpenWorldTask,
@@ -60,6 +61,28 @@ describe("OpenWorld local research", () => {
       now: new Date("2026-06-27T01:02:00.000Z")
     });
     expect(dry.planPath).toBeUndefined();
+
+    const dryExecution = await executeOpenWorldResearchPlan(root, task.task.id, {
+      planId: plan.id,
+      dryRun: true,
+      now: new Date("2026-06-27T01:03:00.000Z")
+    });
+    expect(dryExecution.execution.status).toBe("planned");
+    expect(dryExecution.execution.summary.ingestedCount).toBe(0);
+    expect(dryExecution.execution.executionPath).toBeUndefined();
+
+    const execution = await executeOpenWorldResearchPlan(root, task.task.id, {
+      planId: plan.id,
+      maxLocalSources: 2,
+      now: new Date("2026-06-27T01:04:00.000Z")
+    });
+    expect(execution.execution.status).toBe("completed");
+    expect(execution.execution.summary.ingestedCount).toBe(1);
+    expect(execution.execution.ingested[0]?.uri).toBe("docs/architecture.md");
+    expect(execution.execution.executionPath).toContain("/research/executions/");
+    await expect(stat(execution.executionPath ?? "")).resolves.toBeTruthy();
+    const index = await readOpenWorldSourceIndex(root);
+    expect(index.entries.some((entry) => entry.uri === "docs/architecture.md")).toBe(true);
   });
 
   it("ingests local files, drafts anchors, and builds visible/holdout suite", async () => {

@@ -43,6 +43,7 @@ describe("openskill-kit MCP server", () => {
           "osk_agent_doctor",
           "osk_install_agent_hooks",
           "osk_run_lifecycle_once",
+          "osk_openworld_execute_source_plan",
           "osk_openworld_verifier_quality"
         ])
       );

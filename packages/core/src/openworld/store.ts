@@ -7,6 +7,7 @@ import {
   AnchorCardSchema,
   OpenWorldEvolutionRunSchema,
   OpenWorldLeakageAuditSchema,
+  OpenWorldResearchExecutionSchema,
   OpenWorldResearchPlanSchema,
   OpenWorldSourceSchema,
   OpenWorldSourceIndexSchema,
@@ -18,6 +19,7 @@ import {
   type AnchorCard,
   type OpenWorldEvolutionRun,
   type OpenWorldLeakageAudit,
+  type OpenWorldResearchExecution,
   type OpenWorldResearchPlan,
   type OpenWorldSource,
   type OpenWorldSourceIndex,
@@ -139,6 +141,34 @@ export async function writeOpenWorldResearchPlan(projectRoot: string, plan: Open
   const root = path.resolve(projectRoot);
   const parsed = OpenWorldResearchPlanSchema.parse(plan);
   const file = taskArtifactPath(root, parsed.taskId, "research", "plans", `${parsed.id}.json`);
+  await writeOpenWorldJson(root, file, parsed);
+  return file;
+}
+
+export async function readOpenWorldResearchPlan(projectRoot: string, taskId: string, planId?: string): Promise<OpenWorldResearchPlan> {
+  const root = path.resolve(projectRoot);
+  if (planId) {
+    const file = taskArtifactPath(root, taskId, "research", "plans", `${planId}.json`);
+    return OpenWorldResearchPlanSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+  }
+  const plansDir = taskArtifactPath(root, taskId, "research", "plans");
+  const entries = await fs.readdir(plansDir, { withFileTypes: true }).catch(() => []);
+  const plans = await Promise.all(entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => fs.readFile(path.join(plansDir, entry.name), "utf8")
+      .then((text) => OpenWorldResearchPlanSchema.parse(JSON.parse(text)))
+      .catch(() => undefined)));
+  const latest = plans
+    .filter((plan): plan is OpenWorldResearchPlan => Boolean(plan))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  if (!latest) throw new Error(`No OpenWorld research plan found for task ${taskId}. Run openworld source-plan first.`);
+  return latest;
+}
+
+export async function writeOpenWorldResearchExecution(projectRoot: string, execution: OpenWorldResearchExecution): Promise<string> {
+  const root = path.resolve(projectRoot);
+  const parsed = OpenWorldResearchExecutionSchema.parse(execution);
+  const file = taskArtifactPath(root, parsed.taskId, "research", "executions", `${parsed.id}.json`);
   await writeOpenWorldJson(root, file, parsed);
   return file;
 }

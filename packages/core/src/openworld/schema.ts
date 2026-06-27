@@ -139,6 +139,43 @@ export const OpenWorldResearchPlanSchema = z.object({
   planPath: z.string().optional()
 });
 
+export const OpenWorldResearchExecutionSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.openworld-research-execution.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  planId: z.string().min(1),
+  executedAt: z.string().datetime(),
+  status: z.enum(["planned", "completed", "partial", "blocked"]),
+  dryRun: z.boolean().default(false),
+  summary: z.object({
+    plannedLocalCount: z.number().int().min(0),
+    ingestedCount: z.number().int().min(0),
+    skippedCount: z.number().int().min(0),
+    errorCount: z.number().int().min(0),
+    explicitWebCount: z.number().int().min(0)
+  }),
+  ingested: z.array(z.object({
+    sourceId: z.string().min(1),
+    kind: OpenWorldSourceSchema.shape.kind,
+    uri: z.string().min(1),
+    privacyClass: z.enum(OpenWorldPrivacyClasses),
+    trustScore: z.number().min(0).max(1),
+    auditId: z.string().optional()
+  })).default([]),
+  skipped: z.array(z.object({
+    uri: z.string().min(1),
+    reason: z.string().min(1)
+  })).default([]),
+  errors: z.array(z.object({
+    uri: z.string().optional(),
+    message: z.string().min(1)
+  })).default([]),
+  sourceIds: z.array(z.string().min(1)).default([]),
+  leakageAuditIds: z.array(z.string().min(1)).default([]),
+  executionPath: z.string().optional(),
+  markdownPath: z.string().optional()
+});
+
 export const AnchorCardSchema = z.object({
   schemaVersion: z.literal("openskill-kit.anchor-card.v1"),
   id: z.string().min(1),
@@ -357,6 +394,7 @@ export type OpenWorldTrustCache = z.infer<typeof OpenWorldTrustCacheSchema>;
 export type OpenWorldResearchQuery = z.infer<typeof OpenWorldResearchQuerySchema>;
 export type OpenWorldSourceCandidate = z.infer<typeof OpenWorldSourceCandidateSchema>;
 export type OpenWorldResearchPlan = z.infer<typeof OpenWorldResearchPlanSchema>;
+export type OpenWorldResearchExecution = z.infer<typeof OpenWorldResearchExecutionSchema>;
 export type AnchorCard = z.infer<typeof AnchorCardSchema>;
 export type VirtualTestCase = z.infer<typeof VirtualTestCaseSchema>;
 export type VirtualTestSuite = z.infer<typeof VirtualTestSuiteSchema>;

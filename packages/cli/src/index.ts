@@ -38,6 +38,7 @@ import {
   buildVirtualSuiteFromAnchors,
   assessOpenWorldVerifierQuality,
   draftAnchorFromOpenWorldSource,
+  executeOpenWorldResearchPlan,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   planOpenWorldResearch,
@@ -262,6 +263,47 @@ openworld.command("source-plan")
       result.leakageAuditPath ? `Leakage audit: ${result.leakageAuditPath}` : undefined,
       ...result.recommendedNextCommands.slice(0, 6)
     ].filter(Boolean).join("\n"));
+  });
+
+openworld.command("execute-source-plan")
+  .description("Execute a leakage-audited OpenWorld source plan by ingesting recommended local sources and explicit vetted URLs")
+  .requiredOption("--task-id <id>", "Task id")
+  .option("--plan-id <id>", "Research plan id; defaults to latest plan")
+  .option("--include-available", "Also ingest available non-recommended local candidates")
+  .option("--max-local <number>", "Maximum local sources to ingest", parseIntegerOption, 5)
+  .option("--url <url>", "Explicit HTTP(S) source URL to register", collectOption, [])
+  .option("--title <title>", "Title for explicit URL, aligned by order with --url", collectOption, [])
+  .option("--content-file <path>", "Cached text for explicit URL, aligned by order with --url", collectOption, [])
+  .option("--timeout-ms <number>", "Fetch timeout for explicit URLs without content files", parseIntegerOption, 12000)
+  .option("--max-bytes <number>", "Maximum fetched text size", parseIntegerOption, 1000000)
+  .option("--dry-run", "Show planned ingestion without writing source artifacts")
+  .option("--no-write", "Do not write execution artifact")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const explicitWebSources = await Promise.all(options.url.map(async (url: string, index: number) => ({
+      url,
+      title: options.title[index],
+      content: options.contentFile[index] ? await fs.readFile(path.resolve(options.contentFile[index]), "utf8") : undefined,
+      timeoutMs: options.timeoutMs,
+      maxBytes: options.maxBytes
+    })));
+    const result = await executeOpenWorldResearchPlan(process.cwd(), options.taskId, {
+      planId: options.planId,
+      includeAvailable: options.includeAvailable === true,
+      maxLocalSources: options.maxLocal,
+      explicitWebSources,
+      dryRun: options.dryRun === true,
+      write: options.write !== false
+    });
+    output(options.json, result, [
+      `OpenWorld research execution ${result.execution.id}: ${result.execution.status}`,
+      `Ingested: ${result.execution.summary.ingestedCount}`,
+      `Skipped: ${result.execution.summary.skippedCount}`,
+      `Errors: ${result.execution.summary.errorCount}`,
+      result.execution.executionPath ? `Execution: ${result.execution.executionPath}` : undefined,
+      result.execution.markdownPath ? `Report: ${result.execution.markdownPath}` : undefined
+    ].filter(Boolean).join("\n"));
+    process.exitCode = result.execution.status === "blocked" ? 1 : 0;
   });
 
 openworld.command("fetch-source")

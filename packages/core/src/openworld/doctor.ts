@@ -24,6 +24,7 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "Task records", status: "available", message: "Local OpenWorld task records are supported." },
     { name: "Leakage barrier", status: "available", message: "Queries, paths, content, and artifacts can be scanned for forbidden identifiers." },
     { name: "Local source discovery plans", status: "available", message: "Project files can be ranked as source candidates with sanitized query plans and leakage-blocked candidates before ingestion." },
+    { name: "Source plan execution", status: "available", message: "Recommended local candidates and explicit vetted URLs can be ingested from a saved research plan with an execution artifact." },
     { name: "Local source ingestion", status: "available", message: "Project-local files can become audited OpenWorld sources." },
     { name: "Explicit web source ingestion", status: "available", message: "HTTP(S) URLs can be fetched only when the task has allowWeb enabled; source text is leakage-audited before caching." },
     { name: "Source index and trust cache", status: "available", message: "OpenWorld source metadata, content hashes, cache paths, and trust scores are recorded." },
