@@ -95,6 +95,9 @@ if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string;
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.readOnly === true)) throw new Error("compiled plugin command map missing interaction pool route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.readOnly === true)) throw new Error("compiled plugin command map missing git context route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk openworld doctor" && item.mcpTool === "osk_openworld_doctor" && item.readOnly === true)) throw new Error("compiled plugin command map missing OpenWorld doctor route");
+if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld build verifier" && !item.mcpTool)) throw new Error("compiled plugin command map missing OpenWorld build verifier route");
+if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk openworld verifier quality" && item.mcpTool === "osk_openworld_verifier_quality" && item.readOnly === true)) throw new Error("compiled plugin command map missing OpenWorld verifier quality route");
+if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld run verifier" && item.mcpTool === "osk_openworld_run_verifier")) throw new Error("compiled plugin command map missing OpenWorld run verifier route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk openworld promote review" && item.mcpTool === "osk_openworld_promote_review" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing OpenWorld promote review approval");
 if (!pluginManifest.files?.includes("commands/commands.json")) throw new Error("compiled plugin manifest missing command map file");
 if (!pluginManifest.files?.includes("install-guides/codex.md")) throw new Error("compiled plugin manifest missing Codex guide");
@@ -116,7 +119,7 @@ if (terminalImportPlan.status !== "planned" || terminalImportPlan.parsedEventCou
 const gitContext = await runJson(["interactions", "git-context", "--json"]);
 if (gitContext.schemaVersion !== "openskill-kit.git-local-context.v1" || gitContext.adapter?.rawDiffIncluded !== false) throw new Error("git context command failed");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 28") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 31") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
 if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");

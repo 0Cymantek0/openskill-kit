@@ -46,7 +46,10 @@
     "items": [
       {
         "command": "/osk init",
-        "aliases": ["openskill init", "bootstrap openskill"],
+        "aliases": [
+          "openskill init",
+          "bootstrap openskill"
+        ],
         "description": "Initialize or bootstrap project behavior state and report plugin readiness.",
         "mcpTool": "osk_bootstrap_session",
         "cli": "openskill-kit init && openskill-kit status",
@@ -56,7 +59,10 @@
       },
       {
         "command": "/osk status",
-        "aliases": ["osk status", "openskill status"],
+        "aliases": [
+          "osk status",
+          "openskill status"
+        ],
         "description": "Show learned behavior, compiled artifacts, plugin readiness, and next actions.",
         "mcpTool": "osk_bootstrap_session",
         "cli": "openskill-kit status",
@@ -66,7 +72,10 @@
       },
       {
         "command": "/osk context",
-        "aliases": ["osk task context", "openskill context"],
+        "aliases": [
+          "osk task context",
+          "openskill context"
+        ],
         "description": "Return route plan, relevant behavior, plugin health, review state, and next actions for the current coding task.",
         "mcpTool": "osk_get_agent_task_context",
         "cli": "openskill-kit context --query \"<task>\"",
@@ -76,7 +85,10 @@
       },
       {
         "command": "/osk finish task",
-        "aliases": ["osk task done", "openskill finish task"],
+        "aliases": [
+          "osk task done",
+          "openskill finish task"
+        ],
         "description": "Record safe task outcome evidence, run learning, write session summaries, and return review next actions.",
         "mcpTool": "osk_finish_agent_task",
         "cli": "openskill-kit finish-task --summary \"<safe summary>\"",
@@ -86,7 +98,10 @@
       },
       {
         "command": "/osk import adapters",
-        "aliases": ["osk adapters", "openskill import adapters"],
+        "aliases": [
+          "osk adapters",
+          "openskill import adapters"
+        ],
         "description": "List supported cross-agent import adapters, accepted formats, privacy policy, and adapter status.",
         "mcpTool": "osk_list_interaction_adapters",
         "cli": "openskill-kit interactions adapters",
@@ -96,7 +111,10 @@
       },
       {
         "command": "/osk import session",
-        "aliases": ["osk import transcript", "openskill import session"],
+        "aliases": [
+          "osk import transcript",
+          "openskill import session"
+        ],
         "description": "Preview or import a cross-agent session/export file as redacted local events; applying requires explicit approval.",
         "mcpTool": "osk_import_interaction_source",
         "cli": "openskill-kit interactions import <path>",
@@ -106,7 +124,10 @@
       },
       {
         "command": "/osk import review",
-        "aliases": ["osk import review comments", "openskill import review"],
+        "aliases": [
+          "osk import review comments",
+          "openskill import review"
+        ],
         "description": "Preview or import a local review-comment file as redacted review feedback events; applying requires explicit approval.",
         "mcpTool": "osk_import_interaction_source",
         "cli": "openskill-kit interactions import-review <path>",
@@ -116,7 +137,10 @@
       },
       {
         "command": "/osk import terminal",
-        "aliases": ["osk import terminal history", "openskill import terminal"],
+        "aliases": [
+          "osk import terminal history",
+          "openskill import terminal"
+        ],
         "description": "Preview or import an explicit terminal history file as allowlisted command metadata only; applying requires explicit approval.",
         "mcpTool": "osk_import_interaction_source",
         "cli": "openskill-kit interactions import-terminal <path>",
@@ -126,7 +150,10 @@
       },
       {
         "command": "/osk session imports",
-        "aliases": ["osk imports", "openskill imports"],
+        "aliases": [
+          "osk imports",
+          "openskill imports"
+        ],
         "description": "List previous interaction import runs without raw source content.",
         "mcpTool": "osk_list_interaction_imports",
         "cli": "openskill-kit interactions imports",
@@ -136,7 +163,10 @@
       },
       {
         "command": "/osk explain import",
-        "aliases": ["osk import explain", "openskill explain import"],
+        "aliases": [
+          "osk import explain",
+          "openskill explain import"
+        ],
         "description": "Explain one interaction import receipt, privacy state, and learning next actions without reading raw source content.",
         "mcpTool": "osk_explain_interaction_import",
         "cli": "openskill-kit interactions explain <run-id>",
@@ -146,7 +176,10 @@
       },
       {
         "command": "/osk interaction pool",
-        "aliases": ["osk interactions pool", "openskill interaction pool"],
+        "aliases": [
+          "osk interactions pool",
+          "openskill interaction pool"
+        ],
         "description": "List normalized cross-agent interaction metadata records without raw source content.",
         "mcpTool": "osk_get_interaction_pool",
         "cli": "openskill-kit interactions pool",
@@ -156,7 +189,10 @@
       },
       {
         "command": "/osk git context",
-        "aliases": ["osk git", "openskill git context"],
+        "aliases": [
+          "osk git",
+          "openskill git context"
+        ],
         "description": "Inspect local branch, changed files, aggregate diff stats, and recent commits without raw diffs or file contents.",
         "mcpTool": "osk_get_git_local_context",
         "cli": "openskill-kit interactions git-context",
@@ -166,7 +202,10 @@
       },
       {
         "command": "/osk learn from this session",
-        "aliases": ["osk learn", "learn this session"],
+        "aliases": [
+          "osk learn",
+          "learn this session"
+        ],
         "description": "Extract candidate preferences from captured local events after user approval for any import source.",
         "mcpTool": "osk_learn_from_session",
         "cli": "openskill-kit learn",
@@ -176,7 +215,10 @@
       },
       {
         "command": "/osk explain why you learned this",
-        "aliases": ["osk explain", "explain preference"],
+        "aliases": [
+          "osk explain",
+          "explain preference"
+        ],
         "description": "Explain a learned preference through sanitized evidence cards.",
         "mcpTool": "osk_explain_preference",
         "cli": "openskill-kit explain <preference-id>",
@@ -186,7 +228,10 @@
       },
       {
         "command": "/osk review pending behavior",
-        "aliases": ["osk review", "review behavior"],
+        "aliases": [
+          "osk review",
+          "review behavior"
+        ],
         "description": "Open the review queue for candidate behavior before activation.",
         "mcpTool": "osk_get_review_queue",
         "cli": "openskill-kit review",
@@ -196,7 +241,10 @@
       },
       {
         "command": "/osk update skills",
-        "aliases": ["osk compile skills", "update project skills"],
+        "aliases": [
+          "osk compile skills",
+          "update project skills"
+        ],
         "description": "Compile project-scoped skills from active behavior.",
         "mcpTool": "osk_compile_behavior_layer",
         "cli": "openskill-kit compile --target agent-skills",
@@ -206,7 +254,10 @@
       },
       {
         "command": "/osk update AGENTS.md",
-        "aliases": ["osk update agents", "compile project rules"],
+        "aliases": [
+          "osk update agents",
+          "compile project rules"
+        ],
         "description": "Preview managed AGENTS/CLAUDE instruction updates.",
         "mcpTool": "osk_compile_behavior_layer",
         "cli": "openskill-kit compile --target project-rules",
@@ -216,7 +267,10 @@
       },
       {
         "command": "/osk install hooks",
-        "aliases": ["osk hooks", "install openskill hooks"],
+        "aliases": [
+          "osk hooks",
+          "install openskill hooks"
+        ],
         "description": "Preview or install local hooks; requires explicit user approval before enabling execution.",
         "mcpTool": "osk_install_agent_hooks",
         "cli": "openskill-kit hooks install --dry-run",
@@ -226,7 +280,10 @@
       },
       {
         "command": "/osk attach plugin",
-        "aliases": ["osk attach", "attach openskill plugin"],
+        "aliases": [
+          "osk attach",
+          "attach openskill plugin"
+        ],
         "description": "Preview host MCP config needed to attach this plugin to an existing coding harness; applying requires explicit approval.",
         "mcpTool": "osk_preview_plugin_attach",
         "cli": "openskill-kit agent attach-plugin --host generic-mcp --dry-run",
@@ -236,7 +293,10 @@
       },
       {
         "command": "/osk plugin health",
-        "aliases": ["osk plugin status", "openskill plugin health"],
+        "aliases": [
+          "osk plugin status",
+          "openskill plugin health"
+        ],
         "description": "Show host attachment health for the compiled plugin, including root binding, invalid JSON, and command conflicts.",
         "mcpTool": "osk_get_plugin_attach_status",
         "cli": "openskill-kit agent plugin-status",
@@ -246,7 +306,10 @@
       },
       {
         "command": "/osk run behavior eval",
-        "aliases": ["osk eval", "behavior eval"],
+        "aliases": [
+          "osk eval",
+          "behavior eval"
+        ],
         "description": "Run local behavior replay/evaluation gates and return artifact paths.",
         "mcpTool": "osk_run_behavior_eval",
         "cli": "openskill-kit eval",
@@ -256,7 +319,10 @@
       },
       {
         "command": "/osk openworld doctor",
-        "aliases": ["osk ow doctor", "openskill openworld doctor"],
+        "aliases": [
+          "osk ow doctor",
+          "openskill openworld doctor"
+        ],
         "description": "Show which OpenWorld capabilities are real today and which remain unproven.",
         "mcpTool": "osk_openworld_doctor",
         "cli": "openskill-kit openworld doctor",
@@ -266,7 +332,10 @@
       },
       {
         "command": "/osk openworld source plan",
-        "aliases": ["osk ow source plan", "openskill openworld source plan"],
+        "aliases": [
+          "osk ow source plan",
+          "openskill openworld source plan"
+        ],
         "description": "Plan leakage-audited local and explicit web source candidates for an OpenWorld task.",
         "mcpTool": "osk_openworld_source_plan",
         "cli": "openskill-kit openworld source-plan --task-id <task-id>",
@@ -275,8 +344,49 @@
         "fallback": "cli"
       },
       {
+        "command": "/osk openworld build verifier",
+        "aliases": [
+          "osk ow build verifier",
+          "openskill openworld build verifier"
+        ],
+        "description": "Build a leakage-audited visible/holdout verifier suite from Anchor Cards, preserving manual-review anchors and traceable local file assertions.",
+        "cli": "openskill-kit openworld build-verifier --task-id <task-id> --anchor-id <anchor-id>",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk openworld verifier quality",
+        "aliases": [
+          "osk ow verifier quality",
+          "openskill openworld verifier quality"
+        ],
+        "description": "Score a generated OpenWorld verifier suite for traceability, determinism, holdout coverage, source trust, and leakage metadata.",
+        "mcpTool": "osk_openworld_verifier_quality",
+        "cli": "openskill-kit openworld verifier-quality --task-id <task-id> --suite-id <suite-id>",
+        "readOnly": true,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
+        "command": "/osk openworld run verifier",
+        "aliases": [
+          "osk ow run verifier",
+          "openskill openworld run verifier"
+        ],
+        "description": "Run a generated OpenWorld verifier split through local-process or opt-in Docker sandbox mode and write execution results.",
+        "mcpTool": "osk_openworld_run_verifier",
+        "cli": "openskill-kit openworld run-verifier --task-id <task-id> --suite-id <suite-id> --split visible",
+        "readOnly": false,
+        "approvalRequired": false,
+        "fallback": "cli"
+      },
+      {
         "command": "/osk openworld refine",
-        "aliases": ["osk ow refine", "openskill openworld refine"],
+        "aliases": [
+          "osk ow refine",
+          "openskill openworld refine"
+        ],
         "description": "Run bounded visible verifier refinement and final holdout check for a candidate skill.",
         "mcpTool": "osk_openworld_refine",
         "cli": "openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>",
@@ -286,7 +396,10 @@
       },
       {
         "command": "/osk openworld report",
-        "aliases": ["osk ow report", "openskill openworld report"],
+        "aliases": [
+          "osk ow report",
+          "openskill openworld report"
+        ],
         "description": "Render task evidence, sources, anchors, verifier runs, eval reports, and remaining proof gaps.",
         "mcpTool": "osk_openworld_task_report",
         "cli": "openskill-kit openworld report --task-id <task-id> --write",
@@ -296,7 +409,10 @@
       },
       {
         "command": "/osk openworld promote review",
-        "aliases": ["osk ow promote review", "openskill openworld promote review"],
+        "aliases": [
+          "osk ow promote review",
+          "openskill openworld promote review"
+        ],
         "description": "Create a review-only proposal from a passed OpenWorld run; it never activates behavior directly.",
         "mcpTool": "osk_openworld_promote_review",
         "cli": "openskill-kit openworld promote-review --run-id <run-id> --dry-run",
@@ -306,7 +422,10 @@
       },
       {
         "command": "/osk evolve this skill",
-        "aliases": ["osk evolve", "evolve skill"],
+        "aliases": [
+          "osk evolve",
+          "evolve skill"
+        ],
         "description": "Draft, verify, and evaluate a reusable skill from local evidence.",
         "cli": "openskill-kit evolve \"<topic>\" --no-llm",
         "readOnly": false,
@@ -315,7 +434,10 @@
       },
       {
         "command": "/osk sync project behavior pack",
-        "aliases": ["osk pack", "sync behavior pack"],
+        "aliases": [
+          "osk pack",
+          "sync behavior pack"
+        ],
         "description": "Export or import behavior packs only through review, verification, and trust gates.",
         "mcpTool": "osk_export_behavior_pack",
         "cli": "openskill-kit pack export",
