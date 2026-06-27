@@ -1,10 +1,15 @@
 import { z } from "zod";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { detectAgentEnvironment } from "../detection/detector.js";
 import { appendEvent } from "../events/store.js";
+import type { OpenSkillEvent } from "../events/schema.js";
 import { runLifecycleOnce, type LifecycleRunnerResult } from "../lifecycle/runner.js";
 import { buildReviewQueue } from "../preferences/proposals.js";
 import { inspectGitLocalContext, type GitLocalContextResult } from "./git-local.js";
 import { importInteractionSource, readInteractionImportRuns, type InteractionImportRun } from "./importer.js";
+
+export const OPENCODE_AMBIENT_LOG_RELATIVE_PATH = ".openskill-kit/ambient/opencode-events.jsonl";
 
 export const LearnSourcePolicySchema = z.enum(["safe-metadata", "explicit-import", "blocked"]);
 export type LearnSourcePolicy = z.infer<typeof LearnSourcePolicySchema>;
@@ -69,6 +74,7 @@ export const LearnRunSchema = z.object({
   importRuns: z.array(z.any()),
   safeMetadata: z.object({
     git: z.any().optional(),
+    opencode: z.any().optional(),
     eventIds: z.array(z.string())
   }),
   lifecycle: z.any().optional(),
@@ -97,6 +103,18 @@ export async function planLearningSources(
     source("current-session", "Current session safe summary", "current-session", "safe-metadata", true, "Use task finish summaries and safe event metadata already recorded by OSK."),
     source("git-local", "Git metadata only", "git-local", "safe-metadata", true, "Use branch, changed file names, diff stats, and recent commit metadata without raw diffs.")
   ];
+  const opencodeAmbient = await inspectOpenCodeAmbientMetadata(projectRoot);
+  if (opencodeAmbient.available) {
+    sources.push(source(
+      "opencode-ambient",
+      "OpenCode ambient metadata",
+      "opencode",
+      "safe-metadata",
+      true,
+      `Use ${opencodeAmbient.eventCount} metadata-only OpenCode hook events from ${OPENCODE_AMBIENT_LOG_RELATIVE_PATH}; no raw prompts or raw diffs.`,
+      opencodeAmbient.path
+    ));
+  }
 
   for (const surface of report.surfaces) {
     if (surface.surfaceType === "interaction-export") {
@@ -180,6 +198,7 @@ export async function runLearningPlan(
   const importRuns: InteractionImportRun[] = [];
   const safeEventIds: string[] = [];
   let git: GitLocalContextResult | undefined;
+  let opencode: OpenCodeAmbientAppendResult | undefined;
 
   for (const sourceOption of selectedOptions) {
     if (sourceOption.policy === "explicit-import" && sourceOption.path) {
@@ -211,6 +230,10 @@ export async function runLearningPlan(
       });
       safeEventIds.push(appended.event.id);
     }
+    if (sourceOption.id === "opencode-ambient" && !previewOnly) {
+      opencode = await appendOpenCodeAmbientEvents(projectRoot, { maxEvents: options.maxEvents ?? 200, now: options.now });
+      safeEventIds.push(...opencode.eventIds);
+    }
   }
 
   const eventsAppended = safeEventIds.length + importRuns.reduce((sum, run) => sum + run.appendedEventCount, 0);
@@ -226,7 +249,7 @@ export async function runLearningPlan(
     selectedSourceIds: selected,
     previewOnly,
     importRuns,
-    safeMetadata: { git, eventIds: safeEventIds },
+    safeMetadata: { git, opencode, eventIds: safeEventIds },
     lifecycle,
     digest: {
       sourcesConsidered: plan.options.length,
@@ -242,12 +265,127 @@ export async function runLearningPlan(
       "No raw prompts, raw diffs, secrets, or hidden benchmark answers were copied.",
       "Explicit imports used dry-run preview unless previewOnly=false.",
       "Git learning uses metadata only and never raw diff hunks.",
+      "OpenCode ambient learning uses whitelisted hook metadata only and never raw message text or raw diffs.",
       "Learned behavior remains candidate/staged until `/osk review`."
     ],
     nextActions: previewOnly
       ? ["Preview complete. Re-run with previewOnly=false only after approving selected explicit imports.", "Then run `/osk review`; activation remains review-gated."]
       : ["Learning run complete. Run `/osk review` before compiling or deploying behavior.", "Run `/osk compile` only after review accepts desired behavior."]
   });
+}
+
+interface OpenCodeAmbientInspection {
+  available: boolean;
+  path: string;
+  eventCount: number;
+}
+
+interface OpenCodeAmbientAppendResult {
+  path: string;
+  readCount: number;
+  appendedCount: number;
+  skippedCount: number;
+  eventIds: string[];
+}
+
+async function inspectOpenCodeAmbientMetadata(projectRoot: string): Promise<OpenCodeAmbientInspection> {
+  const file = path.join(path.resolve(projectRoot), OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
+  const text = await fs.readFile(file, "utf8").catch(() => "");
+  const eventCount = text.split(/\r?\n/).filter((line) => line.trim()).length;
+  return { available: eventCount > 0, path: file, eventCount };
+}
+
+async function appendOpenCodeAmbientEvents(projectRoot: string, options: { maxEvents: number; now?: Date }): Promise<OpenCodeAmbientAppendResult> {
+  const file = path.join(path.resolve(projectRoot), OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
+  const text = await fs.readFile(file, "utf8").catch(() => "");
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  const selected = lines.slice(-Math.max(0, options.maxEvents));
+  const eventIds: string[] = [];
+  let skippedCount = lines.length - selected.length;
+  for (const line of selected) {
+    const record = parseOpenCodeAmbientRecord(line);
+    if (!record) {
+      skippedCount += 1;
+      continue;
+    }
+    const appended = await appendEvent(projectRoot, {
+      sessionId: "osk-learn-opencode-ambient",
+      eventType: mapOpenCodeAmbientEventType(record.eventType, record.metadata),
+      timestamp: timestampOrUndefined(record.metadata.timestamp) ?? record.capturedAt ?? options.now?.toISOString(),
+      source: { adapter: "opencode-ambient", host: "opencode" },
+      intent: `Learn from OpenCode metadata-only hook event: ${record.eventType}.`,
+      normalized: {
+        adapter: "opencode",
+        source: "opencode-plugin",
+        eventType: record.eventType,
+        rawPromptIncluded: false,
+        rawDiffIncluded: false,
+        metadata: record.metadata
+      },
+      files: typeof record.metadata.path === "string" ? [{ path: record.metadata.path, action: "unknown" as const }] : [],
+      commands: typeof record.metadata.command === "string"
+        ? [{ command: record.metadata.command, status: statusFromMetadata(record.metadata.status) }]
+        : [],
+      privacy: { redacted: false, rawStored: false, containsUserText: false, containsCode: false }
+    });
+    eventIds.push(appended.event.id);
+  }
+  return { path: file, readCount: lines.length, appendedCount: eventIds.length, skippedCount, eventIds };
+}
+
+function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; metadata: Record<string, unknown> } | undefined {
+  try {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    const eventType = typeof parsed.eventType === "string" ? parsed.eventType : undefined;
+    const metadata = parsed.metadata && typeof parsed.metadata === "object" && !Array.isArray(parsed.metadata)
+      ? sanitizeOpenCodeMetadata(parsed.metadata as Record<string, unknown>)
+      : {};
+    if (!eventType) return undefined;
+    return {
+      eventType,
+      capturedAt: typeof parsed.capturedAt === "string" ? parsed.capturedAt : undefined,
+      metadata
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeOpenCodeMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of ["id", "type", "tool", "command", "path", "status", "decision", "timestamp"]) {
+    const value = metadata[key];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null) out[key] = value;
+  }
+  return out;
+}
+
+function mapOpenCodeAmbientEventType(eventType: string, metadata: Record<string, unknown>): OpenSkillEvent["eventType"] {
+  if (eventType === "session-start") return "session-start";
+  if (eventType === "pre-tool-use" || eventType === "permission-request" || eventType === "command-intent") return "pre-tool-use";
+  if (eventType === "post-tool-use") return metadata.status === "fail" ? "post-tool-use-failure" : "post-tool-use";
+  if (eventType === "file-changed" || eventType === "diff-stats") return "file-changed";
+  if (eventType === "permission-decision") {
+    const decision = String(metadata.decision ?? "").toLowerCase();
+    if (/deny|reject|block/.test(decision)) return "permission-denied";
+    if (/allow|approve|accept/.test(decision)) return "user-accepted";
+  }
+  if (eventType === "finish-task-suggestion") return "task-completed";
+  return "assistant-message";
+}
+
+function statusFromMetadata(value: unknown): "pass" | "fail" | "blocked" | "timeout" | "unknown" {
+  const status = String(value ?? "").toLowerCase();
+  if (status === "pass" || status === "success" || status === "ok") return "pass";
+  if (status === "fail" || status === "failed" || status === "error") return "fail";
+  if (status === "blocked" || status === "denied") return "blocked";
+  if (status === "timeout") return "timeout";
+  return "unknown";
+}
+
+function timestampOrUndefined(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return Number.isNaN(Date.parse(value)) ? undefined : new Date(value).toISOString();
 }
 
 function source(id: string, label: string, adapter: string, policy: LearnSourcePolicy, defaultSelected: boolean, reason: string, sourcePath?: string): LearnSourceOption {

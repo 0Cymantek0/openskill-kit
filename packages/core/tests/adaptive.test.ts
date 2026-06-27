@@ -94,16 +94,20 @@ describe("adaptive behavior layer", () => {
     const evalReport = await runBehaviorEval({ projectRoot: root, now: new Date("2026-06-24T00:04:00.000Z") });
     expect(evalReport.status).toBe("pass");
     await expect(stat(evalReport.artifacts.json)).resolves.toBeTruthy();
+    await mkdir(path.join(root, ".openskill-kit", "ambient"), { recursive: true });
+    await writeFile(path.join(root, ".openskill-kit", "ambient", "opencode-events.jsonl"), "{\"eventType\":\"file-changed\",\"metadata\":{\"path\":\"src/private.ts\"}}\n", "utf8");
 
     const pack = await exportProjectBehaviorPack(root);
     await expect(stat(pack.manifestPath)).resolves.toBeTruthy();
     expect(pack.files).not.toContain(".openskill-kit/events/2026-06.jsonl");
+    expect(pack.files).not.toContain(".openskill-kit/ambient/opencode-events.jsonl");
     const manifest = JSON.parse(await readFile(pack.manifestPath, "utf8"));
     expect(manifest.project.name).toBe("adaptive-fixture");
     expect(manifest.compatibility.configSchema).toBe("openskill-kit.config.v1");
     expect(manifest.generatedArtifacts.some((artifact: { type: string }) => artifact.type === "skill")).toBe(true);
     expect(pack.files).toContain(".openskill-kit/compiled/skills/project-testing/SKILL.md");
     expect(manifest.privacyStatement).toContain("excludes raw events");
+    expect(manifest.privacyStatement).toContain("ambient hook metadata");
     const signed = await signProjectBehaviorPack(pack.packPath, path.join(root, ".openskill-kit", "keys"));
     expect(signed.keyId).toHaveLength(16);
     const packVerify = await verifyProjectBehaviorPack(pack.packPath);

@@ -13,6 +13,7 @@ import {
   runLearningPlan,
   validateOskCommandFamilies
 } from "../src/index.js";
+import { readEvents } from "../src/events/store.js";
 
 describe("OSK command family registry", () => {
   it("defines exactly twelve public command families", () => {
@@ -73,6 +74,52 @@ describe("OSK command family registry", () => {
     expect(plan.privacyPreview.join(" ")).toContain("No raw prompts");
     expect(plan.options.some((option) => option.policy === "explicit-import" && option.path?.endsWith("session-codex.jsonl"))).toBe(true);
     expect(plan.options.some((option) => option.policy === "blocked" && option.path?.includes(`${path.sep}.codex${path.sep}memories`))).toBe(true);
+  });
+
+  it("detects and learns from OpenCode ambient metadata without raw prompts or diffs", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-learn-opencode-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "learn-opencode", now: new Date("2026-06-27T00:00:00.000Z") });
+    await writeText(root, ".openskill-kit/ambient/opencode-events.jsonl", [
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "file-changed",
+        capturedAt: "2026-06-27T00:01:00.000Z",
+        metadata: {
+          path: "src/parser.ts",
+          status: "ok",
+          prompt: "raw prompt must not survive",
+          diff: "raw diff must not survive"
+        }
+      }),
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "permission-decision",
+        capturedAt: "2026-06-27T00:02:00.000Z",
+        metadata: { decision: "denied", command: "rm -rf build" }
+      })
+    ].join("\n") + "\n");
+
+    const plan = await planLearningSources(root, { sourceMode: "all-detected", now: new Date("2026-06-27T00:03:00.000Z") });
+    const ambient = plan.options.find((option) => option.id === "opencode-ambient");
+    expect(ambient?.policy).toBe("safe-metadata");
+    expect(plan.defaults.selectedSourceIds).toContain("opencode-ambient");
+    expect(ambient?.reason).toContain("no raw prompts or raw diffs");
+
+    const applied = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["opencode-ambient"],
+      previewOnly: false,
+      now: new Date("2026-06-27T00:04:00.000Z")
+    });
+    expect(applied.safeMetadata.opencode.appendedCount).toBe(2);
+    expect(applied.digest.eventsAppended).toBe(2);
+    const serialized = JSON.stringify(await readEvents(root));
+    expect(serialized).toContain("opencode-ambient");
+    expect(serialized).toContain("src/parser.ts");
+    expect(serialized).not.toContain("raw prompt must not survive");
+    expect(serialized).not.toContain("raw diff must not survive");
   });
 
   it("runs learning plans preview-first and keeps activation review-gated", async () => {
