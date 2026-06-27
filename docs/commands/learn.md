@@ -8,6 +8,7 @@ Teach OSK from current session, safe detected sources, or explicit imports.
 |---|---|---|---|
 | Current session safe summary | selected | safe metadata | Uses OSK task-finish summaries and safe event metadata. |
 | Git metadata | selected for all-detected | safe metadata | Branch, changed file names, diff stats, and commit subjects only. No raw diffs. |
+| OpenCode ambient metadata | selected when present | safe metadata | Reads `.openskill-kit/ambient/opencode-events.jsonl` written by generated OpenCode hooks. Whitelisted event metadata only; no raw prompts, raw diffs, or tool output. |
 | Codex/Claude/Cursor/manual export file | not selected | explicit import | Preview first, apply only after explicit approval. |
 | Review notes file | not selected | explicit import | Converts supplied notes into redacted review-comment events. |
 | Terminal history file | not selected | explicit import | Requires explicit file path; command metadata only. |
@@ -26,6 +27,7 @@ Teach OSK from current session, safe detected sources, or explicit imports.
 ```bash
 openskill-kit osk learn
 openskill-kit osk learn --all-detected
+openskill-kit osk learn --source opencode-ambient --apply
 openskill-kit osk learn --source current-session --source git-local --apply
 openskill-kit osk review --write
 ```
