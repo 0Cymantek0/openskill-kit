@@ -62,8 +62,11 @@ describe("agent plugin manifest", () => {
     expect(commandGuide).toContain("Prefer MCP");
     const codexGuide = readFileSync(path.join(root, "install-guides", "codex.md"), "utf8");
     const genericGuide = readFileSync(path.join(root, "install-guides", "generic-mcp.md"), "utf8");
+    const opencodeGuide = readFileSync(path.join(root, "install-guides", "opencode.md"), "utf8");
     expect(codexGuide).toContain("AGENTS.md");
     expect(codexGuide).toContain(".codex/config.toml");
     expect(genericGuide).toContain("osk_bootstrap_session");
+    expect(opencodeGuide).toContain("preserves the user's `plugin` list");
+    expect(opencodeGuide).toContain(".opencode/plugins");
   });
 });
