@@ -36,6 +36,8 @@ Manual audit:
 - OpenWorld `report --write` collects sources, anchors, suites, verifier executions, candidate repair runs, EvolutionRuns, eval reports, hidden-oracle harnesses, and next actions in one task report.
 - OpenWorld `promote-review` creates only a semantic review proposal from passed runs and never activates behavior directly.
 - `status --explain` gives useful next action text.
+- Harness docs exist for OpenCode, Codex, Claude Code, and Cursor, and each guide shows dry-run first.
+- `docs/mcp-profiles.md`, `docs/security/privacy-by-command.md`, and `docs/developer/command-family-registry.md` match the current public command and MCP profile surfaces.
 - Generated packs do not include private event, signal, interaction import-run, review, eval-run, report, raw prompt, raw diff, or secret data.
 - Imported hooks stay excluded unless `--trust-hooks` is explicit.
 - Docs and examples avoid external product comparisons.

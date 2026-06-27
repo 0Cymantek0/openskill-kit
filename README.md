@@ -51,6 +51,15 @@ npx openskill-kit compile --target plugin
 npx openskill-kit agent attach-plugin --host generic-mcp --dry-run
 ```
 
+Launch docs:
+
+- [OpenCode harness guide](docs/harnesses/opencode.md)
+- [Codex harness guide](docs/harnesses/codex.md)
+- [Claude Code harness guide](docs/harnesses/claude-code.md)
+- [Cursor harness guide](docs/harnesses/cursor.md)
+- [MCP profiles](docs/mcp-profiles.md)
+- [Privacy by command](docs/security/privacy-by-command.md)
+
 This creates `.openskill-kit/`, records only explicitly supplied safe metadata,
 stages candidate behavior for Learning Review, compiles a Context Pack and
 project behavior skill, and writes an attachable plugin under
