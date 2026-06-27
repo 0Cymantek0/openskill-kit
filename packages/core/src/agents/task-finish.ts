@@ -12,9 +12,17 @@ export interface AgentTaskFinishInput {
   sessionId?: string;
   summary: string;
   outcome?: AgentTaskOutcome;
+  outcomeReason?: string;
   files?: string[];
   commands?: string[];
   commandStatus?: AgentTaskCommandStatus;
+  proposedPatchHash?: string;
+  finalPatchHash?: string;
+  diffStats?: {
+    added: number;
+    removed: number;
+    files: number;
+  };
   learn?: boolean;
   compileSafe?: boolean;
   maxEvents?: number;
@@ -42,9 +50,13 @@ export async function finishAgentTask(input: AgentTaskFinishInput): Promise<Agen
   if (!summary) throw new Error("summary is required.");
   const sessionId = input.sessionId?.trim() || `agent-task-${new Date().toISOString().slice(0, 10)}`;
   const outcome = input.outcome ?? "completed";
+  const outcomeReason = input.outcomeReason?.trim();
   const files = normalizeList(input.files ?? []);
   const commands = normalizeList(input.commands ?? []);
   const commandStatus = input.commandStatus ?? "unknown";
+  const proposedPatchHash = normalizeHash(input.proposedPatchHash);
+  const finalPatchHash = normalizeHash(input.finalPatchHash);
+  const diffStats = normalizeDiffStats(input.diffStats);
   const appended: AppendEventResult[] = [];
   const base = {
     sessionId,
@@ -53,12 +65,13 @@ export async function finishAgentTask(input: AgentTaskFinishInput): Promise<Agen
     commands: commands.map((command) => ({ command, status: commandStatus })),
     privacy: { redacted: false, rawStored: false, containsUserText: true, containsCode: false }
   };
-  appended.push(await appendEvent(root, eventInput("task-completed", summary, outcome, base)));
-  if (commands.length) appended.push(await appendEvent(root, eventInput("test-result", summary, outcome, base)));
-  if (outcome === "accepted") appended.push(await appendEvent(root, eventInput("user-accepted", summary, outcome, base)));
-  if (outcome === "rejected") appended.push(await appendEvent(root, eventInput("user-rejected", summary, outcome, base)));
-  if (outcome === "edited") appended.push(await appendEvent(root, eventInput("user-edited", summary, outcome, base)));
-  appended.push(await appendEvent(root, eventInput("session-end", summary, outcome, base)));
+  const metadata = { outcomeReason, proposedPatchHash, finalPatchHash, diffStats };
+  appended.push(await appendEvent(root, eventInput("task-completed", summary, outcome, base, metadata)));
+  if (commands.length) appended.push(await appendEvent(root, eventInput("test-result", summary, outcome, base, metadata)));
+  if (outcome === "accepted") appended.push(await appendEvent(root, eventInput("user-accepted", summary, outcome, base, metadata)));
+  if (outcome === "rejected") appended.push(await appendEvent(root, eventInput("user-rejected", summary, outcome, base, metadata)));
+  if (outcome === "edited") appended.push(await appendEvent(root, eventInput("user-edited", summary, outcome, base, metadata)));
+  appended.push(await appendEvent(root, eventInput("session-end", summary, outcome, base, metadata)));
 
   const lifecycle = input.learn === false
     ? undefined
@@ -88,8 +101,12 @@ function eventInput(
   eventType: OpenSkillEventInput["eventType"],
   summary: string,
   outcome: AgentTaskOutcome,
-  base: Pick<OpenSkillEventInput, "sessionId" | "source" | "files" | "commands" | "privacy">
+  base: Pick<OpenSkillEventInput, "sessionId" | "source" | "files" | "commands" | "privacy">,
+  metadata: Pick<AgentTaskFinishInput, "outcomeReason" | "proposedPatchHash" | "finalPatchHash" | "diffStats">
 ): OpenSkillEventInput {
+  const accepted = outcome === "accepted";
+  const rejected = outcome === "rejected";
+  const edited = outcome === "edited";
   return {
     ...base,
     eventType,
@@ -97,7 +114,31 @@ function eventInput(
     normalized: {
       text: summary,
       outcome,
-      summaryKind: "agent-task-finish"
+      summaryKind: "agent-task-finish",
+      task: {
+        type: inferTaskType(summary),
+        risk: inferRisk(summary, base.commands ?? [])
+      },
+      userAction: {
+        accepted,
+        rejectedReason: rejected ? metadata.outcomeReason : undefined,
+        editedPatchHash: edited ? metadata.finalPatchHash : undefined,
+        finalPatchHash: metadata.finalPatchHash
+      },
+      agent: {
+        proposedPatchHash: metadata.proposedPatchHash
+      },
+      git: {
+        diffStats: metadata.diffStats
+      },
+      outcomeDetails: {
+        status: outcomeStatus(outcome, base.commands ?? []),
+        reason: metadata.outcomeReason,
+        evidence: [
+          ...((base.files ?? []).map((file) => file.path)),
+          ...((base.commands ?? []).map((command) => [command.command, ...(command.args ?? [])].join(" ").trim()).filter(Boolean))
+        ]
+      }
     }
   };
 }
@@ -112,4 +153,38 @@ function summarizeReview(queue: ReviewQueueResult): AgentTaskFinishResult["revie
 
 function normalizeList(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
+}
+
+function normalizeHash(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && /^[A-Za-z0-9:_-]{6,128}$/.test(trimmed) ? trimmed : undefined;
+}
+
+function normalizeDiffStats(value: AgentTaskFinishInput["diffStats"]): AgentTaskFinishInput["diffStats"] | undefined {
+  if (!value) return undefined;
+  const added = Math.max(0, Math.floor(value.added));
+  const removed = Math.max(0, Math.floor(value.removed));
+  const files = Math.max(0, Math.floor(value.files));
+  return { added, removed, files };
+}
+
+function inferTaskType(summary: string): string {
+  if (/\b(test|spec|pytest|vitest)\b/i.test(summary)) return "test";
+  if (/\b(doc|readme|documentation)\b/i.test(summary)) return "docs";
+  if (/\b(security|auth|secret|token)\b/i.test(summary)) return "security";
+  if (/\b(refactor|cleanup)\b/i.test(summary)) return "refactor";
+  if (/\b(fix|bug|regression)\b/i.test(summary)) return "bugfix";
+  return "feature";
+}
+
+function inferRisk(summary: string, commands: NonNullable<OpenSkillEventInput["commands"]>): string {
+  if (/\b(security|auth|delete|destructive|migration|production)\b/i.test(summary)) return "high";
+  if (commands.some((command) => command.status === "fail" || command.status === "blocked" || command.status === "timeout")) return "medium";
+  return "low";
+}
+
+function outcomeStatus(outcome: AgentTaskOutcome, commands: NonNullable<OpenSkillEventInput["commands"]>): string {
+  if (outcome === "rejected") return "failed";
+  if (commands.some((command) => command.status === "fail" || command.status === "blocked" || command.status === "timeout")) return "failed";
+  return "success";
 }

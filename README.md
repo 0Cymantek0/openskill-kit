@@ -129,6 +129,7 @@ openskill-kit prefs --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit route --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit context --query "parser test change" --path src/parser/tokenizer.ts
 openskill-kit finish-task --summary "Prefer focused parser tests before final response." --command "npm test" --command-status pass
+openskill-kit finish-task --summary "User accepted parser fix." --outcome accepted --final-patch-hash sha256:<hash> --diff-added 12 --diff-removed 3 --diff-files 1
 openskill-kit daemon
 openskill-kit agent doctor
 openskill-kit agent install-manifests --target project --dry-run

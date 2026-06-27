@@ -190,7 +190,11 @@ describe("openskill-kit MCP server", () => {
           summary: "Always run npm test before final response.",
           outcome: "accepted",
           commands: ["npm test"],
-          commandStatus: "pass"
+          commandStatus: "pass",
+          outcomeReason: "User accepted verified test workflow.",
+          proposedPatchHash: "sha256:mcpProposal",
+          finalPatchHash: "sha256:mcpFinal",
+          diffStats: { added: 4, removed: 1, files: 1 }
         }
       });
       const finishedParsed = JSON.parse(finished.content.find((item) => item.type === "text")?.text ?? "{}");

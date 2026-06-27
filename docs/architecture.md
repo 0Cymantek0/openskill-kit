@@ -214,6 +214,14 @@ metadata-only records to `.openskill-kit/interactions/pool.jsonl`; CLI
 `interactions pool` and MCP `osk_get_interaction_pool` expose that normalized
 cross-agent event index without raw transcript content.
 
+## Harness Outcome Telemetry
+
+`finish-task` and MCP `osk_finish_agent_task` record accepted, rejected, edited,
+or completed task outcomes as normal events. Harness callers can pass short
+outcome reasons, patch hashes, and diff statistics; OpenSkillKit stores these as
+structured metadata under `normalized.userAction`, `normalized.agent`,
+`normalized.git`, and `normalized.outcomeDetails` without storing raw diffs.
+
 ## MCP Runtime
 
 `openskill-kit-mcp` exposes adaptive tools for bootstrap, status, context packs, interaction import, preference retrieval, event recording, proposal submission, review actions, learning, compilation, preference explanation, behavior packs, encrypted sync, evals, doctor checks, lifecycle runs, and maintenance operations.

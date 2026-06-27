@@ -365,17 +365,25 @@ export function createOpenSkillMcpServer(): McpServer {
         sessionId: z.string().min(1).default("agent-task"),
         summary: z.string().min(1).max(2000),
         outcome: z.enum(["completed", "accepted", "rejected", "edited"]).default("completed"),
+        outcomeReason: z.string().min(1).max(500).optional(),
         files: z.array(z.string().min(1)).default([]),
         commands: z.array(z.string().min(1)).default([]),
         commandStatus: z.enum(["pass", "fail", "blocked", "timeout", "unknown"]).default("unknown"),
+        proposedPatchHash: z.string().min(6).max(128).optional(),
+        finalPatchHash: z.string().min(6).max(128).optional(),
+        diffStats: z.object({
+          added: z.number().int().min(0),
+          removed: z.number().int().min(0),
+          files: z.number().int().min(0)
+        }).optional(),
         learn: z.boolean().default(true),
         compileSafe: z.boolean().default(false)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, sessionId, summary, outcome, files, commands, commandStatus, learn, compileSafe }) => {
+    async ({ projectRoot, sessionId, summary, outcome, outcomeReason, files, commands, commandStatus, proposedPatchHash, finalPatchHash, diffStats, learn, compileSafe }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await finishAgentTask({ projectRoot: root, sessionId, summary, outcome, files, commands, commandStatus, learn, compileSafe }), root);
+      return toolResult(await finishAgentTask({ projectRoot: root, sessionId, summary, outcome, outcomeReason, files, commands, commandStatus, proposedPatchHash, finalPatchHash, diffStats, learn, compileSafe }), root);
     }
   );
 

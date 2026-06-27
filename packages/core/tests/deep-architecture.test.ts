@@ -15,6 +15,7 @@ import {
   initAdaptiveProject,
   readEvidenceCards,
   readCalibrationReport,
+  readEvents,
   readPreferenceGraph,
   runBehaviorEval,
   installInstructionManifests,
@@ -199,9 +200,13 @@ describe("deep architecture hardening", () => {
       sessionId: "finish-test",
       summary: "Always run focused parser tests before final response.",
       outcome: "accepted",
+      outcomeReason: "Patch matched requested parser behavior.",
       files: ["src/parser/index.ts"],
       commands: ["npm test"],
-      commandStatus: "pass"
+      commandStatus: "pass",
+      proposedPatchHash: "sha256:proposal123",
+      finalPatchHash: "sha256:final456",
+      diffStats: { added: 12, removed: 3, files: 1 }
     });
 
     expect(result.schemaVersion).toBe("openskill-kit.agent-task-finish.v1");
@@ -210,6 +215,12 @@ describe("deep architecture hardening", () => {
     expect(result.lifecycle?.summaryPaths[0]).toContain("finish-test");
     expect(result.review?.pendingPreferenceCount).toBeGreaterThan(0);
     expect(result.nextActions.some((action) => action.includes("Review pending behavior"))).toBe(true);
+    const events = await readEvents(root);
+    const accepted = events.find((event) => event.eventType === "user-accepted");
+    expect(accepted?.normalized.userAction).toMatchObject({ accepted: true, finalPatchHash: "sha256:final456" });
+    expect(accepted?.normalized.agent).toMatchObject({ proposedPatchHash: "sha256:proposal123" });
+    expect(accepted?.normalized.git).toMatchObject({ diffStats: { added: 12, removed: 3, files: 1 } });
+    expect(accepted?.normalized.outcomeDetails).toMatchObject({ status: "success", reason: "Patch matched requested parser behavior." });
     const graph = await readPreferenceGraph(root);
     expect(graph.nodes.some((node) => node.statement.includes("focused parser tests"))).toBe(true);
   });

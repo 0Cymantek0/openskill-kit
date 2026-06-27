@@ -955,9 +955,15 @@ program.command("finish-task")
   .requiredOption("--summary <text>", "Short safe summary of what happened; no raw prompts, raw diffs, secrets, or hidden answers")
   .option("--session <id>", "Session id", "agent-task")
   .option("--outcome <outcome>", "completed|accepted|rejected|edited", "completed")
+  .option("--outcome-reason <text>", "Short reason for rejected or edited outcomes")
   .option("--file <path>", "Touched file path", collectOption, [])
   .option("--command <command>", "Verification or tool command", collectOption, [])
   .option("--command-status <status>", "pass|fail|blocked|timeout|unknown", "unknown")
+  .option("--proposed-patch-hash <hash>", "Hash/reference for agent proposed patch")
+  .option("--final-patch-hash <hash>", "Hash/reference for final accepted/edited patch")
+  .option("--diff-added <number>", "Added line count metadata", parseIntegerOption)
+  .option("--diff-removed <number>", "Removed line count metadata", parseIntegerOption)
+  .option("--diff-files <number>", "Changed file count metadata", parseIntegerOption)
   .option("--no-learn", "Record events without running learning")
   .option("--compile-safe", "Compile active behavior only when lifecycle sees no conflicts")
   .option("--json", "Print JSON")
@@ -967,9 +973,13 @@ program.command("finish-task")
       sessionId: options.session,
       summary: options.summary,
       outcome: parseTaskOutcome(options.outcome),
+      outcomeReason: options.outcomeReason,
       files: options.file,
       commands: options.command,
       commandStatus: parseCommandStatus(options.commandStatus),
+      proposedPatchHash: options.proposedPatchHash,
+      finalPatchHash: options.finalPatchHash,
+      diffStats: makeDiffStats(options.diffAdded, options.diffRemoved, options.diffFiles),
       learn: options.learn !== false,
       compileSafe: options.compileSafe === true
     });
@@ -1460,6 +1470,15 @@ function parseTaskOutcome(value: string): "completed" | "accepted" | "rejected" 
 function parseCommandStatus(value: string): "pass" | "fail" | "blocked" | "timeout" | "unknown" {
   if (value === "pass" || value === "fail" || value === "blocked" || value === "timeout" || value === "unknown") return value;
   throw new Error(`Invalid command status: ${value}. Expected pass, fail, blocked, timeout, or unknown.`);
+}
+
+function makeDiffStats(added: number | undefined, removed: number | undefined, files: number | undefined): { added: number; removed: number; files: number } | undefined {
+  if (added === undefined && removed === undefined && files === undefined) return undefined;
+  return {
+    added: added ?? 0,
+    removed: removed ?? 0,
+    files: files ?? 0
+  };
 }
 
 function collectOption(value: string, previous: string[]): string[] {
