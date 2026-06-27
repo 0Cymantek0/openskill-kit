@@ -42,13 +42,13 @@ describe("agent plugin manifest", () => {
         statusCli: "openskill-kit agent plugin-status --json"
       })
     ]));
-    expect(manifest.installProfile.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_plan_learning_sources", "osk_preview_plugin_attach", "osk_export_behavior_pack"]));
+    expect(manifest.installProfile.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_plan_learning_sources", "osk_review_behavior", "osk_compile_deploy", "osk_pack_behavior"]));
     expect(manifest.installProfile.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile"]));
     expect(manifest.commands.items).toHaveLength(12);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; aliases: string[] }) => item.command === "/osk task" && item.mcpTool === "osk_get_agent_task_context" && item.aliases.includes("/osk context"))).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources" && item.approvalRequired === true)).toBe(true);
-    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk deploy" && item.mcpTool === "osk_preview_plugin_attach" && item.approvalRequired === true)).toBe(true);
+    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk deploy" && item.mcpTool === "osk_compile_deploy" && item.approvalRequired === true)).toBe(true);
     expect(manifest.privacy.requiresExplicitApproval).toContain("interaction imports");
     expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
     const mcp = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));

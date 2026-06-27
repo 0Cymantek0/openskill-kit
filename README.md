@@ -93,14 +93,14 @@ benchmark evaluation yet.
 | `/osk status` | Show readiness, review counts, plugin state, and next actions. | `osk_bootstrap_session` |
 | `/osk task` | Load behavior before work and record a safe finish summary after work. | `osk_get_agent_task_context` |
 | `/osk learn` | Plan and run review-gated learning from selected safe sources. | `osk_plan_learning_sources` |
-| `/osk review` | Approve, reject, edit, lock, or demote candidate behavior. | `osk_get_review_queue` |
-| `/osk research` | Build leakage-audited OpenWorld source and anchor plans. | `osk_openworld_source_plan` |
-| `/osk evolve` | Refine source-grounded candidate skills through verifier artifacts. | `osk_openworld_refine` |
-| `/osk verify` | Check descriptors, compiled artifacts, verifier suites, and proof limits. | `osk_openworld_task_report` |
-| `/osk compile` | Refresh context packs, skills, command maps, descriptors, hooks, and plugin files. | `osk_compile_behavior_layer` |
-| `/osk deploy` | Preview or apply harness attach and project-local install steps. | `osk_preview_plugin_attach` |
+| `/osk review` | Approve, reject, edit, lock, or demote candidate behavior. | `osk_review_behavior` |
+| `/osk research` | Build leakage-audited OpenWorld source and anchor plans. | `osk_run_openworld_workflow` |
+| `/osk evolve` | Refine source-grounded candidate skills through verifier artifacts. | `osk_run_openworld_workflow` |
+| `/osk verify` | Check descriptors, compiled artifacts, verifier suites, and proof limits. | `osk_verify_behavior` |
+| `/osk compile` | Refresh context packs, skills, command maps, descriptors, hooks, and plugin files. | `osk_compile_deploy` |
+| `/osk deploy` | Preview or apply harness attach and project-local install steps. | `osk_compile_deploy` |
 | `/osk eval` | Measure behavior quality, calibration, and context overhead. | `osk_run_behavior_eval` |
-| `/osk pack` | Export, sign, verify, import, or apply reviewed behavior packs. | `osk_export_behavior_pack` |
+| `/osk pack` | Export, sign, verify, import, or apply reviewed behavior packs. | `osk_pack_behavior` |
 
 See [`docs/commands.md`](docs/commands.md) for the full generated command map.
 The lower-level CLI remains stable for scripts and advanced users:
@@ -150,73 +150,24 @@ The stdio MCP server exposes the adaptive runtime:
 openskill-kit-mcp
 ```
 
-Key tools:
+Public-profile facade tools:
 
 - `osk_bootstrap_session`
-- `osk_detect_environment`
-- `osk_get_agent_surfaces`
-- `osk_import_interaction_source`
-- `osk_list_interaction_adapters`
-- `osk_list_interaction_imports`
-- `osk_explain_interaction_import`
-- `osk_get_interaction_pool`
-- `osk_get_context_pack`
-- `osk_get_relevant_preferences`
-- `osk_route_behavior`
+- `osk_explain_status`
 - `osk_get_agent_task_context`
 - `osk_finish_agent_task`
-- `osk_record_event`
-- `osk_propose_preference`
-- `osk_get_review_queue`
-- `osk_apply_review_actions` (preferences plus workflowActivate/workflowReject/workflowLock/workflowDemote)
-- `osk_learn_from_session`
-- `osk_compile_behavior_layer`
-- `osk_explain_preference`
-- `osk_get_preference_evidence`
-- `osk_get_behavior_manifest`
-- `osk_preview_manifest_install`
-- `osk_apply_manifest_install`
-- `osk_preview_manifest_uninstall`
-- `osk_apply_manifest_uninstall`
-- `osk_validate_memory_candidate`
-- `osk_get_calibration_report`
-- `osk_export_behavior_pack`
-- `osk_export_encrypted_behavior_pack`
-- `osk_sign_behavior_pack`
-- `osk_verify_behavior_pack`
-- `osk_inspect_behavior_pack`
-- `osk_diff_behavior_pack`
-- `osk_import_behavior_pack`
-- `osk_import_encrypted_behavior_pack`
+- `osk_plan_learning_sources`
+- `osk_run_learning_plan`
+- `osk_review_behavior`
+- `osk_run_openworld_workflow`
+- `osk_verify_behavior`
+- `osk_compile_deploy`
 - `osk_run_behavior_eval`
-- `osk_run_agent_ab_eval`
-- `osk_run_external_agent_eval`
-- `osk_agent_doctor`
-- `osk_install_agent_hooks`
-- `osk_preview_plugin_attach`
-- `osk_apply_plugin_attach`
-- `osk_get_plugin_attach_status`
-- `osk_run_lifecycle_once`
-- `osk_mine_workflows`
-- `osk_get_workflow_graph`
-- `osk_explain_status`
-- `osk_run_full_doctor`
-- `osk_openworld_doctor`
-- `osk_openworld_source_plan`
-- `osk_openworld_ingest_source`
-- `osk_openworld_execute_source_plan`
-- `osk_openworld_sources`
-- `osk_openworld_candidate_skill`
-- `osk_openworld_run_verifier`
-- `osk_openworld_verifier_quality`
-- `osk_openworld_refine`
-- `osk_openworld_eval_report`
-- `osk_openworld_task_report`
-- `osk_openworld_promote_review`
-- `osk_compact_state`
-- `osk_prune_state`
-- `osk_archive_state`
-- `osk_reset_state`
+- `osk_pack_behavior`
+
+Advanced-profile tools remain available for scripts and lower-level automation,
+including interaction imports, manifest install/uninstall, hook install,
+OpenWorld source/verifier primitives, encrypted packs, signing, and maintenance.
 
 Legacy skill drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.
@@ -289,3 +240,4 @@ of the full project behavior when task scope is narrow.
 
 Future depth should focus on larger golden scenario packs, hosted sync, review
 UI polish, and real external-agent A/B evals.
+

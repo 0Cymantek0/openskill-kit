@@ -71,6 +71,11 @@ describe("openskill-kit MCP server", () => {
           "osk_record_event",
           "osk_learn_from_session",
           "osk_compile_behavior_layer",
+          "osk_compile_deploy",
+          "osk_review_behavior",
+          "osk_run_openworld_workflow",
+          "osk_verify_behavior",
+          "osk_pack_behavior",
           "osk_agent_doctor",
           "osk_install_agent_hooks",
           "osk_preview_plugin_attach",
@@ -125,10 +130,13 @@ describe("openskill-kit MCP server", () => {
         name: "osk_apply_review_actions",
         arguments: { projectRoot: root, activateAll: true }
       });
-      await client.callTool({
-        name: "osk_compile_behavior_layer",
-        arguments: { projectRoot: root, targets: ["plugin"] }
+      const facadeCompile = await client.callTool({
+        name: "osk_compile_deploy",
+        arguments: { projectRoot: root, action: "compile", targets: ["plugin"] }
       });
+      const facadeCompileParsed = JSON.parse(facadeCompile.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(facadeCompileParsed.schemaVersion).toBe("openskill-kit.compile-deploy.v1");
+      expect(facadeCompileParsed.compile.compiledTargets).toContain("plugin");
       const bootReady = await client.callTool({
         name: "osk_bootstrap_session",
         arguments: { projectRoot: root, init: false }
@@ -140,12 +148,12 @@ describe("openskill-kit MCP server", () => {
       expect(bootReadyParsed.plugin.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
 
       const attachPlan = await client.callTool({
-        name: "osk_preview_plugin_attach",
-        arguments: { projectRoot: root, host: "generic-mcp" }
+        name: "osk_compile_deploy",
+        arguments: { projectRoot: root, action: "deploy", host: "generic-mcp" }
       });
       const attachPlanParsed = JSON.parse(attachPlan.content.find((item) => item.type === "text")?.text ?? "{}");
-      expect(attachPlanParsed.status).toBe("planned");
-      expect(attachPlanParsed.files[0].destination).toContain(".mcp.json");
+      expect(attachPlanParsed.attachment.status).toBe("planned");
+      expect(attachPlanParsed.attachment.files[0].destination).toContain(".mcp.json");
       const healthPlan = await client.callTool({
         name: "osk_get_plugin_attach_status",
         arguments: { projectRoot: root }
@@ -201,6 +209,29 @@ describe("openskill-kit MCP server", () => {
       expect(finishedParsed.schemaVersion).toBe("openskill-kit.agent-task-finish.v1");
       expect(finishedParsed.eventIds.length).toBeGreaterThanOrEqual(4);
       expect(finishedParsed.lifecycle.signals.signalCount).toBeGreaterThan(0);
+
+      const reviewQueue = await client.callTool({
+        name: "osk_review_behavior",
+        arguments: { projectRoot: root, action: "queue" }
+      });
+      const reviewQueueParsed = JSON.parse(reviewQueue.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(reviewQueueParsed.schemaVersion).toBe("openskill-kit.review-queue.v1");
+
+      const verified = await client.callTool({
+        name: "osk_verify_behavior",
+        arguments: { projectRoot: root }
+      });
+      const verifiedParsed = JSON.parse(verified.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(verifiedParsed.schemaVersion).toBe("openskill-kit.verify-behavior.v1");
+      expect(verifiedParsed.hiddenOracleProof).toBe(false);
+
+      const packed = await client.callTool({
+        name: "osk_pack_behavior",
+        arguments: { projectRoot: root, action: "export" }
+      });
+      const packedParsed = JSON.parse(packed.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(packedParsed.schemaVersion).toBe("openskill-kit.project-pack.v1");
+      expect(packedParsed.packPath).toContain(".openskill-kit");
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",

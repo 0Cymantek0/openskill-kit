@@ -47,16 +47,16 @@ Plan and run explicit, review-gated learning from selected sources.
 
 Inspect and approve, reject, lock, or demote candidate behavior.
 
-- MCP tool: `osk_get_review_queue`
+- MCP tool: `osk_review_behavior`
 - CLI fallback: `openskill-kit review`
 - Read-only: `no`
-- Explicit approval required: `no`
+- Explicit approval required: `yes`
 
 ### /osk research
 
 Plan leakage-audited sources and anchors for unfamiliar tasks.
 
-- MCP tool: `osk_openworld_source_plan`
+- MCP tool: `osk_run_openworld_workflow`
 - CLI fallback: `openskill-kit openworld source-plan --task-id <task-id>`
 - Read-only: `no`
 - Explicit approval required: `no`
@@ -65,7 +65,7 @@ Plan leakage-audited sources and anchors for unfamiliar tasks.
 
 Generate review-only candidate skills from anchored OpenWorld evidence.
 
-- MCP tool: `osk_openworld_refine`
+- MCP tool: `osk_run_openworld_workflow`
 - CLI fallback: `openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>`
 - Read-only: `no`
 - Explicit approval required: `no`
@@ -74,7 +74,7 @@ Generate review-only candidate skills from anchored OpenWorld evidence.
 
 Run integrity, privacy, verifier, and proof-boundary checks.
 
-- MCP tool: `osk_openworld_verifier_quality`
+- MCP tool: `osk_verify_behavior`
 - CLI fallback: `openskill-kit openworld verifier-quality --task-id <task-id> --suite-id <suite-id>`
 - Read-only: `no`
 - Explicit approval required: `no`
@@ -83,7 +83,7 @@ Run integrity, privacy, verifier, and proof-boundary checks.
 
 Compile active reviewed behavior into harness artifacts.
 
-- MCP tool: `osk_compile_behavior_layer`
+- MCP tool: `osk_compile_deploy`
 - CLI fallback: `openskill-kit compile --target plugin`
 - Read-only: `no`
 - Explicit approval required: `no`
@@ -92,7 +92,7 @@ Compile active reviewed behavior into harness artifacts.
 
 Preview or apply project-local harness attachment with receipts.
 
-- MCP tool: `osk_preview_plugin_attach`
+- MCP tool: `osk_compile_deploy`
 - CLI fallback: `openskill-kit agent attach-plugin --host opencode --dry-run`
 - Read-only: `no`
 - Explicit approval required: `yes`
@@ -110,7 +110,8 @@ Measure OSK behavior through replay or external-agent evals.
 
 Export, verify, diff, sign, or import behavior packs through trust gates.
 
-- MCP tool: `osk_export_behavior_pack`
+- MCP tool: `osk_pack_behavior`
 - CLI fallback: `openskill-kit pack export`
 - Read-only: `no`
 - Explicit approval required: `yes`
+

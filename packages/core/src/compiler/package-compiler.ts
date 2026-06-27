@@ -113,6 +113,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_get_preference_evidence", "retrieval", "read-only"),
   descriptor("osk_propose_preference", "review", "local-write"),
   descriptor("osk_get_review_queue", "review", "local-write"),
+  descriptor("osk_review_behavior", "review", "approval-required", true),
   descriptor("osk_apply_review_actions", "review", "approval-required", true),
   descriptor("osk_get_behavior_manifest", "manifests", "read-only"),
   descriptor("osk_preview_manifest_install", "manifests", "local-write"),
@@ -136,6 +137,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_install_agent_hooks", "hooks", "approval-required", true),
   descriptor("osk_preview_plugin_attach", "plugin", "local-write"),
   descriptor("osk_apply_plugin_attach", "plugin", "approval-required", true),
+  descriptor("osk_compile_deploy", "plugin", "approval-required", true),
   descriptor("osk_get_plugin_attach_status", "plugin", "read-only"),
   descriptor("osk_get_plugin_install_profile", "plugin", "read-only"),
   descriptor("osk_run_lifecycle_once", "lifecycle", "local-write"),
@@ -143,6 +145,8 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_get_workflow_graph", "workflows", "read-only"),
   descriptor("osk_run_full_doctor", "doctor", "read-only"),
   descriptor("osk_openworld_doctor", "openworld", "read-only"),
+  descriptor("osk_run_openworld_workflow", "openworld", "local-write"),
+  descriptor("osk_verify_behavior", "verification", "local-write"),
   descriptor("osk_openworld_source_plan", "openworld", "local-write"),
   descriptor("osk_openworld_ingest_source", "openworld", "local-write"),
   descriptor("osk_openworld_execute_source_plan", "openworld", "local-write"),
@@ -155,6 +159,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_openworld_hidden_oracle_harness", "openworld", "local-write"),
   descriptor("osk_openworld_task_report", "openworld", "local-write"),
   descriptor("osk_openworld_promote_review", "openworld", "approval-required", true),
+  descriptor("osk_pack_behavior", "packs", "approval-required", true),
   descriptor("osk_reset_state", "maintenance", "approval-required", true),
   descriptor("osk_prune_state", "maintenance", "approval-required", true),
   descriptor("osk_archive_state", "maintenance", "approval-required", true),
@@ -163,17 +168,17 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
 
 const PUBLIC_MCP_PROFILE_TOOLS = [
   "osk_bootstrap_session",
+  "osk_explain_status",
   "osk_get_agent_task_context",
   "osk_finish_agent_task",
   "osk_plan_learning_sources",
-  "osk_get_review_queue",
-  "osk_openworld_source_plan",
-  "osk_openworld_refine",
-  "osk_openworld_verifier_quality",
-  "osk_compile_behavior_layer",
-  "osk_preview_plugin_attach",
+  "osk_run_learning_plan",
+  "osk_review_behavior",
+  "osk_run_openworld_workflow",
+  "osk_verify_behavior",
+  "osk_compile_deploy",
   "osk_run_behavior_eval",
-  "osk_export_behavior_pack"
+  "osk_pack_behavior"
 ];
 
 async function compileMcpConfig(root: string, contextPackPath?: string): Promise<CompileMcpConfigResult> {

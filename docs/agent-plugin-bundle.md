@@ -205,8 +205,8 @@ Harness behavior should stay conservative:
   config.
 - Use `osk_get_plugin_attach_status` for readiness checks,
   `osk_get_plugin_install_profile` for the machine attach contract,
-  `osk_preview_plugin_attach` for MCP-based attach previews, and
-  `osk_apply_plugin_attach` only after explicit approval.
+  `osk_compile_deploy` for public compile/deploy flows, and
+  `osk_apply_plugin_attach` only for advanced explicit-approval automation.
 - Preview managed instruction files and hooks before applying.
 - Require explicit approval for global writes, hook execution, interaction
   imports, and behavior pack imports.

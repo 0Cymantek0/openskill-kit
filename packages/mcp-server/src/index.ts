@@ -579,6 +579,51 @@ export function createOpenSkillMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "osk_review_behavior",
+    {
+      title: "OpenSkillKit Review Behavior",
+      description: "Facade for behavior review: read queue by default, or apply explicit review actions.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        action: z.enum(["queue", "apply"]).default("queue"),
+        activate: z.array(z.string().min(1)).default([]),
+        reject: z.array(z.string().min(1)).default([]),
+        lock: z.array(z.string().min(1)).default([]),
+        demote: z.array(z.string().min(1)).default([]),
+        promote: z.array(z.string().min(1)).default([]),
+        promoteGlobal: z.array(z.string().min(1)).default([]),
+        activateAll: z.boolean().default(false),
+        workflowActivate: z.array(z.string().min(1)).default([]),
+        workflowReject: z.array(z.string().min(1)).default([]),
+        workflowLock: z.array(z.string().min(1)).default([]),
+        workflowDemote: z.array(z.string().min(1)).default([]),
+        workflowActivateAll: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, action, workflowActivate, workflowReject, workflowLock, workflowDemote, workflowActivateAll, ...options }) => {
+      const root = resolveProjectRoot(projectRoot);
+      if (action === "queue") return toolResult(await buildReviewQueue(root), root);
+      const preferences = await applyPreferenceReview(root, options);
+      const hasWorkflowAction = workflowActivate.length > 0
+        || workflowReject.length > 0
+        || workflowLock.length > 0
+        || workflowDemote.length > 0
+        || workflowActivateAll;
+      const workflows = hasWorkflowAction
+        ? await applyWorkflowReview(root, {
+          activate: workflowActivate,
+          reject: workflowReject,
+          lock: workflowLock,
+          demote: workflowDemote,
+          activateAll: workflowActivateAll
+        })
+        : undefined;
+      return toolResult(workflows ? { preferences, workflows } : preferences, root);
+    }
+  );
+
+  server.registerTool(
     "osk_apply_review_actions",
     {
       title: "OpenSkillKit Apply Review Actions",
@@ -768,6 +813,38 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await exportProjectBehaviorPack(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_pack_behavior",
+    {
+      title: "OpenSkillKit Pack Behavior",
+      description: "Facade for safe behavior pack export, verify, inspect, diff, and staged import.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        action: z.enum(["export", "verify", "inspect", "diff", "import"]).default("export"),
+        packPath: z.string().min(1).optional(),
+        otherPackPath: z.string().min(1).optional(),
+        dryRun: z.boolean().default(true),
+        trustHooks: z.boolean().default(false),
+        review: z.boolean().default(false),
+        maxChangedFiles: z.number().int().min(0).optional()
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, action, packPath, otherPackPath, dryRun, trustHooks, review, maxChangedFiles }) => {
+      const root = resolveProjectRoot(projectRoot);
+      if (action === "export") return toolResult(await exportProjectBehaviorPack(root), root);
+      if (!packPath) throw new Error("packPath required for verify, inspect, diff, or import.");
+      const resolvedPack = resolvePath(packPath, root);
+      if (action === "verify") return toolResult(await verifyProjectBehaviorPack(resolvedPack), root);
+      if (action === "inspect") return toolResult(await inspectProjectBehaviorPack(resolvedPack), root);
+      if (action === "diff") {
+        if (!otherPackPath) throw new Error("otherPackPath required for diff.");
+        return toolResult(await diffProjectBehaviorPacks(resolvedPack, resolvePath(otherPackPath, root)), root);
+      }
+      return toolResult(await importProjectBehaviorPack(root, resolvedPack, { dryRun, trustHooks, review, maxChangedFiles }), root);
     }
   );
 
@@ -975,6 +1052,40 @@ export function createOpenSkillMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "osk_compile_deploy",
+    {
+      title: "OpenSkillKit Compile Deploy",
+      description: "Facade for compile and preview/apply harness attachment.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        action: z.enum(["compile", "deploy"]).default("compile"),
+        targets: z.array(z.enum(CompileTargets)).optional(),
+        includeStagedPreview: z.boolean().default(false),
+        host: z.enum(AgentPluginAttachHosts).default("opencode"),
+        apply: z.boolean().default(false),
+        yes: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, action, targets, includeStagedPreview, host, apply, yes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const compile = await compileBehaviorLayer(root, { targets: targets ?? ["plugin"], includeStagedPreview });
+      const attachment = action === "deploy"
+        ? await attachAgentPlugin(root, { host, dryRun: !(apply && yes), yes: apply && yes })
+        : undefined;
+      return toolResult({
+        schemaVersion: "openskill-kit.compile-deploy.v1",
+        action,
+        compile,
+        attachment,
+        nextActions: attachment
+          ? attachment.messages
+          : ["Run with action `deploy` to preview harness attachment after reviewing compiled artifacts."]
+      }, root);
+    }
+  );
+
+  server.registerTool(
     "osk_get_plugin_attach_status",
     {
       title: "OpenSkillKit Plugin Attach Status",
@@ -1131,6 +1242,82 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runOpenWorldDoctor(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_run_openworld_workflow",
+    {
+      title: "OpenSkillKit OpenWorld Workflow",
+      description: "Facade for research, evolve, verifier quality, reports, and promotion review.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        action: z.enum(["research", "evolve", "verifier-quality", "eval-report", "task-report", "promote-review"]).default("research"),
+        taskId: z.string().min(1).optional(),
+        query: z.string().optional(),
+        paths: z.array(z.string().min(1)).default([]),
+        suiteId: z.string().min(1).optional(),
+        candidateSkillId: z.string().min(1).optional(),
+        runId: z.string().min(1).optional(),
+        sandboxMode: z.enum(["local-process", "docker"]).default("local-process"),
+        dockerImage: z.string().min(1).optional(),
+        maxRounds: z.number().int().min(1).max(5).default(3),
+        timeoutMs: z.number().int().min(1000).max(300000).default(30000),
+        write: z.boolean().default(true)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, action, taskId, query, paths, suiteId, candidateSkillId, runId, sandboxMode, dockerImage, maxRounds, timeoutMs, write }) => {
+      const root = resolveProjectRoot(projectRoot);
+      if (action === "eval-report") {
+        if (!runId) throw new Error("runId required for eval-report.");
+        return toolResult(await buildOpenWorldEvalReport(root, runId), root);
+      }
+      if (action === "task-report" || action === "promote-review" || action === "research") {
+        if (!taskId) throw new Error("taskId required for this OpenWorld action.");
+      }
+      if (action === "task-report") return toolResult(await buildOpenWorldTaskReport(root, taskId!), root);
+      if (action === "promote-review") {
+        if (!runId) throw new Error("runId required for promote-review.");
+        return toolResult(await promoteOpenWorldRunToReview(root, runId, { dryRun: true }), root);
+      }
+      if (action === "research") return toolResult(await planOpenWorldResearch(root, taskId!, { query, paths, write }), root);
+      if (!taskId || !suiteId) throw new Error("taskId and suiteId required for evolve or verifier-quality.");
+      if (action === "verifier-quality") return toolResult(await assessOpenWorldVerifierQuality(root, taskId, suiteId, { write }), root);
+      return toolResult(await runOpenWorldRefinement(root, taskId, suiteId, { candidateSkillId, sandboxMode, dockerImage, maxRounds, timeoutMs }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_verify_behavior",
+    {
+      title: "OpenSkillKit Verify Behavior",
+      description: "Facade for memory integrity, plugin integrity, doctor checks, and optional OpenWorld verifier quality.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1).optional(),
+        suiteId: z.string().min(1).optional(),
+        write: z.boolean().default(true)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, taskId, suiteId, write }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const memory = await validateMemoryIntegrity(root);
+      const plugin = await getCompiledPluginStatus(root);
+      const doctor = await runFullDoctor(root).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+      const openWorld = taskId && suiteId
+        ? await assessOpenWorldVerifierQuality(root, taskId, suiteId, { write })
+        : await runOpenWorldDoctor(root).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+      return toolResult({
+        schemaVersion: "openskill-kit.verify-behavior.v1",
+        memory,
+        plugin,
+        doctor,
+        openWorld,
+        hiddenOracleProof: false,
+        proofLevel: taskId && suiteId ? "artifact-verifier" : "local-integrity"
+      }, root);
     }
   );
 

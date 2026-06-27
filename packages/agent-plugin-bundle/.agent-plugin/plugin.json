@@ -69,8 +69,9 @@
     },
     "approvalRequiredTools": [
       "osk_plan_learning_sources",
-      "osk_preview_plugin_attach",
-      "osk_export_behavior_pack"
+      "osk_review_behavior",
+      "osk_compile_deploy",
+      "osk_pack_behavior"
     ],
     "readOnlyFirstTools": [
       "osk_bootstrap_session",
@@ -206,10 +207,10 @@
           "review behavior"
         ],
         "description": "Inspect and approve, reject, lock, or demote candidate behavior.",
-        "mcpTool": "osk_get_review_queue",
+        "mcpTool": "osk_review_behavior",
         "cli": "openskill-kit review",
         "readOnly": false,
-        "approvalRequired": false,
+        "approvalRequired": true,
         "fallback": "cli",
         "visibility": "public",
         "familyId": "review"
@@ -221,7 +222,7 @@
           "osk ow source plan"
         ],
         "description": "Plan leakage-audited sources and anchors for unfamiliar tasks.",
-        "mcpTool": "osk_openworld_source_plan",
+        "mcpTool": "osk_run_openworld_workflow",
         "cli": "openskill-kit openworld source-plan --task-id <task-id>",
         "readOnly": false,
         "approvalRequired": false,
@@ -236,7 +237,7 @@
           "evolve skill"
         ],
         "description": "Generate review-only candidate skills from anchored OpenWorld evidence.",
-        "mcpTool": "osk_openworld_refine",
+        "mcpTool": "osk_run_openworld_workflow",
         "cli": "openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>",
         "readOnly": false,
         "approvalRequired": false,
@@ -252,7 +253,7 @@
           "osk ow verify"
         ],
         "description": "Run integrity, privacy, verifier, and proof-boundary checks.",
-        "mcpTool": "osk_openworld_verifier_quality",
+        "mcpTool": "osk_verify_behavior",
         "cli": "openskill-kit openworld verifier-quality --task-id <task-id> --suite-id <suite-id>",
         "readOnly": false,
         "approvalRequired": false,
@@ -268,7 +269,7 @@
           "osk compile"
         ],
         "description": "Compile active reviewed behavior into harness artifacts.",
-        "mcpTool": "osk_compile_behavior_layer",
+        "mcpTool": "osk_compile_deploy",
         "cli": "openskill-kit compile --target plugin",
         "readOnly": false,
         "approvalRequired": false,
@@ -284,7 +285,7 @@
           "deploy opencode"
         ],
         "description": "Preview or apply project-local harness attachment with receipts.",
-        "mcpTool": "osk_preview_plugin_attach",
+        "mcpTool": "osk_compile_deploy",
         "cli": "openskill-kit agent attach-plugin --host opencode --dry-run",
         "readOnly": false,
         "approvalRequired": true,
@@ -314,7 +315,7 @@
           "sync behavior pack"
         ],
         "description": "Export, verify, diff, sign, or import behavior packs through trust gates.",
-        "mcpTool": "osk_export_behavior_pack",
+        "mcpTool": "osk_pack_behavior",
         "cli": "openskill-kit pack export",
         "readOnly": false,
         "approvalRequired": true,
@@ -342,3 +343,4 @@
     ]
   }
 }
+

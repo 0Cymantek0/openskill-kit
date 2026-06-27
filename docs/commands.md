@@ -103,7 +103,7 @@ Inspect and approve, reject, lock, or demote candidate behavior.
 
 - Why public: Human review is the core safety boundary before activation.
 - CLI fallback: `openskill-kit review`
-- MCP first call: `osk_get_review_queue`
+- MCP first call: `osk_review_behavior`
 - Skills: `osk-review-gate`
 - Subagents: `osk-reviewer`
 - Output: Pending items, evidence summaries, actions taken, and compile next action.
@@ -120,7 +120,7 @@ Plan leakage-audited sources and anchors for unfamiliar tasks.
 
 - Why public: OpenWorld research is the first visible paper-style workflow stage.
 - CLI fallback: `openskill-kit openworld source-plan --task-id <task-id>`
-- MCP first call: `osk_openworld_source_plan`
+- MCP first call: `osk_run_openworld_workflow`
 - Skills: `osk-openworld`
 - Subagents: `osk-researcher`
 - Output: Source plan, blocked candidates, proof level, and next evolve/verify command.
@@ -137,7 +137,7 @@ Generate review-only candidate skills from anchored OpenWorld evidence.
 
 - Why public: Evolution is a high-value product workflow distinct from local learning.
 - CLI fallback: `openskill-kit openworld refine --task-id <task-id> --suite-id <suite-id> --candidate-id <candidate-id>`
-- MCP first call: `osk_openworld_refine`
+- MCP first call: `osk_run_openworld_workflow`
 - Skills: `osk-openworld`
 - Subagents: `osk-evolver`, `osk-verifier`
 - Output: Candidate, verifier results, proof level, limitations, and review next action.
@@ -155,7 +155,7 @@ Run integrity, privacy, verifier, and proof-boundary checks.
 
 - Why public: Verification is the trust surface before deploy, pack, or promotion.
 - CLI fallback: `openskill-kit openworld verifier-quality --task-id <task-id> --suite-id <suite-id>`
-- MCP first call: `osk_openworld_verifier_quality`
+- MCP first call: `osk_verify_behavior`
 - Skills: `osk-review-gate`, `osk-openworld`
 - Subagents: `osk-verifier`
 - Output: Pass/fail checks, proof level, hiddenOracleProof flag, and remediation.
@@ -172,7 +172,7 @@ Compile active reviewed behavior into harness artifacts.
 
 - Why public: Compile is the visible boundary between reviewed behavior and generated artifacts.
 - CLI fallback: `openskill-kit compile --target plugin`
-- MCP first call: `osk_compile_behavior_layer`
+- MCP first call: `osk_compile_deploy`
 - Skills: `osk-operating-manual`
 - Subagents: none
 - Output: Compiled targets, artifact paths, descriptor hashes, and attach next action.
@@ -189,7 +189,7 @@ Preview or apply project-local harness attachment with receipts.
 
 - Why public: Deploy writes host config and must be dry-run first.
 - CLI fallback: `openskill-kit agent attach-plugin --host opencode --dry-run`
-- MCP first call: `osk_preview_plugin_attach`
+- MCP first call: `osk_compile_deploy`
 - Skills: `osk-operating-manual`
 - Subagents: `osk-router`
 - Output: Planned/applied files, diff summary, receipt, restart instructions.
@@ -224,7 +224,7 @@ Export, verify, diff, sign, or import behavior packs through trust gates.
 
 - Why public: Pack operations cross project boundaries and need explicit provenance.
 - CLI fallback: `openskill-kit pack export`
-- MCP first call: `osk_export_behavior_pack`
+- MCP first call: `osk_pack_behavior`
 - Skills: `osk-review-gate`
 - Subagents: `osk-reviewer`
 - Output: Pack path, signature state, included/excluded classes, and review next action.
@@ -234,3 +234,4 @@ Workflow:
 1. Export only share-safe behavior.
 2. Verify signatures and privacy.
 3. Import as staged review items only.
+

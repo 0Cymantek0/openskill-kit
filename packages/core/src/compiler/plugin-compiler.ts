@@ -623,6 +623,10 @@ function renderOpenCodeCommand(family: OskCommandFamily): string {
     family.mcpTool
       ? `Call MCP tool \`${family.mcpTool}\` first. If MCP unavailable, run \`${family.cli}\` from project root.`
       : `Run \`${family.cli}\` from project root.`,
+    family.mcpTool?.startsWith("osk_run_openworld_workflow") ? `Use action \`${family.id}\` for this command family.` : undefined,
+    family.mcpTool === "osk_compile_deploy" ? `Use action \`${family.id}\` for this command family.` : undefined,
+    family.mcpTool === "osk_pack_behavior" ? "Use action `export` unless the user asks to verify, inspect, diff, or import a pack." : undefined,
+    family.mcpTool === "osk_review_behavior" ? "Use action `queue` unless the user explicitly asks to apply review decisions." : undefined,
     "",
     "## Workflow",
     "",
@@ -638,7 +642,7 @@ function renderOpenCodeCommand(family: OskCommandFamily): string {
     "",
     family.outputSummary,
     ""
-  ].join("\n");
+  ].filter((line): line is string => line !== undefined).join("\n");
 }
 
 interface OpenCodeAgentSpec {
