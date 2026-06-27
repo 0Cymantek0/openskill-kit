@@ -78,6 +78,8 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
     generated(projectRoot, ".openskill-kit/compiled/plugin/plugin.json", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/.agent-plugin/plugin.json", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/.mcp.json", "mcp-config"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/commands/commands.json", "compiled-artifact"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/commands/osk.md", "compiled-artifact"),
     hook(projectRoot, ".agents/hooks/openskill-kit.json", "project"),
     hook(projectRoot, ".openskill-kit/compiled/hooks/hooks.json", "project")
   ];

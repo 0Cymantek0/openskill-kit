@@ -24,6 +24,8 @@ describe("agent environment detection", () => {
     await writeText(root, ".openskill-kit/compiled/plugin/plugin.json", "{\"schemaVersion\":\"openskill-kit.agent-plugin.v1\"}\n");
     await writeText(root, ".openskill-kit/compiled/plugin/.agent-plugin/plugin.json", "{\"schemaVersion\":\"openskill-kit.agent-plugin.v1\"}\n");
     await writeText(root, ".openskill-kit/compiled/plugin/.mcp.json", "{\"mcpServers\":{\"openskill-kit\":{\"command\":\"openskill-kit-mcp\"}}}\n");
+    await writeText(root, ".openskill-kit/compiled/plugin/commands/commands.json", "{\"commands\":[{\"command\":\"/osk status\"}]}\n");
+    await writeText(root, ".openskill-kit/compiled/plugin/commands/osk.md", "# Command Map\n");
     await writeText(root, "session-codex.jsonl", "{\"role\":\"user\",\"content\":\"Prefer tests\"}\n");
     await writeText(root, ".codex-log/session-2026.jsonl", "{\"event\":\"user-prompt-submit\"}\n");
 
@@ -36,6 +38,8 @@ describe("agent environment detection", () => {
     expect(report.surfaces.some((surface) => surface.adapter === "openskill-kit" && surface.relativePath === ".openskill-kit/compiled/plugin/plugin.json" && surface.writePolicy === "generated-only")).toBe(true);
     expect(report.surfaces.some((surface) => surface.adapter === "openskill-kit" && surface.relativePath === ".openskill-kit/compiled/plugin/.agent-plugin/plugin.json")).toBe(true);
     expect(report.surfaces.some((surface) => surface.adapter === "openskill-kit" && surface.relativePath === ".openskill-kit/compiled/plugin/.mcp.json" && surface.surfaceType === "mcp-config")).toBe(true);
+    expect(report.surfaces.some((surface) => surface.adapter === "openskill-kit" && surface.relativePath === ".openskill-kit/compiled/plugin/commands/commands.json" && surface.writePolicy === "generated-only")).toBe(true);
+    expect(report.surfaces.some((surface) => surface.adapter === "openskill-kit" && surface.relativePath === ".openskill-kit/compiled/plugin/commands/osk.md")).toBe(true);
     const interactionExports = report.surfaces.filter((surface) => surface.surfaceType === "interaction-export");
     expect(interactionExports).toHaveLength(2);
     expect(interactionExports.every((surface) => surface.readPolicy === "explicit-import" && surface.writePolicy === "never" && surface.privacyRisk === "high")).toBe(true);

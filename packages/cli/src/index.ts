@@ -134,7 +134,11 @@ program.command("status")
       `Plugin ready: ${status.compiled.plugin}`,
       `Plugin: ${status.compiled.pluginStatus.pluginDir}`,
       status.compiled.plugin
-        ? `Plugin MCP: ${status.compiled.pluginStatus.mcpServerCommand}`
+        ? [
+          `Plugin MCP: ${status.compiled.pluginStatus.mcpServerCommand}`,
+          `Plugin commands: ${status.compiled.pluginStatus.commands.length}`,
+          `Plugin command map: ${status.compiled.pluginStatus.commandMapPath}`
+        ].join("\n")
         : status.compiled.pluginStatus.integrityIssues.length
           ? `Plugin integrity issues: ${status.compiled.pluginStatus.integrityIssues.join("; ")}`
           : `Plugin missing: ${status.compiled.pluginStatus.missing.join(", ")}`
