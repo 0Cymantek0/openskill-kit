@@ -88,7 +88,7 @@
     "hostConfig": [
       {
         "host": "codex",
-        "configPath": ".mcp.json",
+        "configPath": ".codex/config.toml",
         "supportLevel": "supported"
       },
       {

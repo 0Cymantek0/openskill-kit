@@ -33,7 +33,7 @@ describe("agent plugin attach planner", () => {
     await writeGraph(root, [pref("attach", "Prefer explicit host config writes", "workflow")]);
     await writeFile(path.join(root, ".mcp.json"), `${JSON.stringify({ mcpServers: { existing: { command: "existing-mcp" } }, keep: true }, null, 2)}\n`, "utf8");
 
-    const attached = await attachAgentPlugin(root, { host: "codex", dryRun: false, yes: true });
+    const attached = await attachAgentPlugin(root, { host: "generic-mcp", dryRun: false, yes: true });
 
     expect(attached.status).toBe("attached");
     expect(attached.dryRun).toBe(false);
@@ -49,6 +49,35 @@ describe("agent plugin attach planner", () => {
     expect(status.receiptCount).toBe(1);
     expect(status.hosts.find((host) => host.host === "generic-mcp")?.status).toBe("attached");
     expect(status.hosts.find((host) => host.host === "generic-mcp")?.projectRootBound).toBe(true);
+  });
+
+  it("attaches Codex through project config.toml while preserving other settings", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("codex", "Prefer Codex project-local MCP config", "workflow")]);
+    await mkdir(path.join(root, ".codex"), { recursive: true });
+    await writeFile(path.join(root, ".codex", "config.toml"), "model = \"gpt-5\"\n\n[mcp_servers.\"openskill-kit\"]\ncommand = \"node\"\n\n[mcp_servers.\"openskill-kit\".env]\nOLD_ROOT = \"stale\"\n\n[profiles.default]\napproval_policy = \"never\"\n", "utf8");
+
+    const planned = await attachAgentPlugin(root, { host: "codex", dryRun: true });
+    expect(planned.status).toBe("planned");
+    expect(planned.files[0]?.destination).toBe(path.join(root, ".codex", "config.toml"));
+    expect(String(planned.files[0]?.preview)).toContain("[mcp_servers.\"openskill-kit\"]");
+    expect(String(planned.files[0]?.preview)).toContain("model = \"gpt-5\"");
+    expect(String(planned.files[0]?.preview)).not.toContain("OLD_ROOT");
+    expect(await readFile(path.join(root, ".codex", "config.toml"), "utf8")).not.toContain("openskill-kit-mcp");
+
+    const attached = await attachAgentPlugin(root, { host: "codex", dryRun: false, yes: true });
+    expect(attached.status).toBe("attached");
+    const codexConfig = await readFile(path.join(root, ".codex", "config.toml"), "utf8");
+    expect(codexConfig).toContain("model = \"gpt-5\"");
+    expect(codexConfig).toContain("[mcp_servers.\"openskill-kit\"]");
+    expect(codexConfig).toContain("command = \"openskill-kit-mcp\"");
+    expect(codexConfig).toContain(`OPENSKILLKIT_PROJECT_ROOT = ${JSON.stringify(root)}`);
+    expect(codexConfig).toContain("[profiles.default]");
+    expect(codexConfig).not.toContain("OLD_ROOT");
+    const status = await getAgentPluginAttachStatus(root);
+    expect(status.attached).toBe(true);
+    expect(status.hosts.find((host) => host.host === "codex")?.status).toBe("attached");
+    expect(status.hosts.find((host) => host.host === "generic-mcp")?.status).toBe("missing");
   });
 
   it("blocks invalid host config JSON without overwriting it", async () => {
@@ -106,6 +135,18 @@ describe("agent plugin attach planner", () => {
 
     expect(planned.status).toBe("planned");
     expect(planned.files[0]?.destination).toBe(path.join(root, ".cursor", "mcp.json"));
+  });
+
+  it("reports Codex config root binding and command conflicts", async () => {
+    const root = await tempProject();
+    await mkdir(path.join(root, ".codex"), { recursive: true });
+    await writeFile(path.join(root, ".codex", "config.toml"), "[mcp_servers.\"openskill-kit\"]\ncommand = \"openskill-kit-mcp\"\n", "utf8");
+    let status = await getAgentPluginAttachStatus(root);
+    expect(status.hosts.find((host) => host.host === "codex")?.status).toBe("needs-root-binding");
+
+    await writeFile(path.join(root, ".codex", "config.toml"), `[mcp_servers."openskill-kit"]\ncommand = "node"\nenv = { OPENSKILLKIT_PROJECT_ROOT = ${JSON.stringify(root)} }\n`, "utf8");
+    status = await getAgentPluginAttachStatus(root);
+    expect(status.hosts.find((host) => host.host === "codex")?.status).toBe("wrong-command");
   });
 
   it("surfaces host attach readiness in status explain", async () => {

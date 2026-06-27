@@ -97,7 +97,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.schemaVersion).toBe("openskill-kit.agent-plugin.v1");
     expect(manifest.compatibility).toEqual(expect.arrayContaining(["agent-plugin", "mcp-stdio", "codex", "claude-code"]));
     expect(manifest.hostCompatibility).toEqual(expect.arrayContaining([
-      expect.objectContaining({ host: "codex", supportLevel: "supported", configPath: ".mcp.json", instructionSurface: "AGENTS.md" }),
+      expect.objectContaining({ host: "codex", supportLevel: "supported", configPath: ".codex/config.toml", instructionSurface: "AGENTS.md" }),
       expect.objectContaining({ host: "cursor", supportLevel: "preview", configPath: ".cursor/mcp.json" })
     ]));
     expect(manifest.capabilities).toContain("openworld-review-promotion");
@@ -114,7 +114,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host generic-mcp --dry-run");
     expect(manifest.installProfile.hostConfig).toEqual(expect.arrayContaining([
-      expect.objectContaining({ host: "codex", configPath: ".mcp.json", supportLevel: "supported" }),
+      expect.objectContaining({ host: "codex", configPath: ".codex/config.toml", supportLevel: "supported" }),
       expect.objectContaining({ host: "cursor", configPath: ".cursor/mcp.json", supportLevel: "preview" })
     ]));
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk update skills" && item.mcpTool === "osk_compile_behavior_layer" && item.cli === "openskill-kit compile --target agent-skills")).toBe(true);

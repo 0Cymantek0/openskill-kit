@@ -199,6 +199,9 @@ attach issue and directs operators to `openskill-kit agent attach-plugin
 --host generic-mcp --dry-run`.
 Applied host MCP config includes `OPENSKILLKIT_PROJECT_ROOT`, so an attached
 harness can omit per-tool `projectRoot` arguments without relying on launch cwd.
+Codex attach uses the project `.codex/config.toml`
+`[mcp_servers."openskill-kit"]` section instead of generic `.mcp.json`; the
+planner replaces only that section and preserves the rest of the TOML file.
 The same attachment health is exposed through status/bootstrap responses for
 agent UIs that need a direct ready/misconfigured signal. Attachment receipts
 record the plugin version and MCP descriptor hash active at apply time; status

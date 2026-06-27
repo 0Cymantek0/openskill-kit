@@ -21,6 +21,9 @@ describe("agent plugin manifest", () => {
     expect(manifest.installProfile.firstCall).toEqual({ mcpTool: "osk_bootstrap_session", cliFallback: "openskill-kit status --json" });
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(manifest.installProfile.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
+    expect(manifest.installProfile.hostConfig).toEqual(expect.arrayContaining([
+      expect.objectContaining({ host: "codex", configPath: ".codex/config.toml", supportLevel: "supported" })
+    ]));
     expect(manifest.installProfile.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_install_agent_hooks", "osk_import_interaction_source", "osk_openworld_promote_review"]));
     expect(manifest.installProfile.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile"]));
     expect(manifest.commands.items).toHaveLength(33);
@@ -75,6 +78,7 @@ describe("agent plugin manifest", () => {
     const codexGuide = readFileSync(path.join(root, "install-guides", "codex.md"), "utf8");
     const genericGuide = readFileSync(path.join(root, "install-guides", "generic-mcp.md"), "utf8");
     expect(codexGuide).toContain("AGENTS.md");
+    expect(codexGuide).toContain(".codex/config.toml");
     expect(genericGuide).toContain("osk_bootstrap_session");
   });
 });

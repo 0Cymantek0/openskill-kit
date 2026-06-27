@@ -122,3 +122,13 @@ Local MCP hosts can spawn the stdio server:
 
 Server tools default to deterministic local mode. Installation calls default to
 dry-run; pass `dryRun: false` and `yes: true` only after explicit approval.
+
+Codex project attach uses project-local TOML instead of global settings:
+
+```toml
+[mcp_servers."openskill-kit"]
+command = "openskill-kit-mcp"
+env = { OPENSKILLKIT_PROJECT_ROOT = "/absolute/project/root" }
+```
+
+Preview it first with `openskill-kit agent attach-plugin --host codex --dry-run`.

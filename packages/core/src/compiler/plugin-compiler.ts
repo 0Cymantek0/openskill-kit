@@ -392,8 +392,8 @@ function pluginHostCompatibility(): AgentPluginHostCompatibility[] {
     {
       host: "codex",
       supportLevel: "supported",
-      requires: ["stdio MCP client support", "project-local `.mcp.json` support", "repository AGENTS.md instruction surface"],
-      configPath: ".mcp.json",
+      requires: ["stdio MCP client support", "project-local `.codex/config.toml` support", "repository AGENTS.md instruction surface"],
+      configPath: ".codex/config.toml",
       instructionSurface: "AGENTS.md",
       notes: ["Use project-local config first; never import user Codex memories unless the user supplies an explicit export file."]
     },
@@ -441,7 +441,7 @@ function pluginInstallGuides(): PluginInstallGuide[] {
       steps: [
         "Attach this directory as a local plugin when the harness supports plugin directories.",
         "Keep `AGENTS.md` behavior managed through `openskill-kit agent install-manifests --target project --dry-run` before applying.",
-        "Use `.mcp.json` or equivalent Codex MCP config to start `openskill-kit-mcp` from the project root.",
+        "Use `openskill-kit agent attach-plugin --host codex --dry-run` to preview the project `.codex/config.toml` MCP section.",
         "Route `/osk ...` phrases through `commands/commands.json`."
       ],
       notes: [

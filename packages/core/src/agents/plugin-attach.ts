@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { compileBehaviorLayer } from "../compiler/package-compiler.js";
 import { getCompiledPluginStatus, type AgentPluginInstallProfile, type CompiledPluginStatus } from "../compiler/plugin-compiler.js";
-import { writeJsonAtomic } from "../storage/atomic.js";
+import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
 export const AgentPluginAttachHosts = ["codex", "claude-code", "cursor", "generic-mcp"] as const;
 export type AgentPluginAttachHost = typeof AgentPluginAttachHosts[number];
@@ -69,6 +69,11 @@ interface AttachReceipt {
   [key: string]: unknown;
 }
 
+interface HostConfigTarget {
+  destination: string;
+  format: "json-mcp" | "codex-toml";
+}
+
 export async function attachAgentPlugin(
   projectRoot: string,
   options: { host?: AgentPluginAttachHost; dryRun?: boolean; yes?: boolean } = {}
@@ -83,7 +88,7 @@ export async function attachAgentPlugin(
   if (!plugin.ready) {
     return blocked(root, host, plugin, [`Plugin is not ready: ${[...plugin.missing, ...plugin.integrityIssues].join(", ")}`]);
   }
-  const files = await Promise.all(hostConfigTargets(root, host).map((destination) => planMcpConfig(destination, plugin.mcpServerCommand, root)));
+  const files = await Promise.all(hostConfigTargets(root, host).map((target) => planHostConfig(target, plugin.mcpServerCommand, root)));
   const blockedFiles = files.filter((file) => file.action === "blocked");
   if (blockedFiles.length) {
     return {
@@ -114,7 +119,8 @@ export async function attachAgentPlugin(
   }
   for (const file of files) {
     assertInsideRoot(root, file.destination);
-    if (file.preview !== undefined) await writeJsonAtomic(file.destination, file.preview);
+    if (typeof file.preview === "string") await writeFileAtomic(file.destination, file.preview);
+    else if (file.preview !== undefined) await writeJsonAtomic(file.destination, file.preview);
   }
   const receiptPath = path.join(root, ".openskill-kit", "installs", `plugin-attach-${host}-${Date.now()}.json`);
   await writeJsonAtomic(receiptPath, {
@@ -200,15 +206,18 @@ export async function getAgentPluginInstallProfile(projectRoot: string): Promise
   };
 }
 
-function hostConfigTargets(root: string, host: AgentPluginAttachHost): string[] {
-  if (host === "cursor") return [path.join(root, ".cursor", "mcp.json")];
-  return [path.join(root, ".mcp.json")];
+function hostConfigTargets(root: string, host: AgentPluginAttachHost): HostConfigTarget[] {
+  if (host === "codex") return [{ destination: path.join(root, ".codex", "config.toml"), format: "codex-toml" }];
+  if (host === "cursor") return [{ destination: path.join(root, ".cursor", "mcp.json"), format: "json-mcp" }];
+  return [{ destination: path.join(root, ".mcp.json"), format: "json-mcp" }];
 }
 
 async function inspectHostAttach(root: string, host: AgentPluginAttachHost, plugin: CompiledPluginStatus, receipts: Array<{ path: string; receipt: AttachReceipt }>): Promise<AgentPluginHostAttachStatus> {
-  const destination = hostConfigTargets(root, host)[0]!;
+  const target = hostConfigTargets(root, host)[0]!;
+  const destination = target.destination;
   const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
   if (existing === undefined) return { host, destination, status: "missing", projectRootBound: false, issue: "Host MCP config missing" };
+  if (target.format === "codex-toml") return inspectAttachedServer(root, host, destination, parseCodexTomlMcpServer(existing, root), plugin, receipts);
   let parsed: McpConfig;
   try {
     parsed = JSON.parse(existing) as McpConfig;
@@ -220,7 +229,19 @@ async function inspectHostAttach(root: string, host: AgentPluginAttachHost, plug
     : undefined;
   const command = typeof server?.command === "string" ? server.command : undefined;
   const env = isRecord(server?.env) ? server.env : {};
-  const projectRootBound = env[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root;
+  return inspectAttachedServer(root, host, destination, { command, projectRootBound: env[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root }, plugin, receipts);
+}
+
+function inspectAttachedServer(
+  root: string,
+  host: AgentPluginAttachHost,
+  destination: string,
+  server: { command?: string; projectRootBound: boolean },
+  plugin: CompiledPluginStatus,
+  receipts: Array<{ path: string; receipt: AttachReceipt }>
+): AgentPluginHostAttachStatus {
+  const command = server.command;
+  const projectRootBound = server.projectRootBound;
   if (command !== "openskill-kit-mcp") {
     return {
       host,
@@ -272,6 +293,11 @@ async function listAttachReceipts(root: string): Promise<Array<{ path: string; r
   return receipts.sort((left, right) => String(right.receipt.attachedAt ?? "").localeCompare(String(left.receipt.attachedAt ?? "")));
 }
 
+async function planHostConfig(target: HostConfigTarget, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {
+  if (target.format === "codex-toml") return planCodexTomlConfig(target.destination, command, projectRoot);
+  return planMcpConfig(target.destination, command, projectRoot);
+}
+
 async function planMcpConfig(destination: string, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {
   const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
   let parsed: McpConfig = {};
@@ -307,6 +333,83 @@ async function planMcpConfig(destination: string, command: string, projectRoot: 
     preview: next,
     diff: unifiedDiff(destination, before, after)
   };
+}
+
+async function planCodexTomlConfig(destination: string, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {
+  const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
+  const before = existing ?? "";
+  const section = renderCodexTomlMcpSection(command, projectRoot);
+  const after = replaceCodexTomlMcpSection(before, section);
+  return {
+    destination,
+    action: existing === undefined ? "create" : before === after ? "unchanged" : "update",
+    preview: after,
+    diff: unifiedDiff(destination, before, after)
+  };
+}
+
+function renderCodexTomlMcpSection(command: string, projectRoot: string): string {
+  return [
+    '[mcp_servers."openskill-kit"]',
+    `command = ${tomlString(command)}`,
+    `env = { ${AGENT_PLUGIN_PROJECT_ROOT_ENV} = ${tomlString(projectRoot)} }`
+  ].join("\n");
+}
+
+function replaceCodexTomlMcpSection(existing: string, section: string): string {
+  const normalized = existing.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  const start = lines.findIndex(isCodexOskMcpHeader);
+  if (start === -1) {
+    const prefix = normalized.trimEnd();
+    return `${prefix ? `${prefix}\n\n` : ""}${section}\n`;
+  }
+  let end = start + 1;
+  while (end < lines.length && (!isTomlTableHeader(lines[end]!) || isCodexOskMcpNestedHeader(lines[end]!))) end += 1;
+  const next = [
+    ...lines.slice(0, start),
+    ...section.split("\n"),
+    ...lines.slice(end)
+  ].join("\n").replace(/\n*$/, "\n");
+  return next;
+}
+
+function parseCodexTomlMcpServer(content: string, projectRoot: string): { command?: string; projectRootBound: boolean } {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const start = lines.findIndex(isCodexOskMcpHeader);
+  if (start === -1) return { projectRootBound: false };
+  let end = start + 1;
+  while (end < lines.length && (!isTomlTableHeader(lines[end]!) || isCodexOskMcpNestedHeader(lines[end]!))) end += 1;
+  const section = lines.slice(start + 1, end).join("\n");
+  const commandMatch = section.match(/^\s*command\s*=\s*("(?:\\.|[^"])*")\s*$/m);
+  return {
+    command: commandMatch ? parseTomlString(commandMatch[1]!) : undefined,
+    projectRootBound: section.includes(`${AGENT_PLUGIN_PROJECT_ROOT_ENV} = ${tomlString(projectRoot)}`)
+  };
+}
+
+function isTomlTableHeader(line: string): boolean {
+  return /^\s*\[/.test(line);
+}
+
+function isCodexOskMcpHeader(line: string): boolean {
+  return /^\s*\[mcp_servers\.(?:"openskill-kit"|openskill-kit)\]\s*$/.test(line);
+}
+
+function isCodexOskMcpNestedHeader(line: string): boolean {
+  return /^\s*\[mcp_servers\.(?:"openskill-kit"|openskill-kit)\.[^\]]+\]\s*$/.test(line);
+}
+
+function tomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
+function parseTomlString(value: string): string | undefined {
+  try {
+    return JSON.parse(value) as string;
+  } catch {
+    return undefined;
+  }
 }
 
 function blocked(root: string, host: AgentPluginAttachHost, plugin: CompiledPluginStatus | undefined, messages: string[]): AgentPluginAttachResult {

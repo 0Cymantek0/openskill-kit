@@ -76,8 +76,9 @@ For harness compatibility, generated plugins also include:
   host attach notes. They keep existing host config reviewable instead of
   silently writing global settings.
 - `openskill-kit agent attach-plugin`: a safe host-config planner that compiles
-  the plugin, preserves existing MCP servers, writes only project-local config
-  (`.mcp.json` or `.cursor/mcp.json`), and records an install receipt on apply.
+  the plugin, preserves existing MCP servers/settings, writes only project-local
+  config (`.codex/config.toml`, `.mcp.json`, or `.cursor/mcp.json`), and records
+  an install receipt on apply.
   Applied config also sets `OPENSKILLKIT_PROJECT_ROOT` so MCP tools still bind
   to the project when a host launches the stdio server from another working
   directory.
@@ -104,6 +105,9 @@ Harness behavior should stay conservative:
 - Check `plugin.json.hostCompatibility` for the target host before writing any
   config. Treat preview hosts, currently Cursor rules, as manual-confirmation
   paths even when MCP attachment is supported.
+- For Codex, prefer `openskill-kit agent attach-plugin --host codex --dry-run`;
+  it updates only the project `.codex/config.toml` `mcp_servers."openskill-kit"`
+  section and preserves other Codex settings.
 - Compare `plugin.json.integrity.descriptorsHash` with
   `mcp/descriptor-hashes.json` before trusting tool descriptors.
 - Treat any `plugin.integrityIssues` returned from `osk_bootstrap_session` or

@@ -29,6 +29,9 @@ Run `openskill-kit detect` before attach planning. It reports project-level MCP
 and harness config surfaces such as `.mcp.json`, `.cursor/mcp.json`,
 `.claude/settings.json`, `continue/config.json`, `.codex/config.toml`, and
 `.roo/` with read/write policy and privacy metadata.
+For Codex, `openskill-kit agent attach-plugin --host codex --dry-run` plans a
+project `.codex/config.toml` `mcp_servers."openskill-kit"` section and preserves
+other settings.
 
 For MCP-capable hosts, run `openskill-kit-mcp`. It exposes the same core through
 stdio tools with sanitized structured output.

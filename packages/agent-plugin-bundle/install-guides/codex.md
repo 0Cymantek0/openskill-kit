@@ -6,7 +6,7 @@ Host: Codex
 
 1. Attach this directory as a local plugin when the harness supports plugin directories.
 2. Keep `AGENTS.md` behavior managed through `openskill-kit agent install-manifests --target project --dry-run` before applying.
-3. Use `.mcp.json` or equivalent Codex MCP config to start `openskill-kit-mcp` from the project root.
+3. Use `openskill-kit agent attach-plugin --host codex --dry-run` to preview the project `.codex/config.toml` MCP section.
 4. Route `/osk ...` phrases through `commands/commands.json`.
 
 ## Safety Notes

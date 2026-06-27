@@ -358,7 +358,7 @@ budget traces, encrypted privacy-safe sync envelopes,
 target-aware context/skill/manifest/hook/MCP/plugin compilation, standalone hook scripts,
 managed AGENTS/CLAUDE previews and installer, plugin output, MCP config
 generation, host MCP attach preview/apply with detection of invalid/conflicting
-MCP configs, env-bound project root, plugin attachment health in status/bootstrap,
+MCP configs, Codex project `.codex/config.toml` attach support, env-bound project root, plugin attachment health in status/bootstrap,
 project skill install, Project Behavior Pack
 export/sign/verify/inspect/diff/review/apply, behavior evals, maintenance
 commands, import diff gates, external-agent eval prompt harness, CLI, MCP tools,
