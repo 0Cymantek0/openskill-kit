@@ -5,6 +5,7 @@ import {
   OpenWorldCandidateSkillSchema,
   OpenWorldEvalReportSchema,
   OpenWorldEvolutionRunSchema,
+  OpenWorldHiddenOracleHarnessSchema,
   OpenWorldLeakageAuditSchema,
   OpenWorldResearchExecutionSchema,
   OpenWorldVerifierQualityReportSchema,
@@ -16,6 +17,7 @@ import {
   type OpenWorldCandidateSkill,
   type OpenWorldEvalReport,
   type OpenWorldEvolutionRun,
+  type OpenWorldHiddenOracleHarness,
   type OpenWorldLeakageAudit,
   type OpenWorldResearchExecution,
   type OpenWorldVerifierQualityReport,
@@ -40,6 +42,7 @@ export interface BuildOpenWorldTaskReportResult {
   researchExecutions: OpenWorldResearchExecution[];
   runs: OpenWorldEvolutionRun[];
   evalReports: OpenWorldEvalReport[];
+  hiddenOracleHarnesses: OpenWorldHiddenOracleHarness[];
   qualityReports: OpenWorldVerifierQualityReport[];
   nextActions: string[];
   markdown: string;
@@ -60,9 +63,10 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
   const researchExecutions = await readJsonFiles(path.join(taskDir, "research", "executions"), (value) => OpenWorldResearchExecutionSchema.parse(value));
   const runs = await readEvolutionRuns(root, taskId);
   const evalReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldEvalReportSchema.parse(value));
+  const hiddenOracleHarnesses = await readJsonFiles(path.join(taskDir, "harness"), (value) => OpenWorldHiddenOracleHarnessSchema.parse(value));
   const qualityReports = await readJsonFiles(path.join(taskDir, "reports"), (value) => OpenWorldVerifierQualityReportSchema.parse(value));
-  const nextActions = inferNextActions({ task, sources, anchors, suites, runs, evalReports, qualityReports });
-  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, candidateSkills, audits, researchExecutions, runs, evalReports, qualityReports, nextActions });
+  const nextActions = inferNextActions({ task, sources, anchors, suites, runs, evalReports, hiddenOracleHarnesses, qualityReports });
+  const markdown = renderOpenWorldTaskReport({ task, sources, anchors, suites, executions, plans, candidateSkills, audits, researchExecutions, runs, evalReports, hiddenOracleHarnesses, qualityReports, nextActions });
   const markdownPath = options.write === true
     ? await writeOpenWorldTaskTextArtifact(root, taskId, ["reports", "task-report.md"], markdown)
     : undefined;
@@ -79,6 +83,7 @@ export async function buildOpenWorldTaskReport(projectRoot: string, taskId: stri
     researchExecutions,
     runs,
     evalReports,
+    hiddenOracleHarnesses,
     qualityReports,
     nextActions,
     markdown,
@@ -98,6 +103,7 @@ export function renderOpenWorldTaskReport(input: {
   researchExecutions?: OpenWorldResearchExecution[];
   runs?: OpenWorldEvolutionRun[];
   evalReports?: OpenWorldEvalReport[];
+  hiddenOracleHarnesses?: OpenWorldHiddenOracleHarness[];
   qualityReports?: OpenWorldVerifierQualityReport[];
   nextActions?: string[];
 }): string {
@@ -111,8 +117,9 @@ export function renderOpenWorldTaskReport(input: {
   const researchExecutions = input.researchExecutions ?? [];
   const runs = input.runs ?? [];
   const evalReports = input.evalReports ?? [];
+  const hiddenOracleHarnesses = input.hiddenOracleHarnesses ?? [];
   const qualityReports = input.qualityReports ?? [];
-  const nextActions = input.nextActions ?? inferNextActions({ task: input.task, sources, anchors, suites, runs, evalReports, qualityReports });
+  const nextActions = input.nextActions ?? inferNextActions({ task: input.task, sources, anchors, suites, runs, evalReports, hiddenOracleHarnesses, qualityReports });
   const lines = [
     `# OpenWorld Task: ${input.task.title}`,
     "",
@@ -138,6 +145,7 @@ export function renderOpenWorldTaskReport(input: {
       `- Verifier executions: ${executions.length}`,
       `- Evolution runs: ${runs.length}`,
       `- Eval reports: ${evalReports.length}`,
+      `- Hidden-oracle harnesses: ${hiddenOracleHarnesses.length}`,
       `- Verifier quality reports: ${qualityReports.length}`,
       `- Research executions: ${researchExecutions.length}`,
       `- Leakage audits: ${audits.length}`
@@ -210,6 +218,13 @@ export function renderOpenWorldTaskReport(input: {
       report.proofLevel,
       report.hiddenOracleProof ? "yes" : "no"
     ])),
+    ...table("Hidden-Oracle Harnesses", ["ID", "Status", "Proof", "Denied Paths", "Leaks"], hiddenOracleHarnesses.map((harness) => [
+      harness.id,
+      harness.status,
+      harness.proofLevel,
+      String(harness.deniedPathProof.deniedPathCount),
+      String(harness.deniedPathProof.leakedReferenceCount)
+    ])),
     ...section("Next Actions", nextActions.map((action) => `- ${action}`))
   ];
   return `${lines.join("\n")}\n`;
@@ -254,6 +269,7 @@ function inferNextActions(input: {
   suites: VirtualTestSuite[];
   runs: OpenWorldEvolutionRun[];
   evalReports: OpenWorldEvalReport[];
+  hiddenOracleHarnesses: OpenWorldHiddenOracleHarness[];
   qualityReports: OpenWorldVerifierQualityReport[];
 }): string[] {
   if (!input.sources.length) return [`Ingest project-local source with: openskill-kit openworld research --task-id ${input.task.id} --file <path>`];
@@ -271,6 +287,7 @@ function inferNextActions(input: {
   if (!latestRun) return ["No next action inferred."];
   if (latestRun.status !== "passed") return [`Inspect failed run ${latestRun.id}; fix sources, anchors, or verifier before promotion.`];
   if (!input.evalReports.some((report) => report.runId === latestRun.id)) return [`Write artifact-verifier report with: openskill-kit openworld eval-report --run-id ${latestRun.id}`];
+  if (input.task.forbiddenPaths.length && !input.hiddenOracleHarnesses.length) return [`Write denied-path harness with: openskill-kit openworld hidden-oracle-harness --task-id ${input.task.id}`];
   return [`Passed run ${latestRun.id} is ready for review-only promotion: openskill-kit openworld promote-review --run-id ${latestRun.id} --dry-run`];
 }
 

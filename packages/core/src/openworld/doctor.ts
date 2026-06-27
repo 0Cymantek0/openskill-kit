@@ -36,11 +36,12 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "Candidate skill revisions", status: "available", message: "Visible verifier failures can write candidate skill revision artifacts with diagnosis, validation, safety, and leakage metadata." },
     { name: "Bounded verifier refinement", status: "available", message: "Visible verifier rounds stop early on pass or actionable failure; holdout runs only after visible success and writes an EvolutionRun." },
     { name: "OpenWorld eval reports", status: "available", message: "EvolutionRun metrics can be rendered with explicit artifact-verifier proof level and hidden-oracle limitations." },
+    { name: "Hidden-oracle denied-path harness", status: "available", message: "Generated runtime artifacts can be scanned for forbidden path exposure without reading oracle file contents; this is static proof, not benchmark proof." },
     { name: "Review-only promotion bridge", status: "available", message: "Passed OpenWorld runs can create semantic review proposals without activating behavior." },
     { name: "Autonomous web search", status: "missing", message: "No autonomous query planning or web/doc/repo search engine is implemented." },
     { name: "LLM skill generation", status: "missing", message: "No built-in model generation loop is implemented; candidate skill artifacts are deterministic and review-only." },
     { name: "Containerized skill repair", status: "missing", message: "Candidate revisions are artifact-only; no containerized iterative skill repair loop is implemented." },
-    { name: "Hidden-oracle benchmark proof", status: "missing", message: "Existing evals do not prove hidden-oracle benchmark improvement." }
+    { name: "Hidden-oracle benchmark proof", status: "missing", message: "Existing evals and denied-path scans do not prove hidden-oracle benchmark improvement." }
   ];
   return {
     schemaVersion: "openskill-kit.openworld-doctor.v1",

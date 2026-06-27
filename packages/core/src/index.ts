@@ -79,3 +79,4 @@ export * from "./openworld/refinement.js";
 export * from "./openworld/eval-report.js";
 export * from "./openworld/promotion.js";
 export * from "./openworld/doctor.js";
+export * from "./openworld/hidden-oracle.js";

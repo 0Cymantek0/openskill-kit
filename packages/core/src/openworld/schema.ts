@@ -480,6 +480,40 @@ export const OpenWorldEvalReportSchema = z.object({
   limitations: z.array(z.string().min(1)).default([])
 });
 
+export const OpenWorldHiddenOracleHarnessSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.openworld-hidden-oracle-harness.v1"),
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  suiteId: z.string().min(1).optional(),
+  generatedAt: z.string().datetime(),
+  status: z.enum(["pass", "fail", "warn"]),
+  proofLevel: z.enum(["denied-path-static", "not-proof"]),
+  hiddenOracleProof: z.literal(false),
+  deniedPathProof: z.object({
+    deniedPathCount: z.number().int().min(0),
+    scannedArtifactCount: z.number().int().min(0),
+    leakedReferenceCount: z.number().int().min(0),
+    osBoundaryEnforced: z.boolean(),
+    status: z.enum(["pass", "fail", "not-enforced"])
+  }),
+  deniedPaths: z.array(z.object({
+    id: z.string().min(1),
+    pathHash: z.string().min(16),
+    insideProject: z.boolean()
+  })).default([]),
+  scannedArtifacts: z.array(z.string().min(1)).default([]),
+  leaks: z.array(z.object({
+    artifactPath: z.string().min(1),
+    deniedPathId: z.string().min(1),
+    deniedPathHash: z.string().min(16)
+  })).default([]),
+  artifacts: z.object({
+    harnessPath: z.string().optional(),
+    markdownPath: z.string().optional()
+  }).default({}),
+  limitations: z.array(z.string().min(1)).default([])
+});
+
 export type OpenWorldTask = z.infer<typeof OpenWorldTaskSchema>;
 export type OpenWorldSource = z.infer<typeof OpenWorldSourceSchema>;
 export type OpenWorldSourceIndex = z.infer<typeof OpenWorldSourceIndexSchema>;
@@ -502,3 +536,4 @@ export type OpenWorldLeakageFinding = z.infer<typeof OpenWorldLeakageFindingSche
 export type OpenWorldLeakageAudit = z.infer<typeof OpenWorldLeakageAuditSchema>;
 export type OpenWorldEvolutionRun = z.infer<typeof OpenWorldEvolutionRunSchema>;
 export type OpenWorldEvalReport = z.infer<typeof OpenWorldEvalReportSchema>;
+export type OpenWorldHiddenOracleHarness = z.infer<typeof OpenWorldHiddenOracleHarnessSchema>;

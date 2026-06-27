@@ -40,6 +40,7 @@ import {
   loadSkillPackage,
   buildReviewQueue,
   buildOpenWorldEvalReport,
+  buildOpenWorldHiddenOracleHarness,
   buildOpenWorldTaskReport,
   proposeSemanticPreference,
   mineWorkflowGraph,
@@ -1099,6 +1100,25 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, runId }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await buildOpenWorldEvalReport(root, runId), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_hidden_oracle_harness",
+    {
+      title: "OpenSkillKit OpenWorld Hidden Oracle Harness",
+      description: "Write a static denied-path harness report without reading hidden oracle contents or claiming benchmark proof.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1),
+        suiteId: z.string().min(1).optional(),
+        deniedPaths: z.array(z.string().min(1)).default([])
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, taskId, suiteId, deniedPaths }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await buildOpenWorldHiddenOracleHarness(root, taskId, { suiteId, deniedPaths }), root);
     }
   );
 

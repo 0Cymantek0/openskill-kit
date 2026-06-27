@@ -8,6 +8,7 @@ import {
   assessOpenWorldVerifierQuality,
   buildOpenWorldRetrievalAdapters,
   buildOpenWorldEvalReport,
+  buildOpenWorldHiddenOracleHarness,
   buildOpenWorldTaskReport,
   buildReviewQueue,
   draftAnchorFromOpenWorldSource,
@@ -181,6 +182,16 @@ describe("OpenWorld local research", () => {
     expect(report.report.metrics.visiblePassRate).toBe(1);
     expect(report.report.metrics.holdoutPassRate).toBe(1);
     expect(await readFile(report.markdownPath, "utf8")).toContain("Hidden-oracle proof: no");
+    const harness = await buildOpenWorldHiddenOracleHarness(root, task.task.id, {
+      suiteId: suite.suite.id,
+      now: new Date("2026-06-26T01:04:46.000Z")
+    });
+    expect(harness.harness.status).toBe("pass");
+    expect(harness.harness.hiddenOracleProof).toBe(false);
+    expect(harness.harness.deniedPathProof.osBoundaryEnforced).toBe(false);
+    expect(harness.harness.deniedPathProof.scannedArtifactCount).toBeGreaterThan(0);
+    expect(JSON.stringify(harness.harness.deniedPaths)).not.toContain("hidden/oracle.txt");
+    expect(await readFile(harness.markdownPath, "utf8")).toContain("OS path boundary enforced: no");
     const taskReport = await buildOpenWorldTaskReport(root, task.task.id, { write: true });
     expect(taskReport.markdownPath).toContain("task-report.md");
     expect(taskReport.sources).toHaveLength(1);
@@ -191,7 +202,9 @@ describe("OpenWorld local research", () => {
     expect(taskReport.executions.length).toBeGreaterThan(0);
     expect(taskReport.runs.some((run) => run.id === refined.id)).toBe(true);
     expect(taskReport.evalReports.some((evalReport) => evalReport.runId === refined.id)).toBe(true);
+    expect(taskReport.hiddenOracleHarnesses.some((item) => item.id === harness.harness.id)).toBe(true);
     expect(taskReport.markdown).toContain("## Next Actions");
+    expect(taskReport.markdown).toContain("## Hidden-Oracle Harnesses");
     expect(taskReport.markdown).toContain(`promote-review --run-id ${refined.id}`);
     expect(await readFile(taskReport.markdownPath ?? "", "utf8")).toContain("## Sources");
     const plannedPromotion = await promoteOpenWorldRunToReview(root, refined.id, {
@@ -273,6 +286,27 @@ describe("OpenWorld local research", () => {
       now: new Date("2026-06-26T01:00:00.000Z")
     });
     await expect(ingestLocalOpenWorldSource(root, task.task.id, "bad.md")).rejects.toThrow(/blocked by leakage audit/);
+  });
+
+  it("flags denied oracle paths in generated artifacts without reading oracle contents", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-openworld-oracle-harness-"));
+    const task = await initOpenWorldTask(root, {
+      title: "Oracle harness",
+      prompt: "Scan generated artifacts only.",
+      forbiddenPaths: ["hidden/oracle.txt"],
+      now: new Date("2026-06-27T03:00:00.000Z")
+    });
+    const reportsDir = path.join(root, ".openskill-kit", "openworld", "tasks", task.task.id, "reports");
+    await mkdir(reportsDir, { recursive: true });
+    await writeFile(path.join(reportsDir, "leaky.md"), "Generated artifact mentioned hidden/oracle.txt.\n", "utf8");
+
+    const harness = await buildOpenWorldHiddenOracleHarness(root, task.task.id, {
+      now: new Date("2026-06-27T03:01:00.000Z")
+    });
+    expect(harness.harness.status).toBe("fail");
+    expect(harness.harness.deniedPathProof.leakedReferenceCount).toBe(1);
+    expect(harness.harness.leaks[0]?.artifactPath).toContain("reports/leaky.md");
+    expect(JSON.stringify(harness.harness.deniedPaths)).not.toContain("hidden/oracle.txt");
   });
 
   it("blocks virtual suite artifacts before writing verifier scripts", async () => {

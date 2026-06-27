@@ -32,6 +32,7 @@ import {
   loadSkillPackage,
   buildReviewQueue,
   buildOpenWorldEvalReport,
+  buildOpenWorldHiddenOracleHarness,
   proposeSemanticPreference,
   retrieveRelevantPreferences,
   auditOpenWorldLeakage,
@@ -468,6 +469,21 @@ openworld.command("eval-report")
     const result = await buildOpenWorldEvalReport(process.cwd(), options.runId);
     output(options.json, result, `OpenWorld eval ${result.report.status}: ${result.report.proofLevel}\n${result.reportPath}\n${result.markdownPath}`);
     process.exitCode = result.report.status === "fail" ? 1 : 0;
+  });
+
+openworld.command("hidden-oracle-harness")
+  .description("Write a static denied-path hidden-oracle harness report without reading oracle contents")
+  .requiredOption("--task-id <id>", "Task id")
+  .option("--suite-id <id>", "Verifier suite id")
+  .option("--denied-path <path>", "Extra denied oracle path to hash and scan for", collectOption, [])
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await buildOpenWorldHiddenOracleHarness(process.cwd(), options.taskId, {
+      suiteId: options.suiteId,
+      deniedPaths: options.deniedPath
+    });
+    output(options.json, result, `OpenWorld hidden-oracle harness ${result.harness.status}: ${result.harness.proofLevel}\n${result.harnessPath}\n${result.markdownPath}`);
+    process.exitCode = result.harness.status === "fail" ? 1 : 0;
   });
 
 openworld.command("promote-review")

@@ -280,12 +280,21 @@ artifacts, not full containerized skill repair yet.
 `openworld eval-report` turns an `EvolutionRun` into JSON and Markdown metrics:
 visible/holdout pass rates, overfit risk, leakage audit count, run/result
 references, wall-clock cost, and explicit limitations. The proof level is
-`artifact-verifier` unless a future hidden-oracle harness supplies independent
+`artifact-verifier`; hidden-oracle benchmark proof remains false.
+
+`openworld hidden-oracle-harness` writes JSON and Markdown denied-path reports
+under `openworld/tasks/<task-id>/harness/`. It hashes configured forbidden paths,
+does not read oracle file contents, scans generated runtime artifacts such as
+sources, anchors, verifier outputs, candidate skills, reports, and research
+executions for forbidden path exposure, and records whether leaked references
+were found. In local-process mode it explicitly reports that OS-level path
+denial is not enforced, so this is static denied-path exposure proof, not
 benchmark evidence.
 
 `openworld report --write` collects the task, source registry entries, Anchor
 Cards, verifier suites, verifier executions, candidate skills, skill plans,
-leakage audits, EvolutionRuns, eval reports, and inferred next actions into
+leakage audits, EvolutionRuns, eval reports, hidden-oracle harness reports, and
+inferred next actions into
 `openworld/tasks/<task-id>/reports/task-report.md`. This gives operators and
 host agents one auditable status surface instead of requiring manual directory
 inspection. It still reports artifact-verifier evidence only and never promotes

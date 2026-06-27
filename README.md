@@ -52,6 +52,7 @@ npx openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <s
 npx openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 npx openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id> --candidate-id <owskill_id>
 npx openskill-kit openworld eval-report --run-id <owrun_id>
+npx openskill-kit openworld hidden-oracle-harness --task-id <owtask_id> --suite-id <suite_id>
 npx openskill-kit openworld promote-review --run-id <owrun_id> --dry-run
 npx openskill-kit openworld report --task-id <owtask_id>
 npx openskill-kit openworld doctor
@@ -82,9 +83,10 @@ traces, source-plan execution artifacts, visible/holdout virtual verifier
 generation, review-only candidate skill artifacts, local sandbox execution of
 generated verifier scripts, verifier quality scoring, bounded verifier
 refinement/eval report records, candidate revision artifacts, and review-only
-promotion proposals. It still
-does not perform autonomous web search, built-in LLM skill generation,
-containerized candidate-skill repair, or hidden-oracle benchmark evaluation yet.
+promotion proposals. It also has a static hidden-oracle denied-path harness that
+scans generated artifacts without reading oracle files. It still does not
+perform autonomous web search, built-in LLM skill generation, containerized
+candidate-skill repair, or hidden-oracle benchmark evaluation yet.
 
 ## Core Commands
 
@@ -151,6 +153,7 @@ openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite
 openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
 openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id> --candidate-id <owskill_id>
 openskill-kit openworld eval-report --run-id <owrun_id>
+openskill-kit openworld hidden-oracle-harness --task-id <owtask_id> --suite-id <suite_id>
 openskill-kit openworld promote-review --run-id <owrun_id>
 openskill-kit openworld report --task-id <owtask_id>
 openskill-kit openworld doctor
