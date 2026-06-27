@@ -25,6 +25,7 @@ export interface AgentPluginManifest {
     skillDirectory: string;
     commands: string;
     commandGuide: string;
+    installGuides: string;
     mcpConfig: string;
     mcpDescriptors: string;
     mcpDescriptorHashes: string;
@@ -78,6 +79,7 @@ export interface CompiledPluginStatus {
   mcpDescriptorHashPath: string;
   commandMapPath: string;
   commandGuidePath: string;
+  installGuidesPath: string;
   mcpServerCommand: string;
   mcpDescriptorsHash?: string;
   manifest?: AgentPluginManifest;
@@ -106,6 +108,9 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
     commands: manifest.commands
   });
   await writeFileAtomic(path.join(pluginDir, "commands", "osk.md"), renderCommandGuide(manifest));
+  for (const guide of pluginInstallGuides()) {
+    await writeFileAtomic(path.join(pluginDir, "install-guides", guide.file), renderInstallGuide(guide));
+  }
   await writeFileAtomic(path.join(pluginDir, "README.md"), renderReadme(manifest));
   await writeJsonAtomic(path.join(pluginDir, ".mcp.json"), buildMcpAttachmentConfig());
   manifest.files = [...new Set([...(await listFiles(pluginDir)).filter((file) => file !== "plugin.json"), ".agent-plugin/plugin.json"])].sort();
@@ -125,6 +130,7 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
   const mcpDescriptorHashPath = path.join(pluginDir, "mcp", "descriptor-hashes.json");
   const commandMapPath = path.join(pluginDir, "commands", "commands.json");
   const commandGuidePath = path.join(pluginDir, "commands", "osk.md");
+  const installGuidesPath = path.join(pluginDir, "install-guides");
   const manifest = await readJson<AgentPluginManifest>(manifestPath).catch(() => undefined);
   const agentManifest = await readJson<AgentPluginManifest>(agentPluginManifestPath).catch(() => undefined);
   const mcpAttachment = await readJson<{ mcpServers?: Record<string, { command?: string }> }>(mcpAttachmentPath).catch(() => undefined);
@@ -132,6 +138,8 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
   const mcpDescriptors = await readJson<unknown>(mcpDescriptorPath).catch(() => undefined);
   const commandMap = await readJson<{ commands?: AgentPluginCommand[] }>(commandMapPath).catch(() => undefined);
   const commandGuideExists = await exists(commandGuidePath);
+  const guideFiles = pluginInstallGuides().map((guide) => path.join(installGuidesPath, guide.file));
+  const missingGuides = (await Promise.all(guideFiles.map(async (file, index) => await exists(file) ? undefined : `install-guides/${pluginInstallGuides()[index]!.file}`))).filter(Boolean) as string[];
   const mcpServerConfigExists = await exists(path.join(pluginDir, "mcp", "server-config.json"));
   const missing = [
     ...(manifest ? [] : ["plugin.json"]),
@@ -142,7 +150,8 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     ...(mcpDescriptors ? [] : ["mcp/descriptors.json"]),
     ...(mcpHashes ? [] : ["mcp/descriptor-hashes.json"]),
     ...(commandMap?.commands?.length ? [] : ["commands/commands.json"]),
-    ...(commandGuideExists ? [] : ["commands/osk.md"])
+    ...(commandGuideExists ? [] : ["commands/osk.md"]),
+    ...missingGuides
   ];
   const actualDescriptorsHash = mcpDescriptors ? sha256Stable(mcpDescriptors) : undefined;
   const integrityIssues = [
@@ -161,6 +170,7 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     mcpDescriptorHashPath,
     commandMapPath,
     commandGuidePath,
+    installGuidesPath,
     mcpServerCommand: mcpAttachment?.mcpServers?.["openskill-kit"]?.command ?? manifest?.entrypoints.mcpServer.command ?? "openskill-kit-mcp",
     mcpDescriptorsHash: mcpHashes?.descriptorsHash ?? manifest?.integrity.descriptorsHash,
     manifest,
@@ -177,6 +187,7 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
         ? ["Re-run `openskill-kit compile --target plugin`; compiled plugin integrity check failed."]
       : [
         "Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.",
+        "Open `install-guides/` for the target harness before writing any host config.",
         "Map `/osk ...` requests through `commands/commands.json`; prefer MCP tools and use CLI fallbacks only when MCP is unavailable.",
         "Start `openskill-kit-mcp` from the project root when the harness supports MCP.",
         "Keep hooks, global instruction writes, interaction imports, and behavior pack imports behind explicit approval."
@@ -208,6 +219,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       skillDirectory: "skills",
       commands: "commands/commands.json",
       commandGuide: "commands/osk.md",
+      installGuides: "install-guides",
       mcpConfig: "mcp/server-config.json",
       mcpDescriptors: "mcp/descriptors.json",
       mcpDescriptorHashes: "mcp/descriptor-hashes.json",
@@ -224,6 +236,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       defaultMode: "attach",
       steps: [
         "Attach this directory as a local plugin from the project root.",
+        "Read the matching file under `install-guides/` for Codex, Claude Code, Cursor, or generic MCP hosts.",
         "Load `skills/` as repository-scoped skills.",
         "Map `/osk ...` requests using `commands/commands.json`; prefer MCP tools and fall back to CLI commands.",
         "Start `openskill-kit-mcp` with stdio from the project root when the harness supports MCP.",
@@ -274,6 +287,79 @@ async function pluginSkillRefs(pluginDir: string): Promise<string[]> {
   return entries.filter((entry) => entry.isDirectory()).map((entry) => `skills/${entry.name}`).sort();
 }
 
+interface PluginInstallGuide {
+  file: string;
+  title: string;
+  host: string;
+  steps: string[];
+  notes: string[];
+}
+
+function pluginInstallGuides(): PluginInstallGuide[] {
+  return [
+    {
+      file: "codex.md",
+      title: "Codex Attach Guide",
+      host: "Codex",
+      steps: [
+        "Attach this directory as a local plugin when the harness supports plugin directories.",
+        "Keep `AGENTS.md` behavior managed through `openskill-kit agent install-manifests --target project --dry-run` before applying.",
+        "Use `.mcp.json` or equivalent Codex MCP config to start `openskill-kit-mcp` from the project root.",
+        "Route `/osk ...` phrases through `commands/commands.json`."
+      ],
+      notes: [
+        "Do not import Codex memories or user-level instructions unless the user explicitly asks.",
+        "Project `AGENTS.md` remains the safest shared instruction surface."
+      ]
+    },
+    {
+      file: "claude-code.md",
+      title: "Claude Code Attach Guide",
+      host: "Claude Code",
+      steps: [
+        "Load `skills/` or install the project behavior skill where Claude Code can read project skills.",
+        "Preview `CLAUDE.md` and `.claude/rules/` with `openskill-kit agent install-manifests --target project --dry-run` before applying.",
+        "Configure MCP to run `openskill-kit-mcp` from the project root.",
+        "Route `/osk ...` phrases through `commands/commands.json`."
+      ],
+      notes: [
+        "Never edit user-level Claude memory silently.",
+        "Hooks stay preview-only until the user approves install."
+      ]
+    },
+    {
+      file: "cursor.md",
+      title: "Cursor Attach Guide",
+      host: "Cursor",
+      steps: [
+        "Use `.mcp.json` or Cursor MCP config to start `openskill-kit-mcp` from the project root.",
+        "Treat `.cursor/rules` as preview-only unless the user confirms the desired rule format.",
+        "Read `commands/commands.json` to map `/osk ...` phrases to MCP tools or CLI fallback.",
+        "Use `openskill-kit detect --json` before writing any existing Cursor config."
+      ],
+      notes: [
+        "Cursor rule formats can vary by project; do not overwrite existing rules automatically.",
+        "Keep OpenSkillKit generated behavior under the compiled plugin until user approves integration."
+      ]
+    },
+    {
+      file: "generic-mcp.md",
+      title: "Generic MCP Attach Guide",
+      host: "Generic MCP client",
+      steps: [
+        "Register `openskill-kit-mcp` as a stdio MCP server with working directory set to the project root.",
+        "Call `osk_bootstrap_session` first.",
+        "Check `plugin.ready`, `plugin.integrityIssues`, and `plugin.missing` before trusting generated artifacts.",
+        "Use `commands/commands.json` for `/osk ...` intent mapping."
+      ],
+      notes: [
+        "Compare descriptor hashes before trusting tools.",
+        "Approval-required tools must stay behind explicit user confirmation."
+      ]
+    }
+  ];
+}
+
 function pluginCommands(): AgentPluginCommand[] {
   return [
     command("/osk init", ["openskill init", "bootstrap openskill"], "Initialize or bootstrap project behavior state and report plugin readiness.", "osk_bootstrap_session", "openskill-kit init && openskill-kit status", false, false),
@@ -318,6 +404,7 @@ function renderReadme(manifest: AgentPluginManifest): string {
     `- Skills: \`${manifest.entrypoints.skillDirectory}\``,
     `- Command map: \`${manifest.entrypoints.commands}\``,
     `- Command guide: \`${manifest.entrypoints.commandGuide}\``,
+    `- Install guides: \`${manifest.entrypoints.installGuides}\``,
     `- MCP config: \`${manifest.entrypoints.mcpConfig}\``,
     `- MCP descriptors: \`${manifest.entrypoints.mcpDescriptors}\``,
     `- MCP descriptor hashes: \`${manifest.entrypoints.mcpDescriptorHashes}\``,
@@ -331,6 +418,10 @@ function renderReadme(manifest: AgentPluginManifest): string {
     "",
     ...manifest.commands.map((item) => `- \`${item.command}\` -> ${item.mcpTool ? `MCP \`${item.mcpTool}\`, ` : ""}fallback \`${item.cli}\`${item.approvalRequired ? " (approval required)" : ""}`),
     "",
+    "## Host Guides",
+    "",
+    ...pluginInstallGuides().map((guide) => `- ${guide.host}: \`install-guides/${guide.file}\``),
+    "",
     "## Approval Gates",
     "",
     ...manifest.install.requiresExplicitApproval.map((item) => `- ${item}`),
@@ -340,6 +431,27 @@ function renderReadme(manifest: AgentPluginManifest): string {
     "This bundle excludes private event logs, raw signals, raw prompts, raw diffs, review queues, and private evidence blobs.",
     "",
     "Never attach hidden benchmark answers, secrets, user/global memories, or raw interaction exports through this plugin.",
+    ""
+  ].join("\n");
+}
+
+function renderInstallGuide(guide: PluginInstallGuide): string {
+  return [
+    `# ${guide.title}`,
+    "",
+    `Host: ${guide.host}`,
+    "",
+    "## Steps",
+    "",
+    ...guide.steps.map((step, index) => `${index + 1}. ${step}`),
+    "",
+    "## Safety Notes",
+    "",
+    ...guide.notes.map((note) => `- ${note}`),
+    "",
+    "## Required First Call",
+    "",
+    "Call `osk_bootstrap_session` before using learned behavior. If MCP is unavailable, run `openskill-kit status --json` from the project root.",
     ""
   ].join("\n");
 }

@@ -29,6 +29,15 @@
     "server": "openskill-kit-mcp",
     "transport": "stdio"
   },
+  "installGuides": {
+    "directory": "install-guides",
+    "hosts": {
+      "codex": "install-guides/codex.md",
+      "claude-code": "install-guides/claude-code.md",
+      "cursor": "install-guides/cursor.md",
+      "generic-mcp": "install-guides/generic-mcp.md"
+    }
+  },
   "commands": {
     "map": "commands/commands.json",
     "guide": "commands/osk.md",

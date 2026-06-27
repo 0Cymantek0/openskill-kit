@@ -7,6 +7,8 @@ it. The plugin bundle gives that harness four local entrypoints:
 - `.mcp.json` for the local `openskill-kit-mcp` stdio backend.
 - `commands/` for `/osk ...` intent mapping with MCP-first and CLI fallback
   routes.
+- `install-guides/` for host-specific attach notes for Codex, Claude Code,
+  Cursor, and generic MCP clients.
 - `.agent-plugin/plugin.json` for the host-facing capability and privacy
   contract.
 
@@ -46,6 +48,10 @@ For harness compatibility, generated plugins also include:
 - `commands/commands.json` and `commands/osk.md`: slash-command intent map.
   Hosts that do not implement slash commands can still interpret `/osk ...`
   phrases by calling the mapped MCP tool or running the CLI fallback.
+- `install-guides/codex.md`, `install-guides/claude-code.md`,
+  `install-guides/cursor.md`, and `install-guides/generic-mcp.md`: conservative
+  host attach notes. They keep existing host config reviewable instead of
+  silently writing global settings.
 
 Harness behavior should stay conservative:
 
@@ -61,6 +67,8 @@ Harness behavior should stay conservative:
   approvals remain required.
 - Route `/osk ...` requests through `commands/commands.json`; prefer MCP and use
   CLI fallbacks only when the MCP backend is unavailable.
+- Read the matching `install-guides/` file before applying any host-specific
+  config.
 - Preview managed instruction files and hooks before applying.
 - Require explicit approval for global writes, hook execution, interaction
   imports, and behavior pack imports.

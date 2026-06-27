@@ -28,6 +28,7 @@
     "packages/agent-plugin-bundle/.mcp.json",
     "packages/agent-plugin-bundle/.agent-plugin/",
     "packages/agent-plugin-bundle/commands/",
+    "packages/agent-plugin-bundle/install-guides/",
     "packages/agent-plugin-bundle/skills/"
   ],
   "scripts": {

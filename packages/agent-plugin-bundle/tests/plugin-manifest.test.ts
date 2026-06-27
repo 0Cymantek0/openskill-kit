@@ -12,6 +12,8 @@ describe("agent plugin manifest", () => {
     expect(manifest.capabilities).toContain("local-mcp-tools");
     expect(manifest.skills[0].path).toBe("skills/openskill-kit");
     expect(manifest.mcp.server).toBe("openskill-kit-mcp");
+    expect(manifest.installGuides.hosts.codex).toBe("install-guides/codex.md");
+    expect(manifest.installGuides.hosts["generic-mcp"]).toBe("install-guides/generic-mcp.md");
     expect(manifest.commands.map).toBe("commands/commands.json");
     expect(manifest.commands.items).toHaveLength(11);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
@@ -26,5 +28,9 @@ describe("agent plugin manifest", () => {
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk evolve this skill" && !item.mcpTool)).toBe(true);
     const commandGuide = readFileSync(path.join(root, "commands", "osk.md"), "utf8");
     expect(commandGuide).toContain("Prefer MCP");
+    const codexGuide = readFileSync(path.join(root, "install-guides", "codex.md"), "utf8");
+    const genericGuide = readFileSync(path.join(root, "install-guides", "generic-mcp.md"), "utf8");
+    expect(codexGuide).toContain("AGENTS.md");
+    expect(genericGuide).toContain("osk_bootstrap_session");
   });
 });
