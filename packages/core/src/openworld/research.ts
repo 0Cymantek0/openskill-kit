@@ -599,6 +599,7 @@ export async function draftAnchorFromOpenWorldSource(projectRoot: string, taskId
   const statement = cleanClaim(claim ?? firstUsefulLine(content) ?? `Review source ${source.uri} before using it as OpenWorld evidence.`);
   const audit = auditOpenWorldLeakage([{ source: source.uri, surface: "content", value: statement }], task, now);
   if (audit.status === "blocked") throw new Error(`OpenWorld anchor blocked by leakage audit: ${audit.findings.map((finding) => finding.id).join(", ")}`);
+  const verifiableAs = inferAnchorVerifiers(source, statement, content);
   const anchor = {
     schemaVersion: "openskill-kit.anchor-card.v1" as const,
     id: `anc_${shortHash(`${taskId}:${sourceId}:${statement}`)}`,
@@ -606,7 +607,7 @@ export async function draftAnchorFromOpenWorldSource(projectRoot: string, taskId
     sourceId,
     claim: statement,
     anchorType: source.kind === "local-doc" ? "workflow" as const : "invariant" as const,
-    verifiableAs: ["manual-review" as const],
+    verifiableAs,
     sourceQuote: firstUsefulLine(content)?.slice(0, 400),
     paths: source.kind === "project-file" ? [source.uri] : [],
     confidence: source.kind === "local-doc" ? 0.62 : 0.58,
@@ -658,13 +659,7 @@ export async function buildVirtualSuiteFromAnchors(projectRoot: string, taskId: 
       description: anchor.claim,
       file: scriptRelative,
       command: ["node", scriptRelative],
-      assertions: [
-        "Anchor JSON exists and references the expected source.",
-        "Source JSON and cached text exist.",
-        "Cached source text matches the recorded content hash.",
-        "Anchor quote is traceable to cached source text when present.",
-        "Anchor artifact avoids generic hidden-oracle markers."
-      ],
+      assertions: buildCaseAssertions(anchor),
       expectedArtifacts: [scriptRelative],
       status: "ready" as const
     });
@@ -675,7 +670,7 @@ export async function buildVirtualSuiteFromAnchors(projectRoot: string, taskId: 
       sourceId: anchor.sourceId,
       sourceUri: source.uri,
       sourceHash: source.contentHash,
-      assertionCount: 5
+      assertionCount: buildCaseAssertions(anchor).length
     });
   }
   const audit = auditOpenWorldLeakage([
@@ -722,6 +717,7 @@ const root = process.cwd();
 const caseId = ${JSON.stringify(input.caseId)};
 const expectedAnchorId = ${JSON.stringify(input.anchor.id)};
 const expectedSourceId = ${JSON.stringify(input.source.id)};
+const expectedVerifiableAs = ${JSON.stringify(input.anchor.verifiableAs)};
 const anchorPath = path.join(root, ${JSON.stringify(anchorPath)});
 const sourcePath = path.join(root, ${JSON.stringify(sourcePath)});
 const cachePath = path.join(root, ${JSON.stringify(cachePath)});
@@ -755,12 +751,45 @@ if (source && source.contentHash && sourceText) {
 if (anchor && anchor.sourceQuote) {
   check("quote-trace", sourceText.includes(anchor.sourceQuote), "anchor quote appears in source cache");
 }
+if (anchor && expectedVerifiableAs.includes("file-contains")) {
+  check("claim-trace", sourceText.includes(anchor.claim), "file-contains anchor claim appears in source cache");
+}
+if (anchor && expectedVerifiableAs.includes("file-exists")) {
+  check("source-file-exists", fs.existsSync(cachePath), "file-exists anchor cache file exists");
+}
 const markerText = [anchor?.claim || "", anchor?.sourceQuote || ""].join("\\n");
 check("oracle-marker", !/\\b(hidden[-_\\s]?tests?|oracle[-_\\s]?private|ground[-_\\s]?truth|target[-_\\s]?answer|reference[-_\\s]?solution)\\b/i.test(markerText), "anchor text avoids generic oracle markers");
 const result = { schemaVersion: "openskill-kit.virtual-test-case-result.v1", caseId, status: failures.length ? "fail" : "pass", checks, failures };
 console.log(JSON.stringify(result, null, 2));
 process.exit(failures.length ? 1 : 0);
 `;
+}
+
+function inferAnchorVerifiers(source: OpenWorldSource, statement: string, content: string): AnchorCard["verifiableAs"] {
+  const verifiers: AnchorCard["verifiableAs"] = [];
+  const hasTraceableClaim = content.includes(statement);
+  if ((source.kind === "project-file" || source.kind === "local-doc" || source.kind === "user-provided") && hasTraceableClaim) {
+    verifiers.push("file-exists", "file-contains");
+  }
+  if (verifiers.length === 0) verifiers.push("manual-review");
+  return verifiers;
+}
+
+function buildCaseAssertions(anchor: AnchorCard): string[] {
+  const assertions = [
+    "Anchor JSON exists and references the expected source.",
+    "Source JSON and cached text exist.",
+    "Cached source text matches the recorded content hash.",
+    "Anchor quote is traceable to cached source text when present."
+  ];
+  if (anchor.verifiableAs.includes("file-contains")) {
+    assertions.push("Anchor file-contains claim appears in cached source text.");
+  }
+  if (anchor.verifiableAs.includes("file-exists")) {
+    assertions.push("Anchor file-exists cache artifact exists.");
+  }
+  assertions.push("Anchor artifact avoids generic hidden-oracle markers.");
+  return assertions;
 }
 
 function firstUsefulLine(content: string): string | undefined {

@@ -30,7 +30,7 @@ export async function runOpenWorldDoctor(projectRootInput: string): Promise<Open
     { name: "Explicit web source ingestion", status: "available", message: "HTTP(S) URLs can be fetched only when the task has allowWeb enabled; source text is leakage-audited before caching." },
     { name: "Source index and trust cache", status: "available", message: "OpenWorld source metadata, content hashes, cache paths, and trust scores are recorded." },
     { name: "Anchor Cards", status: "available", message: "Anchor Cards can be drafted from local sources." },
-    { name: "Virtual verifier suite", status: "available", message: "Visible/holdout verifier manifests, traceability maps, executable Node cases, and local-process or opt-in Docker sandbox execution records are supported." },
+    { name: "Virtual verifier suite", status: "available", message: "Visible/holdout verifier manifests, traceability maps, executable Node cases, verifiableAs-aware local file assertions, and local-process or opt-in Docker sandbox execution records are supported." },
     { name: "Verifier quality scoring", status: "available", message: "Verifier suites can be scored for traceability, determinism, holdout coverage, source trust, and leakage metadata." },
     { name: "Candidate skill artifacts", status: "available", message: "Anchor-grounded review-only SKILL.md candidates can be generated with leakage, validation, and safety gates." },
     { name: "Candidate skill revisions", status: "available", message: "Visible verifier failures can write candidate skill revision artifacts with diagnosis, validation, safety, and leakage metadata." },

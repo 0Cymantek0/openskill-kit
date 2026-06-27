@@ -306,8 +306,11 @@ Virtual verifier generation creates executable Node verifier files under each
 task's `verifiers/<suite-id>/visible` and `verifiers/<suite-id>/holdout`
 directories, plus `manifest.json` and `traceability-map.json`. The generated
 cases check anchor/source linkage, source-cache presence, recorded content hash,
-quote traceability, and generic oracle-marker absence. Artifact text is leakage
-audited before any verifier script is written. `openworld run-verifier` executes
+quote traceability, generic oracle-marker absence, and `verifiableAs` semantics
+for traceable local anchors such as `file-exists` and `file-contains`. Claims
+that are not present in cached source text remain manual-review anchors instead
+of being mislabeled as executable proof. Artifact text is leakage audited before
+any verifier script is written. `openworld run-verifier` executes
 ready Node cases through the local `execFile` sandbox by default, or through
 caller-provided Docker mode with `--sandbox docker --docker-image <image>`.
 Both modes use no shell expansion, network disabled in policy metadata or Docker

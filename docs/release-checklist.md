@@ -25,7 +25,7 @@ Manual audit:
 - `openworld doctor` still clearly labels scaffolded and missing paper-level capabilities.
 - OpenWorld source ingestion writes source-index/trust-cache and blocks forbidden identifiers before caching source text.
 - OpenWorld `retrieval-adapters`, `source-plan`, and `execute-source-plan` expose adapter gates, ingest only leakage-audited recommended local candidates plus explicit vetted URLs or opt-in autonomous docs/repo candidates, and write adapter-level execution traces.
-- OpenWorld `build-verifier` writes manifest, traceability map, visible/holdout executable cases, and blocks leaked verifier artifacts before writing scripts.
+- OpenWorld `build-verifier` writes manifest, traceability map, visible/holdout executable cases, preserves manual-review anchors, and runs `file-exists`/`file-contains` assertions only for claims traceable to cached source text.
 - OpenWorld `candidate-skill` writes only review-only Anchor-grounded skill artifacts, validates package structure, runs safety scan, and never activates behavior.
 - OpenWorld `repair-candidate` writes candidate revisions, executes local-process or caller-provided Docker sandbox repair probes, records repair runs, and never activates behavior.
 - OpenWorld `verifier-quality` scores traceability, determinism, holdout coverage, source trust, and leakage metadata without claiming hidden-oracle proof.

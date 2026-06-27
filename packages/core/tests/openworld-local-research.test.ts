@@ -134,6 +134,8 @@ describe("OpenWorld local research", () => {
       await expect(stat(anchor.anchorPath)).resolves.toBeTruthy();
     }
     expect(anchors[0]?.claim).toContain("local-only retrieval");
+    expect(anchors[0]?.verifiableAs).toEqual(["file-exists", "file-contains"]);
+    expect(anchors[1]?.verifiableAs).toEqual(["manual-review"]);
 
     const candidateSkill = await generateOpenWorldCandidateSkill(root, task.task.id, {
       anchorIds: anchors.map((anchor) => anchor.id),
@@ -162,8 +164,10 @@ describe("OpenWorld local research", () => {
     expect(suite.suite.cases[0]?.split).toBe("visible");
     expect(suite.suite.cases.some((testCase) => testCase.split === "holdout")).toBe(true);
     expect(suite.suite.cases.every((testCase) => testCase.runner === "node" && testCase.status === "ready" && testCase.file && testCase.command[0] === "node")).toBe(true);
+    expect(suite.suite.cases[0]?.assertions).toContain("Anchor file-contains claim appears in cached source text.");
     await expect(stat(suite.manifestPath)).resolves.toBeTruthy();
     await expect(stat(suite.traceabilityMapPath)).resolves.toBeTruthy();
+    expect(await readFile(suite.caseFilePaths[0] ?? "", "utf8")).toContain("claim-trace");
     expect(JSON.parse(await readFile(suite.manifestPath, "utf8")).holdout).toHaveLength(1);
     await expect(runVirtualTestSuite(root, task.task.id, suite.suite.id, {
       sandboxMode: "docker"
@@ -182,6 +186,7 @@ describe("OpenWorld local research", () => {
       now: new Date("2026-06-26T01:04:00.000Z")
     });
     expect(execution.summary).toMatchObject({ pass: 4, fail: 0, blocked: 0, timeout: 0, skipped: 0 });
+    expect(execution.results.some((result) => result.stdout?.includes("claim-trace"))).toBe(true);
     expect(execution.sandboxMode).toBe("local-process");
     expect(execution.resultPath).toContain("/results/");
 
@@ -260,6 +265,7 @@ describe("OpenWorld local research", () => {
       now: new Date("2026-06-26T01:05:00.000Z")
     });
     expect(failed.summary.fail).toBeGreaterThan(0);
+    expect(failed.results.some((result) => result.stdout?.includes("\"name\":\"claim-trace\"") || result.stdout?.includes("\"name\": \"claim-trace\""))).toBe(true);
     const failedRefinement = await runOpenWorldRefinement(root, task.task.id, suite.suite.id, {
       candidateSkillId: candidateSkill.candidate.id,
       now: new Date("2026-06-26T01:06:00.000Z")

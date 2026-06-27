@@ -86,7 +86,7 @@ The OpenWorld layer now covers task records, leakage audits, local source
 discovery plans, source ingestion/cache, explicit web source fetches, Anchor
 Cards, named retrieval adapter contracts with allow-web gates, deterministic
 package/language docs-repo URL discovery, execution traces, source-plan execution artifacts, visible/holdout virtual verifier
-generation, review-only candidate skill artifacts, local-process or opt-in Docker sandbox execution of
+generation with traceable `file-exists`/`file-contains` checks, review-only candidate skill artifacts, local-process or opt-in Docker sandbox execution of
 generated verifier scripts, verifier quality scoring, bounded verifier
 refinement/eval report records, candidate revision artifacts, local-process
 sandbox repair probes with optional caller-provided Docker mode, and review-only promotion proposals. It also has a static
