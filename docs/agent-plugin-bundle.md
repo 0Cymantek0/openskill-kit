@@ -98,8 +98,11 @@ Harness behavior should stay conservative:
   CLI fallbacks only when the MCP backend is unavailable.
 - For normal coding tasks, route `/osk context` to
   `osk_get_agent_task_context`; it returns the route plan, compact relevant
-  preferences, workflow matches, plugin health, review state, and next actions
-  in one harness-friendly response.
+  preferences, workflow matches, plugin health, review counts, compact pending
+  review items, action hints, and next actions in one harness-friendly response.
+  Semantic proposals and OpenWorld review promotions shown there are review
+  inputs only; the host must still run learning/update graph and explicit
+  review actions before compiling or installing active behavior.
 - At task end, route `/osk finish task` to `osk_finish_agent_task` with a short
   safe summary, touched files, verification commands, command status, and
   outcome. It records redacted local evidence, writes session summaries, runs

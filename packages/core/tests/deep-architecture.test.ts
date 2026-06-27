@@ -13,6 +13,7 @@ import {
   finishAgentTask,
   getCompiledPluginStatus,
   initAdaptiveProject,
+  proposeSemanticPreference,
   readEvidenceCards,
   readCalibrationReport,
   readEvents,
@@ -188,7 +189,26 @@ describe("deep architecture hardening", () => {
 
   it("returns one-shot agent task context for coding harness plugins", async () => {
     const root = await tempProject();
-    await writeGraph(root, [pref("context", "Prefer focused tests before final answer", "testing", ["src/parser"])]);
+    const candidate = pref("pending-context", "Prefer pending parser review before compile", "workflow", ["src/parser"]);
+    candidate.status = "candidate";
+    await writeGraph(root, [pref("context", "Prefer focused tests before final answer", "testing", ["src/parser"]), candidate]);
+    await appendEvent(root, {
+      sessionId: "proposal-context",
+      eventType: "test-result",
+      source: { adapter: "test" },
+      normalized: { text: "OpenWorld artifact verifier passed but needs review." }
+    });
+    await proposeSemanticPreference(root, {
+      schemaVersion: "openskill-kit.semantic-proposal.v1",
+      sessionId: "proposal-context",
+      statement: "Prefer review-only OpenWorld promotion before active behavior compile.",
+      category: "workflow",
+      scope: { level: "project", paths: [] },
+      evidence: [{ eventId: "evt_proposal-context", quote: "Artifact verifier passed." }],
+      confidence: 0.58,
+      risk: "medium",
+      suggestedCompileTargets: ["context-pack", "agent-skills"]
+    });
     await compileBehaviorLayer(root, { targets: ["plugin"] });
 
     const context = await getAgentTaskContext({
@@ -202,8 +222,15 @@ describe("deep architecture hardening", () => {
     expect(["local-only", "project-evidence"]).toContain(context.route.decision);
     expect(context.preferences.items.some((item) => item.node.statement.includes("focused tests"))).toBe(true);
     expect(context.plugin.attached).toBe(false);
+    expect(context.review.pendingProposalCount).toBe(1);
+    expect(context.review.pendingPreferenceCount).toBe(1);
+    expect(context.review.totalPendingCount).toBe(2);
+    expect(context.review.items.some((item) => item.kind === "semantic-proposal" && item.actionHint.includes("not active behavior"))).toBe(true);
+    expect(context.review.items.some((item) => item.kind === "preference" && item.id === candidate.id && item.actionHint.includes("osk_apply_review_actions"))).toBe(true);
     expect(context.compactMarkdown).toContain("OpenSkillKit Task Context");
+    expect(context.compactMarkdown).toContain("Pending Review Items");
     expect(context.nextActions).toContain("Apply only returned preferences relevant to this task and paths.");
+    expect(context.nextActions).toContain("Semantic proposals are review inputs only; run learning/update graph before applying review actions.");
   });
 
   it("finishes agent tasks by recording safe evidence and learning review candidates", async () => {
