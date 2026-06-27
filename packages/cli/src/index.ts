@@ -122,7 +122,19 @@ program.command("status")
       return;
     }
     const status = await getAdaptiveStatus(process.cwd());
-    output(options.json, status, `Initialized: ${status.initialized}\nEvents: ${status.eventCount}\nSignals: ${status.signalCount}\nActive preferences: ${status.activePreferenceCount}\nStaged preferences: ${status.stagedPreferenceCount}\nActive workflows: ${status.activeWorkflowCount}\nStaged workflows: ${status.stagedWorkflowCount}\nPending review: ${status.pendingReviewCount}`);
+    output(options.json, status, [
+      `Initialized: ${status.initialized}`,
+      `Events: ${status.eventCount}`,
+      `Signals: ${status.signalCount}`,
+      `Active preferences: ${status.activePreferenceCount}`,
+      `Staged preferences: ${status.stagedPreferenceCount}`,
+      `Active workflows: ${status.activeWorkflowCount}`,
+      `Staged workflows: ${status.stagedWorkflowCount}`,
+      `Pending review: ${status.pendingReviewCount}`,
+      `Plugin ready: ${status.compiled.plugin}`,
+      `Plugin: ${status.compiled.pluginStatus.pluginDir}`,
+      status.compiled.plugin ? `Plugin MCP: ${status.compiled.pluginStatus.mcpServerCommand}` : `Plugin missing: ${status.compiled.pluginStatus.missing.join(", ")}`
+    ].join("\n"));
   });
 
 program.command("doctor")
@@ -800,6 +812,7 @@ program.command("compile")
       result.contextPackPath ? `Context: ${result.contextPackPath}` : undefined,
       result.skillPaths.length ? `Skill: ${result.skillPaths.join(", ")}` : undefined,
       result.manifestPaths.length ? `Manifests: ${result.manifestPaths.join(", ")}` : undefined,
+      result.pluginManifestPath ? `Plugin: ${result.pluginManifestPath}` : undefined,
       result.stagedPreviewPath ? `Staged preview: ${result.stagedPreviewPath}` : undefined
     ].filter(Boolean).join("\n"));
   });

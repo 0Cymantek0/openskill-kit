@@ -81,6 +81,10 @@ if (pluginManifest.schemaVersion !== "openskill-kit.agent-plugin.v1") throw new 
 if (pluginAgentManifest.name !== pluginManifest.name) throw new Error("compiled .agent-plugin manifest mismatch");
 if (pluginMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("compiled plugin MCP attachment missing");
 if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/")) throw new Error("compiled plugin privacy exclusions incomplete");
+const statusText = await runText(["status"]);
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp")) {
+  throw new Error("status text missing compiled plugin readiness");
+}
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
 if (!prefs.items?.length || !prefs.compactMarkdown?.includes("run npm test")) throw new Error("preference retrieval failed");
