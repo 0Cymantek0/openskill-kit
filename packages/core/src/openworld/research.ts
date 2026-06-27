@@ -41,7 +41,19 @@ export interface IngestLocalSourceResult {
   auditPath: string;
 }
 
-export async function ingestLocalOpenWorldSource(projectRoot: string, taskId: string, filePath: string, now = new Date()): Promise<IngestLocalSourceResult> {
+export interface OpenWorldSourceProvenanceInput {
+  adapterId?: OpenWorldSource["provenance"]["adapterId"];
+  retrievalMode?: OpenWorldSource["provenance"]["retrievalMode"];
+  origin?: OpenWorldSource["provenance"]["origin"];
+  planId?: string;
+  candidateId?: string;
+  allowWebAtIngest?: boolean;
+  operatorProvidedContent?: boolean;
+  networkAccess?: OpenWorldSource["provenance"]["networkAccess"];
+  safeguards?: string[];
+}
+
+export async function ingestLocalOpenWorldSource(projectRoot: string, taskId: string, filePath: string, now = new Date(), provenance: OpenWorldSourceProvenanceInput = {}): Promise<IngestLocalSourceResult> {
   const root = path.resolve(projectRoot);
   const task = await readOpenWorldTask(root, taskId);
   const absolute = path.resolve(root, filePath);
@@ -58,6 +70,17 @@ export async function ingestLocalOpenWorldSource(projectRoot: string, taskId: st
     content,
     now,
     trust: { authority: 0.7, freshness: 0.8, independence: 0.4, rationale: "Project-local source, leakage-audited before caching." },
+    provenance: {
+      adapterId: provenance.adapterId ?? "local-project-files",
+      retrievalMode: provenance.retrievalMode ?? "local-scan",
+      origin: provenance.origin ?? "operator-file",
+      planId: provenance.planId,
+      candidateId: provenance.candidateId,
+      allowWebAtIngest: false,
+      operatorProvidedContent: false,
+      networkAccess: "none",
+      safeguards: provenance.safeguards ?? ["project-root path containment", "leakage audit before cache write", "atomic artifact writes"]
+    },
     privacyClass: "project-private",
     usableFor: ["skill", "virtual-test", "report"]
   });
@@ -69,6 +92,7 @@ export interface IngestWebSourceOptions {
   content?: string;
   timeoutMs?: number;
   maxBytes?: number;
+  provenance?: OpenWorldSourceProvenanceInput;
   now?: Date;
 }
 
@@ -79,6 +103,7 @@ export async function ingestWebOpenWorldSource(projectRoot: string, taskId: stri
   const url = new URL(options.url);
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error(`Unsupported OpenWorld source URL protocol: ${url.protocol}`);
   const content = options.content ?? await fetchText(url, options.timeoutMs ?? 12000, options.maxBytes ?? 1_000_000);
+  const usedOperatorContent = typeof options.content === "string";
   const sourceId = `src_${shortHash(`${taskId}:${url.toString()}:${sha256(content)}`)}`;
   return registerOpenWorldSource(root, {
     taskId,
@@ -90,6 +115,23 @@ export async function ingestWebOpenWorldSource(projectRoot: string, taskId: stri
     now: options.now ?? new Date(),
     locator: { url: url.toString() },
     trust: trustForWebSource(url),
+    provenance: {
+      adapterId: options.provenance?.adapterId ?? (usedOperatorContent ? "explicit-http-cache" : "explicit-http-fetch"),
+      retrievalMode: options.provenance?.retrievalMode ?? (usedOperatorContent ? "explicit-cache" : "explicit-fetch"),
+      origin: options.provenance?.origin ?? (usedOperatorContent ? "operator-cache" : "operator-url"),
+      planId: options.provenance?.planId,
+      candidateId: options.provenance?.candidateId,
+      allowWebAtIngest: task.allowWeb,
+      operatorProvidedContent: usedOperatorContent,
+      networkAccess: usedOperatorContent ? "none" : "explicit-http",
+      safeguards: options.provenance?.safeguards ?? [
+        "allowWeb must be true",
+        usedOperatorContent ? "operator-provided content cache" : "HTTP(S) fetch only",
+        "content-type allowlist",
+        "timeout and byte limit",
+        "leakage audit before cache write"
+      ]
+    },
     privacyClass: "openworld-public",
     usableFor: ["skill", "virtual-test", "report"]
   });
@@ -360,7 +402,13 @@ export async function executeOpenWorldResearchPlan(
       continue;
     }
     try {
-      const result = await ingestLocalOpenWorldSource(root, taskId, candidate.locator.path ?? candidate.uri, now);
+      const result = await ingestLocalOpenWorldSource(root, taskId, candidate.locator.path ?? candidate.uri, now, {
+        adapterId: "local-project-files",
+        retrievalMode: "local-scan",
+        origin: "source-plan-candidate",
+        planId: plan.id,
+        candidateId: candidate.id
+      });
       ingested.push(sourceExecutionEntry(result.source, result.audit.id));
       localIngested += 1;
     } catch (error) {
@@ -382,6 +430,15 @@ export async function executeOpenWorldResearchPlan(
         content: webSource.content,
         timeoutMs: webSource.timeoutMs,
         maxBytes: webSource.maxBytes,
+        provenance: {
+          adapterId: usedCache ? "explicit-http-cache" : "explicit-http-fetch",
+          retrievalMode: usedCache ? "explicit-cache" : "explicit-fetch",
+          origin: usedCache ? "operator-cache" : "operator-url",
+          planId: plan.id,
+          allowWebAtIngest: task.allowWeb,
+          operatorProvidedContent: usedCache,
+          networkAccess: usedCache ? "none" : "explicit-http"
+        },
         now
       });
       ingested.push(sourceExecutionEntry(result.source, result.audit.id));
@@ -403,6 +460,16 @@ export async function executeOpenWorldResearchPlan(
       const result = await ingestWebOpenWorldSource(root, taskId, {
         url: candidate.locator.url ?? candidate.uri,
         title: candidate.title,
+        provenance: {
+          adapterId: "autonomous-docs-repo-discovery",
+          retrievalMode: "autonomous-web",
+          origin: "autonomous-candidate",
+          planId: plan.id,
+          candidateId: candidate.id,
+          allowWebAtIngest: task.allowWeb,
+          operatorProvidedContent: false,
+          networkAccess: "explicit-http"
+        },
         now
       });
       ingested.push(sourceExecutionEntry(result.source, result.audit.id));
@@ -521,7 +588,7 @@ export function renderOpenWorldResearchExecution(execution: OpenWorldResearchExe
     "## Ingested Sources",
     "",
     ...(execution.ingested.length
-      ? execution.ingested.map((source) => `- ${source.sourceId} ${source.kind} trust=${source.trustScore} ${source.uri}`)
+      ? execution.ingested.map((source) => `- ${source.sourceId} ${source.kind} adapter=${source.adapterId ?? "unknown"} mode=${source.retrievalMode ?? "unknown"} network=${source.networkAccess} trust=${source.trustScore} ${source.uri}`)
       : ["None"]),
     "",
     "## Skipped",
@@ -550,6 +617,7 @@ async function registerOpenWorldSource(
     now: Date;
     locator?: OpenWorldSource["locator"];
     trust: OpenWorldSource["trust"];
+    provenance?: OpenWorldSource["provenance"];
     privacyClass: OpenWorldSource["privacyClass"];
     usableFor: OpenWorldSource["usableFor"];
   }
@@ -573,6 +641,7 @@ async function registerOpenWorldSource(
     contentPath: cachePath,
     cachePath,
     trust: input.trust,
+    provenance: input.provenance,
     privacyClass: input.privacyClass,
     usableFor: input.usableFor,
     leakageAuditId: audit.id
@@ -1053,7 +1122,14 @@ function sourceExecutionEntry(source: OpenWorldSource, auditId?: string): OpenWo
     uri: source.uri,
     privacyClass: source.privacyClass,
     trustScore: source.trust.score ?? 0.5,
-    auditId
+    auditId,
+    adapterId: source.provenance.adapterId,
+    retrievalMode: source.provenance.retrievalMode,
+    planId: source.provenance.planId,
+    candidateId: source.provenance.candidateId,
+    allowWebAtIngest: source.provenance.allowWebAtIngest,
+    operatorProvidedContent: source.provenance.operatorProvidedContent,
+    networkAccess: source.provenance.networkAccess
   };
 }
 

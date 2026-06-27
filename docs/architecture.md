@@ -300,6 +300,13 @@ OpenWorld source ingestion now updates `.openskill-kit/openworld/source-index.js
 and `.openskill-kit/openworld/trust-cache.json`. Source text is cached under the
 task's `sources/cache/` directory after leakage audit. Trust scores are
 explainable metadata, not proof of correctness.
+Each source and source-index entry also carries provenance metadata: retrieval
+adapter, retrieval mode, source-plan id, candidate id when applicable,
+allowWeb-at-ingest state, operator-provided-content flag, network policy, and
+safeguards. Research execution Markdown repeats adapter/mode/network details so
+operators can audit whether evidence came from local scan, explicit cached
+text, explicit HTTP fetch, or autonomous docs/repo discovery without reopening
+raw cached source text.
 
 `openworld retrieval-adapters` shows the current retrieval contract for a task:
 local project files are network-free, explicit URL cache ingestion is

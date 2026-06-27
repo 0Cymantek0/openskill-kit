@@ -34,6 +34,18 @@ export const SourceTrustSchema = z.object({
   rationale: z.string().optional()
 });
 
+export const OpenWorldSourceProvenanceSchema = z.object({
+  adapterId: z.enum(["local-project-files", "explicit-http-fetch", "explicit-http-cache", "autonomous-docs-repo-discovery"]).optional(),
+  retrievalMode: z.enum(["local-scan", "explicit-cache", "explicit-fetch", "autonomous-web"]).optional(),
+  origin: z.enum(["operator-file", "operator-url", "operator-cache", "source-plan-candidate", "autonomous-candidate"]).optional(),
+  planId: z.string().min(1).optional(),
+  candidateId: z.string().min(1).optional(),
+  allowWebAtIngest: z.boolean().default(false),
+  operatorProvidedContent: z.boolean().default(false),
+  networkAccess: z.enum(["none", "explicit-http"]).default("none"),
+  safeguards: z.array(z.string().min(1)).default([])
+});
+
 export const OpenWorldSourceSchema = z.object({
   schemaVersion: z.enum(["openskill-kit.openworld-source.v1", "openskill-kit.openworld-source.v2"]),
   id: z.string().min(1),
@@ -55,6 +67,7 @@ export const OpenWorldSourceSchema = z.object({
   retrievedAt: z.string().datetime(),
   contentHash: z.string().min(16),
   trust: SourceTrustSchema.default({ authority: 0.5, freshness: 0.5, independence: 0.5 }),
+  provenance: OpenWorldSourceProvenanceSchema.default({ allowWebAtIngest: false, operatorProvidedContent: false, networkAccess: "none", safeguards: [] }),
   privacyClass: z.enum(OpenWorldPrivacyClasses).default("project-private"),
   usableFor: z.array(z.enum(["skill", "virtual-test", "safety", "report"])).default(["skill", "virtual-test"]),
   leakageAuditId: z.string().optional()
@@ -70,6 +83,7 @@ export const OpenWorldSourceIndexEntrySchema = z.object({
   cachePath: z.string().optional(),
   retrievedAt: z.string().datetime(),
   trustScore: z.number().min(0).max(1),
+  provenance: OpenWorldSourceProvenanceSchema.default({ allowWebAtIngest: false, operatorProvidedContent: false, networkAccess: "none", safeguards: [] }),
   privacyClass: z.enum(OpenWorldPrivacyClasses),
   leakageAuditId: z.string().optional()
 });
@@ -190,7 +204,14 @@ export const OpenWorldResearchExecutionSchema = z.object({
     uri: z.string().min(1),
     privacyClass: z.enum(OpenWorldPrivacyClasses),
     trustScore: z.number().min(0).max(1),
-    auditId: z.string().optional()
+    auditId: z.string().optional(),
+    adapterId: OpenWorldRetrievalAdapterSchema.shape.id.optional(),
+    retrievalMode: z.enum(["local-scan", "explicit-cache", "explicit-fetch", "autonomous-web"]).optional(),
+    planId: z.string().optional(),
+    candidateId: z.string().optional(),
+    allowWebAtIngest: z.boolean().default(false),
+    operatorProvidedContent: z.boolean().default(false),
+    networkAccess: z.enum(["none", "explicit-http"]).default("none")
   })).default([]),
   skipped: z.array(z.object({
     uri: z.string().min(1),

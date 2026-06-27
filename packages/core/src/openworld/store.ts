@@ -238,7 +238,7 @@ export async function readOpenWorldTrustCache(projectRoot: string): Promise<Open
     .catch(() => OpenWorldTrustCacheSchema.parse({ schemaVersion: "openskill-kit.openworld-trust-cache.v1", updatedAt: new Date(0).toISOString(), entries: {} }));
 }
 
-export function makeOpenWorldSource(input: Omit<OpenWorldSource, "schemaVersion" | "contentHash" | "retrievedAt"> & { content: string; retrievedAt?: Date }): OpenWorldSource {
+export function makeOpenWorldSource(input: Omit<OpenWorldSource, "schemaVersion" | "contentHash" | "retrievedAt" | "provenance"> & { content: string; retrievedAt?: Date; provenance?: OpenWorldSource["provenance"] }): OpenWorldSource {
   const kind = input.kind;
   const trust = scoreTrust(input.trust ?? { authority: 0.5, freshness: 0.5, independence: 0.5 });
   return OpenWorldSourceSchema.parse({
@@ -269,6 +269,7 @@ async function updateOpenWorldSourceIndex(projectRoot: string, source: OpenWorld
       cachePath: source.cachePath,
       retrievedAt: source.retrievedAt,
       trustScore: source.trust.score ?? scoreTrust(source.trust).score ?? 0.5,
+      provenance: source.provenance,
       privacyClass: source.privacyClass,
       leakageAuditId: source.leakageAuditId
     });

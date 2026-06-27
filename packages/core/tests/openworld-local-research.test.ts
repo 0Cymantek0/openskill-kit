@@ -89,10 +89,26 @@ describe("OpenWorld local research", () => {
     expect(execution.execution.adapterResults.some((result) => result.adapterId === "local-project-files" && result.status === "completed" && result.ingestedCount === 1)).toBe(true);
     expect(execution.execution.adapterResults.some((result) => result.adapterId === "explicit-http-fetch" && result.status === "skipped")).toBe(true);
     expect(execution.execution.ingested[0]?.uri).toBe("docs/architecture.md");
+    expect(execution.execution.ingested[0]).toMatchObject({
+      adapterId: "local-project-files",
+      retrievalMode: "local-scan",
+      planId: plan.id,
+      allowWebAtIngest: false,
+      operatorProvidedContent: false,
+      networkAccess: "none"
+    });
     expect(execution.execution.executionPath).toContain("/research/executions/");
     await expect(stat(execution.executionPath ?? "")).resolves.toBeTruthy();
+    expect(await readFile(execution.markdownPath ?? "", "utf8")).toContain("adapter=local-project-files mode=local-scan network=none");
     const index = await readOpenWorldSourceIndex(root);
     expect(index.entries.some((entry) => entry.uri === "docs/architecture.md")).toBe(true);
+    expect(index.entries.find((entry) => entry.uri === "docs/architecture.md")?.provenance).toMatchObject({
+      adapterId: "local-project-files",
+      retrievalMode: "local-scan",
+      planId: plan.id,
+      allowWebAtIngest: false,
+      networkAccess: "none"
+    });
 
     const disabledAdapters = buildOpenWorldRetrievalAdapters({ allowWeb: false, privacyClass: "project-private" });
     expect(disabledAdapters.find((adapter) => adapter.id === "explicit-http-fetch")?.status).toBe("disabled");
@@ -397,9 +413,18 @@ describe("OpenWorld local research", () => {
     expect(source.source.kind).toBe("official-docs");
     expect(source.source.privacyClass).toBe("openworld-public");
     expect(source.source.locator.url).toBe("https://docs.example.com/sdk");
+    expect(source.source.provenance).toMatchObject({
+      adapterId: "explicit-http-cache",
+      retrievalMode: "explicit-cache",
+      origin: "operator-cache",
+      allowWebAtIngest: true,
+      operatorProvidedContent: true,
+      networkAccess: "none"
+    });
     expect(source.source.trust.score).toBeGreaterThan(0.7);
     const index = await readOpenWorldSourceIndex(root);
     expect(index.entries.some((entry) => entry.sourceId === source.source.id && entry.privacyClass === "openworld-public")).toBe(true);
+    expect(index.entries.find((entry) => entry.sourceId === source.source.id)?.provenance.retrievalMode).toBe("explicit-cache");
 
     await expect(ingestWebOpenWorldSource(root, allowed.task.id, {
       url: "https://docs.example.com/private-case-7",
@@ -435,6 +460,13 @@ describe("OpenWorld local research", () => {
         now: new Date("2026-06-26T02:01:00.000Z")
       });
       expect(source.source.kind).toBe("web");
+      expect(source.source.provenance).toMatchObject({
+        adapterId: "explicit-http-fetch",
+        retrievalMode: "explicit-fetch",
+        allowWebAtIngest: true,
+        operatorProvidedContent: false,
+        networkAccess: "explicit-http"
+      });
       expect(await readOpenWorldSourceContent(root, task.task.id, source.source.id)).toContain("deterministic retry behavior");
       await expect(ingestWebOpenWorldSource(root, task.task.id, {
         url: `http://127.0.0.1:${address.port}/sdk`,
@@ -494,8 +526,22 @@ describe("OpenWorld local research", () => {
       });
       expect(execution.execution.status).toBe("completed");
       expect(execution.execution.adapterResults.find((result) => result.adapterId === "autonomous-docs-repo-discovery")?.ingestedCount).toBe(1);
+      expect(execution.execution.ingested[0]).toMatchObject({
+        adapterId: "autonomous-docs-repo-discovery",
+        retrievalMode: "autonomous-web",
+        planId: plan.id,
+        allowWebAtIngest: true,
+        operatorProvidedContent: false,
+        networkAccess: "explicit-http"
+      });
       const index = await readOpenWorldSourceIndex(root);
       expect(index.entries.some((entry) => entry.uri.endsWith("/sdk") && entry.privacyClass === "openworld-public")).toBe(true);
+      expect(index.entries.find((entry) => entry.uri.endsWith("/sdk"))?.provenance).toMatchObject({
+        adapterId: "autonomous-docs-repo-discovery",
+        retrievalMode: "autonomous-web",
+        planId: plan.id,
+        networkAccess: "explicit-http"
+      });
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
