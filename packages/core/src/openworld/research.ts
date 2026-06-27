@@ -18,7 +18,7 @@ import {
   writeVirtualTestSuite
 } from "./store.js";
 import { OpenWorldResearchExecutionSchema, OpenWorldResearchPlanSchema } from "./schema.js";
-import type { AnchorCard, OpenWorldLeakageAudit, OpenWorldResearchExecution, OpenWorldResearchPlan, OpenWorldSource, OpenWorldSourceCandidate, VirtualTestSuite } from "./schema.js";
+import type { AnchorCard, OpenWorldLeakageAudit, OpenWorldResearchExecution, OpenWorldResearchPlan, OpenWorldRetrievalAdapter, OpenWorldSource, OpenWorldSourceCandidate, OpenWorldTask, VirtualTestSuite } from "./schema.js";
 
 const SOURCE_SKIP_DIRS = new Set([".git", ".openskill-kit", "node_modules", "dist", "coverage", "tmp", ".next", ".turbo"]);
 const SOURCE_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".json", ".jsonc", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".toml", ".yaml", ".yml"]);
@@ -97,6 +97,57 @@ export interface PlanOpenWorldResearchOptions {
   now?: Date;
 }
 
+export function buildOpenWorldRetrievalAdapters(task: Pick<OpenWorldTask, "allowWeb" | "privacyClass">, limits: { maxLocalSources?: number; maxBytes?: number; timeoutMs?: number } = {}): OpenWorldRetrievalAdapter[] {
+  const maxLocalSources = Math.max(0, Math.min(limits.maxLocalSources ?? 5, 25));
+  const maxBytes = Math.max(1_000, Math.min(limits.maxBytes ?? 1_000_000, 2_000_000));
+  const timeoutMs = Math.max(1_000, Math.min(limits.timeoutMs ?? 12_000, 120_000));
+  return [
+    {
+      id: "local-project-files",
+      kind: "local-files",
+      title: "Project-local source files",
+      status: "enabled",
+      networkAccess: "none",
+      requiresAllowWeb: false,
+      inputPrivacyClasses: ["project-private", "shareable"],
+      outputPrivacyClass: "project-private",
+      maxSources: maxLocalSources,
+      maxBytes,
+      reasons: ["Always available for files under the project root."],
+      safeguards: ["Project-root path containment", "Leakage audit before cache write", "Atomic artifact writes"]
+    },
+    {
+      id: "explicit-http-cache",
+      kind: "http-cache",
+      title: "Explicit URL with operator-provided text cache",
+      status: task.allowWeb ? "enabled" : "disabled",
+      networkAccess: "none",
+      requiresAllowWeb: true,
+      inputPrivacyClasses: ["openworld-public", "shareable"],
+      outputPrivacyClass: "openworld-public",
+      maxSources: 25,
+      maxBytes,
+      reasons: task.allowWeb ? ["Task allows explicit public web sources; content is provided by operator."] : ["Task allowWeb is false."],
+      safeguards: ["No network access", "Operator supplies exact text", "Leakage audit before cache write"]
+    },
+    {
+      id: "explicit-http-fetch",
+      kind: "http-fetch",
+      title: "Explicit HTTP(S) fetch",
+      status: task.allowWeb ? "enabled" : "disabled",
+      networkAccess: "explicit-http",
+      requiresAllowWeb: true,
+      inputPrivacyClasses: ["openworld-public"],
+      outputPrivacyClass: "openworld-public",
+      maxSources: 25,
+      maxBytes,
+      timeoutMs,
+      reasons: task.allowWeb ? ["Task allows explicit public web sources; URL must be passed by operator."] : ["Task allowWeb is false."],
+      safeguards: ["HTTP(S) only", "Operator-provided URL only", "Content-type allowlist", "Timeout and byte limit", "Leakage audit before cache write"]
+    }
+  ];
+}
+
 export async function planOpenWorldResearch(projectRoot: string, taskId: string, options: PlanOpenWorldResearchOptions = {}): Promise<OpenWorldResearchPlan> {
   const root = path.resolve(projectRoot);
   const task = await readOpenWorldTask(root, taskId);
@@ -104,6 +155,7 @@ export async function planOpenWorldResearch(projectRoot: string, taskId: string,
   const maxCandidates = Math.max(1, Math.min(options.maxCandidates ?? 8, 25));
   const maxFilesScanned = Math.max(maxCandidates, Math.min(options.maxFilesScanned ?? 250, 1000));
   const maxFileBytes = Math.max(4_000, Math.min(options.maxFileBytes ?? 128_000, 1_000_000));
+  const retrievalAdapters = buildOpenWorldRetrievalAdapters(task, { maxLocalSources: maxCandidates, maxBytes: maxFileBytes });
   const queryPlan = buildResearchQueries(task, options.query, options.includeWebQueries ?? true, now);
   const seedPaths = [...new Set([...(task.paths ?? []), ...(options.paths ?? [])].map((item) => item.trim()).filter(Boolean))];
   const files = await discoverCandidateFiles(root, seedPaths, maxFilesScanned);
@@ -167,10 +219,13 @@ export async function planOpenWorldResearch(projectRoot: string, taskId: string,
     id: planId,
     taskId,
     createdAt: now.toISOString(),
+    retrievalAdapters,
     queryPlan,
     candidates: topCandidates,
     recommendedNextCommands,
     summary: {
+      adapterCount: retrievalAdapters.length,
+      enabledAdapterCount: retrievalAdapters.filter((adapter) => adapter.status === "enabled").length,
       queryCount: queryPlan.length,
       candidateCount: topCandidates.length,
       recommendedCount: topCandidates.filter((candidate) => candidate.status === "recommended").length,
@@ -229,6 +284,9 @@ export async function executeOpenWorldResearchPlan(
   if (plan.taskId !== taskId) throw new Error(`OpenWorld research plan ${plan.id} belongs to task ${plan.taskId}, not ${taskId}.`);
 
   const localLimit = Math.max(0, Math.min(options.maxLocalSources ?? 5, 25));
+  const retrievalAdapters = plan.retrievalAdapters.length
+    ? plan.retrievalAdapters
+    : buildOpenWorldRetrievalAdapters(task, { maxLocalSources: localLimit, maxBytes: Math.max(...explicitWebSources.map((source) => source.maxBytes ?? 1_000_000), 1_000_000), timeoutMs: Math.max(...explicitWebSources.map((source) => source.timeoutMs ?? 12_000), 12_000) });
   const localCandidates = plan.candidates
     .filter((candidate) => candidate.status === "recommended" || (options.includeAvailable === true && candidate.status === "available"))
     .filter((candidate) => candidate.status !== "blocked")
@@ -239,6 +297,13 @@ export async function executeOpenWorldResearchPlan(
     .map((candidate) => ({ uri: candidate.uri, reason: "Blocked by source-plan leakage audit." }));
   const ingested: OpenWorldResearchExecution["ingested"] = [];
   const errors: OpenWorldResearchExecution["errors"] = [];
+  const adapterResults: OpenWorldResearchExecution["adapterResults"] = [];
+  let localIngested = 0;
+  let localErrors = 0;
+  let webCacheIngested = 0;
+  let webCacheErrors = 0;
+  let webFetchIngested = 0;
+  let webFetchErrors = 0;
 
   for (const candidate of localCandidates) {
     if (dryRun) {
@@ -248,8 +313,10 @@ export async function executeOpenWorldResearchPlan(
     try {
       const result = await ingestLocalOpenWorldSource(root, taskId, candidate.locator.path ?? candidate.uri, now);
       ingested.push(sourceExecutionEntry(result.source, result.audit.id));
+      localIngested += 1;
     } catch (error) {
       errors.push({ uri: candidate.uri, message: error instanceof Error ? error.message : String(error) });
+      localErrors += 1;
     }
   }
 
@@ -259,6 +326,7 @@ export async function executeOpenWorldResearchPlan(
       continue;
     }
     try {
+      const usedCache = typeof webSource.content === "string";
       const result = await ingestWebOpenWorldSource(root, taskId, {
         url: webSource.url,
         title: webSource.title,
@@ -268,9 +336,48 @@ export async function executeOpenWorldResearchPlan(
         now
       });
       ingested.push(sourceExecutionEntry(result.source, result.audit.id));
+      if (usedCache) webCacheIngested += 1;
+      else webFetchIngested += 1;
     } catch (error) {
       errors.push({ uri: webSource.url, message: error instanceof Error ? error.message : String(error) });
+      if (typeof webSource.content === "string") webCacheErrors += 1;
+      else webFetchErrors += 1;
     }
+  }
+
+  for (const adapter of retrievalAdapters) {
+    if (adapter.id === "local-project-files") {
+      adapterResults.push({
+        adapterId: adapter.id,
+        status: dryRun ? "planned" : localErrors ? localIngested ? "partial" : "error" : "completed",
+        plannedCount: localCandidates.length,
+        ingestedCount: dryRun ? 0 : localIngested,
+        skippedCount: dryRun ? localCandidates.length : 0,
+        errorCount: localErrors,
+        reasons: adapter.reasons
+      });
+      continue;
+    }
+    const webSourcesForAdapter = explicitWebSources.filter((source) => adapter.id === "explicit-http-cache" ? typeof source.content === "string" : typeof source.content !== "string");
+    const adapterIngested = adapter.id === "explicit-http-cache" ? webCacheIngested : webFetchIngested;
+    const adapterErrors = adapter.id === "explicit-http-cache" ? webCacheErrors : webFetchErrors;
+    adapterResults.push({
+      adapterId: adapter.id,
+      status: adapter.status === "disabled"
+        ? "blocked"
+        : dryRun
+          ? "planned"
+          : webSourcesForAdapter.length === 0
+            ? "skipped"
+            : adapterErrors
+              ? adapterIngested ? "partial" : "error"
+              : "completed",
+      plannedCount: webSourcesForAdapter.length,
+      ingestedCount: dryRun ? 0 : adapterIngested,
+      skippedCount: dryRun ? webSourcesForAdapter.length : 0,
+      errorCount: adapterErrors,
+      reasons: adapter.reasons
+    });
   }
 
   const status = dryRun
@@ -293,8 +400,10 @@ export async function executeOpenWorldResearchPlan(
       ingestedCount: ingested.length,
       skippedCount: skipped.length,
       errorCount: errors.length,
-      explicitWebCount: explicitWebSources.length
+      explicitWebCount: explicitWebSources.length,
+      adapterCount: adapterResults.length
     },
+    adapterResults,
     ingested,
     skipped,
     errors,
@@ -329,9 +438,16 @@ export function renderOpenWorldResearchExecution(execution: OpenWorldResearchExe
     "",
     `- Planned local sources: ${execution.summary.plannedLocalCount}`,
     `- Explicit web sources: ${execution.summary.explicitWebCount}`,
+    `- Retrieval adapters: ${execution.summary.adapterCount}`,
     `- Ingested: ${execution.summary.ingestedCount}`,
     `- Skipped: ${execution.summary.skippedCount}`,
     `- Errors: ${execution.summary.errorCount}`,
+    "",
+    "## Retrieval Adapters",
+    "",
+    ...(execution.adapterResults.length
+      ? execution.adapterResults.map((item) => `- ${item.adapterId}: ${item.status} planned=${item.plannedCount} ingested=${item.ingestedCount} skipped=${item.skippedCount} errors=${item.errorCount}`)
+      : ["None"]),
     "",
     "## Ingested Sources",
     "",

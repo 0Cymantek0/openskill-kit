@@ -103,6 +103,22 @@ export const OpenWorldResearchQuerySchema = z.object({
   reasons: z.array(z.string().min(1)).default([])
 });
 
+export const OpenWorldRetrievalAdapterSchema = z.object({
+  id: z.enum(["local-project-files", "explicit-http-fetch", "explicit-http-cache"]),
+  kind: z.enum(["local-files", "http-fetch", "http-cache"]),
+  title: z.string().min(1),
+  status: z.enum(["enabled", "disabled"]),
+  networkAccess: z.enum(["none", "explicit-http"]),
+  requiresAllowWeb: z.boolean().default(false),
+  inputPrivacyClasses: z.array(z.enum(OpenWorldPrivacyClasses)).default([]),
+  outputPrivacyClass: z.enum(OpenWorldPrivacyClasses),
+  maxSources: z.number().int().min(0).max(100).optional(),
+  maxBytes: z.number().int().min(0).optional(),
+  timeoutMs: z.number().int().min(0).optional(),
+  reasons: z.array(z.string().min(1)).default([]),
+  safeguards: z.array(z.string().min(1)).default([])
+});
+
 export const OpenWorldSourceCandidateSchema = z.object({
   id: z.string().min(1),
   taskId: z.string().min(1),
@@ -124,10 +140,13 @@ export const OpenWorldResearchPlanSchema = z.object({
   id: z.string().min(1),
   taskId: z.string().min(1),
   createdAt: z.string().datetime(),
+  retrievalAdapters: z.array(OpenWorldRetrievalAdapterSchema).default([]),
   queryPlan: z.array(OpenWorldResearchQuerySchema).default([]),
   candidates: z.array(OpenWorldSourceCandidateSchema).default([]),
   recommendedNextCommands: z.array(z.string().min(1)).default([]),
   summary: z.object({
+    adapterCount: z.number().int().min(0).default(0),
+    enabledAdapterCount: z.number().int().min(0).default(0),
     queryCount: z.number().int().min(0),
     candidateCount: z.number().int().min(0),
     recommendedCount: z.number().int().min(0),
@@ -152,8 +171,18 @@ export const OpenWorldResearchExecutionSchema = z.object({
     ingestedCount: z.number().int().min(0),
     skippedCount: z.number().int().min(0),
     errorCount: z.number().int().min(0),
-    explicitWebCount: z.number().int().min(0)
+    explicitWebCount: z.number().int().min(0),
+    adapterCount: z.number().int().min(0).default(0)
   }),
+  adapterResults: z.array(z.object({
+    adapterId: OpenWorldRetrievalAdapterSchema.shape.id,
+    status: z.enum(["planned", "completed", "skipped", "blocked", "partial", "error"]),
+    plannedCount: z.number().int().min(0).default(0),
+    ingestedCount: z.number().int().min(0).default(0),
+    skippedCount: z.number().int().min(0).default(0),
+    errorCount: z.number().int().min(0).default(0),
+    reasons: z.array(z.string().min(1)).default([])
+  })).default([]),
   ingested: z.array(z.object({
     sourceId: z.string().min(1),
     kind: OpenWorldSourceSchema.shape.kind,
@@ -456,6 +485,7 @@ export type OpenWorldSource = z.infer<typeof OpenWorldSourceSchema>;
 export type OpenWorldSourceIndex = z.infer<typeof OpenWorldSourceIndexSchema>;
 export type OpenWorldTrustCache = z.infer<typeof OpenWorldTrustCacheSchema>;
 export type OpenWorldResearchQuery = z.infer<typeof OpenWorldResearchQuerySchema>;
+export type OpenWorldRetrievalAdapter = z.infer<typeof OpenWorldRetrievalAdapterSchema>;
 export type OpenWorldSourceCandidate = z.infer<typeof OpenWorldSourceCandidateSchema>;
 export type OpenWorldResearchPlan = z.infer<typeof OpenWorldResearchPlanSchema>;
 export type OpenWorldResearchExecution = z.infer<typeof OpenWorldResearchExecutionSchema>;

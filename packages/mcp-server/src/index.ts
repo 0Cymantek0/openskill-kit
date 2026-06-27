@@ -22,6 +22,7 @@ import {
   explainAdaptiveStatus,
   getAdaptiveStatus,
   assessOpenWorldVerifierQuality,
+  buildOpenWorldRetrievalAdapters,
   executeOpenWorldResearchPlan,
   generateOpenWorldCandidateSkill,
   ingestLocalOpenWorldSource,
@@ -48,6 +49,7 @@ import {
   renderWorkflowGraph,
   readCalibrationReport,
   readInteractionImportRuns,
+  readOpenWorldTask,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
   readRegistry,
@@ -907,6 +909,24 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, taskId, query, paths, maxCandidates, maxFilesScanned, write }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await planOpenWorldResearch(root, taskId, { query, paths, maxCandidates, maxFilesScanned, write }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_openworld_retrieval_adapters",
+    {
+      title: "OpenSkillKit OpenWorld Retrieval Adapters",
+      description: "List OpenWorld retrieval adapters, allow-web gates, network policy, limits, and safeguards for a task.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        taskId: z.string().min(1)
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, taskId }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const task = await readOpenWorldTask(root, taskId);
+      return toolResult({ schemaVersion: "openskill-kit.openworld-retrieval-adapters.v1", taskId: task.id, adapters: buildOpenWorldRetrievalAdapters(task) }, root);
     }
   );
 

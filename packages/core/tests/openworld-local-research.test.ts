@@ -6,6 +6,7 @@ import path from "node:path";
 import {
   buildVirtualSuiteFromAnchors,
   assessOpenWorldVerifierQuality,
+  buildOpenWorldRetrievalAdapters,
   buildOpenWorldEvalReport,
   buildOpenWorldTaskReport,
   buildReviewQueue,
@@ -50,6 +51,9 @@ describe("OpenWorld local research", () => {
     expect(plan.queryPlan.some((query) => query.status === "sanitized" && !query.sanitizedQuery.includes("hidden/oracle.txt"))).toBe(true);
     expect(plan.candidates.some((candidate) => candidate.uri === "docs/architecture.md" && candidate.status === "recommended")).toBe(true);
     expect(plan.candidates.some((candidate) => candidate.uri === "docs/leaked.md" && candidate.status === "blocked")).toBe(true);
+    expect(plan.retrievalAdapters.map((adapter) => adapter.id)).toEqual(["local-project-files", "explicit-http-cache", "explicit-http-fetch"]);
+    expect(plan.retrievalAdapters.find((adapter) => adapter.id === "explicit-http-fetch")?.status).toBe("enabled");
+    expect(plan.summary.enabledAdapterCount).toBe(3);
     expect(plan.recommendedNextCommands.some((command) => command.includes("openworld research") && command.includes("docs/architecture.md"))).toBe(true);
     expect(plan.recommendedNextCommands.some((command) => command.includes("fetch-source"))).toBe(true);
     expect(plan.planPath).toContain("/research/plans/");
@@ -79,11 +83,17 @@ describe("OpenWorld local research", () => {
     });
     expect(execution.execution.status).toBe("completed");
     expect(execution.execution.summary.ingestedCount).toBe(1);
+    expect(execution.execution.summary.adapterCount).toBe(3);
+    expect(execution.execution.adapterResults.some((result) => result.adapterId === "local-project-files" && result.status === "completed" && result.ingestedCount === 1)).toBe(true);
+    expect(execution.execution.adapterResults.some((result) => result.adapterId === "explicit-http-fetch" && result.status === "skipped")).toBe(true);
     expect(execution.execution.ingested[0]?.uri).toBe("docs/architecture.md");
     expect(execution.execution.executionPath).toContain("/research/executions/");
     await expect(stat(execution.executionPath ?? "")).resolves.toBeTruthy();
     const index = await readOpenWorldSourceIndex(root);
     expect(index.entries.some((entry) => entry.uri === "docs/architecture.md")).toBe(true);
+
+    const disabledAdapters = buildOpenWorldRetrievalAdapters({ allowWeb: false, privacyClass: "project-private" });
+    expect(disabledAdapters.find((adapter) => adapter.id === "explicit-http-fetch")?.status).toBe("disabled");
   });
 
   it("ingests local files, drafts anchors, and builds visible/holdout suite", async () => {

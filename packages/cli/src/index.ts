@@ -38,11 +38,13 @@ import {
   buildVirtualSuiteFromAnchors,
   assessOpenWorldVerifierQuality,
   draftAnchorFromOpenWorldSource,
+  buildOpenWorldRetrievalAdapters,
   executeOpenWorldResearchPlan,
   generateOpenWorldCandidateSkill,
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   planOpenWorldResearch,
+  readOpenWorldTask,
   buildOpenWorldTaskReport,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
@@ -264,6 +266,18 @@ openworld.command("source-plan")
       result.leakageAuditPath ? `Leakage audit: ${result.leakageAuditPath}` : undefined,
       ...result.recommendedNextCommands.slice(0, 6)
     ].filter(Boolean).join("\n"));
+  });
+
+openworld.command("retrieval-adapters")
+  .description("List OpenWorld retrieval adapters, gates, limits, and safeguards for a task")
+  .requiredOption("--task-id <id>", "Task id")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const task = await readOpenWorldTask(process.cwd(), options.taskId);
+    const adapters = buildOpenWorldRetrievalAdapters(task);
+    output(options.json, { schemaVersion: "openskill-kit.openworld-retrieval-adapters.v1", taskId: task.id, adapters }, adapters
+      .map((adapter) => `${adapter.id} ${adapter.status} network=${adapter.networkAccess}${adapter.timeoutMs ? ` timeoutMs=${adapter.timeoutMs}` : ""}${adapter.maxBytes ? ` maxBytes=${adapter.maxBytes}` : ""}`)
+      .join("\n"));
   });
 
 openworld.command("execute-source-plan")
