@@ -873,7 +873,7 @@ agent.command("uninstall-manifests")
 
 agent.command("attach-plugin")
   .description("Preview or write host MCP config for the compiled OpenSkillKit plugin")
-  .option("--host <host>", "codex|claude-code|cursor|generic-mcp", "generic-mcp")
+  .option("--host <host>", "opencode|codex|claude-code|cursor|generic-mcp", "generic-mcp")
   .option("--dry-run", "Plan without writing")
   .option("--yes", "Non-interactive approval")
   .option("--json", "Print JSON")

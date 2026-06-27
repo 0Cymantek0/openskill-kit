@@ -1,7 +1,18 @@
 # Agent Plugin Bundle
 
 OpenSkillKit is intended to attach to an existing coding harness, not replace
-it. The plugin bundle gives that harness four local entrypoints:
+it. OpenCode is the primary full-feature target for command files, learner
+subagent metadata, plugin hooks, and MCP. Codex, Claude Code, Cursor, and
+generic MCP clients stay supported through conservative preview-first attach
+paths.
+
+The public harness surface is 12 `/osk` command families: `init`, `status`,
+`task`, `learn`, `review`, `research`, `evolve`, `verify`, `compile`,
+`deploy`, `eval`, and `pack`. Low-level MCP tools and CLI commands are still
+available for advanced automation, but user-facing harness flows should route
+through the family map first.
+
+The plugin bundle gives a harness these local entrypoints:
 
 - `skills/` for repository-scoped skill instructions.
 - `.mcp.json` for the local `openskill-kit-mcp` stdio backend.
@@ -128,6 +139,9 @@ Harness behavior should stay conservative:
   approvals remain required.
 - Route `/osk ...` requests through `commands/commands.json`; prefer MCP and use
   CLI fallbacks only when the MCP backend is unavailable.
+- Keep normal users on the 12 public command families. Treat individual
+  low-level commands as implementation details unless an advanced automation
+  explicitly needs them.
 - For normal coding tasks, route `/osk context` to
   `osk_get_agent_task_context`; it returns the route plan, compact relevant
   preferences, workflow matches, plugin health, plugin install profile status,

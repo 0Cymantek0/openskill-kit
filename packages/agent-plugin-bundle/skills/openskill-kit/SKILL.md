@@ -1,6 +1,6 @@
 ---
 name: openskill-kit
-description: Use openskill-kit to draft, audit, test, and install portable agent skills
+description: Use OpenSkillKit command families to load, learn, review, verify, compile, and deploy project behavior safely
 license: MIT
 compatibility: agent-plugin
 metadata:
@@ -10,28 +10,55 @@ metadata:
 # openskill-kit
 
 ## When to use
-Use when asked to create, audit, verify, or install reusable agent skills.
+Use when a harness or agent needs project-local behavior memory, `/osk ...`
+command routing, review-gated learning, OpenWorld research/evolution, verifier
+reports, compiled skills, MCP profiles, or behavior packs.
 
 ## When not to use
 Do not use for hidden benchmark answers, secret extraction, or unapproved global
-installation.
+installation. Do not silently import raw memories, shell history, transcripts,
+raw prompts, raw diffs, private evidence, or hidden oracle files.
 
 ## Workflow
-1. For host attach work, read matching `install-guides/<host>.md` before changing any host config.
-2. For `/osk ...` requests, read `commands/commands.json` or `commands/osk.md` and route to the mapped MCP tool first.
-3. If MCP is unavailable, run the mapped CLI fallback from the project root.
-4. Prefer `openskill-kit evolve "<topic>" --no-llm` when user wants draft plus local verification loop.
-5. Use `openskill-kit draft "<topic>" --no-llm` only when a candidate without loop diagnosis is enough.
-6. Add explicit evidence with `--evidence-file <path>` or opt-in URL evidence with `--evidence-url <url>` when user supplies trusted sources.
-7. Run `openskill-kit audit <skill-path>` before install.
-8. Run `openskill-kit test <skill-path>` and inspect report paths. Use `--run-repo-checks` when the user wants verifier-pack repo scripts executed.
-9. Run `openskill-kit evaluate <skill-path>` for one leakage-aware readiness report before install.
-10. Install with explicit target only, such as `--target agents-project`.
-11. Keep generated `SKILL.md` concise; bulky notes belong in references.
+1. Call `osk_bootstrap_session` first when MCP is available. If MCP is not
+   available, run `openskill-kit status --json` from the project root.
+2. For `/osk ...` requests, read `commands/commands.json`, `commands/osk.md`,
+   or `commands/families.json`; route to the mapped MCP tool before using the
+   CLI fallback.
+3. Keep normal users on the 12 command families: `/osk init`, `/osk status`,
+   `/osk task`, `/osk learn`, `/osk review`, `/osk research`, `/osk evolve`,
+   `/osk verify`, `/osk compile`, `/osk deploy`, `/osk eval`, and `/osk pack`.
+4. Use `/osk task context` before coding when project behavior might matter.
+   Use `/osk task finish` after verification with only a safe summary, touched
+   file names, command names, command statuses, and outcome.
+5. Use `/osk learn` only with an explicit source plan. Preview imports first;
+   apply only after approval. Learned behavior remains staged until
+   `/osk review` accepts it.
+6. Use `/osk review` for all activation, rejection, edit, lock, demotion, and
+   workflow decisions. Never activate candidate behavior by compile alone.
+7. Use `/osk research`, `/osk evolve`, and `/osk verify` for unfamiliar-domain
+   work. Treat OpenWorld artifact-verifier results as artifact evidence only;
+   do not claim hidden-oracle benchmark proof unless a real hidden oracle was
+   run outside OSK and reported separately.
+8. Use `/osk compile` to refresh skills, context packs, MCP descriptors,
+   command maps, hooks, and plugin artifacts after reviewed behavior changes.
+9. Use `/osk deploy` or `openskill-kit agent attach-plugin --host <host>
+   --dry-run` before writing host config. OpenCode is the primary full-feature
+   target; Codex, Claude Code, Cursor, and generic MCP remain supported or
+   preview paths according to their install guide.
+10. Use `/osk eval` before relying on major behavior changes and `/osk pack`
+    for share/import flows. Pack import and apply stay review-gated.
+11. Compatibility `draft`, `audit`, `test`, `evaluate`, and `install` commands
+    remain available for manual skill scaffolding, but they are not the primary
+    daily harness workflow.
 
 ## Safety
-Critical audit findings block install unless user explicitly approves override.
-Hidden-test, oracle, and ground-truth evidence inputs are blocked by leakage audit.
-The bundled `.mcp.json` can expose the same core through `openskill-kit-mcp`.
-Slash command support is harness-owned; this plugin only publishes the command
-map and backend operations.
+Critical audit findings block install unless the user explicitly approves an
+override. Hidden-test, oracle, and ground-truth evidence inputs are blocked by
+leakage audit. The bundled `.mcp.json` exposes the same core through
+`openskill-kit-mcp`.
+
+Slash command support is harness-owned. This plugin publishes the command map,
+MCP descriptors, profiles, CLI fallbacks, safety gates, and install guides. A
+harness must still enforce approvals for imports, deploy/apply actions, and
+review-gated learning.

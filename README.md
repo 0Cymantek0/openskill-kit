@@ -1,74 +1,66 @@
 # OpenSkillKit
 
 OpenSkillKit is a local-first Adaptive Skill Graph for AI coding agents. It
-observes project work, extracts evidence-backed Preference Nodes, keeps an
-inspectable Behavior Profile, and compiles the Active Behavior Layer into
-Context Packs, Agent Skills, hooks, MCP tools, and shareable Project Behavior
-Packs.
+helps an existing harness learn how a repository wants work done without
+silently uploading prompts, importing memories, or taking over the editor. It
+turns safe workflow signals, reviewed interaction imports, explicit evidence,
+and OpenWorld research artifacts into an inspectable Behavior Profile. Reviewed
+behavior then compiles into Context Packs, skills, hooks, MCP descriptors,
+slash-command maps, host attach metadata, and shareable Project Behavior Packs.
 
-It is not model training and it does not need provider keys. The host agent
-does the reasoning; OpenSkillKit supplies project-local behavior memory,
-evidence, safety gates, and generated artifacts agents already know how to use.
+OpenSkillKit is not model training and it does not need provider keys. The host
+agent still does the reasoning. OpenSkillKit supplies project-local behavior
+memory, evidence cards, review gates, verifier artifacts, and harness surfaces
+that agents already know how to use.
+
+The public user surface is 12 `/osk` command families: `init`, `status`,
+`task`, `learn`, `review`, `research`, `evolve`, `verify`, `compile`,
+`deploy`, `eval`, and `pack`. Low-level CLI commands and MCP tools remain
+available for automation, but daily harness workflows should start with these
+families.
 
 ## Quickstart
+
+For a coding harness, OpenCode is the primary full-feature target. Generic MCP,
+Codex, Claude Code, and Cursor attach paths are available with conservative
+preview-first behavior.
 
 ```bash
 npm install
 npm run build
 
 npx openskill-kit init
-npx openskill-kit observe --type user-prompt-submit --text "Always run npm test before final response."
-npx openskill-kit learn
+npx openskill-kit osk status
+npx openskill-kit osk task context --query "parser cleanup"
+npx openskill-kit osk task finish --summary "Parser cleanup verified." --command "npm test" --command-status pass
+npx openskill-kit osk learn
 npx openskill-kit review --activate-all
-npx openskill-kit compile
-npx openskill-kit compile --target plugin
-npx openskill-kit agent install-manifests --target project --dry-run
-npx openskill-kit agent uninstall-manifests --target project --dry-run
-npx openskill-kit daemon
-npx openskill-kit agent doctor
-npx openskill-kit agent install-hooks --target project --yes
-npx openskill-kit install --target agents-project --yes
-npx openskill-kit status --explain
-npx openskill-kit detect
-npx openskill-kit doctor --full
-npx openskill-kit compact
+npx openskill-kit osk compile
+npx openskill-kit agent attach-plugin --host opencode --dry-run
+npx openskill-kit agent attach-plugin --host opencode --yes
 ```
 
-OpenWorld scaffold commands are local-only and not benchmark-proven yet:
+When attached through MCP, the harness should call `osk_bootstrap_session`
+first, route `/osk ...` requests through the compiled command map, and fall back
+to the matching CLI command only when MCP is unavailable. Learned behavior stays
+inactive until review accepts it. Deploy/apply flows are preview-first and
+approval-gated.
+
+Generic MCP fallback:
 
 ```bash
-npx openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
-npx openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
-npx openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
-npx openskill-kit openworld source-plan --task-id <owtask_id> --path docs
-npx openskill-kit openworld retrieval-adapters --task-id <owtask_id>
-npx openskill-kit openworld execute-source-plan --task-id <owtask_id> --plan-id <owrplan_id> --include-autonomous-web
-npx openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
-npx openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
-npx openskill-kit openworld sources
-npx openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
-npx openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
-npx openskill-kit openworld candidate-skill --task-id <owtask_id> --anchor-id <anchor_id>
-npx openskill-kit openworld repair-candidate --task-id <owtask_id> --candidate-id <owskill_id> --suite-id <suite_id> --sandbox docker --docker-image node:22-alpine
-npx openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite_id>
-npx openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
-npx openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id> --candidate-id <owskill_id>
-npx openskill-kit openworld eval-report --run-id <owrun_id>
-npx openskill-kit openworld hidden-oracle-harness --task-id <owtask_id> --suite-id <suite_id>
-npx openskill-kit openworld promote-review --run-id <owrun_id> --dry-run
-npx openskill-kit openworld report --task-id <owtask_id>
-npx openskill-kit openworld doctor
+npx openskill-kit compile --target plugin
+npx openskill-kit agent attach-plugin --host generic-mcp --dry-run
 ```
 
-This creates `.openskill-kit/`, records a redacted event, learns candidate
-preferences, activates them through Learning Review, compiles a Context Pack and
-`project-behavior` skill, then installs that skill into the project agent skill
-directory. Manifest install is separate and reviewable because it writes managed
-blocks into root agent instruction files.
-`compile --target plugin` also writes `.openskill-kit/compiled/plugin/`, an
-attachable bundle with `.agent-plugin/plugin.json`, `.mcp.json`, skills, MCP
-metadata, behavior artifacts, and explicit privacy gates for existing coding
-harnesses.
+This creates `.openskill-kit/`, records only explicitly supplied safe metadata,
+stages candidate behavior for Learning Review, compiles a Context Pack and
+project behavior skill, and writes an attachable plugin under
+`.openskill-kit/compiled/plugin/`. The plugin includes `.agent-plugin`,
+`.mcp.json`, command maps, MCP profiles, skills, install guides, behavior
+artifacts, and privacy gates. It does not copy raw prompts, raw diffs, hidden
+benchmark answers, raw interaction imports, private evidence blobs, review
+queues, or user memories into compiled artifacts.
 
 ## How It Works
 
@@ -97,96 +89,23 @@ benchmark evaluation yet.
 
 ## Core Commands
 
-```bash
-openskill-kit init
-openskill-kit status
-openskill-kit observe --type user-prompt-submit --text "Always prefer focused tests first."
-openskill-kit propose --session <session-id> --statement "Prefer parser modules stay dependency-light" --category architecture --evidence-event <event-id>
-openskill-kit learn
-openskill-kit review --queue
-openskill-kit review --tui
-openskill-kit review
-openskill-kit review --activate <preference-id>
-openskill-kit review --reject <preference-id>
-openskill-kit review --edit <preference-id> --statement "Prefer focused tests before broad checks."
-openskill-kit review --merge-into <target-id> --merge-source <source-id>
-openskill-kit review --split <preference-id> --split-statement "Prefer focused tests first." --split-statement "Prefer full smoke before release."
-openskill-kit review --promote <preference-id>
-openskill-kit review --demote <preference-id>
-openskill-kit review --activate-all
-openskill-kit review --workflow-activate <workflow-id>
-openskill-kit review --workflow-reject <workflow-id>
-openskill-kit review --workflow-lock <workflow-id>
-openskill-kit review --workflow-demote <workflow-id>
-openskill-kit review --workflow-activate-all
-openskill-kit compile
-openskill-kit compile --target context-pack
-openskill-kit compile --include-staged-preview
-openskill-kit explain <preference-id>
-openskill-kit explain <preference-id> --evidence
-openskill-kit calibration
-openskill-kit prefs --query "parser test change" --path src/parser/tokenizer.ts
-openskill-kit route --query "parser test change" --path src/parser/tokenizer.ts
-openskill-kit context --query "parser test change" --path src/parser/tokenizer.ts
-openskill-kit finish-task --summary "Prefer focused parser tests before final response." --command "npm test" --command-status pass
-openskill-kit finish-task --summary "User accepted parser fix." --outcome accepted --final-patch-hash sha256:<hash> --diff-added 12 --diff-removed 3 --diff-files 1
-openskill-kit daemon
-openskill-kit agent doctor
-openskill-kit agent install-manifests --target project --dry-run
-openskill-kit agent install-manifests --target project --yes
-openskill-kit agent uninstall-manifests --target project --dry-run
-openskill-kit agent uninstall-manifests --target project --yes
-openskill-kit agent install-hooks --target project --yes
-openskill-kit install --target agents-project --yes
-openskill-kit eval
-openskill-kit eval --compare-baseline
-openskill-kit eval --mode external-agent --dry-run
-openskill-kit status --explain
-openskill-kit detect
-openskill-kit interactions adapters
-openskill-kit interactions import ./session-export.jsonl
-openskill-kit interactions import ./session-export.jsonl --adapter codex --yes
-openskill-kit interactions imports
-openskill-kit interactions explain <import-run-id>
-openskill-kit interactions pool
-openskill-kit doctor --full
-openskill-kit openworld init-task --title "Verifier-first skill" --prompt "Build local anchors only."
-openskill-kit openworld leakage-check --query "docs for parser behavior" --forbidden-identifier <hidden-id>
-openskill-kit openworld plan --title "Verifier-first skill" --prompt "Build local anchors only."
-openskill-kit openworld source-plan --task-id <owtask_id> --path docs
-openskill-kit openworld retrieval-adapters --task-id <owtask_id>
-openskill-kit openworld execute-source-plan --task-id <owtask_id> --plan-id <owrplan_id> --include-autonomous-web
-openskill-kit openworld research --task-id <owtask_id> --file docs/architecture.md
-openskill-kit openworld fetch-source --task-id <owtask_id> --url https://docs.example.com/sdk --content-file docs/sdk-cache.txt
-openskill-kit openworld sources
-openskill-kit openworld anchors --task-id <owtask_id> --source-id <source_id>
-openskill-kit openworld build-verifier --task-id <owtask_id> --anchor-id <anchor_id>
-openskill-kit openworld candidate-skill --task-id <owtask_id> --anchor-id <anchor_id>
-openskill-kit openworld repair-candidate --task-id <owtask_id> --candidate-id <owskill_id> --suite-id <suite_id> --sandbox docker --docker-image node:22-alpine
-openskill-kit openworld verifier-quality --task-id <owtask_id> --suite-id <suite_id>
-openskill-kit openworld run-verifier --task-id <owtask_id> --suite-id <suite_id> --split visible
-openskill-kit openworld refine --task-id <owtask_id> --suite-id <suite_id> --candidate-id <owskill_id>
-openskill-kit openworld eval-report --run-id <owrun_id>
-openskill-kit openworld hidden-oracle-harness --task-id <owtask_id> --suite-id <suite_id>
-openskill-kit openworld promote-review --run-id <owrun_id>
-openskill-kit openworld report --task-id <owtask_id>
-openskill-kit openworld doctor
-openskill-kit compact
-openskill-kit pack
-openskill-kit sync export --passphrase-file .openskill-kit/sync.pass
-openskill-kit sync import .openskill-kit/sync/project-behavior-pack.enc.json --passphrase-file .openskill-kit/sync.pass --review
-openskill-kit sign-pack .openskill-kit/compiled/project-behavior-pack
-openskill-kit verify-pack .openskill-kit/compiled/project-behavior-pack
-openskill-kit inspect-pack .openskill-kit/compiled/project-behavior-pack
-openskill-kit diff-pack <old-pack-path> <new-pack-path>
-openskill-kit import-pack <pack-path> --review --dry-run
-openskill-kit import-pack <pack-path> --review --max-changed-files 5
-openskill-kit apply-pack <pack-path> --yes
-openskill-kit prune --keep-runs 5
-openskill-kit archive
-openskill-kit reset --scope runtime
-openskill-kit doctor
-```
+| Family | Use it for | First route |
+|---|---|---|
+| `/osk init` | Set up local state and preview attach. | `osk_bootstrap_session` |
+| `/osk status` | Show readiness, review counts, plugin state, and next actions. | `osk_bootstrap_session` |
+| `/osk task` | Load behavior before work and record a safe finish summary after work. | `osk_get_agent_task_context` |
+| `/osk learn` | Plan and run review-gated learning from selected safe sources. | `osk_plan_learning_sources` |
+| `/osk review` | Approve, reject, edit, lock, or demote candidate behavior. | `osk_get_review_queue` |
+| `/osk research` | Build leakage-audited OpenWorld source and anchor plans. | `osk_openworld_source_plan` |
+| `/osk evolve` | Refine source-grounded candidate skills through verifier artifacts. | `osk_openworld_refine` |
+| `/osk verify` | Check descriptors, compiled artifacts, verifier suites, and proof limits. | `osk_openworld_task_report` |
+| `/osk compile` | Refresh context packs, skills, command maps, descriptors, hooks, and plugin files. | `osk_compile_behavior_layer` |
+| `/osk deploy` | Preview or apply harness attach and project-local install steps. | `osk_preview_plugin_attach` |
+| `/osk eval` | Measure behavior quality, calibration, and context overhead. | `osk_run_behavior_eval` |
+| `/osk pack` | Export, sign, verify, import, or apply reviewed behavior packs. | `osk_export_behavior_pack` |
+
+See [`docs/commands.md`](docs/commands.md) for the full generated command map.
+The lower-level CLI remains stable for scripts and advanced users:
 
 Compatibility commands remain available for manual skill scaffolding:
 
