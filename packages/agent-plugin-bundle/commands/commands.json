@@ -73,6 +73,16 @@
       "fallback": "cli"
     },
     {
+      "command": "/osk import terminal",
+      "aliases": ["osk import terminal history", "openskill import terminal"],
+      "description": "Preview or import an explicit terminal history file as allowlisted command metadata only; applying requires explicit approval.",
+      "mcpTool": "osk_import_interaction_source",
+      "cli": "openskill-kit interactions import-terminal <path>",
+      "readOnly": false,
+      "approvalRequired": true,
+      "fallback": "cli"
+    },
+    {
       "command": "/osk session imports",
       "aliases": ["osk imports", "openskill imports"],
       "description": "List previous interaction import runs without raw source content.",

@@ -206,6 +206,16 @@ const INTERACTION_ADAPTERS: InteractionAdapterDescriptor[] = [
     notes: ["Converts supplied review text into review-comment events; raw source files are not copied into artifacts."]
   },
   {
+    id: "terminal-history",
+    displayName: "Terminal history",
+    status: "experimental",
+    privacy: "explicit-import-only",
+    acceptedFormats: ["plain text command history", "JSON command records", "JSONL command records"],
+    detectionHints: ["Disabled unless the user supplies an explicit file; OpenSkillKit never reads shell history paths automatically."],
+    defaultAgentName: "Terminal",
+    notes: ["Imports allowlisted command lines only; ignores raw output, non-command text, and disallowed command bases."]
+  },
+  {
     id: "git-local",
     displayName: "Local git metadata",
     status: "available",
@@ -388,7 +398,9 @@ export async function explainInteractionImport(projectRootInput: string, runId: 
 }
 
 function parseInteractionText(text: string, options: ImportInteractionSourceOptions, sourceHash: string): { events: OpenSkillEventInput[]; warnings: string[] } {
-  if (normalizeAdapterId(options.adapter ?? "manual-import") === "review-local") return parseReviewLocalText(text, options, sourceHash);
+  const adapter = normalizeAdapterId(options.adapter ?? "manual-import");
+  if (adapter === "review-local") return parseReviewLocalText(text, options, sourceHash);
+  if (adapter === "terminal-history") return parseTerminalHistoryText(text, options, sourceHash);
   const warnings: string[] = [];
   const objects = parseJsonObjects(text, warnings);
   const sessionId = `import_${sourceHash.replace(/^sha256:/, "").slice(0, 12)}`;
@@ -396,6 +408,104 @@ function parseInteractionText(text: string, options: ImportInteractionSourceOpti
     ? objects.flatMap((object, index) => eventFromObject(object, index, sessionId, options, warnings))
     : eventsFromPlainText(text, sessionId, options);
   return { events, warnings };
+}
+
+function parseTerminalHistoryText(text: string, options: ImportInteractionSourceOptions, sourceHash: string): { events: OpenSkillEventInput[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const objects = parseJsonObjects(text, warnings);
+  const sessionId = `term_${sourceHash.replace(/^sha256:/, "").slice(0, 12)}`;
+  const events = objects.length
+    ? objects.flatMap((object, index) => terminalEventFromObject(object, index, sessionId, options, warnings))
+    : terminalEventsFromPlainText(text, sessionId, options, warnings);
+  if (!events.length) warnings.push("No allowlisted terminal commands found; only command lines are imported and raw output is ignored.");
+  return { events, warnings: objects.length ? warnings : warnings.filter((warning) => !warning.includes("not JSON/JSONL")) };
+}
+
+function terminalEventFromObject(object: unknown, index: number, fallbackSessionId: string, options: ImportInteractionSourceOptions, warnings: string[]): OpenSkillEventInput[] {
+  if (Array.isArray(object)) return object.flatMap((item, nestedIndex) => terminalEventFromObject(item, index + nestedIndex, fallbackSessionId, options, warnings));
+  if (!isObject(object)) {
+    warnings.push(`Skipped non-object terminal entry at index ${index}.`);
+    return [];
+  }
+  const nested = [object.commands, object.history, object.items, object.entries].find(Array.isArray);
+  if (Array.isArray(nested)) return nested.flatMap((item, nestedIndex) => terminalEventFromObject(item, index + nestedIndex, fallbackSessionId, options, warnings));
+  const commandText =
+    stringValue(object.command) ??
+    stringValue(object.cmd) ??
+    stringValue(object.commandLine) ??
+    stringValue(object.terminalCommand) ??
+    stringValue(object.text);
+  const command = commandText ? commandFromLine(commandText) : undefined;
+  if (!command) {
+    warnings.push(`Skipped terminal entry at index ${index}; command missing or not allowlisted.`);
+    return [];
+  }
+  return [terminalEvent({
+    index,
+    sessionId: sessionIdFromObject(object) ?? fallbackSessionId,
+    timestamp: datetimeValue(object.timestamp) ?? datetimeValue(object.createdAt) ?? datetimeValue(object.created_at) ?? timestampFor(options.now ?? new Date(), index),
+    adapter: options.adapter ?? "terminal-history",
+    agentName: options.agentName,
+    command,
+    status: commandStatus(object)
+  })];
+}
+
+function terminalEventsFromPlainText(text: string, sessionId: string, options: ImportInteractionSourceOptions, warnings: string[]): OpenSkillEventInput[] {
+  const events: OpenSkillEventInput[] = [];
+  for (const [index, rawLine] of text.split(/\r?\n/).entries()) {
+    const command = commandFromLine(rawLine);
+    if (!command) continue;
+    events.push(terminalEvent({
+      index,
+      sessionId,
+      timestamp: timestampFor(options.now ?? new Date(), index),
+      adapter: options.adapter ?? "terminal-history",
+      agentName: options.agentName,
+      command,
+      status: /\b(pass|passed|success|succeeded|ok)\b/i.test(rawLine) ? "pass" : "unknown"
+    }));
+  }
+  const nonEmpty = text.split(/\r?\n/).filter((line) => line.trim()).length;
+  if (nonEmpty > events.length) warnings.push(`Ignored ${nonEmpty - events.length} non-command or disallowed terminal line(s).`);
+  return events;
+}
+
+function terminalEvent(input: {
+  index: number;
+  sessionId: string;
+  timestamp: string;
+  adapter: string;
+  agentName?: string;
+  command: { command: string; args: string[] };
+  status: "pass" | "fail" | "blocked" | "timeout" | "unknown";
+}): OpenSkillEventInput {
+  return {
+    schemaVersion: "openskill-kit.event.v1",
+    sessionId: input.sessionId,
+    timestamp: input.timestamp,
+    source: {
+      adapter: input.adapter,
+      agentName: input.agentName
+    },
+    eventType: "post-tool-use",
+    intent: [input.command.command, ...input.command.args].join(" "),
+    normalized: {
+      importIndex: input.index,
+      terminalHistory: {
+        rawOutputIncluded: false,
+        commandAllowlisted: true
+      }
+    },
+    files: [],
+    commands: [{ ...input.command, status: input.status }],
+    privacy: {
+      redacted: false,
+      rawStored: false,
+      containsUserText: false,
+      containsCode: false
+    }
+  };
 }
 
 function parseReviewLocalText(text: string, options: ImportInteractionSourceOptions, sourceHash: string): { events: OpenSkillEventInput[]; warnings: string[] } {
@@ -658,7 +768,7 @@ function commandFromObject(object: Record<string, unknown>): { command: string; 
 }
 
 function commandFromLine(line: string): { command: string; args: string[] } | undefined {
-  const cleaned = line.replace(/^\$+\s*/, "").replace(/^\[(?:pass|passed|success|ok)\]\s*/i, "").trim();
+  const cleaned = line.replace(/^\$+\s*/, "").replace(/^(?:PS>|>\s*)\s*/i, "").replace(/^\[(?:pass|passed|success|ok)\]\s*/i, "").trim();
   if (!/^(npm|pnpm|yarn|bun|node|npx|pytest|python|tsx|vitest|tsc|cargo|go)\b/i.test(cleaned)) return undefined;
   const parts = cleaned.match(/"[^"]+"|'[^']+'|\S+/g)?.map((part) => part.replace(/^["']|["']$/g, "")) ?? [];
   while (parts.length > 1 && /^(pass|passed|success|succeeded|ok)$/i.test(parts[parts.length - 1]!)) parts.pop();

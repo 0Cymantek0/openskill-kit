@@ -24,11 +24,12 @@ const execFileAsync = promisify(execFile);
 describe("interaction import", () => {
   it("describes supported adapters for harness-driven imports", () => {
     const adapters = listInteractionAdapters();
-    expect(adapters.map((adapter) => adapter.id)).toEqual(["manual-import", "codex", "claude-code", "cursor", "review-local", "git-local"]);
+    expect(adapters.map((adapter) => adapter.id)).toEqual(["manual-import", "codex", "claude-code", "cursor", "review-local", "terminal-history", "git-local"]);
     expect(adapters.filter((adapter) => adapter.id !== "git-local").every((adapter) => adapter.privacy === "explicit-import-only")).toBe(true);
     expect(adapters.find((adapter) => adapter.id === "git-local")?.privacy).toBe("metadata-only");
     expect(adapters.find((adapter) => adapter.id === "codex")?.acceptedFormats).toContain("JSONL messages");
     expect(adapters.find((adapter) => adapter.id === "review-local")?.acceptedFormats).toContain("markdown review notes");
+    expect(adapters.find((adapter) => adapter.id === "terminal-history")?.notes.join(" ")).toContain("allowlisted command lines only");
   });
 
   it("inspects local git metadata without exposing raw diffs", async () => {
@@ -196,6 +197,45 @@ describe("interaction import", () => {
     expect(explained.learnable.signalSources).toContain("review feedback");
     const pool = await readInteractionPool(root);
     expect(pool.records.every((record) => record.adapter === "review-local" && record.eventType === "review-comment")).toBe(true);
+  });
+
+  it("imports explicit terminal history as allowlisted command metadata only", async () => {
+    const root = await tempProject();
+    const source = path.join(root, "terminal-history.txt");
+    await writeFile(source, [
+      "$ npm test passed",
+      "SECRET_OUTPUT=terminal-secret",
+      "curl https://example.com/unsafe",
+      "PS> pnpm run smoke",
+      "node scripts/check.js",
+      "random output line"
+    ].join("\n"), "utf8");
+
+    const planned = await importInteractionSource(root, source, {
+      adapter: "terminal-history",
+      now: new Date("2026-06-27T06:40:00.000Z")
+    });
+    expect(planned.status).toBe("planned");
+    expect(planned.parsedEventCount).toBe(3);
+    expect(planned.preview.every((event) => event.eventType === "post-tool-use" && event.commandCount === 1)).toBe(true);
+    expect(planned.warnings.join(" ")).toContain("Ignored 3 non-command or disallowed terminal line");
+    expect(await readFile(planned.artifacts.markdownPath, "utf8")).not.toContain("terminal-secret");
+
+    const imported = await importInteractionSource(root, source, {
+      adapter: "terminal-history",
+      dryRun: false,
+      now: new Date("2026-06-27T06:41:00.000Z")
+    });
+    expect(imported.status).toBe("imported");
+    const events = await readEvents(root);
+    expect(events).toHaveLength(3);
+    expect(events.map((event) => event.commands[0]?.command)).toEqual(["npm", "pnpm", "node"]);
+    expect(events.every((event) => event.eventType === "post-tool-use" && event.source.adapter === "terminal-history")).toBe(true);
+    expect(events[0]?.normalized.terminalHistory).toMatchObject({ rawOutputIncluded: false, commandAllowlisted: true });
+    expect(JSON.stringify(events)).not.toContain("terminal-secret");
+    expect(JSON.stringify(events)).not.toContain("curl");
+    const explained = await explainInteractionImport(root, imported.id);
+    expect(explained.learnable.signalSources).toEqual(expect.arrayContaining(["command outcomes"]));
   });
 
   it("allows unknown adapters but marks generic parsing as experimental", async () => {

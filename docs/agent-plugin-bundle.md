@@ -117,6 +117,10 @@ Harness behavior should stay conservative:
   `review-local` when the user supplies PR review exports or local review notes.
   Keep it approval-gated; previewed review comments become normal
   `review-comment` evidence only after explicit import.
+- Route `/osk import terminal` to `osk_import_interaction_source` with adapter
+  `terminal-history` only when the user supplies a terminal-history file. It
+  imports allowlisted commands, ignores raw output, and requires approval before
+  appending metadata.
 - Route `/osk git context` to `osk_get_git_local_context` when the harness needs
   branch, changed-file, aggregate diff, or recent-commit metadata. It is
   read-only and must not be treated as permission to read raw diffs.

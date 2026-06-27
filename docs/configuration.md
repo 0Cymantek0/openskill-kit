@@ -55,6 +55,11 @@ local review-comment file or PR review export. It is still an explicit import:
 the first run previews `review-comment` events, and `--yes` is required before
 review feedback becomes local evidence.
 
+Use `openskill-kit interactions import-terminal <file>` only for user-supplied
+terminal history exports. It imports allowlisted command lines only, never raw
+output, and ignores disallowed commands or non-command text. It is dry-run by
+default and requires `--yes` before command metadata is appended.
+
 Use `openskill-kit interactions git-context` for read-only local git metadata.
 It reports branch, changed file names, aggregate diff stats, and recent commit
 subjects without raw diffs or file contents.

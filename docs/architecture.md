@@ -222,6 +222,12 @@ extractor can learn from high-signal human critique. It stays dry-run by
 default, uses the normal import receipts, and never copies raw review source
 text into artifacts.
 
+`interactions import-terminal <file>` is the explicit `terminal-history`
+adapter. It never reads shell history paths automatically. It parses only
+allowlisted command lines from a user-supplied text/JSON/JSONL file, ignores raw
+terminal output and disallowed command bases, and stores command metadata as
+`post-tool-use` events with `rawOutputIncluded: false`.
+
 `interactions git-context` and MCP `osk_get_git_local_context` expose the
 `git-local` metadata adapter for harnesses that need local repo state. It
 returns branch, HEAD, upstream/ahead-behind metadata, changed file names,

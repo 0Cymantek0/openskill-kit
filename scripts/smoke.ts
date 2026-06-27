@@ -89,6 +89,7 @@ if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string 
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.readOnly === true)) throw new Error("compiled plugin command map missing import adapter route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing approved session import route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk import review" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing approved review import route");
+if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk import terminal" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing approved terminal import route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.readOnly === true)) throw new Error("compiled plugin command map missing session import history route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.readOnly === true)) throw new Error("compiled plugin command map missing session import explain route");
 if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.readOnly === true)) throw new Error("compiled plugin command map missing interaction pool route");
@@ -104,14 +105,18 @@ if (!pluginManifest.privacy?.excludes?.includes(".openskill-kit/interactions/"))
 const interactionAdapters = await runJson(["interactions", "adapters", "--json"]);
 if (!interactionAdapters.adapters?.some((adapter: { id: string; privacy: string }) => adapter.id === "codex" && adapter.privacy === "explicit-import-only")) throw new Error("interaction adapters command missing Codex explicit import policy");
 if (!interactionAdapters.adapters?.some((adapter: { id: string; privacy: string }) => adapter.id === "review-local" && adapter.privacy === "explicit-import-only")) throw new Error("interaction adapters command missing review-local explicit import policy");
+if (!interactionAdapters.adapters?.some((adapter: { id: string; privacy: string }) => adapter.id === "terminal-history" && adapter.privacy === "explicit-import-only")) throw new Error("interaction adapters command missing terminal-history explicit import policy");
 if (!interactionAdapters.adapters?.some((adapter: { id: string; privacy: string }) => adapter.id === "git-local" && adapter.privacy === "metadata-only")) throw new Error("interaction adapters command missing git-local metadata-only policy");
 await writeFile(path.join(root, "review-notes.md"), "- src/auth.ts:12 - Security blocker: never log authorization tokens.\n", "utf8");
 const reviewImportPlan = await runJson(["interactions", "import-review", "review-notes.md", "--json"]);
 if (reviewImportPlan.status !== "planned" || reviewImportPlan.parsedEventCount !== 1 || reviewImportPlan.preview?.[0]?.eventType !== "review-comment") throw new Error("review import preview failed");
+await writeFile(path.join(root, "terminal-history.txt"), "$ npm test passed\nsecret output line\ncurl https://example.com\n", "utf8");
+const terminalImportPlan = await runJson(["interactions", "import-terminal", "terminal-history.txt", "--json"]);
+if (terminalImportPlan.status !== "planned" || terminalImportPlan.parsedEventCount !== 1 || terminalImportPlan.preview?.[0]?.eventType !== "post-tool-use") throw new Error("terminal import preview failed");
 const gitContext = await runJson(["interactions", "git-context", "--json"]);
 if (gitContext.schemaVersion !== "openskill-kit.git-local-context.v1" || gitContext.adapter?.rawDiffIncluded !== false) throw new Error("git context command failed");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 27") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 28") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
 if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");

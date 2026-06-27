@@ -74,6 +74,7 @@ describe("deep architecture hardening", () => {
     expect(status.commands.some((item) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk import review" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
+    expect(status.commands.some((item) => item.command === "/osk import terminal" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.readOnly === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.readOnly === true)).toBe(true);
@@ -100,6 +101,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.cli.includes("interactions adapters") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; approvalRequired: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.cli.includes("interactions import") && item.approvalRequired === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; approvalRequired: boolean }) => item.command === "/osk import review" && item.mcpTool === "osk_import_interaction_source" && item.cli.includes("interactions import-review") && item.approvalRequired === true)).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; approvalRequired: boolean }) => item.command === "/osk import terminal" && item.mcpTool === "osk_import_interaction_source" && item.cli.includes("interactions import-terminal") && item.approvalRequired === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.cli.includes("interactions imports") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.cli.includes("interactions explain") && item.readOnly === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string; readOnly: boolean }) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.cli.includes("interactions pool") && item.readOnly === true)).toBe(true);
@@ -121,6 +123,7 @@ describe("deep architecture hardening", () => {
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk import review" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
+    expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk import terminal" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.readOnly === true)).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; readOnly: boolean }) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.readOnly === true)).toBe(true);
@@ -128,6 +131,7 @@ describe("deep architecture hardening", () => {
     expect(commandGuide).toContain("Prefer MCP");
     expect(commandGuide).toContain("openskill-kit interactions import <path>");
     expect(commandGuide).toContain("openskill-kit interactions import-review <path>");
+    expect(commandGuide).toContain("openskill-kit interactions import-terminal <path>");
     expect(commandGuide).toContain("openskill-kit interactions explain <run-id>");
     expect(commandGuide).toContain("openskill-kit interactions pool");
     expect(commandGuide).toContain("openskill-kit interactions git-context");

@@ -1232,6 +1232,26 @@ interactions.command("import-review")
     process.exitCode = result.status === "blocked" ? 1 : 0;
   });
 
+interactions.command("import-terminal")
+  .description("Preview or import an explicit terminal history file as allowlisted command metadata only")
+  .argument("<source-path>", "Plain text, JSON, or JSONL command history file")
+  .option("--agent-name <name>", "Terminal source name", "Terminal")
+  .option("--max-events <number>", "Maximum parsed terminal commands to append", parseIntegerOption, 200)
+  .option("--allow-duplicate", "Allow importing a source hash that was already imported")
+  .option("--yes", "Append parsed terminal commands; default is dry-run")
+  .option("--json", "Print JSON")
+  .action(async (sourcePath, options) => {
+    const result = await importInteractionSource(process.cwd(), sourcePath, {
+      adapter: "terminal-history",
+      agentName: options.agentName,
+      maxEvents: options.maxEvents,
+      allowDuplicate: options.allowDuplicate === true,
+      dryRun: options.yes !== true
+    });
+    output(options.json, result, `${result.status}: parsed ${result.parsedEventCount}, appended ${result.appendedEventCount}\nReport: ${result.artifacts.markdownPath}`);
+    process.exitCode = result.status === "blocked" ? 1 : 0;
+  });
+
 interactions.command("adapters")
   .description("List supported interaction import adapters and privacy policy")
   .option("--json", "Print JSON")
