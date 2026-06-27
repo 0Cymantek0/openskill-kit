@@ -26,6 +26,7 @@ export * from "./agents/task-finish.js";
 export * from "./maintenance/maintenance.js";
 export * from "./config/schema.js";
 export * from "./config/migrations.js";
+export * from "./config/model-routing.js";
 export * from "./events/schema.js";
 export * from "./events/migrations.js";
 export * from "./events/redaction.js";

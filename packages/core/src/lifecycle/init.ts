@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { createDefaultProjectConfig, ProjectConfigSchema, type ProjectConfig } from "../config/schema.js";
+import { ensureModelRouting } from "../config/model-routing.js";
 
 export interface InitProjectOptions {
   projectRoot: string;
@@ -16,6 +17,7 @@ export interface InitProjectResult {
   configPath: string;
   projectPath: string;
   gitignorePath: string;
+  modelRoutingPath: string;
   config: ProjectConfig;
 }
 
@@ -29,7 +31,8 @@ export async function initAdaptiveProject(options: InitProjectOptions): Promise<
   if (existing && !options.force) {
     await ensureAdaptiveDirectories(root);
     await ensureGitignore(gitignorePath);
-    return { status: "exists", root, configPath, projectPath, gitignorePath, config: existing };
+    const modelRouting = await ensureModelRouting(root, options.now ?? new Date());
+    return { status: "exists", root, configPath, projectPath, gitignorePath, modelRoutingPath: modelRouting.path, config: existing };
   }
   const createdAt = (options.now ?? new Date()).toISOString();
   const projectName = options.projectName ?? await inferProjectName(root);
@@ -47,7 +50,8 @@ export async function initAdaptiveProject(options: InitProjectOptions): Promise<
     createdAt: config.createdAt
   }, null, 2), "utf8");
   await ensureGitignore(gitignorePath);
-  return { status: existing ? "updated" : "created", root, configPath, projectPath, gitignorePath, config };
+  const modelRouting = await ensureModelRouting(root, options.now ?? new Date());
+  return { status: existing ? "updated" : "created", root, configPath, projectPath, gitignorePath, modelRoutingPath: modelRouting.path, config };
 }
 
 async function readConfigIfExists(configPath: string): Promise<ProjectConfig | undefined> {

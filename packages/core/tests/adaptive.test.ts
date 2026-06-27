@@ -19,6 +19,7 @@ import {
   runBehaviorEval,
   signProjectBehaviorPack,
   diffProjectBehaviorPacks,
+  readModelRouting,
   updatePreferenceGraph,
   verifyProjectBehaviorPack,
   verifySkill
@@ -32,6 +33,10 @@ describe("adaptive behavior layer", () => {
     const init = await initAdaptiveProject({ projectRoot: root, now: new Date("2026-06-24T00:00:00.000Z") });
     expect(init.status).toBe("created");
     expect(init.config.schemaVersion).toBe("openskill-kit.config.v1");
+    expect(init.modelRoutingPath).toBe(path.join(root, ".openskill-kit", "model-routing.json"));
+    const modelRouting = await readModelRouting(root);
+    expect(modelRouting?.schemaVersion).toBe("openskill-kit.model-routing.v1");
+    expect(modelRouting?.routes.learner.permissionsProfile).toBe("learner-safe");
     const sentinelSecret = ["super", "secret", "value"].join("-");
 
     const event = await appendEvent(root, {

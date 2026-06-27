@@ -85,6 +85,7 @@ async function projectSurfaceSpecs(projectRoot: string): Promise<SurfaceSpec[]> 
     generated(projectRoot, ".openskill-kit/compiled/plugin/commands/commands.json", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/commands/osk.md", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/commands/families.json", "compiled-artifact"),
+    generated(projectRoot, ".openskill-kit/compiled/plugin/model-routing.resolved.json", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/opencode/model-routing.json", "compiled-artifact"),
     generated(projectRoot, ".openskill-kit/compiled/plugin/opencode/plugins/openskillkit.ts", "compiled-artifact"),
     hook(projectRoot, ".agents/hooks/openskill-kit.json", "project"),

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { OSK_PUBLIC_COMMAND_FAMILIES, pluginCommandProjections, type OskCommandFamily } from "../commands/families.js";
+import { readOrCreateModelRouting, resolveModelRouting, type ModelRouteName, type ResolvedModelRouting } from "../config/model-routing.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
 export interface CompilePluginResult {
@@ -178,7 +179,14 @@ export async function compileAgentPlugin(projectRoot: string): Promise<CompilePl
     publicFamilyCount: OSK_PUBLIC_COMMAND_FAMILIES.length,
     families: OSK_PUBLIC_COMMAND_FAMILIES
   });
-  await writeOpenCodeArtifacts(pluginDir, OSK_PUBLIC_COMMAND_FAMILIES);
+  const modelRouting = await readOrCreateModelRouting(root);
+  const resolvedModelRouting = resolveModelRouting({
+    routing: modelRouting.routing,
+    sourcePath: path.relative(root, modelRouting.path).replace(/\\/g, "/"),
+    harness: "opencode"
+  });
+  await writeJsonAtomic(path.join(pluginDir, "model-routing.resolved.json"), resolvedModelRouting);
+  await writeOpenCodeArtifacts(pluginDir, OSK_PUBLIC_COMMAND_FAMILIES, resolvedModelRouting);
   for (const guide of pluginInstallGuides()) {
     await writeFileAtomic(path.join(pluginDir, "install-guides", guide.file), renderInstallGuide(guide));
   }
@@ -560,7 +568,7 @@ function pluginCommands(): AgentPluginCommand[] {
   return pluginCommandProjections().map((item) => ({ ...item }));
 }
 
-async function writeOpenCodeArtifacts(pluginDir: string, families: OskCommandFamily[]): Promise<void> {
+async function writeOpenCodeArtifacts(pluginDir: string, families: OskCommandFamily[], modelRouting: ResolvedModelRouting): Promise<void> {
   const root = path.join(pluginDir, "opencode");
   const commandDir = path.join(root, "commands");
   const agentDir = path.join(root, "agents");
@@ -569,7 +577,8 @@ async function writeOpenCodeArtifacts(pluginDir: string, families: OskCommandFam
   for (const family of families) {
     await writeFileAtomic(path.join(commandDir, family.commandFile), renderOpenCodeCommand(family));
   }
-  for (const agent of openCodeAgents()) {
+  const agents = openCodeAgents(modelRouting);
+  for (const agent of agents) {
     await writeFileAtomic(path.join(agentDir, `${agent.id}.md`), renderOpenCodeAgent(agent));
   }
   for (const skill of openCodeSkills()) {
@@ -579,9 +588,17 @@ async function writeOpenCodeArtifacts(pluginDir: string, families: OskCommandFam
   await writeJsonAtomic(path.join(root, "model-routing.json"), {
     schemaVersion: "openskill-kit.model-routing.v1",
     defaultAgent: "osk-router",
-    agents: Object.fromEntries(openCodeAgents().map((agent) => [agent.id, {
+    source: modelRouting.sourcePath,
+    safety: modelRouting.safety,
+    agents: Object.fromEntries(agents.map((agent) => [agent.id, {
       mode: "subagent",
       model: agent.model,
+      route: agent.route,
+      temperature: agent.temperature,
+      maxSteps: agent.maxSteps,
+      reasoningEffort: agent.reasoningEffort,
+      fallbackModels: agent.fallbackModels,
+      permissionsProfile: agent.permissionsProfile,
       permissions: agent.permissions
     }]))
   });
@@ -625,26 +642,47 @@ function renderOpenCodeCommand(family: OskCommandFamily): string {
 
 interface OpenCodeAgentSpec {
   id: string;
+  route: ModelRouteName;
   description: string;
   model: string;
+  fallbackModels: string[];
+  reasoningEffort?: string;
+  temperature?: number;
+  maxSteps?: number;
+  permissionsProfile?: string;
   permissions: Record<string, "allow" | "ask" | "deny">;
 }
 
-function openCodeAgents(): OpenCodeAgentSpec[] {
+function openCodeAgents(modelRouting: ResolvedModelRouting): OpenCodeAgentSpec[] {
+  const withRoute = (route: ModelRouteName, id: string, description: string, permissions: OpenCodeAgentSpec["permissions"]): OpenCodeAgentSpec => {
+    const modelRoute = modelRouting.routes[route];
+    return agent(id, route, description, modelRoute.model, permissions, modelRoute);
+  };
   return [
-    agent("osk-router", "Route OSK commands, read status, and keep context compact.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "deny", question: "ask", webfetch: "deny", websearch: "deny" }),
-    agent("osk-learner", "Plan explicit learning sources and run review-gated learning.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "allow", webfetch: "deny", websearch: "deny" }),
-    agent("osk-reviewer", "Explain and apply behavior review decisions.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "allow", webfetch: "deny", websearch: "deny" }),
-    agent("osk-researcher", "Plan OpenWorld sources and anchors under leakage policy.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "ask", websearch: "deny" }),
-    agent("osk-evolver", "Generate and refine review-only candidate skills.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
-    agent("osk-verifier", "Run integrity, privacy, verifier, and proof-boundary checks.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
-    agent("osk-evaluator", "Run replay and external-agent eval workflows.", "default", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
-    agent("osk-docs", "Polish generated OSK documentation with approval for docs edits.", "default", { read: "allow", list: "allow", grep: "allow", edit: "ask", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" })
+    withRoute("router", "osk-router", "Route OSK commands, read status, and keep context compact.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "deny", question: "ask", webfetch: "deny", websearch: "deny" }),
+    withRoute("learner", "osk-learner", "Plan explicit learning sources and run review-gated learning.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "allow", webfetch: "deny", websearch: "deny" }),
+    withRoute("reviewer", "osk-reviewer", "Explain and apply behavior review decisions.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "allow", webfetch: "deny", websearch: "deny" }),
+    withRoute("researcher", "osk-researcher", "Plan OpenWorld sources and anchors under leakage policy.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "ask", websearch: "deny" }),
+    withRoute("evolver", "osk-evolver", "Generate and refine review-only candidate skills.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
+    withRoute("verifier", "osk-verifier", "Run integrity, privacy, verifier, and proof-boundary checks.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
+    withRoute("evaluator", "osk-evaluator", "Run replay and external-agent eval workflows.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
+    withRoute("docs", "osk-docs", "Polish generated OSK documentation with approval for docs edits.", { read: "allow", list: "allow", grep: "allow", edit: "ask", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" })
   ];
 }
 
-function agent(id: string, description: string, model: string, permissions: OpenCodeAgentSpec["permissions"]): OpenCodeAgentSpec {
-  return { id, description, model, permissions };
+function agent(id: string, route: ModelRouteName, description: string, model: string, permissions: OpenCodeAgentSpec["permissions"], modelRoute: ResolvedModelRouting["routes"][ModelRouteName]): OpenCodeAgentSpec {
+  return {
+    id,
+    route,
+    description,
+    model,
+    fallbackModels: modelRoute.fallbackModels,
+    reasoningEffort: modelRoute.reasoningEffort,
+    temperature: modelRoute.temperature,
+    maxSteps: modelRoute.maxSteps,
+    permissionsProfile: modelRoute.permissionsProfile,
+    permissions
+  };
 }
 
 function renderOpenCodeAgent(agentSpec: OpenCodeAgentSpec): string {
@@ -652,6 +690,9 @@ function renderOpenCodeAgent(agentSpec: OpenCodeAgentSpec): string {
     "---",
     `description: ${JSON.stringify(agentSpec.description)}`,
     `model: ${agentSpec.model}`,
+    agentSpec.temperature === undefined ? undefined : `temperature: ${agentSpec.temperature}`,
+    agentSpec.maxSteps === undefined ? undefined : `steps: ${agentSpec.maxSteps}`,
+    agentSpec.reasoningEffort === undefined ? undefined : `reasoning: ${agentSpec.reasoningEffort}`,
     "mode: subagent",
     "permissions:",
     ...Object.entries(agentSpec.permissions).map(([key, value]) => `  ${key}: ${value}`),
@@ -661,10 +702,12 @@ function renderOpenCodeAgent(agentSpec: OpenCodeAgentSpec): string {
     "",
     agentSpec.description,
     "",
+    `Model route: ${agentSpec.route}.`,
+    agentSpec.permissionsProfile ? `Permissions profile: ${agentSpec.permissionsProfile}.` : undefined,
     "Use OSK MCP facade tools first. Keep imports, host writes, sandbox runs, and behavior activation behind the approval gates described by the command file.",
     "Never store raw prompts, raw diffs, secrets, user/global memories, or hidden benchmark answers.",
     ""
-  ].join("\n");
+  ].filter((line): line is string => line !== undefined).join("\n");
 }
 
 interface OpenCodeSkillSpec {

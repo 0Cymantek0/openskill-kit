@@ -61,6 +61,8 @@ describe("deep architecture hardening", () => {
     const commandMap = JSON.parse(await readFile(path.join(pluginRoot, "commands", "commands.json"), "utf8"));
     const commandGuide = await readFile(path.join(pluginRoot, "commands", "osk.md"), "utf8");
     const commandFamilies = JSON.parse(await readFile(path.join(pluginRoot, "commands", "families.json"), "utf8"));
+    const resolvedModelRouting = JSON.parse(await readFile(path.join(pluginRoot, "model-routing.resolved.json"), "utf8"));
+    const opencodeModelRouting = JSON.parse(await readFile(path.join(pluginRoot, "opencode", "model-routing.json"), "utf8"));
     const opencodeCommand = await readFile(path.join(pluginRoot, "opencode", "commands", "osk-learn.md"), "utf8");
     const opencodeAgent = await readFile(path.join(pluginRoot, "opencode", "agents", "osk-learner.md"), "utf8");
     const opencodeSkill = await readFile(path.join(pluginRoot, "opencode", "skills", "osk-learning", "SKILL.md"), "utf8");
@@ -159,7 +161,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.install.requiresExplicitApproval).toContain("importing interaction exports or private memories");
     expect(manifest.privacy.excludes).toContain(".openskill-kit/interactions/");
     expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
-    expect(manifest.files).toEqual(expect.arrayContaining([".agent-plugin/plugin.json", ".mcp.json", "README.md", "commands/commands.json", "commands/families.json", "commands/osk.md", "install-guides/opencode.md", "install-guides/codex.md", "install-guides/claude-code.md", "install-guides/cursor.md", "install-guides/generic-mcp.md", "opencode/commands/osk-learn.md", "opencode/agents/osk-learner.md", "opencode/skills/osk-learning/SKILL.md", "opencode/skills/osk-operating-manual/SKILL.md", "opencode/plugins/openskillkit.ts", "mcp/server-config.json", "mcp/descriptors.json", "mcp/descriptors.public.json", "mcp/profiles.json", "mcp/descriptor-hashes.json", "skills/project-behavior/SKILL.md"]));
+    expect(manifest.files).toEqual(expect.arrayContaining([".agent-plugin/plugin.json", ".mcp.json", "README.md", "commands/commands.json", "commands/families.json", "commands/osk.md", "install-guides/opencode.md", "install-guides/codex.md", "install-guides/claude-code.md", "install-guides/cursor.md", "install-guides/generic-mcp.md", "model-routing.resolved.json", "opencode/model-routing.json", "opencode/commands/osk-learn.md", "opencode/agents/osk-learner.md", "opencode/skills/osk-learning/SKILL.md", "opencode/skills/osk-operating-manual/SKILL.md", "opencode/plugins/openskillkit.ts", "mcp/server-config.json", "mcp/descriptors.json", "mcp/descriptors.public.json", "mcp/profiles.json", "mcp/descriptor-hashes.json", "skills/project-behavior/SKILL.md"]));
     expect(packagedManifest).toEqual(manifest);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
     expect(commandMap.publicFamilyCount).toBe(12);
@@ -177,6 +179,13 @@ describe("deep architecture hardening", () => {
     expect(opencodeCommand).toContain("agent: osk-learner");
     expect(opencodeCommand).toContain("Never read raw prompts by default.");
     expect(opencodeAgent).toContain("question: allow");
+    expect(opencodeAgent).toContain("Model route: learner.");
+    expect(resolvedModelRouting.schemaVersion).toBe("openskill-kit.model-routing.resolved.v1");
+    expect(resolvedModelRouting.routes.learner.model).toBe("default");
+    expect(resolvedModelRouting.routes.learner.permissionsProfile).toBe("learner-safe");
+    expect(opencodeModelRouting.source).toBe(".openskill-kit/model-routing.json");
+    expect(opencodeModelRouting.agents["osk-learner"].route).toBe("learner");
+    expect(opencodeModelRouting.agents["osk-learner"].maxSteps).toBe(24);
     expect(opencodeSkill).toContain("Preview imports before apply.");
     expect(opencodeSkill).toContain("Learning produces candidate or staged behavior only");
     expect(opencodePlugin).toContain("Metadata-only by default");
