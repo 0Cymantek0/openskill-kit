@@ -5,10 +5,10 @@ OpenSkillKit exposes 12 public `/osk` command families. Low-level commands and M
 | Command | Intent | Safe default | Writes | Approval | Key artifact |
 |---|---|---|---|---|---|
 | `/osk init` | Set up OpenSkillKit in this repository without silently taking over the harness. | Preview or staged write | `.openskill-kit/config.json`<br>`.openskill-kit/detection/*` | Not by default | `project harness metadata`<br>`.openskill-kit/config.json`<br>`.openskill-kit/detection/*` |
-| `/osk status` | Know whether OSK is ready and what needs attention. | Read-only | No writes | Not by default | `.openskill-kit status artifacts`<br>`compiled plugin status`<br>`attach receipts` |
+| `/osk status` | Know whether OSK is ready and what needs attention. | Read-only | No writes | Not by default | `.openskill-kit status artifacts`<br>`compiled plugin status`<br>`OpenWorld proof summary` |
 | `/osk task` | Use the right project behavior now, then teach OSK from the completed task. | Preview or staged write | `route trace`<br>`safe task events when finishing` | Not by default | `preferences`<br>`workflows`<br>`review queue` |
 | `/osk learn` | Teach OSK from current session, safe detected sources, or explicit imports. | Preview or staged write | `LearnSourcePlan`<br>`LearnRun`<br>`Evidence Cards`<br>`review queue` | Required | `detected surfaces`<br>`interaction import receipts`<br>`event metadata` |
-| `/osk review` | Decide what learned behavior becomes active. | Preview or staged write | `review decisions`<br>`calibration report` | Not by default | `review queue`<br>`Evidence Cards`<br>`Preference Graph` |
+| `/osk review` | Decide what learned behavior becomes active. | Preview or staged write | `review decisions`<br>`calibration report` | Required | `review queue`<br>`Evidence Cards`<br>`Preference Graph` |
 | `/osk research` | Find grounded knowledge and verifier anchors without leaking target answers. | Preview or staged write | `Source Cards`<br>`Anchor Cards`<br>`leakage audit` | Not by default | `OpenWorld task`<br>`allowed local files`<br>`explicit URLs` |
 | `/osk evolve` | Create a new source-grounded skill when local memory is not enough. | Preview or staged write | `candidate skill revisions`<br>`EvolutionRun` | Not by default | `Anchor Cards`<br>`candidate skills`<br>`verifier suites` |
 | `/osk verify` | Know whether behavior or OpenWorld artifacts are safe and credible. | Preview or staged write | `verification reports` | Not by default | `compiled artifacts`<br>`verifier suites`<br>`OpenWorld reports` |
@@ -53,13 +53,14 @@ Show behavior, review, plugin, and harness health.
 - MCP first call: `osk_bootstrap_session`
 - Skills: `osk-operating-manual`
 - Subagents: `osk-router`
-- Output: Counts, readiness, descriptor drift, pending review, and next actions.
+- Output: Counts, readiness, descriptor drift, pending review, OpenWorld proof boundary, and next actions.
 
 Workflow:
 
 1. Read adaptive status.
 2. Read compiled plugin and attach status.
-3. Return compact next actions.
+3. Read OpenWorld artifact proof summary without running verifiers.
+4. Return compact next actions.
 
 ### /osk task
 

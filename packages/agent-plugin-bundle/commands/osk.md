@@ -25,6 +25,8 @@ Show behavior, review, plugin, and harness health.
 - Read-only: `yes`
 - Explicit approval required: `no`
 
+Status output includes the OpenWorld proof boundary and never treats artifact-verifier results as hidden-oracle benchmark proof.
+
 ### /osk task
 
 Load task context before work and record safe outcome after work.

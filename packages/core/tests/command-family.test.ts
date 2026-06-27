@@ -48,6 +48,7 @@ describe("OSK command family registry", () => {
     const commands = renderOskCommandsMarkdown();
     const learn = renderOskLearnMarkdown();
     expect(commands).toContain("| `/osk learn` |");
+    expect(commands).toContain("OpenWorld proof boundary");
     expect(commands).toContain("Never store raw prompts by default.");
     expect(commands).toContain("### /osk deploy");
     expect(learn).toContain("openskill-kit osk learn --all-detected");

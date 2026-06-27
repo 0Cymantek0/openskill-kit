@@ -110,11 +110,11 @@ export const OSK_PUBLIC_COMMAND_FAMILIES: OskCommandFamily[] = [
     approvalClasses: ["read-only"],
     skills: ["osk-operating-manual"],
     subagents: ["osk-router"],
-    artifactsRead: [".openskill-kit status artifacts", "compiled plugin status", "attach receipts"],
+    artifactsRead: [".openskill-kit status artifacts", "compiled plugin status", "OpenWorld proof summary", "attach receipts"],
     artifactsWrite: [],
-    workflowSteps: ["Read adaptive status.", "Read compiled plugin and attach status.", "Return compact next actions."],
-    outputSummary: "Counts, readiness, descriptor drift, pending review, and next actions.",
-    tests: ["status command remains read-only", "status reports OpenCode attach state"]
+    workflowSteps: ["Read adaptive status.", "Read compiled plugin and attach status.", "Read OpenWorld artifact proof summary without running verifiers.", "Return compact next actions."],
+    outputSummary: "Counts, readiness, descriptor drift, pending review, OpenWorld proof boundary, and next actions.",
+    tests: ["status command remains read-only", "status reports OpenCode attach state", "status reports OpenWorld proof boundary"]
   }),
   family({
     id: "task",

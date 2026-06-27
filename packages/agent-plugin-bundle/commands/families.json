@@ -89,6 +89,7 @@
       "artifactsRead": [
         ".openskill-kit status artifacts",
         "compiled plugin status",
+        "OpenWorld proof summary",
         "attach receipts"
       ],
       "artifactsWrite": [],
@@ -107,13 +108,15 @@
       "workflowSteps": [
         "Read adaptive status.",
         "Read compiled plugin and attach status.",
+        "Read OpenWorld artifact proof summary without running verifiers.",
         "Return compact next actions."
       ],
-      "outputSummary": "Counts, readiness, descriptor drift, pending review, and next actions.",
+      "outputSummary": "Counts, readiness, descriptor drift, pending review, OpenWorld proof boundary, and next actions.",
       "failureModes": [],
       "tests": [
         "status command remains read-only",
-        "status reports OpenCode attach state"
+        "status reports OpenCode attach state",
+        "status reports OpenWorld proof boundary"
       ]
     },
     {

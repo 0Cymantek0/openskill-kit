@@ -90,7 +90,7 @@ benchmark evaluation yet.
 | Family | Use it for | First route |
 |---|---|---|
 | `/osk init` | Set up local state and preview attach. | `osk_bootstrap_session` |
-| `/osk status` | Show readiness, review counts, plugin state, and next actions. | `osk_bootstrap_session` |
+| `/osk status` | Show readiness, review counts, plugin state, OpenWorld proof boundary, and next actions. | `osk_bootstrap_session` |
 | `/osk task` | Load behavior before work and record a safe finish summary after work. | `osk_get_agent_task_context` |
 | `/osk learn` | Plan and run review-gated learning from selected safe sources. | `osk_plan_learning_sources` |
 | `/osk review` | Approve, reject, edit, lock, or demote candidate behavior. | `osk_review_behavior` |
