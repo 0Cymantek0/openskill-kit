@@ -120,7 +120,10 @@ Harness behavior should stay conservative:
   explicitly wants to ingest a Codex, Claude, Cursor, or manual session export.
   Keep the first run as a preview/dry-run unless the user approves applying the
   import; the command exists so harness users do not have to discover raw CLI
-  import names.
+  import names. Codex, Claude Code, and Cursor imports flatten common nested
+  transcript containers, tool-use command blocks, and IDE file references, but
+  they remain explicit-import-only and never copy raw transcript text into
+  plugin artifacts.
 - Route `/osk import review` to `osk_import_interaction_source` with adapter
   `review-local` when the user supplies PR review exports or local review notes.
   Keep it approval-gated; previewed review comments become normal

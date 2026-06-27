@@ -302,6 +302,70 @@ describe("interaction import", () => {
     expect(await readFile(imported.artifacts.markdownPath, "utf8")).not.toContain("Always keep Claude imports explicit and scoped.");
   });
 
+  it("normalizes nested harness transcript containers without raw transcript copying", async () => {
+    const root = await tempProject();
+    const codexSource = path.join(root, "codex-nested-export.json");
+    await writeFile(codexSource, JSON.stringify({
+      responseItems: [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "Always use nested Codex exports carefully. CODEX_SECRET=nested-secret" }],
+          sessionId: "codex-nested",
+          timestamp: "2026-06-27T08:40:00.000Z"
+        },
+        {
+          type: "tool",
+          input: { command: "npm run typecheck" },
+          status: "success",
+          sessionId: "codex-nested",
+          timestamp: "2026-06-27T08:41:00.000Z"
+        }
+      ]
+    }), "utf8");
+
+    const codexImport = await importInteractionSource(root, codexSource, {
+      adapter: "codex",
+      dryRun: false,
+      now: new Date("2026-06-27T08:42:00.000Z")
+    });
+
+    expect(codexImport.appendedEventCount).toBe(2);
+    expect(codexImport.warnings.join(" ")).toContain("explicit transcript import only");
+    expect(codexImport.preview.map((event) => event.eventType)).toEqual(["user-prompt-submit", "post-tool-use"]);
+    expect(await readFile(codexImport.artifacts.markdownPath, "utf8")).not.toContain("nested-secret");
+
+    const claudeSource = path.join(root, "claude-tool-use-export.json");
+    await writeFile(claudeSource, JSON.stringify({
+      conversation: [
+        {
+          type: "assistant",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "text", text: "I will run the focused suite." },
+              { type: "tool_use", name: "Bash", input: { command: "pnpm test" } }
+            ]
+          },
+          status: "pass",
+          session_id: "claude-nested",
+          timestamp: "2026-06-27T08:43:00.000Z"
+        }
+      ]
+    }), "utf8");
+
+    const claudeImport = await importInteractionSource(root, claudeSource, {
+      adapter: "claude-code",
+      dryRun: false,
+      now: new Date("2026-06-27T08:44:00.000Z")
+    });
+
+    expect(claudeImport.appendedEventCount).toBe(1);
+    expect(claudeImport.preview[0]).toMatchObject({ eventType: "post-tool-use", sessionId: "claude-nested", commandCount: 1 });
+    const events = await readEvents(root);
+    expect(events.find((event) => event.sessionId === "claude-nested")?.commands[0]).toMatchObject({ command: "pnpm", args: ["test"], status: "pass" });
+  });
+
   it("normalizes Cursor chat, terminal, and file reference records", async () => {
     const root = await tempProject();
     const source = path.join(root, "cursor-export.jsonl");
@@ -311,6 +375,7 @@ describe("interaction import", () => {
         text: "Prefer Cursor imports preserve project file references.",
         conversation_id: "cursor-a",
         files: [{ path: "src/app.ts" }],
+        context: { files: [{ path: "src/context.ts" }] },
         timestamp: "2026-06-27T09:00:00.000Z"
       }),
       JSON.stringify({
@@ -331,10 +396,11 @@ describe("interaction import", () => {
     expect(imported.source.adapter).toBe("cursor");
     expect(imported.source.agentName).toBe("Cursor");
     expect(imported.appendedEventCount).toBe(2);
-    expect(imported.preview[0]).toMatchObject({ eventType: "user-prompt-submit", sessionId: "cursor-a", fileCount: 1 });
+    expect(imported.preview[0]).toMatchObject({ eventType: "user-prompt-submit", sessionId: "cursor-a", fileCount: 2 });
     expect(imported.preview[1]).toMatchObject({ eventType: "post-tool-use", sessionId: "cursor-a", commandCount: 1 });
     const events = await readEvents(root);
     expect(events[0]?.files[0]).toMatchObject({ path: "src/app.ts", action: "unknown" });
+    expect(events[0]?.files[1]).toMatchObject({ path: "src/context.ts", action: "unknown" });
     expect(events[1]?.commands[0]).toMatchObject({ command: "pnpm", args: ["test"], status: "pass" });
   });
 });

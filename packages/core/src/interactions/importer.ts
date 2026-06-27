@@ -154,6 +154,19 @@ const EVENT_TYPES = new Set<OpenSkillEventInput["eventType"]>([
 ]);
 
 const MAX_SNIPPET_CHARS = 500;
+const TRANSCRIPT_ADAPTERS = new Set(["codex", "claude-code", "cursor"]);
+const TRANSCRIPT_CONTAINER_KEYS = [
+  "events",
+  "messages",
+  "items",
+  "transcript",
+  "conversation",
+  "turns",
+  "entries",
+  "response",
+  "responseItems"
+];
+
 const INTERACTION_ADAPTERS: InteractionAdapterDescriptor[] = [
   {
     id: "manual-import",
@@ -401,12 +414,25 @@ function parseInteractionText(text: string, options: ImportInteractionSourceOpti
   const adapter = normalizeAdapterId(options.adapter ?? "manual-import");
   if (adapter === "review-local") return parseReviewLocalText(text, options, sourceHash);
   if (adapter === "terminal-history") return parseTerminalHistoryText(text, options, sourceHash);
+  if (TRANSCRIPT_ADAPTERS.has(adapter)) return parseAgentTranscriptText(text, options, sourceHash, adapter);
   const warnings: string[] = [];
   const objects = parseJsonObjects(text, warnings);
   const sessionId = `import_${sourceHash.replace(/^sha256:/, "").slice(0, 12)}`;
   const events = objects.length
     ? objects.flatMap((object, index) => eventFromObject(object, index, sessionId, options, warnings))
     : eventsFromPlainText(text, sessionId, options);
+  return { events, warnings };
+}
+
+function parseAgentTranscriptText(text: string, options: ImportInteractionSourceOptions, sourceHash: string, adapter: string): { events: OpenSkillEventInput[]; warnings: string[] } {
+  const warnings: string[] = [`${adapter} adapter uses explicit transcript import only; raw source text is not copied into OpenSkillKit artifacts.`];
+  const objects = parseJsonObjects(text, warnings);
+  const sessionId = `${adapter.replace(/[^a-z0-9]+/g, "_")}_${sourceHash.replace(/^sha256:/, "").slice(0, 12)}`;
+  const flattened = objects.length ? flattenTranscriptObjects(objects, warnings) : [];
+  const events = flattened.length
+    ? flattened.flatMap((object, index) => eventFromObject(object, index, sessionId, options, warnings))
+    : eventsFromPlainText(text, sessionId, options);
+  if (!events.length) warnings.push(`${adapter} adapter found no supported transcript messages, commands, feedback, or file references.`);
   return { events, warnings };
 }
 
@@ -553,7 +579,7 @@ function reviewEventFromObject(object: unknown, index: number, fallbackSessionId
     adapter: options.adapter ?? "review-local",
     agentName: options.agentName,
     text,
-    filePath: filePathFromObject(object),
+    filePath: filePathsFromObject(object)[0],
     author: stringValue(object.author) ?? stringValue(object.user) ?? stringValue(object.reviewer),
     severity: stringValue(object.severity) ?? stringValue(object.level)
   })];
@@ -657,6 +683,31 @@ function parseJsonObjects(text: string, warnings: string[]): unknown[] {
   }
 }
 
+function flattenTranscriptObjects(objects: unknown[], warnings: string[]): unknown[] {
+  const flattened: unknown[] = [];
+  const visit = (value: unknown, pathLabel: string): void => {
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${pathLabel}[${index}]`));
+      return;
+    }
+    if (!isObject(value)) {
+      warnings.push(`Skipped non-object transcript entry at ${pathLabel}.`);
+      return;
+    }
+    const nestedValues = TRANSCRIPT_CONTAINER_KEYS.flatMap((key) => {
+      const nested = value[key];
+      return Array.isArray(nested) ? [{ key, nested }] : [];
+    });
+    if (nestedValues.length) {
+      for (const { key, nested } of nestedValues) visit(nested, `${pathLabel}.${key}`);
+      return;
+    }
+    flattened.push(value);
+  };
+  objects.forEach((object, index) => visit(object, `$[${index}]`));
+  return flattened;
+}
+
 function eventFromObject(object: unknown, index: number, fallbackSessionId: string, options: ImportInteractionSourceOptions, warnings: string[]): OpenSkillEventInput[] {
   if (!isObject(object)) {
     warnings.push(`Skipped non-object JSON entry at index ${index}.`);
@@ -683,7 +734,7 @@ function eventFromObject(object: unknown, index: number, fallbackSessionId: stri
     text: content,
     command,
     commandStatus: commandStatus(object),
-    filePath: filePathFromObject(object)
+    filePaths: filePathsFromObject(object)
   })];
 }
 
@@ -721,7 +772,7 @@ function baseEvent(input: {
   text?: string;
   command?: { command: string; args: string[] };
   commandStatus?: "pass" | "fail" | "blocked" | "timeout" | "unknown";
-  filePath?: string;
+  filePaths?: string[];
 }): OpenSkillEventInput {
   return {
     schemaVersion: "openskill-kit.event.v1",
@@ -738,13 +789,13 @@ function baseEvent(input: {
       textOmitted: input.text.length > MAX_SNIPPET_CHARS,
       importIndex: input.index
     } : { importIndex: input.index },
-    files: input.filePath ? [{ path: input.filePath, action: "unknown" }] : [],
+    files: (input.filePaths ?? []).map((filePath) => ({ path: filePath, action: "unknown" as const })),
     commands: input.command ? [{ ...input.command, status: input.commandStatus ?? "unknown" }] : [],
     privacy: {
       redacted: false,
       rawStored: false,
       containsUserText: Boolean(input.text),
-      containsCode: Boolean(input.filePath)
+      containsCode: Boolean(input.filePaths?.length)
     }
   };
 }
@@ -752,6 +803,7 @@ function baseEvent(input: {
 function commandFromObject(object: Record<string, unknown>): { command: string; args: string[] } | undefined {
   const input = objectValue(object.input) ?? objectValue(object.params);
   const tool = objectValue(object.tool) ?? objectValue(object.toolUse) ?? objectValue(object.tool_use);
+  const contentCommand = commandFromContentBlocks(object.content) ?? commandFromContentBlocks(objectValue(object.message)?.content);
   const command =
     stringValue(object.command) ??
     stringValue(object.cmd) ??
@@ -761,10 +813,32 @@ function commandFromObject(object: Record<string, unknown>): { command: string; 
     stringValue(input?.cmd) ??
     stringValue(tool?.command) ??
     stringValue(tool?.cmd);
-  if (!command) return undefined;
+  if (!command) return contentCommand;
   const argsSource = Array.isArray(object.args) ? object.args : Array.isArray(input?.args) ? input.args : undefined;
   const args = argsSource ? argsSource.filter((arg): arg is string => typeof arg === "string") : [];
   return args.length ? { command, args } : commandFromLine(command) ?? { command, args: [] };
+}
+
+function commandFromContentBlocks(value: unknown): { command: string; args: string[] } | undefined {
+  const blocks = Array.isArray(value) ? value : isObject(value) ? [value] : [];
+  for (const block of blocks) {
+    if (!isObject(block)) continue;
+    const type = stringValue(block.type)?.toLowerCase();
+    const name = stringValue(block.name)?.toLowerCase();
+    const input = objectValue(block.input) ?? objectValue(block.params);
+    const rawCommand =
+      stringValue(block.command) ??
+      stringValue(block.cmd) ??
+      stringValue(input?.command) ??
+      stringValue(input?.cmd);
+    if (!rawCommand) continue;
+    const looksLikeTool = !type || type.includes("tool") || type.includes("bash") || type.includes("terminal") || name === "bash" || name === "shell";
+    if (!looksLikeTool) continue;
+    const argsSource = Array.isArray(input?.args) ? input.args : Array.isArray(block.args) ? block.args : undefined;
+    const args = argsSource ? argsSource.filter((arg): arg is string => typeof arg === "string") : [];
+    return args.length ? { command: rawCommand, args } : commandFromLine(rawCommand) ?? { command: rawCommand, args: [] };
+  }
+  return undefined;
 }
 
 function commandFromLine(line: string): { command: string; args: string[] } | undefined {
@@ -1005,19 +1079,37 @@ function sessionIdFromObject(object: Record<string, unknown>): string | undefine
     stringValue(object.thread_id);
 }
 
-function filePathFromObject(object: Record<string, unknown>): string | undefined {
-  const direct = stringValue(object.file) ?? stringValue(object.path) ?? stringValue(object.filePath) ?? stringValue(object.file_path);
-  if (direct) return direct;
-  const files = object.files;
-  if (!Array.isArray(files)) return undefined;
-  for (const file of files) {
-    if (typeof file === "string" && file.trim()) return file.trim();
-    if (isObject(file)) {
-      const filePath = stringValue(file.path) ?? stringValue(file.filePath) ?? stringValue(file.name);
-      if (filePath) return filePath;
+function filePathsFromObject(object: Record<string, unknown>): string[] {
+  const paths = new Set<string>();
+  const add = (value: unknown): void => {
+    const direct = stringValue(value);
+    if (direct) paths.add(direct);
+  };
+  add(object.file);
+  add(object.path);
+  add(object.filePath);
+  add(object.file_path);
+  for (const list of [
+    object.files,
+    object.attachedFiles,
+    object.attached_files,
+    object.references,
+    objectValue(object.context)?.files,
+    objectValue(object.context)?.references
+  ]) {
+    if (!Array.isArray(list)) continue;
+    for (const file of list) {
+      if (typeof file === "string") add(file);
+      if (isObject(file)) {
+        add(file.path);
+        add(file.filePath);
+        add(file.file_path);
+        add(file.relativePath);
+        add(file.name);
+      }
     }
   }
-  return undefined;
+  return [...paths];
 }
 
 function snippet(value: string | undefined): string | undefined {

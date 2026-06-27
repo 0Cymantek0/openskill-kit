@@ -217,6 +217,16 @@ metadata-only records to `.openskill-kit/interactions/pool.jsonl`; CLI
 `interactions pool` and MCP `osk_get_interaction_pool` expose that normalized
 cross-agent event index without raw transcript content.
 
+The Codex, Claude Code, and Cursor adapters are first-class explicit transcript
+adapters rather than blind generic JSON importers. They flatten common nested
+export containers such as `messages`, `items`, `responseItems`,
+`conversation`, `turns`, and `entries`; normalize role/content messages into
+user or assistant events; convert Bash/terminal/tool-use command blocks into
+command outcome events; and keep Cursor-style `context.files`,
+`attachedFiles`, and `references` as file metadata. They still never read
+global memory directories or IDE state automatically, and import receipts keep
+only source hashes, event shapes, warnings, and redacted appended events.
+
 `interactions import-review <file>` is a first-class `review-local` adapter for
 explicitly supplied PR review exports, copied review notes, or local
 review-comment files. It turns markdown/plain-text lines and JSON review
