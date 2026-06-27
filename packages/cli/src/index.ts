@@ -71,6 +71,7 @@ import {
   readRegistry,
   readCalibrationReport,
   readInteractionImportRuns,
+  readInteractionPool,
   readEvidenceCards,
   runBehaviorEval,
   runBehaviorCompareEval,
@@ -1229,6 +1230,16 @@ interactions.command("explain")
       `Learnable: ${result.learnable.canLearn ? "yes" : "no"}${result.learnable.signalSources.length ? ` (${result.learnable.signalSources.join(", ")})` : ""}`,
       ...result.learnable.nextActions.map((action) => `- ${action}`)
     ].join("\n"));
+  });
+
+interactions.command("pool")
+  .description("List normalized interaction pool metadata without raw source content")
+  .option("--json", "Print JSON")
+  .action(async (options) => {
+    const result = await readInteractionPool(process.cwd());
+    output(options.json, result, result.records.length
+      ? result.records.map((record) => `${record.id} ${record.adapter} ${record.eventType} commands=${record.commandCount} files=${record.fileCount}`).join("\n")
+      : "No interaction pool records");
   });
 
 const workflows = program.command("workflows")

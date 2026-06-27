@@ -209,7 +209,10 @@ and MCP. `status --json` reports import-run, imported-event, and blocked-import
 counts, while `doctor --full` warns when any interaction import is blocked.
 `interactions explain <run-id>` and MCP `osk_explain_interaction_import` return
 the import receipt, privacy state, event-shape preview, and learning next
-actions without reopening the raw source file.
+actions without reopening the raw source file. Applied imports also append
+metadata-only records to `.openskill-kit/interactions/pool.jsonl`; CLI
+`interactions pool` and MCP `osk_get_interaction_pool` expose that normalized
+cross-agent event index without raw transcript content.
 
 ## MCP Runtime
 

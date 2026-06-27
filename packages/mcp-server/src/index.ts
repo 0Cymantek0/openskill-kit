@@ -58,6 +58,7 @@ import {
   renderWorkflowGraph,
   readCalibrationReport,
   readInteractionImportRuns,
+  readInteractionPool,
   readOpenWorldTask,
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
@@ -259,6 +260,20 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot, runId }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await explainInteractionImport(root, runId), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_interaction_pool",
+    {
+      title: "OpenSkillKit Interaction Pool",
+      description: "Return normalized interaction metadata records without raw session/export content.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await readInteractionPool(root), root);
     }
   );
 

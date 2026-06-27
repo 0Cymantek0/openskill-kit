@@ -82,6 +82,7 @@ describe("openskill-kit MCP server", () => {
           "osk_list_interaction_adapters",
           "osk_list_interaction_imports",
           "osk_explain_interaction_import",
+          "osk_get_interaction_pool",
           "osk_run_lifecycle_once",
           "osk_openworld_retrieval_adapters",
           "osk_openworld_execute_source_plan",

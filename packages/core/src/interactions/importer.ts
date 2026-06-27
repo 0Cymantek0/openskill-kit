@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { appendEvent, readEvents, readProjectConfig } from "../events/store.js";
 import type { OpenSkillEvent, OpenSkillEventInput } from "../events/schema.js";
-import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
+import { withFileLock, writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
 export interface ImportInteractionSourceOptions {
   adapter?: string;
@@ -49,6 +49,34 @@ export interface InteractionImportRun {
     jsonPath: string;
     markdownPath: string;
   };
+}
+
+export interface InteractionPoolRecord {
+  schemaVersion: "openskill-kit.interaction-pool-record.v1";
+  id: string;
+  importRunId: string;
+  sourceHash: string;
+  adapter: string;
+  adapterStatus: InteractionAdapterDescriptor["status"];
+  agentName?: string;
+  eventId: string;
+  eventType: OpenSkillEvent["eventType"];
+  sessionId: string;
+  timestamp: string;
+  commandCount: number;
+  fileCount: number;
+  containsUserText: boolean;
+  containsCode: boolean;
+  redacted: boolean;
+  rawStored: boolean;
+  learned: false;
+}
+
+export interface InteractionPoolResult {
+  schemaVersion: "openskill-kit.interaction-pool.v1";
+  poolPath: string;
+  recordCount: number;
+  records: InteractionPoolRecord[];
 }
 
 export interface InteractionAdapterDescriptor {
@@ -197,15 +225,19 @@ export async function importInteractionSource(projectRootInput: string, sourcePa
   if (duplicate) warnings.push(`Source hash already imported by ${duplicate.id}; dry-run only unless allowDuplicate is true.`);
   const dryRun = options.dryRun !== false;
   const eventIds: string[] = [];
+  const appendedEvents: OpenSkillEvent[] = [];
+  const runId = importRunId(options.now ?? new Date(), sourceHash);
   if (!dryRun) {
     for (const event of limited) {
       const result = await appendEvent(root, event);
       eventIds.push(result.event.id);
+      appendedEvents.push(result.event);
     }
+    await appendInteractionPoolRecords(root, appendedEvents.map((event, index) => poolRecordFromEvent(event, index, runId, sourceHash, adapterValidation)));
   }
   return writeImportRun(root, {
     schemaVersion: "openskill-kit.interaction-import-run.v1",
-    id: importRunId(options.now ?? new Date(), sourceHash),
+    id: runId,
     status: dryRun ? "planned" : "imported",
     projectId: config.projectId,
     source: {
@@ -274,6 +306,19 @@ export async function readInteractionImportRuns(projectRootInput: string): Promi
     runs.push(parsed);
   }
   return runs.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export async function readInteractionPool(projectRootInput: string): Promise<InteractionPoolResult> {
+  const root = path.resolve(projectRootInput);
+  const poolPath = interactionPoolPath(root);
+  const text = await fs.readFile(poolPath, "utf8").catch(() => "");
+  const records = text.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as InteractionPoolRecord);
+  return {
+    schemaVersion: "openskill-kit.interaction-pool.v1",
+    poolPath,
+    recordCount: records.length,
+    records: records.sort((a, b) => a.timestamp.localeCompare(b.timestamp) || a.id.localeCompare(b.id))
+  };
 }
 
 export async function explainInteractionImport(projectRootInput: string, runId: string): Promise<ExplainInteractionImportResult> {
@@ -536,6 +581,42 @@ function explainImportNextActions(run: InteractionImportRun, foundEventCount: nu
   if (missingEventCount > 0) actions.push("Some appended event ids were not found in the current event store; run doctor before learning from this import.");
   actions.push("Do not inspect or copy raw source content unless the user explicitly asks.");
   return [...new Set(actions)];
+}
+
+function poolRecordFromEvent(event: OpenSkillEvent, index: number, importRunId: string, sourceHash: string, adapterValidation: InteractionAdapterValidation): InteractionPoolRecord {
+  return {
+    schemaVersion: "openskill-kit.interaction-pool-record.v1",
+    id: `ipool_${sha256(`${importRunId}:${event.id}:${index}`).slice(0, 16)}`,
+    importRunId,
+    sourceHash,
+    adapter: adapterValidation.normalizedAdapter,
+    adapterStatus: adapterValidation.adapter.status,
+    agentName: adapterValidation.agentName,
+    eventId: event.id,
+    eventType: event.eventType,
+    sessionId: event.sessionId,
+    timestamp: event.timestamp,
+    commandCount: event.commands.length,
+    fileCount: event.files.length,
+    containsUserText: event.privacy.containsUserText,
+    containsCode: event.privacy.containsCode,
+    redacted: event.privacy.redacted,
+    rawStored: event.privacy.rawStored,
+    learned: false
+  };
+}
+
+async function appendInteractionPoolRecords(root: string, records: InteractionPoolRecord[]): Promise<void> {
+  if (!records.length) return;
+  const poolPath = interactionPoolPath(root);
+  await withFileLock(path.join(path.dirname(poolPath), ".pool.lock"), async () => {
+    await fs.mkdir(path.dirname(poolPath), { recursive: true });
+    await fs.appendFile(poolPath, records.map((record) => JSON.stringify(record)).join("\n") + "\n", "utf8");
+  });
+}
+
+function interactionPoolPath(root: string): string {
+  return path.join(root, ".openskill-kit", "interactions", "pool.jsonl");
 }
 
 async function findImportedDuplicate(root: string, sourceHash: string): Promise<InteractionImportRun | undefined> {

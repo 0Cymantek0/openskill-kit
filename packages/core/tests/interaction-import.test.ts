@@ -11,6 +11,7 @@ import {
   listInteractionAdapters,
   readEvents,
   readInteractionImportRuns,
+  readInteractionPool,
   runFullDoctor,
   updatePreferenceGraph
 } from "../src/index.js";
@@ -74,6 +75,12 @@ describe("interaction import", () => {
     expect(duplicate.messages.join(" ")).toContain("already imported");
     const runs = await readInteractionImportRuns(root);
     expect(runs.some((run) => run.status === "imported" && run.source.adapter === "codex")).toBe(true);
+    const pool = await readInteractionPool(root);
+    expect(pool.recordCount).toBe(2);
+    expect(pool.records.map((record) => record.importRunId)).toEqual([imported.id, imported.id]);
+    expect(pool.records[0]).toMatchObject({ adapter: "codex", eventType: "user-prompt-submit", containsUserText: true, rawStored: false, learned: false });
+    expect(pool.records[1]).toMatchObject({ adapter: "codex", eventType: "post-tool-use", commandCount: 1 });
+    expect(JSON.stringify(pool)).not.toContain("sk-live-secret");
     const explained = await explainInteractionImport(root, imported.id);
     expect(explained.schemaVersion).toBe("openskill-kit.interaction-import-explain.v1");
     expect(explained.imported.foundEventCount).toBe(2);
