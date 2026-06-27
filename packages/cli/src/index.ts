@@ -133,7 +133,11 @@ program.command("status")
       `Pending review: ${status.pendingReviewCount}`,
       `Plugin ready: ${status.compiled.plugin}`,
       `Plugin: ${status.compiled.pluginStatus.pluginDir}`,
-      status.compiled.plugin ? `Plugin MCP: ${status.compiled.pluginStatus.mcpServerCommand}` : `Plugin missing: ${status.compiled.pluginStatus.missing.join(", ")}`
+      status.compiled.plugin
+        ? `Plugin MCP: ${status.compiled.pluginStatus.mcpServerCommand}`
+        : status.compiled.pluginStatus.integrityIssues.length
+          ? `Plugin integrity issues: ${status.compiled.pluginStatus.integrityIssues.join("; ")}`
+          : `Plugin missing: ${status.compiled.pluginStatus.missing.join(", ")}`
     ].join("\n"));
   });
 

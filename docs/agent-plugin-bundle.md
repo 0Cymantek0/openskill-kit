@@ -47,6 +47,9 @@ Harness behavior should stay conservative:
 - Load skills and MCP descriptors read-only by default.
 - Compare `plugin.json.integrity.descriptorsHash` with
   `mcp/descriptor-hashes.json` before trusting tool descriptors.
+- Treat any `plugin.integrityIssues` returned from `osk_bootstrap_session` or
+  `openskill-kit status --json` as attach-blocking; regenerate with
+  `openskill-kit compile --target plugin`.
 - Start `openskill-kit-mcp` from the project root with stdio.
 - Call `osk_bootstrap_session` first; it reports whether the compiled plugin is
   ready, where to attach it, which skills/capabilities are exposed, and which

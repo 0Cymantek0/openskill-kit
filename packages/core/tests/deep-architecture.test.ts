@@ -84,6 +84,21 @@ describe("deep architecture hardening", () => {
     expect(readme).toContain("Never attach hidden benchmark answers");
   });
 
+  it("marks compiled plugin unready when MCP descriptors are tampered", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("plugin-tamper", "Prefer verified plugin descriptors", "security", [])]);
+    await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const descriptorPath = path.join(root, ".openskill-kit", "compiled", "plugin", "mcp", "descriptors.json");
+    const descriptors = JSON.parse(await readFile(descriptorPath, "utf8"));
+    descriptors.tools.push({ name: "malicious_shadow_tool", category: "unknown", writeRisk: "approval-required", approvalRequired: true });
+    await writeFile(descriptorPath, `${JSON.stringify(descriptors, null, 2)}\n`, "utf8");
+
+    const status = await getCompiledPluginStatus(root);
+    expect(status.ready).toBe(false);
+    expect(status.integrityIssues).toContain("mcp/descriptors.json hash does not match mcp/descriptor-hashes.json");
+    expect(status.nextActions[0]).toContain("compiled plugin integrity check failed");
+  });
+
   it("generates and installs managed agent manifests while preserving user content", async () => {
     const root = await tempProject();
     await writeGraph(root, [

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
@@ -69,6 +70,7 @@ export interface CompiledPluginStatus {
   approvalGates: string[];
   privacyExclusions: string[];
   missing: string[];
+  integrityIssues: string[];
   nextActions: string[];
 }
 
@@ -99,23 +101,29 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
   const mcpDescriptorPath = path.join(pluginDir, "mcp", "descriptors.json");
   const mcpDescriptorHashPath = path.join(pluginDir, "mcp", "descriptor-hashes.json");
   const manifest = await readJson<AgentPluginManifest>(manifestPath).catch(() => undefined);
-  const agentManifestExists = await exists(agentPluginManifestPath);
+  const agentManifest = await readJson<AgentPluginManifest>(agentPluginManifestPath).catch(() => undefined);
   const mcpAttachment = await readJson<{ mcpServers?: Record<string, { command?: string }> }>(mcpAttachmentPath).catch(() => undefined);
   const mcpHashes = await readJson<{ descriptorsHash?: string }>(mcpDescriptorHashPath).catch(() => undefined);
-  const mcpDescriptorsExist = await exists(mcpDescriptorPath);
+  const mcpDescriptors = await readJson<unknown>(mcpDescriptorPath).catch(() => undefined);
   const mcpServerConfigExists = await exists(path.join(pluginDir, "mcp", "server-config.json"));
   const missing = [
     ...(manifest ? [] : ["plugin.json"]),
-    ...(agentManifestExists ? [] : [".agent-plugin/plugin.json"]),
+    ...(agentManifest ? [] : [".agent-plugin/plugin.json"]),
     ...(mcpAttachment ? [] : [".mcp.json"]),
     ...(!manifest?.skills?.length ? ["skills"] : []),
     ...(mcpServerConfigExists ? [] : ["mcp/server-config.json"]),
-    ...(mcpDescriptorsExist ? [] : ["mcp/descriptors.json"]),
+    ...(mcpDescriptors ? [] : ["mcp/descriptors.json"]),
     ...(mcpHashes ? [] : ["mcp/descriptor-hashes.json"])
+  ];
+  const actualDescriptorsHash = mcpDescriptors ? sha256Stable(mcpDescriptors) : undefined;
+  const integrityIssues = [
+    ...(manifest && agentManifest && stableJson(manifest) !== stableJson(agentManifest) ? [".agent-plugin/plugin.json does not match plugin.json"] : []),
+    ...(manifest?.integrity.descriptorsHash && mcpHashes?.descriptorsHash && manifest.integrity.descriptorsHash !== mcpHashes.descriptorsHash ? ["plugin.json descriptor hash does not match mcp/descriptor-hashes.json"] : []),
+    ...(actualDescriptorsHash && mcpHashes?.descriptorsHash && actualDescriptorsHash !== mcpHashes.descriptorsHash ? ["mcp/descriptors.json hash does not match mcp/descriptor-hashes.json"] : [])
   ];
   return {
     schemaVersion: "openskill-kit.compiled-plugin-status.v1",
-    ready: missing.length === 0,
+    ready: missing.length === 0 && integrityIssues.length === 0,
     pluginDir,
     manifestPath,
     agentPluginManifestPath,
@@ -130,8 +138,11 @@ export async function getCompiledPluginStatus(projectRoot: string): Promise<Comp
     approvalGates: manifest?.install.requiresExplicitApproval ?? [],
     privacyExclusions: manifest?.privacy.excludes ?? [],
     missing,
+    integrityIssues,
     nextActions: missing.length
       ? ["Run `openskill-kit compile --target plugin` before attaching OpenSkillKit to a coding harness."]
+      : integrityIssues.length
+        ? ["Re-run `openskill-kit compile --target plugin`; compiled plugin integrity check failed."]
       : [
         "Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.",
         "Start `openskill-kit-mcp` from the project root when the harness supports MCP.",
@@ -296,4 +307,19 @@ async function readJson<T>(file: string): Promise<T> {
 
 async function exists(file: string): Promise<boolean> {
   return fs.stat(file).then(() => true).catch(() => false);
+}
+
+function sha256Stable(value: unknown): string {
+  return `sha256:${createHash("sha256").update(stableJson(value)).digest("hex")}`;
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
