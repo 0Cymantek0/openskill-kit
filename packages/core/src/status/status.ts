@@ -4,6 +4,7 @@ import { readCalibrationReport, type CalibrationReport } from "../preferences/ca
 import { getCompiledPluginStatus, type CompiledPluginStatus } from "../compiler/plugin-compiler.js";
 import { readProjectConfig } from "../events/store.js";
 import { readInteractionImportRuns } from "../interactions/importer.js";
+import { getAgentPluginAttachStatus, type AgentPluginAttachStatus } from "../agents/plugin-attach.js";
 
 export interface AdaptiveStatus {
   schemaVersion: "openskill-kit.status.v1";
@@ -29,6 +30,7 @@ export interface AdaptiveStatus {
     projectWorkflowsSkill: boolean;
     plugin: boolean;
     pluginStatus: CompiledPluginStatus;
+    pluginAttachment: AgentPluginAttachStatus;
   };
 }
 
@@ -60,6 +62,7 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
   const eventIndex = await readJson(path.join(root, ".openskill-kit", "events", "index.json")).catch(() => undefined) as { eventCount?: number } | undefined;
   const interactionImports = await readInteractionImportRuns(root).catch(() => []);
   const pluginStatus = await getCompiledPluginStatus(root);
+  const pluginAttachment = await getAgentPluginAttachStatus(root);
   return {
     schemaVersion: "openskill-kit.status.v1",
     initialized: Boolean(config),
@@ -83,7 +86,8 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
       projectBehaviorSkill: await exists(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md")),
       projectWorkflowsSkill: await exists(path.join(root, ".openskill-kit", "compiled", "skills", "project-workflows", "SKILL.md")),
       plugin: pluginStatus.ready,
-      pluginStatus
+      pluginStatus,
+      pluginAttachment
     }
   };
 }
@@ -106,7 +110,7 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   if (status.pendingReviewCount > 0) nextActions.push("Run review --queue, then accept or reject candidates and staged previews.");
   if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
   if (!status.compiled.plugin) nextActions.push("Run compile --target plugin to create an attachable coding-harness plugin bundle.");
-  if (status.compiled.plugin && !(await hasHostMcpAttachment(root))) nextActions.push("Run agent attach-plugin --host generic-mcp --dry-run to preview host MCP attachment for the compiled plugin.");
+  if (status.compiled.plugin && !status.compiled.pluginAttachment.attached) nextActions.push(...status.compiled.pluginAttachment.nextActions);
   if (status.activePreferenceCount === 0 && status.pendingReviewCount === 0 && status.signalCount > 0) nextActions.push("Wait for stronger evidence or propose a semantic preference.");
   if (calibration) nextActions.push(`Calibration loaded: ${Object.keys(calibration.categories).length} categor${Object.keys(calibration.categories).length === 1 ? "y" : "ies"}, ${Object.keys(calibration.extractors).length} extractor(s), ${Object.keys(calibration.evalOutcomes).length} eval outcome(s).`);
   if (nextActions.length === 0) nextActions.push("Behavior layer current; keep collecting high-value events.");
@@ -125,15 +129,6 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
       evalOutcomes: calibration.evalOutcomes
     } : undefined
   };
-}
-
-async function hasHostMcpAttachment(root: string): Promise<boolean> {
-  for (const relative of [".mcp.json", path.join(".cursor", "mcp.json")]) {
-    const file = path.join(root, relative);
-    const parsed = await readJson(file).catch(() => undefined) as { mcpServers?: Record<string, { command?: string }> } | undefined;
-    if (parsed?.mcpServers?.["openskill-kit"]?.command === "openskill-kit-mcp") return true;
-  }
-  return false;
 }
 
 async function readJson(file: string): Promise<unknown> {

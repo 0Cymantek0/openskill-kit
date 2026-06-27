@@ -94,6 +94,7 @@ const statusText = await runText(["status"]);
 if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 12") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
+if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");
 const pluginAttachPlan = await runJson(["agent", "attach-plugin", "--host", "generic-mcp", "--dry-run", "--json"]);
 if (pluginAttachPlan.status !== "planned" || !pluginAttachPlan.files?.some((file: { destination: string }) => file.destination.endsWith(".mcp.json"))) throw new Error("plugin attach dry-run failed");
 const pluginAttach = await runJson(["agent", "attach-plugin", "--host", "generic-mcp", "--yes", "--json"]);
@@ -104,6 +105,8 @@ if (hostMcp.mcpServers?.["openskill-kit"]?.env?.OPENSKILLKIT_PROJECT_ROOT !== ro
 const detectionAfterAttach = await runJson(["detect", "--json"]);
 const hostMcpSurface = detectionAfterAttach.surfaces?.find((surface: { relativePath?: string }) => surface.relativePath === ".mcp.json");
 if (hostMcpSurface?.metadata?.openskillKitAttached !== true) throw new Error("detection did not recognize OpenSkillKit MCP attachment");
+const attachedStatusText = await runText(["status"]);
+if (!attachedStatusText.includes("Plugin host attached: true")) throw new Error("status text missing attached plugin host readiness");
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);
 if (!prefs.items?.length || !prefs.compactMarkdown?.includes("run npm test")) throw new Error("preference retrieval failed");

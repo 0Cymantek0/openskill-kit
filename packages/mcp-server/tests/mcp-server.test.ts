@@ -145,6 +145,12 @@ describe("openskill-kit MCP server", () => {
       });
       const attachApplyParsed = JSON.parse(attachApply.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(attachApplyParsed.status).toBe("attached");
+      const bootAttached = await client.callTool({
+        name: "osk_bootstrap_session",
+        arguments: { projectRoot: root, init: false }
+      });
+      const bootAttachedParsed = JSON.parse(bootAttached.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(bootAttachedParsed.status.compiled.pluginAttachment.attached).toBe(true);
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",

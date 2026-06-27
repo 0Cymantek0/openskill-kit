@@ -27,8 +27,31 @@ export interface AgentPluginAttachFile {
   issue?: string;
 }
 
+export interface AgentPluginAttachStatus {
+  schemaVersion: "openskill-kit.agent-plugin-attach-status.v1";
+  attached: boolean;
+  hosts: AgentPluginHostAttachStatus[];
+  receiptCount: number;
+  latestReceiptPath?: string;
+  nextActions: string[];
+}
+
+export interface AgentPluginHostAttachStatus {
+  host: AgentPluginAttachHost;
+  destination: string;
+  status: "attached" | "missing" | "invalid-json" | "needs-root-binding" | "wrong-command";
+  command?: string;
+  projectRootBound: boolean;
+  issue?: string;
+}
+
 interface McpConfig {
   mcpServers?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface AttachReceipt {
+  attachedAt?: string;
   [key: string]: unknown;
 }
 
@@ -102,9 +125,80 @@ export async function attachAgentPlugin(
   };
 }
 
+export async function getAgentPluginAttachStatus(projectRoot: string): Promise<AgentPluginAttachStatus> {
+  const root = path.resolve(projectRoot);
+  const hosts = await Promise.all(AgentPluginAttachHosts.map(async (host) => inspectHostAttach(root, host)));
+  const receipts = await listAttachReceipts(root);
+  const attached = hosts.some((host) => host.status === "attached");
+  const nextActions = attached
+    ? ["Plugin host attachment is ready; MCP tools can use the bound project root without per-call projectRoot arguments."]
+    : [
+      "Run `openskill-kit agent attach-plugin --host generic-mcp --dry-run` to preview host MCP attachment.",
+      "Apply with `--yes` only after reviewing the project-local MCP config diff."
+    ];
+  return {
+    schemaVersion: "openskill-kit.agent-plugin-attach-status.v1",
+    attached,
+    hosts,
+    receiptCount: receipts.length,
+    latestReceiptPath: receipts[0]?.path,
+    nextActions
+  };
+}
+
 function hostConfigTargets(root: string, host: AgentPluginAttachHost): string[] {
   if (host === "cursor") return [path.join(root, ".cursor", "mcp.json")];
   return [path.join(root, ".mcp.json")];
+}
+
+async function inspectHostAttach(root: string, host: AgentPluginAttachHost): Promise<AgentPluginHostAttachStatus> {
+  const destination = hostConfigTargets(root, host)[0]!;
+  const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
+  if (existing === undefined) return { host, destination, status: "missing", projectRootBound: false, issue: "Host MCP config missing" };
+  let parsed: McpConfig;
+  try {
+    parsed = JSON.parse(existing) as McpConfig;
+  } catch {
+    return { host, destination, status: "invalid-json", projectRootBound: false, issue: "Host MCP config is not valid JSON" };
+  }
+  const server = isRecord(parsed.mcpServers) && isRecord(parsed.mcpServers["openskill-kit"])
+    ? parsed.mcpServers["openskill-kit"]
+    : undefined;
+  const command = typeof server?.command === "string" ? server.command : undefined;
+  const env = isRecord(server?.env) ? server.env : {};
+  const projectRootBound = env[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root;
+  if (command !== "openskill-kit-mcp") {
+    return {
+      host,
+      destination,
+      status: "wrong-command",
+      command,
+      projectRootBound,
+      issue: command ? "openskill-kit MCP server command is not openskill-kit-mcp" : "openskill-kit MCP server entry missing"
+    };
+  }
+  if (!projectRootBound) {
+    return {
+      host,
+      destination,
+      status: "needs-root-binding",
+      command,
+      projectRootBound,
+      issue: `${AGENT_PLUGIN_PROJECT_ROOT_ENV} is not bound to this project`
+    };
+  }
+  return { host, destination, status: "attached", command, projectRootBound };
+}
+
+async function listAttachReceipts(root: string): Promise<Array<{ path: string; receipt: AttachReceipt }>> {
+  const dir = path.join(root, ".openskill-kit", "installs");
+  const entries = await fs.readdir(dir).catch(() => []);
+  const receiptFiles = entries.filter((entry) => /^plugin-attach-.+\.json$/.test(entry)).map((entry) => path.join(dir, entry));
+  const receipts = await Promise.all(receiptFiles.map(async (file) => ({
+    path: file,
+    receipt: await readJson<AttachReceipt>(file).catch((): AttachReceipt => ({}))
+  })));
+  return receipts.sort((left, right) => String(right.receipt.attachedAt ?? "").localeCompare(String(left.receipt.attachedAt ?? "")));
 }
 
 async function planMcpConfig(destination: string, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {
@@ -190,6 +284,10 @@ function unifiedDiff(file: string, before: string, after: string): string {
 function assertInsideRoot(root: string, target: string): void {
   const relative = path.relative(root, path.resolve(target));
   if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error(`Refusing to write outside project root: ${target}`);
+}
+
+async function readJson<T>(file: string): Promise<T> {
+  return JSON.parse(await fs.readFile(file, "utf8")) as T;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

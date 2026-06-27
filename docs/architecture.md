@@ -194,6 +194,8 @@ attach issue and directs operators to `openskill-kit agent attach-plugin
 --host generic-mcp --dry-run`.
 Applied host MCP config includes `OPENSKILLKIT_PROJECT_ROOT`, so an attached
 harness can omit per-tool `projectRoot` arguments without relying on launch cwd.
+The same attachment health is exposed through status/bootstrap responses for
+agent UIs that need a direct ready/misconfigured signal.
 
 ## Interaction Imports
 

@@ -140,7 +140,9 @@ program.command("status")
         ? [
           `Plugin MCP: ${status.compiled.pluginStatus.mcpServerCommand}`,
           `Plugin commands: ${status.compiled.pluginStatus.commands.length}`,
-          `Plugin command map: ${status.compiled.pluginStatus.commandMapPath}`
+          `Plugin command map: ${status.compiled.pluginStatus.commandMapPath}`,
+          `Plugin host attached: ${status.compiled.pluginAttachment.attached}`,
+          `Plugin host status: ${status.compiled.pluginAttachment.hosts.map((host) => `${host.host}=${host.status}`).join(", ")}`
         ].join("\n")
         : status.compiled.pluginStatus.integrityIssues.length
           ? `Plugin integrity issues: ${status.compiled.pluginStatus.integrityIssues.join("; ")}`

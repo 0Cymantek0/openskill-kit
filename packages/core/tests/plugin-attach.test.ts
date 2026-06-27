@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   attachAgentPlugin,
   explainAdaptiveStatus,
+  getAgentPluginAttachStatus,
   initAdaptiveProject,
   type PreferenceGraph,
   type PreferenceNode
@@ -42,6 +43,11 @@ describe("agent plugin attach planner", () => {
     expect(mcp.mcpServers.existing.command).toBe("existing-mcp");
     expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     expect(mcp.mcpServers["openskill-kit"].env.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
+    const status = await getAgentPluginAttachStatus(root);
+    expect(status.attached).toBe(true);
+    expect(status.receiptCount).toBe(1);
+    expect(status.hosts.find((host) => host.host === "generic-mcp")?.status).toBe("attached");
+    expect(status.hosts.find((host) => host.host === "generic-mcp")?.projectRootBound).toBe(true);
   });
 
   it("blocks invalid host config JSON without overwriting it", async () => {
@@ -55,6 +61,22 @@ describe("agent plugin attach planner", () => {
     expect(blocked.files[0]?.action).toBe("blocked");
     expect(blocked.files[0]?.issue).toContain("not valid JSON");
     expect(await readFile(path.join(root, ".mcp.json"), "utf8")).toBe("{ invalid json");
+    const status = await getAgentPluginAttachStatus(root);
+    expect(status.attached).toBe(false);
+    expect(status.hosts.find((host) => host.host === "generic-mcp")?.status).toBe("invalid-json");
+  });
+
+  it("reports wrong command and missing project-root binding", async () => {
+    const root = await tempProject();
+    await writeFile(path.join(root, ".mcp.json"), `${JSON.stringify({ mcpServers: { "openskill-kit": { command: "openskill-kit-mcp" } } }, null, 2)}\n`, "utf8");
+    let status = await getAgentPluginAttachStatus(root);
+    expect(status.attached).toBe(false);
+    expect(status.hosts.find((host) => host.host === "generic-mcp")?.status).toBe("needs-root-binding");
+
+    await writeFile(path.join(root, ".mcp.json"), `${JSON.stringify({ mcpServers: { "openskill-kit": { command: "node" } } }, null, 2)}\n`, "utf8");
+    status = await getAgentPluginAttachStatus(root);
+    expect(status.attached).toBe(false);
+    expect(status.hosts.find((host) => host.host === "generic-mcp")?.status).toBe("wrong-command");
   });
 
   it("targets Cursor project MCP config when requested", async () => {
@@ -74,10 +96,12 @@ describe("agent plugin attach planner", () => {
 
     const beforeAttach = await explainAdaptiveStatus(root);
     expect(beforeAttach.nextActions.some((action) => action.includes("agent attach-plugin"))).toBe(true);
+    expect(beforeAttach.status.compiled.pluginAttachment.attached).toBe(false);
 
     await attachAgentPlugin(root, { host: "generic-mcp", dryRun: false, yes: true });
     const afterAttach = await explainAdaptiveStatus(root);
     expect(afterAttach.nextActions.some((action) => action.includes("agent attach-plugin"))).toBe(false);
+    expect(afterAttach.status.compiled.pluginAttachment.attached).toBe(true);
   });
 });
 

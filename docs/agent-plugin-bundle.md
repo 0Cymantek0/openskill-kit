@@ -70,6 +70,9 @@ For harness compatibility, generated plugins also include:
   Applied config also sets `OPENSKILLKIT_PROJECT_ROOT` so MCP tools still bind
   to the project when a host launches the stdio server from another working
   directory.
+  `openskill-kit status --json` and `osk_bootstrap_session` report
+  `compiled.pluginAttachment` so hosts can show whether the plugin is attached,
+  root-bound, missing, invalid JSON, or pointed at the wrong command.
 
 Harness behavior should stay conservative:
 
