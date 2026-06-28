@@ -324,10 +324,10 @@ autonomous docs/repo discovery derives deterministic public URL candidates from
 package metadata and language hints. All web adapters require allow-web,
 timeout, byte-limit, content-type, leakage-audit, and trust-cache guards.
 `openworld source-plan` embeds this contract in plan artifacts, and
-`openworld execute-source-plan --include-autonomous-web` records per-adapter
-results while ingesting recommended local candidates up to a caller-set cap,
-explicit vetted URL sources with cached text or guarded fetches, and opt-in
-autonomous docs/repo candidates. Each run writes
+`openworld execute-source-plan --include-autonomous-web` defaults to a dry-run
+preview. Adding `--yes` records per-adapter results while ingesting recommended
+local candidates up to a caller-set cap, explicit vetted URL sources with cached
+text or guarded fetches, and opt-in autonomous docs/repo candidates. Approved runs write
 `research/executions/<id>.json` and Markdown so operators can see which sources
 were ingested, skipped, or blocked. It is not broad search-engine crawling.
 

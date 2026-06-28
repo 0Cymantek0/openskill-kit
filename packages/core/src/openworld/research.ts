@@ -289,7 +289,10 @@ export async function planOpenWorldResearch(projectRoot: string, taskId: string,
       ? [`openskill-kit openworld fetch-source --task-id ${taskId} --url <trusted-doc-url> --content-file <cached-text-file>`]
       : []),
     ...(task.allowWeb && topCandidates.some((candidate) => candidate.adapterId === "autonomous-docs-repo-discovery" && candidate.status !== "blocked")
-      ? [`openskill-kit openworld execute-source-plan --task-id ${taskId} --plan-id ${planId} --include-autonomous-web`]
+      ? [
+          `openskill-kit openworld execute-source-plan --task-id ${taskId} --plan-id ${planId} --include-autonomous-web`,
+          `openskill-kit openworld execute-source-plan --task-id ${taskId} --plan-id ${planId} --include-autonomous-web --yes`
+        ]
       : []),
     ...(!task.allowWeb ? ["Re-run init-task with --allow-web only if external public sources are explicitly acceptable."] : [])
   ];
@@ -969,7 +972,7 @@ async function discoverAutonomousWebCandidates(root: string, task: OpenWorldTask
       usableFor: ["skill", "virtual-test", "report"],
       reasons: [
         ...item.reasons,
-        "Discovered deterministically from local task/package metadata; execution still requires --include-autonomous-web."
+        "Discovered deterministically from local task/package metadata; writes still require --include-autonomous-web and --yes."
       ],
       leakageFindingIds: audit.findings.map((finding) => finding.id),
       ingestCommand: blocked ? undefined : `openskill-kit openworld execute-source-plan --task-id ${task.id} --include-autonomous-web`

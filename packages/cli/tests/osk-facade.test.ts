@@ -172,6 +172,79 @@ describe("osk CLI facade", () => {
     const applied = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "apply", packPath, "--yes", "--json"], { cwd: target, windowsHide: true });
     expect(JSON.parse(applied.stdout).status).toBe("imported");
   });
+
+  it("previews OpenWorld source-plan execution unless --yes approves ingestion", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-openworld-execute-"));
+    await mkdir(path.join(root, "docs"), { recursive: true });
+    await writeFile(path.join(root, "docs", "adapter-guide.md"), "OpenWorld adapter guide covers local source planning and verifier evidence.\n", "utf8");
+
+    const taskResult = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "openworld",
+      "init-task",
+      "--title",
+      "Adapter guide",
+      "--prompt",
+      "Use local source planning for adapter guide evidence",
+      "--path",
+      "docs",
+      "--json"
+    ], { cwd: root, windowsHide: true });
+    const task = JSON.parse(taskResult.stdout);
+
+    const planResult = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "openworld",
+      "source-plan",
+      "--task-id",
+      task.task.id,
+      "--path",
+      "docs",
+      "--no-autonomous-web-candidates",
+      "--json"
+    ], { cwd: root, windowsHide: true });
+    const plan = JSON.parse(planResult.stdout);
+    expect(plan.summary.recommendedCount).toBeGreaterThan(0);
+
+    const previewResult = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "openworld",
+      "execute-source-plan",
+      "--task-id",
+      task.task.id,
+      "--plan-id",
+      plan.id,
+      "--json"
+    ], { cwd: root, windowsHide: true });
+    const preview = JSON.parse(previewResult.stdout);
+    expect(preview.execution.status).toBe("planned");
+    expect(preview.execution.dryRun).toBe(true);
+    expect(preview.execution.summary.ingestedCount).toBe(0);
+    expect(preview.execution.executionPath).toBeUndefined();
+    await expect(stat(path.join(root, ".openskill-kit", "openworld", "tasks", task.task.id, "sources"))).rejects.toThrow();
+
+    const appliedResult = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "openworld",
+      "execute-source-plan",
+      "--task-id",
+      task.task.id,
+      "--plan-id",
+      plan.id,
+      "--yes",
+      "--json"
+    ], { cwd: root, windowsHide: true });
+    const applied = JSON.parse(appliedResult.stdout);
+    expect(applied.execution.status).toBe("completed");
+    expect(applied.execution.dryRun).toBe(false);
+    expect(applied.execution.summary.ingestedCount).toBe(1);
+    expect(applied.execution.sourceIds).toHaveLength(1);
+    await expect(stat(path.join(root, ".openskill-kit", "openworld", "tasks", task.task.id, "sources", `${applied.execution.sourceIds[0]}.json`))).resolves.toBeTruthy();
+  });
 });
 
 async function runCliWithInput(args: string[], input: string, cwd: string, env: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {

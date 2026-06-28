@@ -1511,7 +1511,7 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_openworld_execute_source_plan",
     {
       title: "OpenSkillKit OpenWorld Execute Source Plan",
-      description: "Execute a leakage-audited OpenWorld source plan by ingesting recommended local sources and explicit vetted URLs.",
+      description: "Preview or execute a leakage-audited OpenWorld source plan. Writes require yes=true when dryRun=false.",
       inputSchema: z.object({
         projectRoot: projectRootSchema,
         taskId: z.string().min(1),
@@ -1527,13 +1527,15 @@ export function createOpenSkillMcpServer(): McpServer {
           timeoutMs: z.number().int().min(1000).max(120000).optional(),
           maxBytes: z.number().int().min(1000).max(2000000).optional()
         })).default([]),
-        dryRun: z.boolean().default(false),
+        dryRun: z.boolean().default(true),
+        yes: z.boolean().default(false),
         write: z.boolean().default(true)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, taskId, planId, includeAvailable, maxLocalSources, includeAutonomousWeb, maxAutonomousWebSources, explicitWebSources, dryRun, write }) => {
+    async ({ projectRoot, taskId, planId, includeAvailable, maxLocalSources, includeAutonomousWeb, maxAutonomousWebSources, explicitWebSources, dryRun, yes, write }) => {
       const root = resolveProjectRoot(projectRoot);
+      if (dryRun === false && yes !== true) throw new Error("osk_openworld_execute_source_plan requires yes=true when dryRun=false.");
       return toolResult(await executeOpenWorldResearchPlan(root, taskId, {
         planId,
         includeAvailable,
@@ -1541,7 +1543,7 @@ export function createOpenSkillMcpServer(): McpServer {
         includeAutonomousWeb,
         maxAutonomousWebSources,
         explicitWebSources,
-        dryRun,
+        dryRun: dryRun !== false,
         write
       }), root);
     }

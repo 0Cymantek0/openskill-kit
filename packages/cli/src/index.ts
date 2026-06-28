@@ -598,6 +598,7 @@ openworld.command("execute-source-plan")
   .option("--timeout-ms <number>", "Fetch timeout for explicit URLs without content files", parseIntegerOption, 12000)
   .option("--max-bytes <number>", "Maximum fetched text size", parseIntegerOption, 1000000)
   .option("--dry-run", "Show planned ingestion without writing source artifacts")
+  .option("--yes", "Apply source ingestion after reviewing the dry-run plan")
   .option("--no-write", "Do not write execution artifact")
   .option("--json", "Print JSON")
   .action(async (options) => {
@@ -615,7 +616,7 @@ openworld.command("execute-source-plan")
       includeAutonomousWeb: options.includeAutonomousWeb === true,
       maxAutonomousWebSources: options.maxAutonomousWeb,
       explicitWebSources,
-      dryRun: options.dryRun === true,
+      dryRun: options.dryRun === true || options.yes !== true,
       write: options.write !== false
     });
     output(options.json, result, [

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { initOpenWorldTask } from "@openskill-kit/core";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
@@ -276,6 +277,41 @@ describe("openskill-kit MCP server", () => {
       });
       const packPreviewParsed = JSON.parse(packPreview.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(packPreviewParsed.status).toBe("planned");
+
+      await writeFile(path.join(root, "openworld-source.md"), "MCP OpenWorld source-plan execution needs explicit approval before ingestion writes.\n", "utf8");
+      const task = await initOpenWorldTask(root, {
+        title: "MCP source gate",
+        prompt: "Use OpenWorld source-plan execution approval for MCP ingestion",
+        paths: ["openworld-source.md"]
+      });
+      const planResult = await client.callTool({
+        name: "osk_openworld_source_plan",
+        arguments: { projectRoot: root, taskId: task.task.id, paths: ["openworld-source.md"], includeAutonomousWebCandidates: false }
+      });
+      const planParsed = JSON.parse(planResult.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(planParsed.summary.recommendedCount).toBeGreaterThan(0);
+      const mcpWriteBlocked = await client.callTool({
+        name: "osk_openworld_execute_source_plan",
+        arguments: { projectRoot: root, taskId: task.task.id, planId: planParsed.id, dryRun: false }
+      });
+      expect(mcpWriteBlocked.isError).toBe(true);
+      expect(mcpWriteBlocked.content.find((item) => item.type === "text")?.text).toContain("requires yes=true");
+      const mcpPreview = await client.callTool({
+        name: "osk_openworld_execute_source_plan",
+        arguments: { projectRoot: root, taskId: task.task.id, planId: planParsed.id }
+      });
+      const mcpPreviewParsed = JSON.parse(mcpPreview.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(mcpPreviewParsed.execution.status).toBe("planned");
+      expect(mcpPreviewParsed.execution.dryRun).toBe(true);
+      expect(mcpPreviewParsed.execution.summary.ingestedCount).toBe(0);
+      const mcpApplied = await client.callTool({
+        name: "osk_openworld_execute_source_plan",
+        arguments: { projectRoot: root, taskId: task.task.id, planId: planParsed.id, dryRun: false, yes: true }
+      });
+      const mcpAppliedParsed = JSON.parse(mcpApplied.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(mcpAppliedParsed.execution.status).toBe("completed");
+      expect(mcpAppliedParsed.execution.dryRun).toBe(false);
+      expect(mcpAppliedParsed.execution.summary.ingestedCount).toBe(1);
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",
