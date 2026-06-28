@@ -23,6 +23,7 @@ export interface HarnessReadinessVerification {
     publicMcpToolCount?: number;
     opencodeCommandCount?: number;
     opencodeAgentCount?: number;
+    opencodePluginReady?: boolean;
   };
   limits: {
     publicCommandCount: number;
@@ -30,6 +31,7 @@ export interface HarnessReadinessVerification {
     opencodeAgentCount: number;
     maxOpenCodeCommandBytes: number;
     maxOpenCodeAgentBytes: number;
+    maxOpenCodePluginBytes: number;
     maxOpenCodeSkillBytes: number;
   };
   findings: HarnessVerificationFinding[];
@@ -38,10 +40,13 @@ export interface HarnessReadinessVerification {
 const COMMON_OPENCODE_BUILT_INS = new Set(["help.md", "init.md", "login.md", "logout.md", "models.md", "theme.md", "config.md", "exit.md", "quit.md"]);
 const REQUIRED_COMMAND_TEXT = ["Never read raw prompts", "Never read raw diffs", "Never read hidden benchmark answers"];
 const REQUIRED_AGENT_TEXT = ["mode: subagent", "Use OSK MCP facade tools first", "Never store raw prompts"];
+const REQUIRED_PLUGIN_TEXT = ["Metadata-only by default", "opencode-events.jsonl", "session.created", "tool.execute.before", "tool.execute.after", "file.edited", "permission.asked", "permission.replied", "session.diff", "session.idle", "tui.command.execute"];
 const EXPECTED_OPENCODE_AGENTS = ["osk-router.md", "osk-learner.md", "osk-reviewer.md", "osk-researcher.md", "osk-evolver.md", "osk-verifier.md", "osk-evaluator.md", "osk-docs.md"];
+const FORBIDDEN_PLUGIN_SAFE_KEYS = ["prompt", "diff", "content", "message", "text", "output"];
 const BROAD_SKILL_DESCRIPTION = /\b(use for all coding|all coding tasks|always use|preferred over all other skills)\b/i;
 const MAX_OPENCODE_COMMAND_BYTES = 6_000;
 const MAX_OPENCODE_AGENT_BYTES = 6_000;
+const MAX_OPENCODE_PLUGIN_BYTES = 8_000;
 const MAX_OPENCODE_SKILL_BYTES = 8_000;
 
 export async function verifyHarnessReadiness(projectRoot: string, now: Date = new Date()): Promise<HarnessReadinessVerification> {
@@ -53,6 +58,7 @@ export async function verifyHarnessReadiness(projectRoot: string, now: Date = ne
   const publicDescriptors = await readJson<any>(path.join(pluginRoot, "mcp", "descriptors.public.json"));
   const opencodeCommandFiles = await listFiles(path.join(pluginRoot, "opencode", "commands"));
   const opencodeAgentFiles = await listFiles(path.join(pluginRoot, "opencode", "agents"));
+  const opencodePluginPath = path.join(pluginRoot, "opencode", "plugins", "openskillkit.ts");
   const opencodeSkillFiles = (await listFiles(path.join(pluginRoot, "opencode", "skills"))).filter((file) => file.endsWith("SKILL.md"));
 
   if (!commandMap) {
@@ -169,6 +175,42 @@ export async function verifyHarnessReadiness(projectRoot: string, now: Date = ne
     }
   }
 
+  const opencodePluginText = await fs.readFile(opencodePluginPath, "utf8").catch(() => "");
+  findings.push(finding(
+    "opencode-plugin-present",
+    opencodePluginText ? "pass" : "fail",
+    `OpenCode plugin file ${opencodePluginText ? "is present" : "is missing"}.`,
+    "Regenerate plugin artifacts for OpenCode.",
+    opencodePluginPath
+  ));
+  if (opencodePluginText) {
+    const bytes = await fileBytes(opencodePluginPath);
+    findings.push(finding(
+      "opencode-plugin-size",
+      bytes <= MAX_OPENCODE_PLUGIN_BYTES ? "pass" : "warn",
+      `OpenCode plugin is ${bytes} byte(s); budget is ${MAX_OPENCODE_PLUGIN_BYTES}.`,
+      "Keep generated plugin small and move explanation into docs.",
+      opencodePluginPath
+    ));
+    for (const required of REQUIRED_PLUGIN_TEXT) {
+      findings.push(finding(
+        `opencode-plugin-hook:${slug(required)}`,
+        opencodePluginText.includes(required) ? "pass" : "fail",
+        `OpenCode plugin ${opencodePluginText.includes(required) ? "includes" : "is missing"} required hook/privacy text: ${required}.`,
+        "Regenerate OpenCode plugin hooks from the compiler.",
+        opencodePluginPath
+      ));
+    }
+    const forbiddenKeys = forbiddenPluginSafeKeys(opencodePluginText);
+    findings.push(finding(
+      "opencode-plugin-safe-key-whitelist",
+      forbiddenKeys.length ? "fail" : "pass",
+      forbiddenKeys.length ? `OpenCode plugin safe whitelist includes raw-prone key(s): ${forbiddenKeys.join(", ")}.` : "OpenCode plugin safe whitelist excludes raw-prone prompt/diff/content keys.",
+      "Keep ambient capture metadata-only; do not whitelist raw prompt, diff, content, message, text, or output fields.",
+      opencodePluginPath
+    ));
+  }
+
   for (const relative of opencodeSkillFiles) {
     const file = path.join(pluginRoot, "opencode", "skills", relative);
     const text = await fs.readFile(file, "utf8");
@@ -205,7 +247,8 @@ export async function verifyHarnessReadiness(projectRoot: string, now: Date = ne
       publicCommandCount: Number(commandMap?.publicFamilyCount ?? commandMap?.commands?.length ?? undefined),
       publicMcpToolCount: Array.isArray(publicDescriptors?.tools) ? publicDescriptors.tools.length : undefined,
       opencodeCommandCount: opencodeCommandFiles.length,
-      opencodeAgentCount: opencodeAgentFiles.length
+      opencodeAgentCount: opencodeAgentFiles.length,
+      opencodePluginReady: opencodePluginText ? !findings.some((item) => item.id.startsWith("opencode-plugin-") && item.severity === "fail") : false
     },
     limits: {
       publicCommandCount: OSK_PUBLIC_COMMAND_COUNT,
@@ -213,6 +256,7 @@ export async function verifyHarnessReadiness(projectRoot: string, now: Date = ne
       opencodeAgentCount: EXPECTED_OPENCODE_AGENTS.length,
       maxOpenCodeCommandBytes: MAX_OPENCODE_COMMAND_BYTES,
       maxOpenCodeAgentBytes: MAX_OPENCODE_AGENT_BYTES,
+      maxOpenCodePluginBytes: MAX_OPENCODE_PLUGIN_BYTES,
       maxOpenCodeSkillBytes: MAX_OPENCODE_SKILL_BYTES
     },
     findings
@@ -255,4 +299,10 @@ function slug(value: string): string {
 
 function commandFromFilename(relative: string): string {
   return `/${path.basename(relative, ".md").replace(/-/g, " ")}`;
+}
+
+function forbiddenPluginSafeKeys(text: string): string[] {
+  const whitelist = text.match(/for \(const key of \[([^\]]+)\]/);
+  const haystack = whitelist?.[1] ?? text;
+  return FORBIDDEN_PLUGIN_SAFE_KEYS.filter((key) => new RegExp(`["']?${key}["']?\\s*[:,]`).test(haystack));
 }

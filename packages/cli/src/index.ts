@@ -358,7 +358,8 @@ osk.command("verify")
         `Findings: ${result.summary.findings}; failures: ${result.summary.failures}; warnings: ${result.summary.warnings}`,
         `Public MCP tools: ${result.summary.publicMcpToolCount ?? "missing"}/${result.limits.publicMcpToolCount}`,
         `OpenCode commands: ${result.summary.opencodeCommandCount ?? "missing"}/${result.limits.publicCommandCount}`,
-        `OpenCode agents: ${result.summary.opencodeAgentCount ?? "missing"}/${result.limits.opencodeAgentCount}`
+        `OpenCode agents: ${result.summary.opencodeAgentCount ?? "missing"}/${result.limits.opencodeAgentCount}`,
+        `OpenCode plugin: ${result.summary.opencodePluginReady ? "ready" : "missing-or-failing"}`
       ].join("\n"));
       process.exitCode = result.status === "fail" ? 1 : 0;
       return;
