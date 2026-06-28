@@ -391,11 +391,30 @@ osk.command("eval")
   });
 
 osk.command("pack")
-  .description("Export active behavior pack")
+  .description("Export, verify, sign, diff, or import behavior packs through trust gates")
+  .argument("[action]", "export|verify|inspect|sign|diff|import|apply", "export")
+  .argument("[pack-path]", "Pack path for verify, inspect, sign, import, or apply")
+  .argument("[other-pack-path]", "Other pack path for diff")
+  .option("--pack <path>", "Pack path")
+  .option("--other <path>", "Other pack path for diff")
+  .option("--yes", "Apply imports; required for apply")
+  .option("--review", "Write import review artifact")
+  .option("--trust-hooks", "Import hook files too")
+  .option("--max-changed-files <number>", "Block import if changed file count exceeds this number", parseIntegerOption)
+  .option("--key-dir <path>", "Signing key directory")
   .option("--json", "Print JSON")
-  .action(async (options) => {
-    const result = await exportProjectBehaviorPack(process.cwd());
-    output(options.json, result, result.packPath);
+  .action(async (action, packPathArg, otherPackPathArg, options) => {
+    const result = await runOskPackAction(action, {
+      packPath: options.pack ?? packPathArg,
+      otherPackPath: options.other ?? otherPackPathArg,
+      yes: options.yes === true,
+      review: options.review === true,
+      trustHooks: options.trustHooks === true,
+      maxChangedFiles: options.maxChangedFiles,
+      keyDir: options.keyDir
+    });
+    output(options.json, result.data, result.text);
+    process.exitCode = result.exitCode ?? 0;
   });
 
 osk.command("setup")
@@ -1797,6 +1816,60 @@ function renderDoctorReport(report: { status: "pass" | "warn" | "fail"; checks: 
   const lines = [`Doctor ${report.status}: ${report.checks.length} checks`];
   lines.push(...notable.map((check) => `${check.status.toUpperCase()} ${check.name}: ${check.message}`));
   return lines.join("\n");
+}
+
+async function runOskPackAction(
+  actionInput: string,
+  options: {
+    packPath?: string;
+    otherPackPath?: string;
+    yes: boolean;
+    review: boolean;
+    trustHooks: boolean;
+    maxChangedFiles?: number;
+    keyDir?: string;
+  }
+): Promise<{ data: unknown; text: string; exitCode?: number }> {
+  const action = actionInput.toLowerCase();
+  if (action === "export") {
+    const result = await exportProjectBehaviorPack(process.cwd());
+    return { data: result, text: `Exported pack ${result.packPath}` };
+  }
+  const packPath = options.packPath;
+  if (!packPath) throw new Error(`Pack path required for /osk pack ${action}.`);
+  if (action === "verify") {
+    const result = await verifyProjectBehaviorPack(packPath);
+    return { data: result, text: `${result.status}: ${result.issues.join("; ") || "pack verified"}`, exitCode: result.status === "fail" ? 1 : 0 };
+  }
+  if (action === "inspect") {
+    const result = await inspectProjectBehaviorPack(packPath);
+    return { data: result, text: `${result.status}: ${result.fileCount} file(s), signature ${result.signature.status}`, exitCode: result.status === "fail" ? 1 : 0 };
+  }
+  if (action === "sign") {
+    const result = await signProjectBehaviorPack(packPath, options.keyDir);
+    return { data: result, text: `Signed pack ${result.packPath}\nPublic key: ${result.publicKeyPath}` };
+  }
+  if (action === "diff") {
+    if (!options.otherPackPath) throw new Error("Other pack path required for /osk pack diff.");
+    const result = await diffProjectBehaviorPacks(packPath, options.otherPackPath);
+    return { data: result, text: `Added: ${result.added.length}\nRemoved: ${result.removed.length}\nChanged: ${result.changed.length}` };
+  }
+  if (action === "import" || action === "apply") {
+    const apply = action === "apply" || options.yes;
+    if (action === "apply" && !options.yes) throw new Error("/osk pack apply requires --yes.");
+    const result = await importProjectBehaviorPack(process.cwd(), packPath, {
+      dryRun: !apply,
+      trustHooks: options.trustHooks,
+      review: options.review || !apply,
+      maxChangedFiles: options.maxChangedFiles
+    });
+    return {
+      data: result,
+      text: `${result.status}: ${result.files.length} file(s)${result.reviewPath ? `\nReview: ${result.reviewPath}` : ""}${result.issues.length ? `\nIssues: ${result.issues.join("; ")}` : ""}`,
+      exitCode: result.status === "blocked" ? 1 : 0
+    };
+  }
+  throw new Error(`Unknown /osk pack action: ${actionInput}. Expected export, verify, inspect, sign, diff, import, or apply.`);
 }
 
 async function runInteractiveLearnPicker(projectRoot: string, maxEvents: number): Promise<LearnSourcePlan | LearnRun> {

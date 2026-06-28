@@ -71,6 +71,7 @@ describe("agent plugin manifest", () => {
     expect(commandMap.commands).toHaveLength(12);
     expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk task" && item.cli.includes("openskill-kit context"))).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources")).toBe(true);
+    expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk pack" && item.cli === "openskill-kit osk pack export")).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk eval" && item.mcpTool === "osk_run_eval")).toBe(true);
     expect(manifest.commands.items.map((item: { command: string; mcpTool?: string }) => ({ command: item.command, mcpTool: item.mcpTool }))).toEqual(commandMap.commands.map((item: { command: string; mcpTool?: string }) => ({ command: item.command, mcpTool: item.mcpTool })));
     const commandGuide = readFileSync(path.join(root, "commands", "osk.md"), "utf8");

@@ -10,7 +10,7 @@ Share or import reviewed behavior without private evidence leakage.
 
 ## First Call
 
-Call MCP tool `osk_pack_behavior` first. If MCP unavailable, run `openskill-kit pack export` from project root.
+Call MCP tool `osk_pack_behavior` first. If MCP unavailable, run `openskill-kit osk pack export` from project root.
 Use action `export` unless the user asks to verify, inspect, diff, or import a pack.
 
 ## Workflow

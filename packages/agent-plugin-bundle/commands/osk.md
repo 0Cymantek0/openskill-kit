@@ -113,7 +113,7 @@ Measure OSK behavior through replay or external-agent evals.
 Export, verify, diff, sign, or import behavior packs through trust gates.
 
 - MCP tool: `osk_pack_behavior`
-- CLI fallback: `openskill-kit pack export`
+- CLI fallback: `openskill-kit osk pack export`
 - Read-only: `no`
 - Explicit approval required: `yes`
 

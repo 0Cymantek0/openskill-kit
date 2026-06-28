@@ -110,6 +110,34 @@ describe("osk CLI facade", () => {
     expect(config.plugin).toEqual(["./custom.ts"]);
     expect(config.mcp).toBeUndefined();
   });
+
+  it("runs /osk pack export, verify, import preview, and gated apply", async () => {
+    const source = await mkdtemp(path.join(os.tmpdir(), "osk-cli-pack-source-"));
+    const target = await mkdtemp(path.join(os.tmpdir(), "osk-cli-pack-target-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: source, windowsHide: true });
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: target, windowsHide: true });
+
+    const exported = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "export", "--json"], { cwd: source, windowsHide: true });
+    const pack = JSON.parse(exported.stdout);
+    expect(pack.schemaVersion).toBe("openskill-kit.project-pack.v1");
+    expect(pack.packPath).toContain("project-behavior-pack");
+    const packPath = path.resolve(source, pack.packPath);
+
+    const verified = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "verify", packPath, "--json"], { cwd: target, windowsHide: true });
+    expect(JSON.parse(verified.stdout).status).toBe("pass");
+
+    const planned = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "import", packPath, "--json"], { cwd: target, windowsHide: true });
+    const plannedParsed = JSON.parse(planned.stdout);
+    expect(plannedParsed.status).toBe("planned");
+    expect(plannedParsed.issues).toContain("Hooks excluded until trustHooks is true");
+
+    const blockedApply = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "apply", packPath, "--json"], { cwd: target, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(blockedApply.code).toBe(1);
+    expect(blockedApply.stderr).toContain("requires --yes");
+
+    const applied = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "apply", packPath, "--yes", "--json"], { cwd: target, windowsHide: true });
+    expect(JSON.parse(applied.stdout).status).toBe("imported");
+  });
 });
 
 async function runCliWithInput(args: string[], input: string, cwd: string, env: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {

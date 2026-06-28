@@ -318,7 +318,7 @@ export const OSK_PUBLIC_COMMAND_FAMILIES: OskCommandFamily[] = [
     userIntent: "Share or import reviewed behavior without private evidence leakage.",
     whyPublic: "Pack operations cross project boundaries and need explicit provenance.",
     mcpTool: "osk_pack_behavior",
-    cli: "openskill-kit pack export",
+    cli: "openskill-kit osk pack export",
     readOnly: false,
     approvalRequired: true,
     approvalClasses: ["shares-or-imports-pack"],

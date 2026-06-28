@@ -224,7 +224,7 @@ Workflow:
 Export, verify, diff, sign, or import behavior packs through trust gates.
 
 - Why public: Pack operations cross project boundaries and need explicit provenance.
-- CLI fallback: `openskill-kit pack export`
+- CLI fallback: `openskill-kit osk pack export`
 - MCP first call: `osk_pack_behavior`
 - Skills: `osk-review-gate`
 - Subagents: `osk-reviewer`
@@ -235,4 +235,16 @@ Workflow:
 1. Export only share-safe behavior.
 2. Verify signatures and privacy.
 3. Import as staged review items only.
+
+CLI actions:
+
+```bash
+openskill-kit osk pack export
+openskill-kit osk pack verify <pack-path>
+openskill-kit osk pack inspect <pack-path>
+openskill-kit osk pack sign <pack-path>
+openskill-kit osk pack diff <left-pack> <right-pack>
+openskill-kit osk pack import <pack-path> --review
+openskill-kit osk pack apply <pack-path> --yes
+```
 

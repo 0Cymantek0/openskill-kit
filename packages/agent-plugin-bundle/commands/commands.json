@@ -181,7 +181,7 @@
       ],
       "description": "Export, verify, diff, sign, or import behavior packs through trust gates.",
       "mcpTool": "osk_pack_behavior",
-      "cli": "openskill-kit pack export",
+      "cli": "openskill-kit osk pack export",
       "readOnly": false,
       "approvalRequired": true,
       "fallback": "cli",
