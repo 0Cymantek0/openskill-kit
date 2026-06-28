@@ -30,6 +30,8 @@ Dry-run first is required for normal workflow. Apply only after reviewing planne
 - `.opencode/skills/osk-*/SKILL.md`: narrow OSK operating skills.
 - `.opencode/plugins/openskillkit.ts`: metadata-only hook plugin.
 - `.opencode/model-routing.json`: OpenCode projection of project model routing.
+- `.agents/hooks/openskill-kit.json`: project-local lifecycle hook config.
+- `AGENTS.md`, `CLAUDE.md`, and `.claude/rules/*`: managed instruction manifests, preserving content outside the OpenSkillKit block.
 - `.openskill-kit/installs/plugin-attach-opencode-*.json`: attach receipt.
 
 OpenSkillKit preserves existing `plugin` entries in `opencode.json` and appends `.opencode/plugins/openskillkit.ts` so OpenCode loads metadata-only hooks after restart.

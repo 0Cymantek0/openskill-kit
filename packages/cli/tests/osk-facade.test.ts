@@ -85,10 +85,39 @@ describe("osk CLI facade", () => {
     expect(parsed.status).toBe("planned");
     expect(parsed.applied).toBe(false);
     expect(parsed.plannedFiles).toBeGreaterThan(0);
+    expect(parsed.plannedHookFiles).toBe(1);
+    expect(parsed.plannedManifestFiles).toBeGreaterThan(0);
+    expect(parsed.messages.join("\n")).toContain("Hooks preview:");
+    expect(parsed.messages.join("\n")).toContain("Instruction manifests preview:");
     await expect(stat(path.join(root, ".openskill-kit", "compiled", "plugin", "plugin.json"))).resolves.toBeTruthy();
     await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
+    await expect(stat(path.join(root, ".agents", "hooks", "openskill-kit.json"))).rejects.toThrow();
+    await expect(stat(path.join(root, "AGENTS.md"))).rejects.toThrow();
     const config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
     expect(config.plugin).toEqual(["./custom.ts"]);
+  });
+
+  it("applies default setup surfaces and uninstall removes generated hooks/manifests", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-default-"));
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2), "utf8");
+
+    const setup = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "setup", "--non-interactive", "--yes", "--json"], { cwd: root, windowsHide: true });
+    const setupParsed = JSON.parse(setup.stdout);
+    expect(setupParsed.status).toBe("installed");
+    expect(setupParsed.hooksStatus).toBe("installed");
+    expect(setupParsed.manifestsStatus).toBe("installed");
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".agents", "hooks", "openskill-kit.json"))).resolves.toBeTruthy();
+    expect(await readFile(path.join(root, "AGENTS.md"), "utf8")).toContain("BEGIN MANAGED BY OPENSKILL-KIT");
+    expect(await readFile(path.join(root, "CLAUDE.md"), "utf8")).toContain("BEGIN MANAGED BY OPENSKILL-KIT");
+
+    const uninstalled = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "uninstall", "--non-interactive", "--yes", "--json"], { cwd: root, windowsHide: true });
+    const uninstallParsed = JSON.parse(uninstalled.stdout);
+    expect(uninstallParsed.status).toBe("uninstalled");
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
+    await expect(stat(path.join(root, ".agents", "hooks", "openskill-kit.json"))).rejects.toThrow();
+    await expect(stat(path.join(root, "AGENTS.md"))).rejects.toThrow();
+    await expect(stat(path.join(root, "CLAUDE.md"))).rejects.toThrow();
   });
 
   it("applies setup and safely previews/applies uninstall", async () => {

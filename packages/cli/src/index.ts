@@ -2256,6 +2256,8 @@ interface SetupWizardResult {
   applied: boolean;
   compiledPlugin?: string;
   plannedFiles: number;
+  plannedHookFiles?: number;
+  plannedManifestFiles?: number;
   hooksStatus?: string;
   manifestsStatus?: string;
   messages: string[];
@@ -2296,16 +2298,74 @@ async function runSetupWizard(projectRoot: string, hostInput: string, options: S
       return { schemaVersion: "openskill-kit.setup-wizard.v1", status: "blocked", host, applied: false, compiledPlugin: compileRes.pluginManifestPath, plannedFiles: previewRes.files.length, messages };
     }
 
-    const shouldApply = options.yes || (rl ? await askYes(rl, "Apply previewed host config and generated .opencode files?") : false);
+    const hooksPreview = options.skipHooks ? undefined : await installAgentHooks({ projectRoot, target: "project", dryRun: true });
+    if (hooksPreview) {
+      messages.push(...hooksPreview.messages.map((message) => `Hooks preview: ${message}`));
+      if (hooksPreview.status === "blocked") {
+        return {
+          schemaVersion: "openskill-kit.setup-wizard.v1",
+          status: "blocked",
+          host,
+          applied: false,
+          compiledPlugin: compileRes.pluginManifestPath,
+          plannedFiles: previewRes.files.length + 1,
+          plannedHookFiles: 1,
+          messages
+        };
+      }
+    } else {
+      messages.push("Hooks skipped.");
+    }
+
+    const manifestsPreview = options.skipManifests ? undefined : await installInstructionManifests(projectRoot, { target: "project", dryRun: true });
+    if (manifestsPreview) {
+      messages.push(...manifestsPreview.messages.map((message) => `Instruction manifests preview: ${message}`));
+      if (manifestsPreview.status === "blocked") {
+        return {
+          schemaVersion: "openskill-kit.setup-wizard.v1",
+          status: "blocked",
+          host,
+          applied: false,
+          compiledPlugin: compileRes.pluginManifestPath,
+          plannedFiles: previewRes.files.length + (hooksPreview ? 1 : 0) + manifestsPreview.files.length,
+          plannedHookFiles: hooksPreview ? 1 : 0,
+          plannedManifestFiles: manifestsPreview.files.length,
+          messages
+        };
+      }
+    } else {
+      messages.push("Instruction manifests skipped.");
+    }
+
+    const plannedHookFiles = hooksPreview ? 1 : 0;
+    const plannedManifestFiles = manifestsPreview?.files.length ?? 0;
+    const plannedFiles = previewRes.files.length + plannedHookFiles + plannedManifestFiles;
+    const applySurfaces = [
+      "host config",
+      "generated OpenCode files",
+      ...(options.skipHooks ? [] : ["hooks"]),
+      ...(options.skipManifests ? [] : ["instruction manifests"])
+    ];
+    const shouldApply = options.yes || (rl ? await askYes(rl, `Apply previewed ${formatList(applySurfaces)}?`) : false);
     if (!shouldApply) {
-      messages.push("Preview only. Re-run with `--yes` to apply host config and generated OpenCode files.");
-      return { schemaVersion: "openskill-kit.setup-wizard.v1", status: "planned", host, applied: false, compiledPlugin: compileRes.pluginManifestPath, plannedFiles: previewRes.files.length, messages };
+      messages.push(`Preview only. Re-run with \`--yes\` to apply ${formatList(applySurfaces)}.`);
+      return {
+        schemaVersion: "openskill-kit.setup-wizard.v1",
+        status: "planned",
+        host,
+        applied: false,
+        compiledPlugin: compileRes.pluginManifestPath,
+        plannedFiles,
+        plannedHookFiles,
+        plannedManifestFiles,
+        messages
+      };
     }
 
     const deployRes = await attachAgentPlugin(projectRoot, { host, dryRun: false, yes: true });
     messages.push(...deployRes.messages.map((message) => `Apply: ${message}`));
     if (deployRes.status === "blocked") {
-      return { schemaVersion: "openskill-kit.setup-wizard.v1", status: "blocked", host, applied: false, compiledPlugin: compileRes.pluginManifestPath, plannedFiles: previewRes.files.length, messages };
+      return { schemaVersion: "openskill-kit.setup-wizard.v1", status: "blocked", host, applied: false, compiledPlugin: compileRes.pluginManifestPath, plannedFiles, plannedHookFiles, plannedManifestFiles, messages };
     }
 
     let hooksStatus: string | undefined;
@@ -2313,6 +2373,9 @@ async function runSetupWizard(projectRoot: string, hostInput: string, options: S
       const hooksRes = await installAgentHooks({ projectRoot, target: "project", yes: true });
       hooksStatus = hooksRes.status;
       messages.push(`Hooks: ${hooksRes.status}`);
+      if (hooksRes.status === "blocked") {
+        return { schemaVersion: "openskill-kit.setup-wizard.v1", status: "blocked", host, applied: false, compiledPlugin: compileRes.pluginManifestPath, plannedFiles, plannedHookFiles, plannedManifestFiles, hooksStatus, messages };
+      }
     } else {
       messages.push("Hooks skipped.");
     }
@@ -2322,6 +2385,9 @@ async function runSetupWizard(projectRoot: string, hostInput: string, options: S
       const manifestsRes = await installInstructionManifests(projectRoot, { target: "project", dryRun: false, yes: true });
       manifestsStatus = manifestsRes.status;
       messages.push(`Instruction manifests: ${manifestsRes.status}`);
+      if (manifestsRes.status === "blocked") {
+        return { schemaVersion: "openskill-kit.setup-wizard.v1", status: "blocked", host, applied: false, compiledPlugin: compileRes.pluginManifestPath, plannedFiles, plannedHookFiles, plannedManifestFiles, hooksStatus, manifestsStatus, messages };
+      }
     } else {
       messages.push("Instruction manifests skipped.");
     }
@@ -2329,7 +2395,7 @@ async function runSetupWizard(projectRoot: string, hostInput: string, options: S
     const explained = await explainAdaptiveStatus(projectRoot);
     messages.push(`Ready. Active preferences: ${explained.status.activePreferenceCount}`);
     messages.push("Restart OpenCode, then run `/osk status`.");
-    return { schemaVersion: "openskill-kit.setup-wizard.v1", status: "installed", host, applied: true, compiledPlugin: compileRes.pluginManifestPath, plannedFiles: previewRes.files.length, hooksStatus, manifestsStatus, messages };
+    return { schemaVersion: "openskill-kit.setup-wizard.v1", status: "installed", host, applied: true, compiledPlugin: compileRes.pluginManifestPath, plannedFiles, plannedHookFiles, plannedManifestFiles, hooksStatus, manifestsStatus, messages };
   } finally {
     rl?.close();
   }
@@ -2418,6 +2484,12 @@ async function runUninstallWizard(projectRoot: string, hostInput: string, option
 async function askYes(rl: ReturnType<typeof createInterface>, question: string): Promise<boolean> {
   const answer = (await rl.question(`${question} (y/n): `)).trim().toLowerCase();
   return answer === "y" || answer === "yes";
+}
+
+function formatList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }
 
 async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean): Promise<{ configChanged: boolean; nextConfig?: Record<string, unknown>; paths: string[] }> {
