@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -21,6 +21,7 @@ for (const [command, args] of steps) {
 }
 
 await removePythonBytecode("python");
+await verifyPackageManifest();
 await verifyPackageDryRun();
 
 try {
@@ -64,6 +65,29 @@ async function verifyPackageDryRun(): Promise<void> {
   const missing = required.filter((item) => !paths.has(item));
   if (missing.length) throw new Error(`npm package missing harness artifact(s): ${missing.join(", ")}`);
   process.stdout.write(`npm package dry-run includes ${paths.size} files and required harness artifacts\n`);
+}
+
+async function verifyPackageManifest(): Promise<void> {
+  const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+    private?: boolean;
+    bin?: Record<string, string>;
+    files?: string[];
+    license?: string;
+  };
+  if (packageJson.private === true) throw new Error("package.json is private; npm publish/npx install path is blocked");
+  if (packageJson.license !== "MIT") throw new Error("package.json license must stay explicit for publish readiness");
+  if (packageJson.bin?.["openskill-kit"] !== "dist/index.cjs") throw new Error("package.json missing openskill-kit CLI bin");
+  if (packageJson.bin?.["openskill-kit-mcp"] !== "dist/openskill-kit-mcp.cjs") throw new Error("package.json missing openskill-kit-mcp bin");
+  const requiredFiles = [
+    "dist/**/*",
+    "packages/agent-plugin-bundle/.agent-plugin/",
+    "packages/agent-plugin-bundle/mcp/",
+    "packages/agent-plugin-bundle/opencode/"
+  ];
+  const files = new Set(packageJson.files ?? []);
+  const missing = requiredFiles.filter((item) => !files.has(item));
+  if (missing.length) throw new Error(`package.json files allowlist missing publish artifact(s): ${missing.join(", ")}`);
+  process.stdout.write("package manifest is publish-ready for npm/npx harness install\n");
 }
 
 async function removePythonBytecode(dir: string): Promise<void> {

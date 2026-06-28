@@ -89,9 +89,14 @@ describe("agent plugin manifest", () => {
     expect(readFileSync(path.join(root, "opencode", "agents", "osk-learner.md"), "utf8")).toContain("question: allow");
     expect(readFileSync(path.join(root, "opencode", "plugins", "openskillkit.ts"), "utf8")).toContain("Metadata-only by default");
     expect(packageJson.files).toEqual(expect.arrayContaining([
+      "dist/**/*",
+      "packages/agent-plugin-bundle/.agent-plugin/",
       "packages/agent-plugin-bundle/mcp/",
       "packages/agent-plugin-bundle/model-routing.resolved.json",
       "packages/agent-plugin-bundle/opencode/"
     ]));
+    expect(packageJson.private).not.toBe(true);
+    expect(packageJson.bin["openskill-kit"]).toBe("dist/index.cjs");
+    expect(packageJson.bin["openskill-kit-mcp"]).toBe("dist/openskill-kit-mcp.cjs");
   });
 });

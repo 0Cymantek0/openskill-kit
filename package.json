@@ -1,6 +1,5 @@
 {
   "name": "openskill-kit",
-  "private": true,
   "version": "0.1.0",
   "description": "Local-first Adaptive Skill Graph and behavior compiler for AI coding agents.",
   "license": "MIT",
