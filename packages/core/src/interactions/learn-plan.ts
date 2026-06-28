@@ -183,17 +183,21 @@ export async function runLearningPlan(
     previewOnly?: boolean;
     maxEvents?: number;
     allowDuplicateImports?: boolean;
+    homeDir?: string;
     now?: Date;
   } = {}
 ): Promise<LearnRun> {
   const plan = await planLearningSources(projectRoot, {
     sourceMode: options.sourceMode ?? (options.selectedSourceIds?.length ? "selected" : "ask"),
     selectedSourceIds: options.selectedSourceIds,
+    homeDir: options.homeDir,
     now: options.now
   });
   const previewOnly = options.previewOnly !== false;
-  const selected = (options.selectedSourceIds?.length ? options.selectedSourceIds : plan.defaults.selectedSourceIds)
-    .filter((id) => plan.options.some((sourceOption) => sourceOption.id === id && sourceOption.policy !== "blocked"));
+  const requested = options.selectedSourceIds?.length ? options.selectedSourceIds : plan.defaults.selectedSourceIds;
+  const selectionIssue = explainSelectionIssue(requested, plan.options);
+  if (selectionIssue) throw new Error(selectionIssue);
+  const selected = requested.filter((id) => plan.options.some((sourceOption) => sourceOption.id === id && sourceOption.policy !== "blocked"));
   const selectedOptions = selected.map((id) => plan.options.find((sourceOption) => sourceOption.id === id)!).filter(Boolean);
   const importRuns: InteractionImportRun[] = [];
   const safeEventIds: string[] = [];
@@ -272,6 +276,23 @@ export async function runLearningPlan(
       ? ["Preview complete. Re-run with previewOnly=false only after approving selected explicit imports.", "Then run `/osk review`; activation remains review-gated."]
       : ["Learning run complete. Run `/osk review` before compiling or deploying behavior.", "Run `/osk compile` only after review accepts desired behavior."]
   });
+}
+
+function explainSelectionIssue(requested: string[], options: LearnSourceOption[]): string | undefined {
+  const known = new Set(options.map((sourceOption) => sourceOption.id));
+  const blocked = new Set(options.filter((sourceOption) => sourceOption.policy === "blocked").map((sourceOption) => sourceOption.id));
+  const invalidIds = requested.filter((id) => !known.has(id));
+  const blockedIds = requested.filter((id) => blocked.has(id));
+  if (!invalidIds.length && !blockedIds.length) return undefined;
+  const supported = options.filter((sourceOption) => sourceOption.policy !== "blocked").map((sourceOption) => sourceOption.id);
+  const blockedLabels = options
+    .filter((sourceOption) => blockedIds.includes(sourceOption.id))
+    .map((sourceOption) => `${sourceOption.id} (${sourceOption.reason})`);
+  return [
+    invalidIds.length ? `Unknown learning source(s): ${invalidIds.join(", ")}.` : "",
+    blockedLabels.length ? `Blocked learning source(s): ${blockedLabels.join("; ")}.` : "",
+    `Supported source ids: ${supported.join(", ") || "none"}.`
+  ].filter(Boolean).join(" ");
 }
 
 interface OpenCodeAmbientInspection {

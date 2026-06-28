@@ -156,6 +156,30 @@ describe("OSK command family registry", () => {
     expect(applied.nextActions.join(" ")).toContain("/osk review");
     expect(applied.privacy.join(" ")).toContain("remains candidate/staged");
   });
+
+  it("blocks unknown or blocked learning source selections instead of silently running nothing", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-learn-source-errors-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "osk-learn-source-errors-home-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "learn-source-errors", now: new Date("2026-06-27T00:00:00.000Z") });
+    await mkdir(path.join(home, ".codex", "memories"), { recursive: true });
+
+    await expect(runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["not-a-source"],
+      previewOnly: false,
+      now: new Date("2026-06-27T00:04:00.000Z")
+    })).rejects.toThrow(/Unknown learning source\(s\): not-a-source.*Supported source ids: current-session, git-local/s);
+
+    const plan = await planLearningSources(root, { sourceMode: "ask", homeDir: home, now: new Date("2026-06-27T00:05:00.000Z") });
+    const blocked = plan.options.find((option) => option.policy === "blocked" && option.path?.includes(`${path.sep}.codex${path.sep}memories`))!;
+    await expect(runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: [blocked.id],
+      homeDir: home,
+      previewOnly: false,
+      now: new Date("2026-06-27T00:06:00.000Z")
+    })).rejects.toThrow(/Blocked learning source\(s\): blocked:/);
+  });
 });
 
 async function writeText(root: string, relative: string, content: string): Promise<void> {

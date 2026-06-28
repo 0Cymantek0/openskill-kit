@@ -43,6 +43,17 @@ describe("osk CLI facade", () => {
     expect(result.stdout).toContain("Preview complete");
   });
 
+  it("fails /osk learn clearly for unknown selected sources", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-bad-source-"));
+    await mkdir(path.join(root, "src"), { recursive: true });
+
+    const result = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--source", "not-a-source", "--json"], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Unknown learning source(s): not-a-source");
+    expect(result.stderr).toContain("Supported source ids: current-session, git-local");
+  });
+
   it("prints failing full doctor checks in human output", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-doctor-routing-"));
     await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
