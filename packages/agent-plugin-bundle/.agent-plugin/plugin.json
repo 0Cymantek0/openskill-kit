@@ -146,7 +146,7 @@
           "bootstrap openskill"
         ],
         "description": "Initialize project-local OSK state and preview harness attach.",
-      "mcpTool": "osk_get_status",
+        "mcpTool": "osk_get_status",
         "cli": "openskill-kit init && openskill-kit status",
         "readOnly": false,
         "approvalRequired": false,
@@ -161,7 +161,7 @@
           "openskill status"
         ],
         "description": "Show behavior, review, plugin, and harness health.",
-      "mcpTool": "osk_get_status",
+        "mcpTool": "osk_get_status",
         "cli": "openskill-kit status",
         "readOnly": true,
         "approvalRequired": false,
@@ -178,7 +178,7 @@
           "osk task finish"
         ],
         "description": "Load task context before work and record safe outcome after work.",
-      "mcpTool": "osk_get_task_context",
+        "mcpTool": "osk_get_task_context",
         "cli": "openskill-kit context --query \"<task>\"",
         "readOnly": false,
         "approvalRequired": false,
@@ -301,7 +301,7 @@
           "behavior eval"
         ],
         "description": "Measure OSK behavior through replay or external-agent evals.",
-        "mcpTool": "osk_run_behavior_eval",
+        "mcpTool": "osk_run_eval",
         "cli": "openskill-kit eval",
         "readOnly": false,
         "approvalRequired": false,
@@ -344,4 +344,3 @@
     ]
   }
 }
-

@@ -51,6 +51,7 @@ describe("agent plugin manifest", () => {
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; aliases: string[] }) => item.command === "/osk task" && item.mcpTool === "osk_get_task_context" && item.aliases.includes("/osk context"))).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources" && item.approvalRequired === true)).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk deploy" && item.mcpTool === "osk_compile_deploy" && item.approvalRequired === true)).toBe(true);
+    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk eval" && item.mcpTool === "osk_run_eval")).toBe(true);
     expect(manifest.privacy.requiresExplicitApproval).toContain("interaction imports");
     expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
     const mcp = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));
@@ -61,6 +62,7 @@ describe("agent plugin manifest", () => {
     expect(commandMap.commands.some((item: { command: string; cli: string }) => item.command === "/osk task" && item.cli.includes("openskill-kit context"))).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources")).toBe(true);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk eval" && item.mcpTool === "osk_run_eval")).toBe(true);
+    expect(manifest.commands.items.map((item: { command: string; mcpTool?: string }) => ({ command: item.command, mcpTool: item.mcpTool }))).toEqual(commandMap.commands.map((item: { command: string; mcpTool?: string }) => ({ command: item.command, mcpTool: item.mcpTool })));
     const commandGuide = readFileSync(path.join(root, "commands", "osk.md"), "utf8");
     expect(commandGuide).toContain("Prefer MCP");
     expect(commandGuide).toContain("MCP tool: `osk_run_eval`");
