@@ -2268,6 +2268,16 @@ async function runSetupWizard(projectRoot: string, hostInput: string, options: S
     `Target host: ${host}`,
     `Project root: ${projectRoot}`
   ];
+  if (host !== "opencode") {
+    return {
+      schemaVersion: "openskill-kit.setup-wizard.v1",
+      status: "blocked",
+      host,
+      applied: false,
+      plannedFiles: 0,
+      messages: [...messages, "`osk setup` is OpenCode-specific. Use `openskill-kit agent attach-plugin --host <host> --dry-run` for other harnesses."]
+    };
+  }
   const rl = options.nonInteractive || options.yes ? undefined : createInterface({ input: process.stdin, output: process.stdout });
   try {
     if (rl && !await askYes(rl, "Proceed with local init, compile, and attach preview?")) {
@@ -2350,6 +2360,18 @@ async function runUninstallWizard(projectRoot: string, hostInput: string, option
     `Target host: ${host}`,
     dryRun ? "Dry-run only. Re-run with `--yes` to apply removals." : "Applying approved uninstall."
   ];
+  if (host !== "opencode") {
+    return {
+      schemaVersion: "openskill-kit.uninstall-wizard.v1",
+      status: "blocked",
+      host,
+      dryRun: true,
+      configChanged: false,
+      removed: [],
+      planned: [],
+      messages: [...messages, "`osk uninstall` is OpenCode-specific. Use host-native config review for other harnesses."]
+    };
+  }
   const rl = options.nonInteractive || options.yes || dryRun ? undefined : createInterface({ input: process.stdin, output: process.stdout });
   try {
     if (rl && !await askYes(rl, "Revert OpenCode settings and remove generated OSK files?")) {
@@ -2441,19 +2463,37 @@ async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean):
 }
 
 async function generatedOpenCodePaths(projectRoot: string): Promise<string[]> {
-  const out: string[] = [".opencode/plugins/openskillkit.ts", ".opencode/model-routing.json"];
-  for (const [dir, kind] of [[".opencode/commands", "file"], [".opencode/agents", "file"], [".opencode/skills", "directory"]] as const) {
-    const absoluteDir = path.join(projectRoot, dir);
-    const entries = await fs.readdir(absoluteDir, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
-      if (!entry.name.startsWith("osk-")) continue;
-      if (kind === "file" && !(entry.isFile() && entry.name.endsWith(".md"))) continue;
-      if (kind === "directory" && !entry.isDirectory()) continue;
-      out.push(path.join(dir, entry.name).replace(/\\/g, "/"));
-    }
-  }
-  return out;
+  const candidates = [
+    ".opencode/plugins/openskillkit.ts",
+    ".opencode/model-routing.json",
+    ...OSK_PUBLIC_COMMAND_FAMILIES.map((family) => path.posix.join(".opencode/commands", family.commandFile)),
+    ...EXPECTED_OPENCODE_AGENT_FILES.map((file) => path.posix.join(".opencode/agents", file)),
+    ...EXPECTED_OPENCODE_SKILL_DIRS.map((dir) => path.posix.join(".opencode/skills", dir))
+  ];
+  const existing = await Promise.all(candidates.map(async (relativePath) => ({
+    relativePath,
+    exists: await fs.stat(path.join(projectRoot, relativePath)).then(() => true).catch(() => false)
+  })));
+  return existing.filter((item) => item.exists).map((item) => item.relativePath);
 }
+
+const EXPECTED_OPENCODE_AGENT_FILES = [
+  "osk-docs.md",
+  "osk-evaluator.md",
+  "osk-evolver.md",
+  "osk-learner.md",
+  "osk-researcher.md",
+  "osk-reviewer.md",
+  "osk-router.md",
+  "osk-verifier.md"
+];
+
+const EXPECTED_OPENCODE_SKILL_DIRS = [
+  "osk-learning",
+  "osk-openworld",
+  "osk-operating-manual",
+  "osk-review-gate"
+];
 
 function assertInsideProject(projectRoot: string, target: string): void {
   const relative = path.relative(path.resolve(projectRoot), path.resolve(target));

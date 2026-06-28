@@ -90,6 +90,10 @@ describe("osk CLI facade", () => {
     await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).resolves.toBeTruthy();
     await expect(stat(path.join(root, ".opencode", "skills", "osk-learning", "SKILL.md"))).resolves.toBeTruthy();
     await expect(stat(path.join(root, ".opencode", "plugins", "openskillkit.ts"))).resolves.toBeTruthy();
+    await mkdir(path.join(root, ".opencode", "skills", "osk-custom"), { recursive: true });
+    await writeFile(path.join(root, ".opencode", "commands", "osk-custom.md"), "user command\n", "utf8");
+    await writeFile(path.join(root, ".opencode", "agents", "osk-custom.md"), "user agent\n", "utf8");
+    await writeFile(path.join(root, ".opencode", "skills", "osk-custom", "SKILL.md"), "user skill\n", "utf8");
     let config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
     expect(config.plugin).toEqual(["./custom.ts", ".opencode/plugins/openskillkit.ts"]);
     expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
@@ -105,10 +109,29 @@ describe("osk CLI facade", () => {
     expect(uninstallParsed.status).toBe("uninstalled");
     await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
     await expect(stat(path.join(root, ".opencode", "skills", "osk-learning"))).rejects.toThrow();
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-custom.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".opencode", "agents", "osk-custom.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".opencode", "skills", "osk-custom", "SKILL.md"))).resolves.toBeTruthy();
     await expect(stat(path.join(root, ".openskill-kit", "config.json"))).resolves.toBeTruthy();
     config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
     expect(config.plugin).toEqual(["./custom.ts"]);
     expect(config.mcp).toBeUndefined();
+  });
+
+  it("blocks OpenCode setup and uninstall facade when a different host is requested", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-host-block-"));
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], mcp: { keep: { command: ["keep"] } } }, null, 2), "utf8");
+
+    const setup = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "setup", "--host", "codex", "--non-interactive", "--yes", "--json"], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(setup.code).toBe(1);
+    expect(JSON.parse(setup.stdout).status).toBe("blocked");
+
+    const uninstall = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "uninstall", "--host", "codex", "--non-interactive", "--yes", "--json"], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(uninstall.code).toBe(1);
+    expect(JSON.parse(uninstall.stdout).status).toBe("blocked");
+    const config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
+    expect(config.plugin).toEqual(["./custom.ts"]);
+    expect(config.mcp.keep.command).toEqual(["keep"]);
   });
 
   it("runs /osk pack export, verify, import preview, and gated apply", async () => {
