@@ -33,6 +33,9 @@ export interface AgentPluginAttachFile {
 export interface AgentPluginAttachStatus {
   schemaVersion: "openskill-kit.agent-plugin-attach-status.v1";
   attached: boolean;
+  defaultHost: AgentPluginAttachHost;
+  defaultHostReady: boolean;
+  defaultHostStatus: AgentPluginHostAttachStatus;
   hosts: AgentPluginHostAttachStatus[];
   receiptCount: number;
   latestReceiptPath?: string;
@@ -51,7 +54,7 @@ export interface AgentPluginInstallProfileStatus {
 export interface AgentPluginHostAttachStatus {
   host: AgentPluginAttachHost;
   destination: string;
-  status: "attached" | "missing" | "invalid-json" | "needs-root-binding" | "wrong-command" | "descriptor-drift";
+  status: "attached" | "missing" | "invalid-json" | "needs-root-binding" | "wrong-command" | "plugin-missing" | "descriptor-drift";
   command?: string;
   projectRootBound: boolean;
   pluginVersion?: string;
@@ -158,14 +161,21 @@ export async function getAgentPluginAttachStatus(projectRoot: string): Promise<A
   const plugin = await getCompiledPluginStatus(root);
   const hosts = await Promise.all(AgentPluginAttachHosts.map(async (host) => inspectHostAttach(root, host, plugin, receipts)));
   const drifted = hosts.filter((host) => host.status === "descriptor-drift");
+  const defaultHostStatus = hosts.find((host) => host.host === DEFAULT_AGENT_PLUGIN_ATTACH_HOST) ?? hosts[0]!;
+  const defaultHostReady = defaultHostStatus.status === "attached";
   const attached = drifted.length === 0 && hosts.some((host) => host.status === "attached");
   const nextActions = drifted.length
     ? [
       `Compiled plugin descriptors changed after host attachment; re-run \`openskill-kit agent attach-plugin --host ${DEFAULT_AGENT_PLUGIN_ATTACH_HOST} --dry-run\` or the drifted host and apply after review.`,
       "Restart or refresh the coding harness MCP server after re-attaching so tool descriptors match the compiled plugin."
     ]
+    : defaultHostReady
+    ? [`Primary ${DEFAULT_AGENT_PLUGIN_ATTACH_HOST} attachment is ready; MCP tools can use the bound project root without per-call projectRoot arguments.`]
     : attached
-    ? ["Plugin host attachment is ready; MCP tools can use the bound project root without per-call projectRoot arguments."]
+    ? [
+      `A non-default host is attached, but primary ${DEFAULT_AGENT_PLUGIN_ATTACH_HOST} status is ${defaultHostStatus.status}${defaultHostStatus.issue ? `: ${defaultHostStatus.issue}` : ""}.`,
+      `Run \`openskill-kit agent attach-plugin --host ${DEFAULT_AGENT_PLUGIN_ATTACH_HOST} --dry-run\` to preview the primary OpenCode attachment.`
+    ]
     : [
       `Run \`openskill-kit agent attach-plugin --host ${DEFAULT_AGENT_PLUGIN_ATTACH_HOST} --dry-run\` to preview OpenCode-first host attachment.`,
       "Apply with `--yes` only after reviewing the project-local MCP config diff."
@@ -173,6 +183,9 @@ export async function getAgentPluginAttachStatus(projectRoot: string): Promise<A
   return {
     schemaVersion: "openskill-kit.agent-plugin-attach-status.v1",
     attached,
+    defaultHost: DEFAULT_AGENT_PLUGIN_ATTACH_HOST,
+    defaultHostReady,
+    defaultHostStatus,
     hosts,
     receiptCount: receipts.length,
     latestReceiptPath: receipts[0]?.path,
@@ -270,19 +283,29 @@ async function inspectHostAttach(root: string, host: AgentPluginAttachHost, plug
     : undefined;
   const command = typeof server?.command === "string" ? server.command : undefined;
   const env = isRecord(server?.env) ? server.env : {};
-  return inspectAttachedServer(root, host, destination, { command, projectRootBound: env[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root }, plugin, receipts);
+  return inspectAttachedServer(root, host, destination, { command, projectRootBound: env[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root, serverPresent: Boolean(server) }, plugin, receipts);
 }
 
 function inspectAttachedServer(
   root: string,
   host: AgentPluginAttachHost,
   destination: string,
-  server: { command?: string; projectRootBound: boolean },
+  server: { command?: string; projectRootBound: boolean; serverPresent?: boolean },
   plugin: CompiledPluginStatus,
   receipts: Array<{ path: string; receipt: AttachReceipt }>
 ): AgentPluginHostAttachStatus {
   const command = server.command;
   const projectRootBound = server.projectRootBound;
+  if (server.serverPresent === false) {
+    return {
+      host,
+      destination,
+      status: "missing",
+      command,
+      projectRootBound,
+      issue: "openskill-kit MCP server entry missing"
+    };
+  }
   if (command !== "openskill-kit-mcp") {
     return {
       host,
@@ -463,13 +486,13 @@ function inspectOpenCodeConfig(
       ? commandValue
       : undefined;
   const environment = isRecord(server?.environment) ? server.environment : {};
-  const attached = inspectAttachedServer(root, host, destination, { command, projectRootBound: environment[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root }, plugin, receipts);
+  const attached = inspectAttachedServer(root, host, destination, { command, projectRootBound: environment[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root, serverPresent: Boolean(server) }, plugin, receipts);
   if (attached.status !== "attached") return attached;
   const pluginList = openCodePluginList(parsed.plugin);
   if (pluginList.issue || !pluginList.items.includes(OPENCODE_PLUGIN_PATH)) {
     return {
       ...attached,
-      status: "wrong-command",
+      status: "plugin-missing",
       issue: pluginList.issue ?? `OpenCode plugin list missing ${OPENCODE_PLUGIN_PATH}`
     };
   }

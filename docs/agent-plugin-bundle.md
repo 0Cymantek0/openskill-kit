@@ -107,6 +107,11 @@ For harness compatibility, generated plugins also include:
   `compiled.pluginAttachment` so hosts can show whether the plugin is attached,
   root-bound, missing, invalid JSON, pointed at the wrong command, or stale
   against current descriptors.
+  Because OpenCode is the default full harness, attachment status also reports
+  `defaultHost`, `defaultHostReady`, and `defaultHostStatus`. `attached=true`
+  means at least one host is usable; `defaultHostReady=true` means OpenCode is
+  actually ready. Missing OpenCode plugin registration reports
+  `plugin-missing`.
   `plugin-install-profile --json` and `osk_get_plugin_install_profile` include
   the same attachment status next to the install contract so bootstrap flows can
   decide whether to preview/apply host config from a single read-only response.

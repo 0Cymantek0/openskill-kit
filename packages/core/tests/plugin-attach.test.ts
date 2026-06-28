@@ -164,6 +164,9 @@ describe("agent plugin attach planner", () => {
     expect(await readFile(path.join(root, ".opencode", "skills", "osk-learning", "SKILL.md"), "utf8")).toContain("Preview imports before apply.");
     const status = await getAgentPluginAttachStatus(root);
     expect(status.hosts.find((host) => host.host === "opencode")?.status).toBe("attached");
+    expect(status.defaultHost).toBe("opencode");
+    expect(status.defaultHostReady).toBe(true);
+    expect(status.defaultHostStatus.status).toBe("attached");
   });
 
   it("reports OpenCode attachment incomplete when the generated plugin is not registered", async () => {
@@ -178,8 +181,40 @@ describe("agent plugin attach planner", () => {
     const status = await getAgentPluginAttachStatus(root);
 
     const opencode = status.hosts.find((host) => host.host === "opencode");
-    expect(opencode?.status).toBe("wrong-command");
+    expect(opencode?.status).toBe("plugin-missing");
     expect(opencode?.issue).toContain("plugin list missing");
+    expect(status.defaultHostReady).toBe(false);
+    expect(status.nextActions.join(" ")).toContain("--host opencode --dry-run");
+  });
+
+  it("reports existing OpenCode config without OSK MCP as missing, not wrong-command", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode-empty", "Prefer clear OpenCode missing attach diagnostics", "workflow")]);
+    await attachAgentPlugin(root, { host: "opencode", dryRun: true });
+    await writeFile(path.join(root, "opencode.json"), `${JSON.stringify({ plugin: ["./custom.ts"] }, null, 2)}\n`, "utf8");
+
+    const status = await getAgentPluginAttachStatus(root);
+
+    const opencode = status.hosts.find((host) => host.host === "opencode");
+    expect(opencode?.status).toBe("missing");
+    expect(opencode?.issue).toContain("MCP server entry missing");
+    expect(status.defaultHostReady).toBe(false);
+  });
+
+  it("keeps non-default MCP readiness separate from primary OpenCode readiness", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("generic-first", "Prefer generic MCP smoke before OpenCode attach", "workflow")]);
+    await attachAgentPlugin(root, { host: "generic-mcp", dryRun: false, yes: true });
+
+    const status = await getAgentPluginAttachStatus(root);
+
+    expect(status.attached).toBe(true);
+    expect(status.hosts.find((host) => host.host === "generic-mcp")?.status).toBe("attached");
+    expect(status.defaultHost).toBe("opencode");
+    expect(status.defaultHostReady).toBe(false);
+    expect(status.defaultHostStatus.status).toBe("missing");
+    expect(status.nextActions.join(" ")).toContain("non-default host is attached");
+    expect(status.nextActions.join(" ")).toContain("--host opencode --dry-run");
   });
 
   it("uses OpenCode-first guidance when compiled plugin is not attached", async () => {
@@ -217,8 +252,9 @@ describe("agent plugin attach planner", () => {
 
     await attachAgentPlugin(root, { host: "generic-mcp", dryRun: false, yes: true });
     const afterAttach = await explainAdaptiveStatus(root);
-    expect(afterAttach.nextActions.some((action) => action.includes("agent attach-plugin"))).toBe(false);
     expect(afterAttach.status.compiled.pluginAttachment.attached).toBe(true);
+    expect(afterAttach.status.compiled.pluginAttachment.defaultHostReady).toBe(false);
+    expect(afterAttach.nextActions.some((action) => action.includes("--host opencode --dry-run"))).toBe(true);
   });
 
   it("returns a read-only install profile for harness bootstrap", async () => {

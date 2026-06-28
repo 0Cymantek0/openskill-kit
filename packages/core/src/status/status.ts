@@ -138,7 +138,7 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   }
   if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
   if (!status.compiled.plugin) nextActions.push("Run compile --target plugin to create an attachable coding-harness plugin bundle.");
-  if (status.compiled.plugin && !status.compiled.pluginAttachment.attached) nextActions.push(...status.compiled.pluginAttachment.nextActions);
+  if (status.compiled.plugin && (!status.compiled.pluginAttachment.attached || !status.compiled.pluginAttachment.defaultHostReady)) nextActions.push(...status.compiled.pluginAttachment.nextActions);
   if (status.activePreferenceCount === 0 && status.pendingReviewCount === 0 && status.signalCount > 0) nextActions.push("Wait for stronger evidence or propose a semantic preference.");
   if (calibration) nextActions.push(`Calibration loaded: ${Object.keys(calibration.categories).length} categor${Object.keys(calibration.categories).length === 1 ? "y" : "ies"}, ${Object.keys(calibration.extractors).length} extractor(s), ${Object.keys(calibration.evalOutcomes).length} eval outcome(s).`);
   if (nextActions.length === 0) nextActions.push("Behavior layer current; keep collecting high-value events.");

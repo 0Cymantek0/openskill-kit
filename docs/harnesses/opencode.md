@@ -58,7 +58,7 @@ npx openskill-kit osk verify --json
 npx openskill-kit osk learn --source opencode-ambient --apply
 ```
 
-Status must show `opencode=attached` after apply. If descriptor drift appears, re-run the dry-run attach command, apply after review, then restart OpenCode so MCP descriptors refresh.
+Status must show `defaultHost=opencode`, `defaultHostReady=true`, and `opencode=attached` after apply. `attached=true` alone can also mean a non-default MCP host is ready, so use `defaultHostReady` for OpenCode-first launch checks. If OpenCode plugin registration is missing, status reports `plugin-missing`. If descriptor drift appears, re-run the dry-run attach command, apply after review, then restart OpenCode so MCP descriptors refresh.
 
 ## Privacy
 

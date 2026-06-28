@@ -19,6 +19,8 @@ describe("planned launch documentation coverage", () => {
     expect(opencode).toContain("npx openskill-kit osk verify --json");
     expect(opencode).not.toContain("npx openskill-kit test\n");
     expect(opencode).toContain("opencode-ambient");
+    expect(opencode).toContain("defaultHostReady=true");
+    expect(opencode).toContain("plugin-missing");
     expect(opencode).toContain("Behavior packs exclude ambient hook metadata");
   });
 
@@ -26,6 +28,8 @@ describe("planned launch documentation coverage", () => {
     const mcpProfiles = await readDoc("docs/mcp-profiles.md");
     expect(mcpProfiles).toContain("Public profile must stay at 12 tools or fewer");
     expect(mcpProfiles).toContain("descriptor-drift");
+    expect(mcpProfiles).toContain("defaultHostReady=true");
+    expect(mcpProfiles).toContain("plugin-missing");
     expect(mcpProfiles).toContain("osk_compile_deploy");
 
     const privacy = await readDoc("docs/security/privacy-by-command.md");

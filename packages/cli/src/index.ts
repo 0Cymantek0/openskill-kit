@@ -942,6 +942,7 @@ agent.command("plugin-status")
     const result = await getAgentPluginAttachStatus(process.cwd());
     output(options.json, result, [
       `Plugin host attached: ${result.attached}`,
+      `Primary host: ${result.defaultHost}=${result.defaultHostStatus.status}`,
       `Plugin host status: ${result.hosts.map((host) => `${host.host}=${host.status}`).join(", ")}`,
       `Plugin attach receipts: ${result.receiptCount}`,
       ...result.nextActions
@@ -963,6 +964,7 @@ agent.command("plugin-install-profile")
         `Command map: ${result.profile.commandRouting.map}`,
         `Approval tools: ${result.profile.approvalRequiredTools.join(", ")}`,
         `Plugin host attached: ${result.attachment.attached}`,
+        `Primary host: ${result.attachment.defaultHost}=${result.attachment.defaultHostStatus.status}`,
         `Plugin host status: ${result.attachment.hosts.map((host) => `${host.host}=${host.status}`).join(", ")}`
       ].join("\n")
       : [

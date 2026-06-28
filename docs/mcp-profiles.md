@@ -38,4 +38,6 @@ Compiled plugin files:
 
 The descriptor hash must match before a harness trusts generated descriptors. If status reports `descriptor-drift`, re-run attach dry-run, apply after review, then restart the harness MCP server.
 
+`osk_get_status` and `openskill-kit agent plugin-status --json` report both any-host MCP readiness and primary OpenCode readiness. `attached=true` means at least one host can use the MCP server. `defaultHostReady=true` means the primary OpenCode harness is attached, root-bound, plugin-registered, and not descriptor-drifted. OpenCode plugin registration failures report `plugin-missing`, not `wrong-command`.
+
 `/osk verify` and `osk_verify_behavior` also run harness readiness checks over the compiled command map, public MCP profile, OpenCode command names, safety text, and generated command/skill size budgets.
