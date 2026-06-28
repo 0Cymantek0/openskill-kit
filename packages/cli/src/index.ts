@@ -174,7 +174,7 @@ program.command("doctor")
   .option("--json", "Print JSON")
   .action(async (options) => {
     const report = options.full === true ? await runFullDoctor(process.cwd()) : await runDoctor(process.cwd());
-    output(options.json, report, `Doctor ${report.status}: ${report.checks.length} checks`);
+    output(options.json, report, renderDoctorReport(report));
     process.exitCode = report.status === "fail" ? 1 : 0;
   });
 
@@ -1790,6 +1790,13 @@ function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
       `Default selected: ${result.defaults.selectedSourceIds.join(", ") || "none"}`,
       ...result.nextActions
     ].join("\n");
+}
+
+function renderDoctorReport(report: { status: "pass" | "warn" | "fail"; checks: Array<{ name: string; status: "pass" | "warn" | "fail"; message: string }> }): string {
+  const notable = report.checks.filter((check) => check.status !== "pass");
+  const lines = [`Doctor ${report.status}: ${report.checks.length} checks`];
+  lines.push(...notable.map((check) => `${check.status.toUpperCase()} ${check.name}: ${check.message}`));
+  return lines.join("\n");
 }
 
 async function runInteractiveLearnPicker(projectRoot: string, maxEvents: number): Promise<LearnSourcePlan | LearnRun> {

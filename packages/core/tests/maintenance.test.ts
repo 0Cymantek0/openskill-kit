@@ -65,4 +65,24 @@ describe("maintenance and full status", () => {
     expect(reset.status).toBe("done");
     await expect(stat(path.join(root, ".openskill-kit", "events"))).rejects.toThrow();
   });
+
+  it("reports invalid model routing through full doctor before compile/setup", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-maintenance-routing-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "routing", now: new Date("2026-06-25T00:00:00.000Z") });
+    await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.model-routing.v1",
+      routes: {
+        learner: {
+          maxStep: 24
+        }
+      }
+    }, null, 2), "utf8");
+
+    const doctor = await runFullDoctor(root);
+    const check = doctor.checks.find((item) => item.name === "Model routing");
+    expect(doctor.status).toBe("fail");
+    expect(check?.status).toBe("fail");
+    expect(check?.message).toContain("routes.learner");
+    expect(check?.message).toContain("maxStep");
+  });
 });

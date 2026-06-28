@@ -41,6 +41,11 @@ describe("planned launch documentation coverage", () => {
     expect(registry).toContain("packages/core/src/commands/families.ts");
     expect(registry).toContain("Exactly 12 public command families");
     expect(registry).toContain("No duplicate command files");
+
+    const modelRouting = await readDoc("docs/model-routing.md");
+    expect(modelRouting).toContain("doctor --full");
+    expect(modelRouting).toContain("Unknown route");
+    expect(modelRouting).toContain("maxStep");
   });
 });
 

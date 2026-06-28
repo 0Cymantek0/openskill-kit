@@ -296,6 +296,16 @@ describe("deep architecture hardening", () => {
       }
     }, null, 2), "utf8");
     await expect(compileBehaviorLayer(root, { targets: ["plugin"] })).rejects.toThrow(/Invalid OpenSkillKit model routing/);
+
+    await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.model-routing.v1",
+      routes: {
+        learn: {
+          model: "opencode/wrong-route"
+        }
+      }
+    }, null, 2), "utf8");
+    await expect(compileBehaviorLayer(root, { targets: ["plugin"] })).rejects.toThrow(/routes Unrecognized key: "learn"/);
   });
 
   it("keeps generated OpenCode launch artifacts on the golden path", async () => {

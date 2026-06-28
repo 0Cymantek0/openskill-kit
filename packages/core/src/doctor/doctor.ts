@@ -10,6 +10,7 @@ import { CompileTargets, PreferenceCategories } from "../schema/constants.js";
 import { explainAdaptiveStatus } from "../status/status.js";
 import { readRegistry } from "../registry/registry.js";
 import { verifyProjectBehaviorPack } from "../sync/bundle.js";
+import { readModelRouting, ModelRouteNames } from "../config/model-routing.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -55,6 +56,7 @@ export async function runFullDoctor(projectRoot: string, homeDir = os.homedir())
   if (config) {
     checks.push(schemaConstantsCheck());
     checks.push(compileTargetsCheck(config.compileTargets));
+    checks.push(await modelRoutingCheck(root));
     const redaction = validateRedactionConfig(config);
     checks.push({
       name: "Custom redaction config",
@@ -101,6 +103,25 @@ export async function runFullDoctor(projectRoot: string, homeDir = os.homedir())
   }
   const finalStatus = checks.some((check) => check.status === "fail") ? "fail" : checks.some((check) => check.status === "warn") ? "warn" : "pass";
   return { status: finalStatus, checks };
+}
+
+async function modelRoutingCheck(root: string): Promise<DoctorCheck> {
+  try {
+    const routing = await readModelRouting(root);
+    if (!routing) return { name: "Model routing", status: "warn", message: "Missing .openskill-kit/model-routing.json; run init to create defaults" };
+    const configuredRoutes = ModelRouteNames.filter((route) => Boolean(routing.routes[route]));
+    return {
+      name: "Model routing",
+      status: "pass",
+      message: `${routing.defaultHarness}; ${configuredRoutes.length}/${ModelRouteNames.length} route(s) valid`
+    };
+  } catch (error) {
+    return {
+      name: "Model routing",
+      status: "fail",
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
 
 function schemaConstantsCheck(): DoctorCheck {

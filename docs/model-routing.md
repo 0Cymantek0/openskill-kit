@@ -21,7 +21,8 @@ Compiled projections:
 ## Safety
 
 - Project-local only. User/global routing is future opt-in work.
-- Invalid JSON or schema violations block plugin compilation.
+- Invalid JSON, unknown route keys, unknown harness override keys, and schema
+  violations are reported by `doctor --full` and block plugin compilation.
 - Private-source learning keeps `allowNetworkModelsForPrivateSources` false by
   default.
 - Harnesses should treat unknown model IDs as user-review items when
@@ -105,7 +106,13 @@ safety profile in code, not from arbitrary user JSON.
 
 ## Validation
 
-Run either command:
+Run `doctor --full` before setup or compile when editing this file by hand:
+
+```bash
+npx openskill-kit doctor --full
+```
+
+Compilation also validates routing and stops before writing plugin artifacts:
 
 ```bash
 npx openskill-kit compile --target plugin
@@ -113,4 +120,7 @@ npx openskill-kit osk compile
 ```
 
 Compilation reads `.openskill-kit/model-routing.json`, validates schema and
-bounds, and fails before writing a plugin if the file is invalid.
+bounds, and fails before writing a plugin if the file is invalid. Unknown route
+keys such as `learn` instead of `learner`, misspelled fields such as `maxStep`,
+and unknown harness override names are treated as errors instead of silently
+being ignored.

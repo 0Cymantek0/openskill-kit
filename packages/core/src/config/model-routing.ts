@@ -18,7 +18,7 @@ export const ModelRouteSchema = z.object({
   timeoutMs: z.number().int().min(1000).optional(),
   permissionsProfile: z.string().min(1).optional(),
   notes: z.string().optional()
-});
+}).strict();
 
 const RoutesSchema = z.object({
   router: ModelRouteSchema.default({ fallbackModels: [] }),
@@ -29,6 +29,30 @@ const RoutesSchema = z.object({
   verifier: ModelRouteSchema.default({ fallbackModels: [] }),
   evaluator: ModelRouteSchema.default({ fallbackModels: [] }),
   docs: ModelRouteSchema.default({ fallbackModels: [] })
+}).strict();
+
+const HarnessOverrideRoutesSchema = z.object({
+  router: ModelRouteSchema.optional(),
+  learner: ModelRouteSchema.optional(),
+  reviewer: ModelRouteSchema.optional(),
+  researcher: ModelRouteSchema.optional(),
+  evolver: ModelRouteSchema.optional(),
+  verifier: ModelRouteSchema.optional(),
+  evaluator: ModelRouteSchema.optional(),
+  docs: ModelRouteSchema.optional()
+}).strict();
+
+const HarnessOverridesSchema = z.record(z.string(), HarnessOverrideRoutesSchema).superRefine((value, ctx) => {
+  const allowed = new Set<string>(HarnessNames);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [key],
+        message: `Unknown harness override "${key}". Expected one of: ${HarnessNames.join(", ")}`
+      });
+    }
+  }
 });
 
 export const OpenSkillKitModelRoutingSchema = z.object({
@@ -45,7 +69,7 @@ export const OpenSkillKitModelRoutingSchema = z.object({
     evaluator: { fallbackModels: [] },
     docs: { fallbackModels: [] }
   }),
-  harnessOverrides: z.record(z.string(), z.record(z.string(), ModelRouteSchema)).default({}),
+  harnessOverrides: HarnessOverridesSchema.default({}),
   safety: z.object({
     requireUserApprovalForModelNotInHost: z.boolean().default(true),
     allowNetworkModelsForPrivateSources: z.boolean().default(false),
@@ -56,7 +80,7 @@ export const OpenSkillKitModelRoutingSchema = z.object({
     redactModelIdsInPublicArtifacts: false
   }),
   updatedAt: z.string().datetime().optional()
-});
+}).strict();
 
 export type ModelRoute = z.infer<typeof ModelRouteSchema>;
 export type OpenSkillKitModelRouting = z.infer<typeof OpenSkillKitModelRoutingSchema>;

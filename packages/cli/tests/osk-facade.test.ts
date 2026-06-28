@@ -43,6 +43,27 @@ describe("osk CLI facade", () => {
     expect(result.stdout).toContain("Preview complete");
   });
 
+  it("prints failing full doctor checks in human output", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-doctor-routing-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
+    await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.model-routing.v1",
+      routes: {
+        learner: {
+          maxStep: 24
+        }
+      }
+    }, null, 2), "utf8");
+
+    const result = await execFileAsync(process.execPath, [tsxBin, cli, "doctor", "--full"], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("Doctor fail:");
+    expect(result.stdout).toContain("FAIL Model routing:");
+    expect(result.stdout).toContain("maxStep");
+  });
+
+
   it("previews setup without attaching unless approved", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-preview-"));
     await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2), "utf8");
