@@ -24,7 +24,7 @@ Dry-run first is required for normal workflow. Apply only after reviewing planne
 
 ## Files Written On Apply
 
-- `opencode.json`: adds local `mcp.openskill-kit` with `OPENSKILLKIT_PROJECT_ROOT`.
+- `opencode.json`: adds local `mcp.openskill-kit` with `OPENSKILLKIT_PROJECT_ROOT` and appends `.opencode/plugins/openskillkit.ts` to `plugin`.
 - `.opencode/commands/osk-*.md`: 12 command-family files.
 - `.opencode/agents/osk-*.md`: route-specific subagents.
 - `.opencode/skills/osk-*/SKILL.md`: narrow OSK operating skills.
@@ -32,7 +32,7 @@ Dry-run first is required for normal workflow. Apply only after reviewing planne
 - `.opencode/model-routing.json`: OpenCode projection of project model routing.
 - `.openskill-kit/installs/plugin-attach-opencode-*.json`: attach receipt.
 
-OpenSkillKit preserves the user's `plugin` list in `opencode.json`. It copies the project plugin file instead of injecting it into that list.
+OpenSkillKit preserves existing `plugin` entries in `opencode.json` and appends `.opencode/plugins/openskillkit.ts` so OpenCode loads metadata-only hooks after restart.
 
 ## Daily Workflow
 

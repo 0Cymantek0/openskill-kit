@@ -15,6 +15,7 @@ describe("planned launch documentation coverage", () => {
     const opencode = await readDoc("docs/harnesses/opencode.md");
     expect(opencode).toContain(".opencode/commands/osk-*.md");
     expect(opencode).toContain(".opencode/plugins/openskillkit.ts");
+    expect(opencode).toContain("appends `.opencode/plugins/openskillkit.ts`");
     expect(opencode).toContain("opencode-ambient");
     expect(opencode).toContain("Behavior packs exclude ambient hook metadata");
   });
