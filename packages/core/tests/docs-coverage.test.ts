@@ -16,6 +16,8 @@ describe("planned launch documentation coverage", () => {
     expect(opencode).toContain(".opencode/commands/osk-*.md");
     expect(opencode).toContain(".opencode/plugins/openskillkit.ts");
     expect(opencode).toContain("appends `.opencode/plugins/openskillkit.ts`");
+    expect(opencode).toContain("npx openskill-kit osk verify --json");
+    expect(opencode).not.toContain("npx openskill-kit test\n");
     expect(opencode).toContain("opencode-ambient");
     expect(opencode).toContain("Behavior packs exclude ambient hook metadata");
   });

@@ -54,8 +54,8 @@ Use `/osk learn --source opencode-ambient --apply` when OpenCode hook metadata h
 ```bash
 npx openskill-kit status
 npx openskill-kit agent plugin-status --json
+npx openskill-kit osk verify --json
 npx openskill-kit osk learn --source opencode-ambient --apply
-npx openskill-kit test
 ```
 
 Status must show `opencode=attached` after apply. If descriptor drift appears, re-run the dry-run attach command, apply after review, then restart OpenCode so MCP descriptors refresh.
