@@ -238,6 +238,7 @@ describe("openskill-kit MCP server", () => {
       expect(verifiedParsed.harness.schemaVersion).toBe("openskill-kit.harness-readiness-verification.v1");
       expect(verifiedParsed.harness.summary.publicMcpToolCount).toBeLessThanOrEqual(12);
       expect(verifiedParsed.harness.summary.opencodeCommandCount).toBe(12);
+      expect(verifiedParsed.harness.summary.opencodeAgentCount).toBe(8);
 
       const evalRun = await client.callTool({
         name: "osk_run_eval",

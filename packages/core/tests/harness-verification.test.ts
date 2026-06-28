@@ -17,8 +17,12 @@ describe("harness readiness verification", () => {
     expect(report.summary.publicCommandCount).toBe(12);
     expect(report.summary.publicMcpToolCount).toBeLessThanOrEqual(12);
     expect(report.summary.opencodeCommandCount).toBe(12);
+    expect(report.summary.opencodeAgentCount).toBe(8);
     expect(report.findings.some((finding) => finding.id === "public-mcp-tool-count" && finding.severity === "pass")).toBe(true);
     expect(report.findings.some((finding) => finding.id.startsWith("opencode-command-safety:osk-learn.md") && finding.severity === "pass")).toBe(true);
+    expect(report.findings.some((finding) => finding.id === "opencode-agent-count" && finding.severity === "pass")).toBe(true);
+    expect(report.findings.some((finding) => finding.id === "opencode-agent-present:osk-router.md" && finding.severity === "pass")).toBe(true);
+    expect(report.findings.some((finding) => finding.id === "opencode-command-facade:osk-status.md" && finding.severity === "pass")).toBe(true);
   });
 
   it("fails when generated OpenCode commands collide or public MCP profile bloats", async () => {
@@ -26,6 +30,7 @@ describe("harness readiness verification", () => {
     await compileBehaviorLayer(root, { targets: ["plugin"] });
     const pluginRoot = path.join(root, ".openskill-kit", "compiled", "plugin");
     await rename(path.join(pluginRoot, "opencode", "commands", "osk-status.md"), path.join(pluginRoot, "opencode", "commands", "help.md"));
+    await rename(path.join(pluginRoot, "opencode", "agents", "osk-router.md"), path.join(pluginRoot, "opencode", "agents", "router.md"));
     const publicDescriptorPath = path.join(pluginRoot, "mcp", "descriptors.public.json");
     const publicDescriptors = JSON.parse(await readFile(publicDescriptorPath, "utf8"));
     publicDescriptors.tools.push({ name: "extra_low_level_tool", category: "debug", writeRisk: "read-only", approvalRequired: false });
@@ -36,7 +41,8 @@ describe("harness readiness verification", () => {
     expect(report.status).toBe("fail");
     expect(report.findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: "public-mcp-tool-count", severity: "fail" }),
-      expect.objectContaining({ id: "opencode-command-name:help.md", severity: "fail" })
+      expect.objectContaining({ id: "opencode-command-name:help.md", severity: "fail" }),
+      expect.objectContaining({ id: "opencode-agent-present:osk-router.md", severity: "fail" })
     ]));
   });
 });
