@@ -19,7 +19,7 @@ describe("agent plugin manifest", () => {
     expect(manifest.commands.map).toBe("commands/commands.json");
     expect(manifest.installProfile.schemaVersion).toBe("openskill-kit.agent-plugin-install-profile.v1");
     expect(manifest.installProfile.pluginDirectory).toBe("packages/agent-plugin-bundle");
-    expect(manifest.installProfile.firstCall).toEqual({ mcpTool: "osk_bootstrap_session", cliFallback: "openskill-kit status --json" });
+    expect(manifest.installProfile.firstCall).toEqual({ mcpTool: "osk_get_status", cliFallback: "openskill-kit status --json" });
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(manifest.installProfile.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
     expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host opencode --dry-run");
@@ -45,10 +45,10 @@ describe("agent plugin manifest", () => {
       })
     ]));
     expect(manifest.installProfile.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_plan_learning_sources", "osk_review_behavior", "osk_compile_deploy", "osk_pack_behavior"]));
-    expect(manifest.installProfile.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile"]));
+    expect(manifest.installProfile.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_get_status", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile", "osk_get_docs_help"]));
     expect(manifest.commands.items).toHaveLength(12);
-    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
-    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; aliases: string[] }) => item.command === "/osk task" && item.mcpTool === "osk_get_agent_task_context" && item.aliases.includes("/osk context"))).toBe(true);
+    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_get_status")).toBe(true);
+    expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; aliases: string[] }) => item.command === "/osk task" && item.mcpTool === "osk_get_task_context" && item.aliases.includes("/osk context"))).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources" && item.approvalRequired === true)).toBe(true);
     expect(manifest.commands.items.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk deploy" && item.mcpTool === "osk_compile_deploy" && item.approvalRequired === true)).toBe(true);
     expect(manifest.privacy.requiresExplicitApproval).toContain("interaction imports");
@@ -69,7 +69,7 @@ describe("agent plugin manifest", () => {
     const opencodeGuide = readFileSync(path.join(root, "install-guides", "opencode.md"), "utf8");
     expect(codexGuide).toContain("AGENTS.md");
     expect(codexGuide).toContain(".codex/config.toml");
-    expect(genericGuide).toContain("osk_bootstrap_session");
+    expect(genericGuide).toContain("osk_get_status");
     expect(opencodeGuide).toContain("preserves the user's `plugin` list");
     expect(opencodeGuide).toContain(".opencode/plugins");
   });

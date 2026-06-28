@@ -11,7 +11,7 @@ OpenWorld routes are review-only unless an explicit review action later activate
 
 Initialize project-local OSK state and preview harness attach.
 
-- MCP tool: `osk_bootstrap_session`
+- MCP tool: `osk_get_status`
 - CLI fallback: `openskill-kit init && openskill-kit status`
 - Read-only: `no`
 - Explicit approval required: `no`
@@ -20,7 +20,7 @@ Initialize project-local OSK state and preview harness attach.
 
 Show behavior, review, plugin, and harness health.
 
-- MCP tool: `osk_bootstrap_session`
+- MCP tool: `osk_get_status`
 - CLI fallback: `openskill-kit status`
 - Read-only: `yes`
 - Explicit approval required: `no`
@@ -31,7 +31,7 @@ Status output includes the OpenWorld proof boundary and never treats artifact-ve
 
 Load task context before work and record safe outcome after work.
 
-- MCP tool: `osk_get_agent_task_context`
+- MCP tool: `osk_get_task_context`
 - CLI fallback: `openskill-kit context --query "<task>"`
 - Read-only: `no`
 - Explicit approval required: `no`

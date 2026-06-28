@@ -20,7 +20,7 @@ installation. Do not silently import raw memories, shell history, transcripts,
 raw prompts, raw diffs, private evidence, or hidden oracle files.
 
 ## Workflow
-1. Call `osk_bootstrap_session` first when MCP is available. If MCP is not
+1. Call `osk_get_status` first when MCP is available. If MCP is not
    available, run `openskill-kit status --json` from the project root.
 2. For `/osk ...` requests, read `commands/commands.json`, `commands/osk.md`,
    or `commands/families.json`; route to the mapped MCP tool before using the

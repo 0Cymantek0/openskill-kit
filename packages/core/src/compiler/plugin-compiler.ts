@@ -378,7 +378,7 @@ function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]):
     mode: "local-project-plugin",
     pluginDirectory: ".openskill-kit/compiled/plugin",
     firstCall: {
-      mcpTool: "osk_bootstrap_session",
+      mcpTool: "osk_get_status",
       cliFallback: "openskill-kit status --json"
     },
     mcp: {
@@ -403,7 +403,7 @@ function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]):
       fallback: "cli"
     },
     approvalRequiredTools: pluginCommands().filter((item) => item.approvalRequired && item.mcpTool).map((item) => item.mcpTool!),
-    readOnlyFirstTools: ["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile", "osk_get_agent_task_context"],
+    readOnlyFirstTools: ["osk_get_status", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile", "osk_get_task_context", "osk_get_docs_help"],
     attach: {
       previewCli: "openskill-kit agent attach-plugin --host opencode --dry-run",
       applyCli: "openskill-kit agent attach-plugin --host opencode --yes",
@@ -470,7 +470,7 @@ function pluginHostCompatibility(): AgentPluginHostCompatibility[] {
       requires: ["stdio MCP client support", "working directory or OPENSKILLKIT_PROJECT_ROOT bound to the project root"],
       configPath: ".mcp.json",
       instructionSurface: "skills/ and commands/commands.json",
-      notes: ["Call osk_bootstrap_session first and compare descriptor hashes before trusting tool descriptors."]
+      notes: ["Call osk_get_status first and compare descriptor hashes before trusting tool descriptors."]
     }
   ];
 }
@@ -553,7 +553,7 @@ function pluginInstallGuides(): PluginInstallGuide[] {
       host: "Generic MCP client",
       steps: [
         "Register `openskill-kit-mcp` as a stdio MCP server with working directory set to the project root.",
-        "Call `osk_bootstrap_session` first.",
+        "Call `osk_get_status` first.",
         "Check `plugin.ready`, `plugin.integrityIssues`, and `plugin.missing` before trusting generated artifacts.",
         "Use `commands/commands.json` for `/osk ...` intent mapping."
       ],
@@ -730,7 +730,7 @@ function openCodeSkills(): OpenCodeSkillSpec[] {
       description: "Route OpenSkillKit command families, MCP calls, and CLI fallbacks safely.",
       whenToUse: "Use for any `/osk ...` request, plugin attach decision, command-family routing, or OSK readiness question.",
       workflow: [
-        "Call `osk_bootstrap_session` first when MCP is available.",
+        "Call `osk_get_status` first when MCP is available.",
         "Route public requests through `commands/commands.json` and the 12 command families.",
         "Use CLI fallbacks only when MCP is unavailable.",
         "Keep deploy/apply operations preview-first until the user approves."
@@ -957,7 +957,7 @@ function renderInstallGuide(guide: PluginInstallGuide): string {
     "",
     "## Required First Call",
     "",
-    "Call `osk_bootstrap_session` before using learned behavior. If MCP is unavailable, run `openskill-kit status --json` from the project root.",
+    "Call `osk_get_status` before using learned behavior. If MCP is unavailable, run `openskill-kit status --json` from the project root.",
     ""
   ].join("\n");
 }

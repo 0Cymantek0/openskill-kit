@@ -220,7 +220,7 @@ describe("agent plugin attach planner", () => {
     expect(profile.ready).toBe(true);
     expect(profile.attachment.attached).toBe(false);
     expect(profile.attachment.hosts.some((host) => host.host === "generic-mcp" && host.status === "missing")).toBe(true);
-    expect(profile.profile?.firstCall.mcpTool).toBe("osk_bootstrap_session");
+    expect(profile.profile?.firstCall.mcpTool).toBe("osk_get_status");
     expect(profile.profile?.mcp.command).toBe("openskill-kit-mcp");
     expect(profile.profile?.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(profile.profile?.commandRouting.map).toBe("commands/commands.json");

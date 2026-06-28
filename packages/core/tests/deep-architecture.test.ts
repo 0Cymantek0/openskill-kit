@@ -78,9 +78,9 @@ describe("deep architecture hardening", () => {
     expect(status.mcpDescriptorsHash).toMatch(/^sha256:/);
     expect(status.commandMapPath).toBe(path.join(pluginRoot, "commands", "commands.json"));
     expect(status.installGuidesPath).toBe(path.join(pluginRoot, "install-guides"));
-    expect(status.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
+    expect(status.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_get_status")).toBe(true);
     expect(status.commands).toHaveLength(12);
-    expect(status.commands.some((item) => item.command === "/osk task" && item.mcpTool === "osk_get_agent_task_context" && item.aliases.includes("/osk context") && item.aliases.includes("/osk finish task"))).toBe(true);
+    expect(status.commands.some((item) => item.command === "/osk task" && item.mcpTool === "osk_get_task_context" && item.aliases.includes("/osk context") && item.aliases.includes("/osk finish task"))).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources" && item.approvalRequired === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk deploy" && item.mcpTool === "osk_compile_deploy" && item.approvalRequired === true)).toBe(true);
     expect(status.commands.some((item) => item.command === "/osk pack" && item.mcpTool === "osk_pack_behavior" && item.approvalRequired === true)).toBe(true);
@@ -88,11 +88,11 @@ describe("deep architecture hardening", () => {
     expect(status.hostCompatibility.some((host) => host.host === "generic-mcp" && host.requires.some((requirement) => requirement.includes("stdio MCP")))).toBe(true);
     expect(status.installProfile?.schemaVersion).toBe("openskill-kit.agent-plugin-install-profile.v1");
     expect(status.installProfile?.pluginDirectory).toBe(".openskill-kit/compiled/plugin");
-    expect(status.installProfile?.firstCall).toEqual({ mcpTool: "osk_bootstrap_session", cliFallback: "openskill-kit status --json" });
+    expect(status.installProfile?.firstCall).toEqual({ mcpTool: "osk_get_status", cliFallback: "openskill-kit status --json" });
     expect(status.installProfile?.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
     expect(status.installProfile?.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
     expect(status.installProfile?.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_plan_learning_sources", "osk_review_behavior", "osk_compile_deploy", "osk_pack_behavior"]));
-    expect(status.installProfile?.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_bootstrap_session", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile"]));
+    expect(status.installProfile?.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_get_status", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile", "osk_get_docs_help"]));
     expect(status.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
     expect(status.nextActions).toContain("Check `plugin.hostCompatibility` for the target harness requirements before applying host config.");
     expect(status.nextActions).toContain("Open `install-guides/` for the target harness before writing any host config.");
@@ -154,7 +154,7 @@ describe("deep architecture hardening", () => {
     ]));
     expect(manifest.commands).toHaveLength(12);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; aliases: string[] }) => item.command === "/osk compile" && item.mcpTool === "osk_compile_deploy" && item.aliases.includes("/osk update skills"))).toBe(true);
-    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk task" && item.mcpTool === "osk_get_agent_task_context" && item.cli.includes("openskill-kit context"))).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk task" && item.mcpTool === "osk_get_task_context" && item.cli.includes("openskill-kit context"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources" && item.approvalRequired === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk deploy" && item.mcpTool === "osk_compile_deploy" && item.cli.includes("opencode"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk eval" && item.mcpTool === "osk_run_eval")).toBe(true);
@@ -167,7 +167,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
     expect(manifest.files).toEqual(expect.arrayContaining([".agent-plugin/plugin.json", ".mcp.json", "README.md", "commands/commands.json", "commands/families.json", "commands/osk.md", "install-guides/opencode.md", "install-guides/codex.md", "install-guides/claude-code.md", "install-guides/cursor.md", "install-guides/generic-mcp.md", "model-routing.resolved.json", "opencode/model-routing.json", "opencode/commands/osk-learn.md", "opencode/agents/osk-learner.md", "opencode/skills/osk-learning/SKILL.md", "opencode/skills/osk-operating-manual/SKILL.md", "opencode/plugins/openskillkit.ts", "mcp/server-config.json", "mcp/descriptors.json", "mcp/descriptors.public.json", "mcp/profiles.json", "mcp/descriptor-hashes.json", "skills/project-behavior/SKILL.md"]));
     expect(packagedManifest).toEqual(manifest);
-    expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
+    expect(commandMap.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_get_status")).toBe(true);
     expect(commandMap.publicFamilyCount).toBe(12);
     expect(commandMap.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources" && item.approvalRequired === true)).toBe(true);
     expect(commandFamilies.publicFamilyCount).toBe(12);
@@ -199,7 +199,7 @@ describe("deep architecture hardening", () => {
     expect(readme).toContain("codex (supported, codex-toml)");
     expect(readme).toContain("openskill-kit agent attach-plugin --host codex --dry-run");
     expect(codexGuide).toContain("AGENTS.md");
-    expect(genericMcpGuide).toContain("osk_bootstrap_session");
+    expect(genericMcpGuide).toContain("osk_get_status");
     expect(mcpAttachment.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     expect(mcpConfig.descriptorsHash).toBe(mcpHashes.descriptorsHash);
     expect(mcpConfig.defaultProfile).toBe("public");
@@ -211,6 +211,11 @@ describe("deep architecture hardening", () => {
     expect(mcpPublicDescriptors.tools).toHaveLength(12);
     expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_compile_behavior_layer")).toBe(false);
     expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_compile_deploy")).toBe(true);
+    expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_get_status")).toBe(true);
+    expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_get_task_context")).toBe(true);
+    expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_finish_task")).toBe(true);
+    expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_get_docs_help")).toBe(true);
+    expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_bootstrap_session")).toBe(false);
     expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_run_eval")).toBe(true);
     expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_run_behavior_eval")).toBe(false);
     expect(mcpDescriptors.profile).toBe("advanced");
@@ -220,6 +225,8 @@ describe("deep architecture hardening", () => {
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_plugin_attach" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_plugin_attach_status" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_plugin_install_profile" && tool.writeRisk === "read-only")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_task_context" && tool.writeRisk === "local-write")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_finish_task" && tool.writeRisk === "local-write")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_agent_task_context" && tool.writeRisk === "local-write")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_finish_agent_task" && tool.writeRisk === "local-write")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_import_interaction_source" && tool.approvalRequired === true)).toBe(true);
@@ -231,7 +238,7 @@ describe("deep architecture hardening", () => {
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_openworld_doctor" && tool.writeRisk === "read-only")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_openworld_hidden_oracle_harness" && tool.writeRisk === "local-write")).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_openworld_promote_review" && tool.approvalRequired === true)).toBe(true);
-    expect(mcpHashes.tools["osk_bootstrap_session"]).toMatch(/^sha256:/);
+    expect(mcpHashes.tools["osk_get_status"]).toMatch(/^sha256:/);
     expect(mcpHashes.approvalRequiredTools).toContain("osk_install_agent_hooks");
     expect(mcpHashes.approvalRequiredTools).toContain("osk_apply_plugin_attach");
     expect(mcpHashes.approvalRequiredTools).toContain("osk_import_interaction_source");
@@ -240,7 +247,7 @@ describe("deep architecture hardening", () => {
     expect(readme).toContain("Command map: `commands/commands.json`");
     expect(readme).toContain("Install guides: `install-guides`");
     expect(readme).toContain("## Install Profile");
-    expect(readme).toContain("First MCP call: `osk_bootstrap_session`");
+    expect(readme).toContain("First MCP call: `osk_get_status`");
     expect(readme).toContain("OPENSKILLKIT_PROJECT_ROOT");
     expect(readme).toContain("## Host Compatibility");
     expect(readme).toContain("cursor (preview)");
@@ -358,7 +365,7 @@ describe("deep architecture hardening", () => {
     expect(context.preferences.items.some((item) => item.node.statement.includes("focused tests"))).toBe(true);
     expect(context.plugin.attached).toBe(false);
     expect(context.pluginInstallProfile.ready).toBe(true);
-    expect(context.pluginInstallProfile.profile?.firstCall.mcpTool).toBe("osk_bootstrap_session");
+    expect(context.pluginInstallProfile.profile?.firstCall.mcpTool).toBe("osk_get_status");
     expect(context.review.pendingProposalCount).toBe(1);
     expect(context.review.pendingPreferenceCount).toBe(1);
     expect(context.review.totalPendingCount).toBe(2);
@@ -366,7 +373,7 @@ describe("deep architecture hardening", () => {
     expect(context.review.items.some((item) => item.kind === "preference" && item.id === candidate.id && item.actionHint.includes("osk_apply_review_actions"))).toBe(true);
     expect(context.compactMarkdown).toContain("OpenSkillKit Task Context");
     expect(context.compactMarkdown).toContain("Plugin install profile: ready");
-    expect(context.compactMarkdown).toContain("Plugin first call: osk_bootstrap_session");
+    expect(context.compactMarkdown).toContain("Plugin first call: osk_get_status");
     expect(context.compactMarkdown).toContain("Pending Review Items");
     expect(context.nextActions).toContain("Apply only returned preferences relevant to this task and paths.");
     expect(context.nextActions).toContain("Use pluginInstallProfile.profile for first-call, MCP env binding, command routing, and approval gates.");

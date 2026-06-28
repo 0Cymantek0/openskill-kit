@@ -69,6 +69,8 @@ import {
   readOpenWorldSourceIndex,
   readOpenWorldTrustCache,
   readRegistry,
+  renderOskCommandsMarkdown,
+  renderOskLearnMarkdown,
   promoteOpenWorldRunToReview,
   retrieveRelevantPreferences,
   routeBehavior,
@@ -110,6 +112,34 @@ const topicSchema = z.string().min(1).max(200);
 const skillPathSchema = z.string().min(1);
 const evidenceFilesSchema = z.array(z.string().min(1)).default([]);
 const evidenceUrlsSchema = z.array(z.string().url()).default([]);
+const statusInputSchema = z.object({ projectRoot: projectRootSchema, projectName: z.string().min(1).optional(), init: z.boolean().default(false) });
+const taskContextInputSchema = z.object({
+  projectRoot: projectRootSchema,
+  query: z.string().optional(),
+  paths: z.array(z.string()).default([]),
+  changedFiles: z.array(z.string()).default([]),
+  commands: z.array(z.string()).default([]),
+  limit: z.number().int().min(1).max(20).default(8)
+});
+const taskFinishInputSchema = z.object({
+  projectRoot: projectRootSchema,
+  sessionId: z.string().min(1).default("agent-task"),
+  summary: z.string().min(1).max(2000),
+  outcome: z.enum(["completed", "accepted", "rejected", "edited"]).default("completed"),
+  outcomeReason: z.string().min(1).max(500).optional(),
+  files: z.array(z.string().min(1)).default([]),
+  commands: z.array(z.string().min(1)).default([]),
+  commandStatus: z.enum(["pass", "fail", "blocked", "timeout", "unknown"]).default("unknown"),
+  proposedPatchHash: z.string().min(6).max(128).optional(),
+  finalPatchHash: z.string().min(6).max(128).optional(),
+  diffStats: z.object({
+    added: z.number().int().min(0),
+    removed: z.number().int().min(0),
+    files: z.number().int().min(0)
+  }).optional(),
+  learn: z.boolean().default(true),
+  compileSafe: z.boolean().default(false)
+});
 
 export function createOpenSkillMcpServer(): McpServer {
   const server = new McpServer(
@@ -117,6 +147,35 @@ export function createOpenSkillMcpServer(): McpServer {
     {
       instructions:
         "Use OpenSkillKit tools to load project behavior, record safe local events, learn preference candidates, compile behavior artifacts, and install skills. Keep dryRun true unless user explicitly approves writes."
+    }
+  );
+
+  server.registerTool(
+    "osk_get_status",
+    {
+      title: "OpenSkillKit Status",
+      description: "Return the public status facade: optional init, readiness, plugin health, proof boundary, and next actions.",
+      inputSchema: statusInputSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, projectName, init }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const initResult = init ? await initAdaptiveProject({ projectRoot: root, projectName }) : undefined;
+      const status = await getAdaptiveStatus(root);
+      const explanation = await explainAdaptiveStatus(root);
+      const plugin = await getCompiledPluginStatus(root);
+      return toolResult({
+        schemaVersion: "openskill-kit.status-facade.v1",
+        initResult,
+        status,
+        explanation,
+        plugin,
+        nextActions: [
+          ...plugin.nextActions,
+          ...(status.pendingReviewCount > 0 ? ["Review pending behavior before compiling or attaching the plugin."] : []),
+          ...(status.activePreferenceCount > 0 && !status.compiled.contextPack ? ["Run `osk_compile_deploy` with action `compile` to refresh compiled behavior."] : [])
+        ]
+      }, root);
     }
   );
 
@@ -158,6 +217,27 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await explainAdaptiveStatus(root), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_get_docs_help",
+    {
+      title: "OpenSkillKit Docs Help",
+      description: "Return generated public command help and learning workflow help for harness routing.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, topic: z.enum(["commands", "learn", "all"]).default("commands") }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, topic }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const commands = topic === "learn" ? undefined : renderOskCommandsMarkdown();
+      const learn = topic === "commands" ? undefined : renderOskLearnMarkdown();
+      return toolResult({
+        schemaVersion: "openskill-kit.docs-help.v1",
+        topic,
+        commands,
+        learn
+      }, root);
     }
   );
 
@@ -405,18 +485,11 @@ export function createOpenSkillMcpServer(): McpServer {
   );
 
   server.registerTool(
-    "osk_get_agent_task_context",
+    "osk_get_task_context",
     {
-      title: "OpenSkillKit Agent Task Context",
-      description: "Return one-shot coding task context: route, relevant behavior, plugin health, review state, and next actions.",
-      inputSchema: z.object({
-        projectRoot: projectRootSchema,
-        query: z.string().optional(),
-        paths: z.array(z.string()).default([]),
-        changedFiles: z.array(z.string()).default([]),
-        commands: z.array(z.string()).default([]),
-        limit: z.number().int().min(1).max(20).default(8)
-      }),
+      title: "OpenSkillKit Task Context",
+      description: "Return the public task-start facade: route, relevant behavior, plugin health, review state, and next actions.",
+      inputSchema: taskContextInputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
     },
     async ({ projectRoot, query, paths, changedFiles, commands, limit }) => {
@@ -426,29 +499,39 @@ export function createOpenSkillMcpServer(): McpServer {
   );
 
   server.registerTool(
+    "osk_get_agent_task_context",
+    {
+      title: "OpenSkillKit Agent Task Context",
+      description: "Return one-shot coding task context: route, relevant behavior, plugin health, review state, and next actions.",
+      inputSchema: taskContextInputSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, query, paths, changedFiles, commands, limit }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, limit }), root);
+    }
+  );
+
+  server.registerTool(
+    "osk_finish_task",
+    {
+      title: "OpenSkillKit Finish Task",
+      description: "Record public task-end evidence, run learning, write session summaries, and return review next actions.",
+      inputSchema: taskFinishInputSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, sessionId, summary, outcome, outcomeReason, files, commands, commandStatus, proposedPatchHash, finalPatchHash, diffStats, learn, compileSafe }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await finishAgentTask({ projectRoot: root, sessionId, summary, outcome, outcomeReason, files, commands, commandStatus, proposedPatchHash, finalPatchHash, diffStats, learn, compileSafe }), root);
+    }
+  );
+
+  server.registerTool(
     "osk_finish_agent_task",
     {
       title: "OpenSkillKit Finish Agent Task",
       description: "Record safe task completion evidence, run learning, write session summaries, and return review next actions.",
-      inputSchema: z.object({
-        projectRoot: projectRootSchema,
-        sessionId: z.string().min(1).default("agent-task"),
-        summary: z.string().min(1).max(2000),
-        outcome: z.enum(["completed", "accepted", "rejected", "edited"]).default("completed"),
-        outcomeReason: z.string().min(1).max(500).optional(),
-        files: z.array(z.string().min(1)).default([]),
-        commands: z.array(z.string().min(1)).default([]),
-        commandStatus: z.enum(["pass", "fail", "blocked", "timeout", "unknown"]).default("unknown"),
-        proposedPatchHash: z.string().min(6).max(128).optional(),
-        finalPatchHash: z.string().min(6).max(128).optional(),
-        diffStats: z.object({
-          added: z.number().int().min(0),
-          removed: z.number().int().min(0),
-          files: z.number().int().min(0)
-        }).optional(),
-        learn: z.boolean().default(true),
-        compileSafe: z.boolean().default(false)
-      }),
+      inputSchema: taskFinishInputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
     async ({ projectRoot, sessionId, summary, outcome, outcomeReason, files, commands, commandStatus, proposedPatchHash, finalPatchHash, diffStats, learn, compileSafe }) => {

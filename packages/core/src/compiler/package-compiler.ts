@@ -90,6 +90,7 @@ interface McpToolDescriptor {
 
 const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_bootstrap_session", "bootstrap", "local-write"),
+  descriptor("osk_get_status", "status", "local-write"),
   descriptor("osk_explain_status", "status", "read-only"),
   descriptor("osk_detect_environment", "detection", "local-write"),
   descriptor("osk_get_agent_surfaces", "detection", "local-write"),
@@ -105,7 +106,9 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_get_relevant_preferences", "retrieval", "read-only"),
   descriptor("osk_route_behavior", "routing", "read-only"),
   descriptor("osk_get_agent_task_context", "routing", "local-write"),
+  descriptor("osk_get_task_context", "routing", "local-write"),
   descriptor("osk_finish_agent_task", "observation", "local-write"),
+  descriptor("osk_finish_task", "observation", "local-write"),
   descriptor("osk_record_event", "observation", "local-write"),
   descriptor("osk_learn_from_session", "learning", "local-write"),
   descriptor("osk_compile_behavior_layer", "compile", "local-write"),
@@ -161,6 +164,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_openworld_task_report", "openworld", "local-write"),
   descriptor("osk_openworld_promote_review", "openworld", "approval-required", true),
   descriptor("osk_pack_behavior", "packs", "approval-required", true),
+  descriptor("osk_get_docs_help", "docs", "read-only"),
   descriptor("osk_reset_state", "maintenance", "approval-required", true),
   descriptor("osk_prune_state", "maintenance", "approval-required", true),
   descriptor("osk_archive_state", "maintenance", "approval-required", true),
@@ -168,10 +172,9 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
 ];
 
 const PUBLIC_MCP_PROFILE_TOOLS = [
-  "osk_bootstrap_session",
-  "osk_explain_status",
-  "osk_get_agent_task_context",
-  "osk_finish_agent_task",
+  "osk_get_status",
+  "osk_get_task_context",
+  "osk_finish_task",
   "osk_plan_learning_sources",
   "osk_run_learning_plan",
   "osk_review_behavior",
@@ -179,7 +182,8 @@ const PUBLIC_MCP_PROFILE_TOOLS = [
   "osk_verify_behavior",
   "osk_compile_deploy",
   "osk_run_eval",
-  "osk_pack_behavior"
+  "osk_pack_behavior",
+  "osk_get_docs_help"
 ];
 
 async function compileMcpConfig(root: string, contextPackPath?: string): Promise<CompileMcpConfigResult> {

@@ -16,4 +16,4 @@ Host: Cursor
 
 ## Required First Call
 
-Call `osk_bootstrap_session` before using learned behavior. If MCP is unavailable, run `openskill-kit status --json` from the project root.
+Call `osk_get_status` before using learned behavior. If MCP is unavailable, run `openskill-kit status --json` from the project root.

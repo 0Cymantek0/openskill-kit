@@ -26,7 +26,7 @@ describe("openskill-kit MCP server", () => {
     try {
       await client.connect(transport);
       const boot = await client.callTool({
-        name: "osk_bootstrap_session",
+        name: "osk_get_status",
         arguments: { init: true }
       });
       const bootText = boot.content.find((item) => item.type === "text")?.text;
@@ -67,7 +67,8 @@ describe("openskill-kit MCP server", () => {
           "openskill_install",
           "openskill_list",
           "openskill_inspect",
-          "osk_bootstrap_session",
+          "osk_get_status",
+          "osk_get_docs_help",
           "osk_record_event",
           "osk_learn_from_session",
           "osk_compile_behavior_layer",
@@ -82,8 +83,8 @@ describe("openskill-kit MCP server", () => {
           "osk_preview_plugin_attach",
           "osk_apply_plugin_attach",
           "osk_get_plugin_attach_status",
-          "osk_get_agent_task_context",
-          "osk_finish_agent_task",
+          "osk_get_task_context",
+          "osk_finish_task",
           "osk_import_interaction_source",
           "osk_list_interaction_adapters",
           "osk_list_interaction_imports",
@@ -100,14 +101,14 @@ describe("openskill-kit MCP server", () => {
       );
 
       const boot = await client.callTool({
-        name: "osk_bootstrap_session",
+        name: "osk_get_status",
         arguments: { projectRoot: root, init: true }
       });
       const bootText = boot.content.find((item) => item.type === "text")?.text;
       expect(bootText).toBeTruthy();
       expect(bootText).not.toContain(root);
       const bootParsed = JSON.parse(bootText ?? "{}");
-      expect(bootParsed.schemaVersion).toBe("openskill-kit.bootstrap-session.v1");
+      expect(bootParsed.schemaVersion).toBe("openskill-kit.status-facade.v1");
       expect(bootParsed.plugin.ready).toBe(false);
       expect(bootParsed.plugin.nextActions[0]).toContain("compile --target plugin");
 
@@ -139,7 +140,7 @@ describe("openskill-kit MCP server", () => {
       expect(facadeCompileParsed.schemaVersion).toBe("openskill-kit.compile-deploy.v1");
       expect(facadeCompileParsed.compile.compiledTargets).toContain("plugin");
       const bootReady = await client.callTool({
-        name: "osk_bootstrap_session",
+        name: "osk_get_status",
         arguments: { projectRoot: root, init: false }
       });
       const bootReadyText = bootReady.content.find((item) => item.type === "text")?.text;
@@ -169,7 +170,7 @@ describe("openskill-kit MCP server", () => {
       const attachApplyParsed = JSON.parse(attachApply.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(attachApplyParsed.status).toBe("attached");
       const bootAttached = await client.callTool({
-        name: "osk_bootstrap_session",
+        name: "osk_get_status",
         arguments: { projectRoot: root, init: false }
       });
       const bootAttachedParsed = JSON.parse(bootAttached.content.find((item) => item.type === "text")?.text ?? "{}");
@@ -182,7 +183,7 @@ describe("openskill-kit MCP server", () => {
       expect(healthAttachedParsed.attached).toBe(true);
 
       const taskContext = await client.callTool({
-        name: "osk_get_agent_task_context",
+        name: "osk_get_task_context",
         arguments: { projectRoot: root, query: "finish with npm test", commands: ["npm test"] }
       });
       const taskContextParsed = JSON.parse(taskContext.content.find((item) => item.type === "text")?.text ?? "{}");
@@ -192,7 +193,7 @@ describe("openskill-kit MCP server", () => {
       expect(taskContextParsed.plugin.attached).toBe(true);
 
       const finished = await client.callTool({
-        name: "osk_finish_agent_task",
+        name: "osk_finish_task",
         arguments: {
           projectRoot: root,
           sessionId: "mcp-finish",
@@ -210,6 +211,15 @@ describe("openskill-kit MCP server", () => {
       expect(finishedParsed.schemaVersion).toBe("openskill-kit.agent-task-finish.v1");
       expect(finishedParsed.eventIds.length).toBeGreaterThanOrEqual(4);
       expect(finishedParsed.lifecycle.signals.signalCount).toBeGreaterThan(0);
+
+      const docsHelp = await client.callTool({
+        name: "osk_get_docs_help",
+        arguments: { projectRoot: root, topic: "all" }
+      });
+      const docsHelpParsed = JSON.parse(docsHelp.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(docsHelpParsed.schemaVersion).toBe("openskill-kit.docs-help.v1");
+      expect(docsHelpParsed.commands).toContain("`/osk task`");
+      expect(docsHelpParsed.learn).toContain("OpenCode ambient metadata");
 
       const reviewQueue = await client.callTool({
         name: "osk_review_behavior",

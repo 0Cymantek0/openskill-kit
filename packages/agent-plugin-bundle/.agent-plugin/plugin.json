@@ -46,7 +46,7 @@
     "mode": "local-project-plugin",
     "pluginDirectory": "packages/agent-plugin-bundle",
     "firstCall": {
-      "mcpTool": "osk_bootstrap_session",
+      "mcpTool": "osk_get_status",
       "cliFallback": "openskill-kit status --json"
     },
     "mcp": {
@@ -74,11 +74,12 @@
       "osk_pack_behavior"
     ],
     "readOnlyFirstTools": [
-      "osk_bootstrap_session",
+      "osk_get_status",
       "osk_detect_environment",
       "osk_get_plugin_attach_status",
       "osk_get_plugin_install_profile",
-      "osk_get_agent_task_context"
+      "osk_get_task_context",
+      "osk_get_docs_help"
     ],
     "attach": {
       "previewCli": "openskill-kit agent attach-plugin --host opencode --dry-run",
@@ -145,7 +146,7 @@
           "bootstrap openskill"
         ],
         "description": "Initialize project-local OSK state and preview harness attach.",
-        "mcpTool": "osk_bootstrap_session",
+      "mcpTool": "osk_get_status",
         "cli": "openskill-kit init && openskill-kit status",
         "readOnly": false,
         "approvalRequired": false,
@@ -160,7 +161,7 @@
           "openskill status"
         ],
         "description": "Show behavior, review, plugin, and harness health.",
-        "mcpTool": "osk_bootstrap_session",
+      "mcpTool": "osk_get_status",
         "cli": "openskill-kit status",
         "readOnly": true,
         "approvalRequired": false,
@@ -177,7 +178,7 @@
           "osk task finish"
         ],
         "description": "Load task context before work and record safe outcome after work.",
-        "mcpTool": "osk_get_agent_task_context",
+      "mcpTool": "osk_get_task_context",
         "cli": "openskill-kit context --query \"<task>\"",
         "readOnly": false,
         "approvalRequired": false,

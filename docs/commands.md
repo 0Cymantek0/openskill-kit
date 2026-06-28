@@ -33,7 +33,7 @@ Initialize project-local OSK state and preview harness attach.
 
 - Why public: Bootstrap is a common first-run workflow that must discover surfaces, compile artifacts, and show safe next actions.
 - CLI fallback: `openskill-kit init && openskill-kit status`
-- MCP first call: `osk_bootstrap_session`
+- MCP first call: `osk_get_status`
 - Skills: `osk-operating-manual`
 - Subagents: `osk-router`
 - Output: Readiness, detected harnesses, privacy gates, and next command.
@@ -50,7 +50,7 @@ Show behavior, review, plugin, and harness health.
 
 - Why public: Status is the low-risk first call for any harness and the fallback when commands fail.
 - CLI fallback: `openskill-kit status`
-- MCP first call: `osk_bootstrap_session`
+- MCP first call: `osk_get_status`
 - Skills: `osk-operating-manual`
 - Subagents: `osk-router`
 - Output: Counts, readiness, descriptor drift, pending review, OpenWorld proof boundary, and next actions.
@@ -68,7 +68,7 @@ Load task context before work and record safe outcome after work.
 
 - Why public: Task start/finish is the daily workflow loop for harness users.
 - CLI fallback: `openskill-kit context --query "<task>"`
-- MCP first call: `osk_get_agent_task_context`
+- MCP first call: `osk_get_task_context`
 - Skills: `project-behavior`, `project-workflows`
 - Subagents: `osk-router`
 - Output: Compact context or finish digest with review next actions.

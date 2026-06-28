@@ -103,7 +103,7 @@ For harness compatibility, generated plugins also include:
   attach time. If the compiled plugin descriptor hash changes later,
   `osk_get_plugin_attach_status` reports `descriptor-drift` until the host
   attachment is previewed and applied again.
-  `openskill-kit status --json` and `osk_bootstrap_session` report
+  `openskill-kit status --json` and `osk_get_status` report
   `compiled.pluginAttachment` so hosts can show whether the plugin is attached,
   root-bound, missing, invalid JSON, pointed at the wrong command, or stale
   against current descriptors.
@@ -131,14 +131,14 @@ Harness behavior should stay conservative:
   section and preserves other Codex settings.
 - Compare `plugin.json.integrity.descriptorsHash` with
   `mcp/descriptor-hashes.json` before trusting tool descriptors.
-- Treat any `plugin.integrityIssues` returned from `osk_bootstrap_session` or
+- Treat any `plugin.integrityIssues` returned from `osk_get_status` or
   `openskill-kit status --json` as attach-blocking; regenerate with
   `openskill-kit compile --target plugin`.
 - Treat `compiled.pluginAttachment.hosts[*].status == "descriptor-drift"` as
   attach-stale; preview and re-apply host attachment, then restart or refresh
   the harness MCP server.
 - Start `openskill-kit-mcp` from the project root with stdio.
-- Call `osk_bootstrap_session` first; it reports whether the compiled plugin is
+- Call `osk_get_status` first; it reports whether the compiled plugin is
   ready, where to attach it, which skills/capabilities are exposed, and which
   approvals remain required.
 - Route `/osk ...` requests through `commands/commands.json`; prefer MCP and use
@@ -147,14 +147,14 @@ Harness behavior should stay conservative:
   low-level commands as implementation details unless an advanced automation
   explicitly needs them.
 - For normal coding tasks, route `/osk context` to
-  `osk_get_agent_task_context`; it returns the route plan, compact relevant
+  `osk_get_task_context`; it returns the route plan, compact relevant
   preferences, workflow matches, plugin health, plugin install profile status,
   review counts, compact pending review items, action hints, and next actions in
   one harness-friendly response.
   Semantic proposals and OpenWorld review promotions shown there are review
   inputs only; the host must still run learning/update graph and explicit
   review actions before compiling or installing active behavior.
-- At task end, route `/osk finish task` to `osk_finish_agent_task` with a short
+- At task end, route `/osk finish task` to `osk_finish_task` with a short
   safe summary, touched files, verification commands, command status, and
   outcome. It records redacted local evidence, writes session summaries, runs
   learning, and returns review next actions. Do not pass raw prompts, raw diffs,

@@ -151,6 +151,6 @@ describe("adaptive behavior layer", () => {
     expect(status.compiled.plugin).toBe(true);
     expect(status.compiled.pluginStatus.ready).toBe(true);
     expect(status.compiled.pluginStatus.skills).toEqual(expect.arrayContaining(["skills/project-behavior", "skills/project-testing"]));
-    expect(status.compiled.pluginStatus.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")).toBe(true);
+    expect(status.compiled.pluginStatus.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_get_status")).toBe(true);
   });
 });

@@ -38,7 +38,7 @@ npx openskill-kit osk uninstall --host opencode
 npx openskill-kit osk uninstall --host opencode --yes
 ```
 
-When attached through MCP, the harness should call `osk_bootstrap_session`
+When attached through MCP, the harness should call `osk_get_status`
 first, route `/osk ...` requests through the compiled command map, and fall back
 to the matching CLI command only when MCP is unavailable. Learned behavior stays
 inactive until review accepts it. Deploy/apply flows are preview-first and
@@ -98,9 +98,9 @@ benchmark evaluation yet.
 
 | Family | Use it for | First route |
 |---|---|---|
-| `/osk init` | Set up local state and preview attach. | `osk_bootstrap_session` |
-| `/osk status` | Show readiness, review counts, plugin state, OpenWorld proof boundary, and next actions. | `osk_bootstrap_session` |
-| `/osk task` | Load behavior before work and record a safe finish summary after work. | `osk_get_agent_task_context` |
+| `/osk init` | Set up local state and preview attach. | `osk_get_status` |
+| `/osk status` | Show readiness, review counts, plugin state, OpenWorld proof boundary, and next actions. | `osk_get_status` |
+| `/osk task` | Load behavior before work and record a safe finish summary after work. | `osk_get_task_context` |
 | `/osk learn` | Plan and run review-gated learning from selected safe sources. | `osk_plan_learning_sources` |
 | `/osk review` | Approve, reject, edit, lock, or demote candidate behavior. | `osk_review_behavior` |
 | `/osk research` | Build leakage-audited OpenWorld source and anchor plans. | `osk_run_openworld_workflow` |
@@ -161,10 +161,9 @@ openskill-kit-mcp
 
 Public-profile facade tools:
 
-- `osk_bootstrap_session`
-- `osk_explain_status`
-- `osk_get_agent_task_context`
-- `osk_finish_agent_task`
+- `osk_get_status`
+- `osk_get_task_context`
+- `osk_finish_task`
 - `osk_plan_learning_sources`
 - `osk_run_learning_plan`
 - `osk_review_behavior`
@@ -173,6 +172,7 @@ Public-profile facade tools:
 - `osk_compile_deploy`
 - `osk_run_eval`
 - `osk_pack_behavior`
+- `osk_get_docs_help`
 
 Advanced-profile tools remain available for scripts and lower-level automation,
 including interaction imports, manifest install/uninstall, hook install,
@@ -181,13 +181,13 @@ OpenWorld source/verifier primitives, encrypted packs, signing, and maintenance.
 Legacy skill drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.
 
-`osk_bootstrap_session` is the recommended first call for a coding harness. It
+`osk_get_status` is the recommended first call for a coding harness. It
 returns initialization status plus compiled plugin readiness, attach path,
 published skills/capabilities, MCP command, privacy exclusions, approval gates,
 and next actions.
 
-For normal coding work, call `osk_get_agent_task_context` before editing and
-`osk_finish_agent_task` after verification. The finish call records a safe
+For normal coding work, call `osk_get_task_context` before editing and
+`osk_finish_task` after verification. The finish call records a safe
 task summary, commands, touched files, and outcome, then runs the same learning
 and review queue path as the CLI. Do not send raw prompts, raw diffs, secrets,
 or hidden benchmark answers as the summary.
