@@ -9,6 +9,7 @@ export const AgentPluginAttachHosts = ["opencode", "codex", "claude-code", "curs
 export type AgentPluginAttachHost = typeof AgentPluginAttachHosts[number];
 export const AGENT_PLUGIN_PROJECT_ROOT_ENV = "OPENSKILLKIT_PROJECT_ROOT";
 export const DEFAULT_AGENT_PLUGIN_ATTACH_HOST: AgentPluginAttachHost = "opencode";
+const OPENCODE_PLUGIN_PATH = ".opencode/plugins/openskillkit.ts";
 
 export interface AgentPluginAttachResult {
   schemaVersion: "openskill-kit.agent-plugin-attach.v1";
@@ -394,8 +395,18 @@ async function planOpenCodeConfig(destination: string, command: string, projectR
   }
   const before = existing ?? "";
   const currentMcp = isRecord(parsed.mcp) ? parsed.mcp : {};
+  const pluginList = openCodePluginList(parsed.plugin);
+  if (pluginList.issue) {
+    return {
+      destination,
+      action: "blocked",
+      issue: pluginList.issue,
+      diff: unifiedDiff(destination, before, before)
+    };
+  }
   const next: Record<string, unknown> = {
     ...parsed,
+    plugin: pluginList.items.includes(OPENCODE_PLUGIN_PATH) ? pluginList.items : [...pluginList.items, OPENCODE_PLUGIN_PATH],
     mcp: {
       ...currentMcp,
       "openskill-kit": {
@@ -452,7 +463,17 @@ function inspectOpenCodeConfig(
       ? commandValue
       : undefined;
   const environment = isRecord(server?.environment) ? server.environment : {};
-  return inspectAttachedServer(root, host, destination, { command, projectRootBound: environment[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root }, plugin, receipts);
+  const attached = inspectAttachedServer(root, host, destination, { command, projectRootBound: environment[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root }, plugin, receipts);
+  if (attached.status !== "attached") return attached;
+  const pluginList = openCodePluginList(parsed.plugin);
+  if (pluginList.issue || !pluginList.items.includes(OPENCODE_PLUGIN_PATH)) {
+    return {
+      ...attached,
+      status: "wrong-command",
+      issue: pluginList.issue ?? `OpenCode plugin list missing ${OPENCODE_PLUGIN_PATH}`
+    };
+  }
+  return attached;
 }
 
 async function planCodexTomlConfig(destination: string, command: string, projectRoot: string): Promise<AgentPluginAttachFile> {
@@ -587,4 +608,12 @@ async function readJson<T>(file: string): Promise<T> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function openCodePluginList(value: unknown): { items: string[]; issue?: string } {
+  if (value === undefined) return { items: [] };
+  if (typeof value === "string") return { items: [value] };
+  if (!Array.isArray(value)) return { items: [], issue: "Existing OpenCode plugin config must be a string or string array." };
+  if (!value.every((item) => typeof item === "string")) return { items: [], issue: "Existing OpenCode plugin array contains non-string entries." };
+  return { items: [...new Set(value)] };
 }

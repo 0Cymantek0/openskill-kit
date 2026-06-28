@@ -156,7 +156,7 @@ describe("agent plugin attach planner", () => {
     expect(attached.status).toBe("attached");
     const config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
     expect(config.keep).toBe(true);
-    expect(config.plugin).toEqual(["./custom.ts"]);
+    expect(config.plugin).toEqual(["./custom.ts", ".opencode/plugins/openskillkit.ts"]);
     expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
     expect(config.mcp["openskill-kit"].environment.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
     expect(await readFile(path.join(root, ".opencode", "commands", "osk-learn.md"), "utf8")).toContain("osk_plan_learning_sources");
@@ -164,6 +164,22 @@ describe("agent plugin attach planner", () => {
     expect(await readFile(path.join(root, ".opencode", "skills", "osk-learning", "SKILL.md"), "utf8")).toContain("Preview imports before apply.");
     const status = await getAgentPluginAttachStatus(root);
     expect(status.hosts.find((host) => host.host === "opencode")?.status).toBe("attached");
+  });
+
+  it("reports OpenCode attachment incomplete when the generated plugin is not registered", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode-plugin", "Prefer loaded OpenCode plugin hooks", "workflow")]);
+    await attachAgentPlugin(root, { host: "opencode", dryRun: false, yes: true });
+    const configPath = path.join(root, "opencode.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.plugin = config.plugin.filter((item: string) => item !== ".opencode/plugins/openskillkit.ts");
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const status = await getAgentPluginAttachStatus(root);
+
+    const opencode = status.hosts.find((host) => host.host === "opencode");
+    expect(opencode?.status).toBe("wrong-command");
+    expect(opencode?.issue).toContain("plugin list missing");
   });
 
   it("uses OpenCode-first guidance when compiled plugin is not attached", async () => {

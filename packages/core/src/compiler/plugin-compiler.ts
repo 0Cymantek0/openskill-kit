@@ -498,7 +498,7 @@ function pluginInstallGuides(): PluginInstallGuide[] {
       ],
       notes: [
         "OpenCode is the primary full-feature target for command files, skills, learner subagent, project plugin hooks, and MCP.",
-        "OpenSkillKit preserves the user's `plugin` list; generated project plugins are copied into `.opencode/plugins` instead of injected into `opencode.json`.",
+        "OpenSkillKit preserves existing `plugin` entries and appends `.opencode/plugins/openskillkit.ts` so metadata-only hooks load.",
         "Generated hooks store metadata only by default and never raw prompts or raw diffs."
       ]
     },

@@ -70,7 +70,8 @@ describe("agent plugin manifest", () => {
     expect(codexGuide).toContain("AGENTS.md");
     expect(codexGuide).toContain(".codex/config.toml");
     expect(genericGuide).toContain("osk_get_status");
-    expect(opencodeGuide).toContain("preserves the user's `plugin` list");
+    expect(opencodeGuide).toContain("preserves existing `plugin` entries");
+    expect(opencodeGuide).toContain(".opencode/plugins/openskillkit.ts");
     expect(opencodeGuide).toContain(".opencode/plugins");
   });
 });

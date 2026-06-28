@@ -21,7 +21,7 @@ The plugin bundle gives a harness these local entrypoints:
 - `install-guides/` for host-specific attach notes for Codex, Claude Code,
   Cursor, and generic MCP clients.
 - `opencode/plugins/` for OpenCode project plugin hooks copied into
-  `.opencode/plugins` without changing the user's `plugin` list.
+  `.opencode/plugins` and registered without removing existing `plugin` entries.
 - `.agent-plugin/plugin.json` for the host-facing capability and privacy
   contract.
 

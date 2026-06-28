@@ -466,6 +466,27 @@ describe("deep architecture hardening", () => {
     await expect(stat(path.join(root, ".claude", "rules", "src-parser.md"))).rejects.toThrow();
   });
 
+  it("deletes manifest files on uninstall when OpenSkillKit created them from scratch", async () => {
+    const root = await tempProject();
+
+    const installed = await installInstructionManifests(root, { dryRun: false, yes: true });
+
+    expect(installed.status).toBe("installed");
+    expect(installed.files.find((file) => file.destination.endsWith("AGENTS.md"))?.action).toBe("create");
+    await expect(stat(path.join(root, "AGENTS.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, "CLAUDE.md"))).resolves.toBeTruthy();
+
+    const preview = await uninstallInstructionManifests(root, { dryRun: true });
+    expect(preview.files.find((file) => file.destination.endsWith("AGENTS.md"))?.action).toBe("delete");
+    expect(preview.files.find((file) => file.destination.endsWith("CLAUDE.md"))?.action).toBe("delete");
+
+    const uninstalled = await uninstallInstructionManifests(root, { dryRun: false, yes: true });
+
+    expect(uninstalled.status).toBe("uninstalled");
+    await expect(stat(path.join(root, "AGENTS.md"))).rejects.toThrow();
+    await expect(stat(path.join(root, "CLAUDE.md"))).rejects.toThrow();
+  });
+
   it("validates custom redactions and ignores invalid regexes during event capture", async () => {
     const root = await tempProject();
     const configPath = path.join(root, ".openskill-kit", "config.json");

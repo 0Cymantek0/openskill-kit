@@ -234,9 +234,10 @@ async function planDirectoryInstall(sourceDir: string, destinationDir: string): 
 
 async function planManifestUninstall(root: string): Promise<ManifestPlanFile[]> {
   const ruleFiles = await installedRuleDestinations(root);
+  const createdFiles = await createdManifestDestinations(root);
   const plans: ManifestPlanFile[] = [
-    await planManagedBlockRemoval(path.join(root, "AGENTS.md")),
-    await planManagedBlockRemoval(path.join(root, "CLAUDE.md")),
+    await planManagedBlockRemoval(path.join(root, "AGENTS.md"), createdFiles.has("AGENTS.md")),
+    await planManagedBlockRemoval(path.join(root, "CLAUDE.md"), createdFiles.has("CLAUDE.md")),
     ...await Promise.all(ruleFiles.map(async (destination) => {
       assertInsideRoot(root, destination);
       const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
@@ -252,16 +253,26 @@ async function planManifestUninstall(root: string): Promise<ManifestPlanFile[]> 
   return plans.filter((file) => file.action !== "unchanged" || file.diff);
 }
 
-async function planManagedBlockRemoval(destination: string): Promise<ManifestPlanFile> {
+async function planManagedBlockRemoval(destination: string, deleteIfOnlyGeneratedShell = false): Promise<ManifestPlanFile> {
   const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
   const next = removeManagedBlock(existing);
+  const shouldDelete = existing !== undefined && deleteIfOnlyGeneratedShell && isOnlyGeneratedManifestShell(destination, next);
   return {
     source: destination,
     destination,
-    action: existing === undefined || existing === next ? "unchanged" : "update",
-    preview: next,
-    diff: unifiedDiff(destination, existing ?? "", next ?? "")
+    action: existing === undefined ? "unchanged" : shouldDelete ? "delete" : existing === next ? "unchanged" : "update",
+    preview: shouldDelete ? undefined : next,
+    diff: unifiedDiff(destination, existing ?? "", shouldDelete ? "" : next ?? "")
   };
+}
+
+function isOnlyGeneratedManifestShell(destination: string, text: string | undefined): boolean {
+  const normalized = (text ?? "").replace(/\r\n/g, "\n").trim();
+  if (!normalized) return true;
+  const basename = path.basename(destination);
+  if (basename === "AGENTS.md") return normalized === "# AGENTS.md instructions";
+  if (basename === "CLAUDE.md") return normalized === "# CLAUDE.md";
+  return false;
 }
 
 function mergeManagedBlock(existing: string | undefined, managedBlock: string): string {
@@ -323,6 +334,15 @@ async function installedRuleDestinations(root: string): Promise<string[]> {
   if (receiptRules.length) return [...new Set(receiptRules)].sort();
   const compiledRules = await listFiles(path.join(root, ".openskill-kit", "compiled", "manifests", "claude-rules"));
   return compiledRules.map((file) => path.join(root, ".claude", "rules", path.basename(file))).sort();
+}
+
+async function createdManifestDestinations(root: string): Promise<Set<string>> {
+  const receipt = await latestManifestReceipt(root).catch(() => undefined);
+  return new Set(
+    (receipt?.files ?? [])
+      .filter((file) => file.action === "create" && typeof file.destination === "string")
+      .map((file) => file.destination!)
+  );
 }
 
 async function latestManifestReceipt(root: string): Promise<InstructionManifestReceipt | undefined> {

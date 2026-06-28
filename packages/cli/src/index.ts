@@ -2156,7 +2156,7 @@ async function runSetupWizard(projectRoot: string, hostInput: string, options: S
 
     let manifestsStatus: string | undefined;
     if (!options.skipManifests) {
-      const manifestsRes = await installInstructionManifests(projectRoot, { target: "project", yes: true });
+      const manifestsRes = await installInstructionManifests(projectRoot, { target: "project", dryRun: false, yes: true });
       manifestsStatus = manifestsRes.status;
       messages.push(`Instruction manifests: ${manifestsRes.status}`);
     } else {
@@ -2198,7 +2198,7 @@ async function runUninstallWizard(projectRoot: string, hostInput: string, option
     `Target host: ${host}`,
     dryRun ? "Dry-run only. Re-run with `--yes` to apply removals." : "Applying approved uninstall."
   ];
-  const rl = options.nonInteractive || options.yes || options.dryRun ? undefined : createInterface({ input: process.stdin, output: process.stdout });
+  const rl = options.nonInteractive || options.yes || dryRun ? undefined : createInterface({ input: process.stdin, output: process.stdout });
   try {
     if (rl && !await askYes(rl, "Revert OpenCode settings and remove generated OSK files?")) {
       return { schemaVersion: "openskill-kit.uninstall-wizard.v1", status: "cancelled", host, dryRun: true, configChanged: false, removed: [], planned: [], messages: [...messages, "Uninstall cancelled."] };
@@ -2230,7 +2230,7 @@ async function runUninstallWizard(projectRoot: string, hostInput: string, option
       messages.push(`Removed: ${relativePath}`);
     }
 
-    const manifests = await uninstallInstructionManifests(projectRoot, { target: "project", yes: true });
+    const manifests = await uninstallInstructionManifests(projectRoot, { target: "project", dryRun: false, yes: true });
     messages.push(`Instruction manifests: ${manifests.status}`);
     messages.push(options.deleteState ? "Local OSK state removed." : "Local OSK state preserved.");
     messages.push("Restart OpenCode to finalize removal.");
@@ -2246,7 +2246,7 @@ async function askYes(rl: ReturnType<typeof createInterface>, question: string):
 }
 
 async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean): Promise<{ configChanged: boolean; nextConfig?: Record<string, unknown>; paths: string[] }> {
-  const paths = new Set<string>([".openskill-kit/compiled"]);
+  const paths = new Set<string>([".agents/hooks/openskill-kit.json", ".openskill-kit/compiled"]);
   const opencodeJsonPath = path.join(projectRoot, "opencode.json");
   let configChanged = false;
   let nextConfig: Record<string, unknown> | undefined;
@@ -2260,7 +2260,12 @@ async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean):
       if (Object.keys(mcp).length) nextConfig.mcp = mcp;
       else delete nextConfig.mcp;
     }
-    if (Array.isArray(nextConfig.plugin)) {
+    if (typeof nextConfig.plugin === "string") {
+      if (nextConfig.plugin === ".opencode/plugins/openskillkit.ts") {
+        delete nextConfig.plugin;
+        configChanged = true;
+      }
+    } else if (Array.isArray(nextConfig.plugin)) {
       const filtered = nextConfig.plugin.filter((item) => item !== ".opencode/plugins/openskillkit.ts");
       if (filtered.length !== nextConfig.plugin.length) configChanged = true;
       if (filtered.length) nextConfig.plugin = filtered;
