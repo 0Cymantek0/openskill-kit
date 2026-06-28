@@ -84,7 +84,7 @@ Workflow:
 Plan and run explicit, review-gated learning from selected sources.
 
 - Why public: Learning touches private evidence, so it needs a visible source picker and approval boundary.
-- CLI fallback: `openskill-kit learn`
+- CLI fallback: `openskill-kit osk learn`
 - MCP first call: `osk_plan_learning_sources`
 - Skills: `osk-learning`, `osk-review-gate`
 - Subagents: `osk-learner`

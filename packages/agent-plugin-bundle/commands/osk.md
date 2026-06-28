@@ -41,7 +41,7 @@ Load task context before work and record safe outcome after work.
 Plan and run explicit, review-gated learning from selected sources.
 
 - MCP tool: `osk_plan_learning_sources`
-- CLI fallback: `openskill-kit learn`
+- CLI fallback: `openskill-kit osk learn`
 - Read-only: `no`
 - Explicit approval required: `yes`
 

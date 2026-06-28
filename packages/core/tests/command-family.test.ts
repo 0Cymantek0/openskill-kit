@@ -41,6 +41,7 @@ describe("OSK command family registry", () => {
     const commands = pluginCommandProjections();
     expect(commands).toHaveLength(OSK_PUBLIC_COMMAND_COUNT);
     expect(commands.find((item) => item.command === "/osk learn")?.mcpTool).toBe("osk_plan_learning_sources");
+    expect(commands.find((item) => item.command === "/osk learn")?.cli).toBe("openskill-kit osk learn");
     expect(commands.find((item) => item.command === "/osk deploy")?.approvalRequired).toBe(true);
     expect(commands.find((item) => item.command === "/osk eval")?.mcpTool).toBe("osk_run_eval");
     expect(commands.find((item) => item.command === "/osk status")?.readOnly).toBe(true);

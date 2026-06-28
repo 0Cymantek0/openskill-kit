@@ -100,7 +100,9 @@ import {
   OSK_PUBLIC_COMMAND_FAMILIES,
   type CompileTarget,
   type AgentPluginAttachHost,
-  type InstallTarget
+  type InstallTarget,
+  type LearnRun,
+  type LearnSourcePlan
 } from "@openskill-kit/core";
 
 const program = new Command();
@@ -280,6 +282,7 @@ osk.command("learn")
   .option("--all-detected", "Select all safe detected sources")
   .option("--apply", "Apply selected sources after preview approval")
   .option("--max-events <number>", "Maximum events", parseIntegerOption, 250)
+  .option("--no-interactive", "Do not prompt; print the source plan")
   .option("--json", "Print JSON")
   .action(async (options) => {
     const sourceMode = options.source.length ? "selected" : options.allDetected === true ? "all-detected" : "ask";
@@ -290,22 +293,10 @@ osk.command("learn")
         previewOnly: options.apply !== true,
         maxEvents: options.maxEvents
       })
+      : options.interactive !== false && options.json !== true && canPrompt()
+        ? await runInteractiveLearnPicker(process.cwd(), options.maxEvents)
       : await planLearningSources(process.cwd(), { sourceMode });
-    const text = "digest" in result
-      ? [
-        `Sources considered: ${result.digest.sourcesConsidered}`,
-        `Sources used: ${result.digest.sourcesUsed}`,
-        `Events appended: ${result.digest.eventsAppended}`,
-        `Signals extracted: ${result.digest.signalsExtracted}`,
-        `Candidate preferences: ${result.digest.candidatePreferences}`,
-        ...result.nextActions
-      ].join("\n")
-      : [
-        `Sources: ${result.summary.total} (${result.summary.safeMetadata} safe, ${result.summary.explicitImport} explicit, ${result.summary.blocked} blocked)`,
-        `Default selected: ${result.defaults.selectedSourceIds.join(", ") || "none"}`,
-        ...result.nextActions
-      ].join("\n");
-    output(options.json, result, text);
+    output(options.json, result, renderLearnResult(result));
   });
 
 osk.command("review")
@@ -1780,6 +1771,85 @@ program.parseAsync(process.argv).catch((error) => {
 function output(json: boolean | undefined, data: unknown, text: string): void {
   if (json) console.log(JSON.stringify(sanitizeForOutput(data), null, 2));
   else console.log(sanitizeText(text));
+}
+
+function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
+  return "digest" in result
+    ? [
+      `Sources considered: ${result.digest.sourcesConsidered}`,
+      `Sources used: ${result.digest.sourcesUsed}`,
+      `Events appended: ${result.digest.eventsAppended}`,
+      `Signals extracted: ${result.digest.signalsExtracted}`,
+      `Candidate preferences: ${result.digest.candidatePreferences}`,
+      ...result.nextActions
+    ].join("\n")
+    : [
+      `Sources: ${result.summary.total} (${result.summary.safeMetadata} safe, ${result.summary.explicitImport} explicit, ${result.summary.blocked} blocked)`,
+      `Default selected: ${result.defaults.selectedSourceIds.join(", ") || "none"}`,
+      ...result.nextActions
+    ].join("\n");
+}
+
+async function runInteractiveLearnPicker(projectRoot: string, maxEvents: number): Promise<LearnSourcePlan | LearnRun> {
+  const plan = await planLearningSources(projectRoot, { sourceMode: "ask" });
+  const choices = plan.question.choices;
+  if (!choices.length) return plan;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log(plan.question.prompt);
+    for (const [index, choice] of choices.entries()) {
+      const option = plan.options.find((item) => item.id === choice.id);
+      const marker = plan.defaults.selectedSourceIds.includes(choice.id) ? "*" : " ";
+      const approval = choice.approvalRequired ? "approval required" : "safe metadata";
+      console.log(`${index + 1}. [${marker}] ${choice.id} - ${choice.label} (${approval})`);
+      if (option?.reason) console.log(`   ${option.reason}`);
+    }
+    const answer = (await rl.question("Select source numbers/ids, `all`, or Enter for defaults: ")).trim();
+    if (/^(q|quit|cancel)$/i.test(answer)) return plan;
+    const selectedSourceIds = parseLearnSelection(answer, plan);
+    if (!selectedSourceIds.length) return plan;
+    const selectedOptions = selectedSourceIds
+      .map((id) => plan.options.find((item) => item.id === id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+    const hasExplicitImport = selectedOptions.some((item) => item.policy === "explicit-import");
+    const pipedPrompt = process.stdin.isTTY !== true || process.stdout.isTTY !== true;
+    const previewOnly = hasExplicitImport || pipedPrompt
+      ? true
+      : !await askYes(rl, "Apply selected safe metadata now? Default is preview only");
+    if (hasExplicitImport) {
+      console.log("Explicit import selected; running preview only. Re-run with explicit --source id and --apply after reviewing the preview.");
+    }
+    return runLearningPlan(projectRoot, {
+      sourceMode: "selected",
+      selectedSourceIds,
+      previewOnly,
+      maxEvents
+    });
+  } finally {
+    rl.close();
+  }
+}
+
+function parseLearnSelection(answer: string, plan: LearnSourcePlan): string[] {
+  const available = new Map(plan.question.choices.map((choice, index) => [choice.id, { id: choice.id, index: index + 1 }]));
+  if (!answer) return plan.defaults.selectedSourceIds.filter((id) => available.has(id));
+  if (/^(all|a)$/i.test(answer)) return plan.question.choices.map((choice) => choice.id);
+  const selected = new Set<string>();
+  for (const token of answer.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean)) {
+    const byNumber = Number.parseInt(token, 10);
+    const numbered = Number.isFinite(byNumber) ? [...available.values()].find((item) => item.index === byNumber) : undefined;
+    if (numbered) {
+      selected.add(numbered.id);
+      continue;
+    }
+    if (available.has(token)) selected.add(token);
+    else throw new Error(`Unknown learning source selection: ${token}`);
+  }
+  return [...selected];
+}
+
+function canPrompt(): boolean {
+  return process.env.OPENSKILLKIT_FORCE_INTERACTIVE === "1" || (process.stdin.isTTY === true && process.stdout.isTTY === true);
 }
 
 function parseTarget(value: string): InstallTarget {

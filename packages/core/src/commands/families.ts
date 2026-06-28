@@ -146,7 +146,7 @@ export const OSK_PUBLIC_COMMAND_FAMILIES: OskCommandFamily[] = [
     userIntent: "Teach OSK from current session, safe detected sources, or explicit imports.",
     whyPublic: "Learning touches private evidence, so it needs a visible source picker and approval boundary.",
     mcpTool: "osk_plan_learning_sources",
-    cli: "openskill-kit learn",
+    cli: "openskill-kit osk learn",
     readOnly: false,
     approvalRequired: true,
     approvalClasses: ["writes-osk-state", "imports-external-source"],

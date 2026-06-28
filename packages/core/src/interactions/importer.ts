@@ -902,7 +902,7 @@ function learnableSignalSources(events: OpenSkillEvent[], preview: InteractionIm
 function explainImportNextActions(run: InteractionImportRun, foundEventCount: number, missingEventCount: number): string[] {
   const actions: string[] = [];
   if (run.status === "planned") actions.push("Review preview first; rerun import with `--yes` only if this source should become local evidence.");
-  if (run.status === "imported" && foundEventCount > 0) actions.push("Run `openskill-kit learn` or `osk_learn_from_session` to turn imported events into review candidates.");
+  if (run.status === "imported" && foundEventCount > 0) actions.push("Run `openskill-kit osk learn` to turn imported events into review candidates.");
   if (run.status === "imported" && foundEventCount === 0) actions.push("Imported run has no readable events; inspect event store before learning.");
   if (run.status === "blocked") actions.push("Resolve import warnings before retrying; no events were appended.");
   if (missingEventCount > 0) actions.push("Some appended event ids were not found in the current event store; run doctor before learning from this import.");

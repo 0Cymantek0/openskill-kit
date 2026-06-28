@@ -6,7 +6,7 @@ npm run build
 npx openskill-kit init
 npx openskill-kit detect
 npx openskill-kit observe --type user-prompt-submit --text "Always run npm test before final response."
-npx openskill-kit learn
+npx openskill-kit osk learn
 npx openskill-kit review --activate-all
 npx openskill-kit review --tui
 npx openskill-kit compile

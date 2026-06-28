@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -28,6 +28,19 @@ describe("osk CLI facade", () => {
     expect(parsed.schemaVersion).toBe("openskill-kit.learn-source-plan.v1");
     expect(parsed.defaults.previewOnly).toBe(true);
     expect(parsed.privacyPreview.join(" ")).toContain("No raw prompts");
+  });
+
+  it("prompts for /osk learn sources in interactive terminal mode", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-picker-"));
+    await mkdir(path.join(root, "src"), { recursive: true });
+    const result = await runCliWithInput(["osk", "learn"], "\n", root, { OPENSKILLKIT_FORCE_INTERACTIVE: "1" });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("What should OpenSkillKit learn from?");
+    expect(result.stdout).toContain("current-session");
+    expect(result.stdout).toContain("git-local");
+    expect(result.stdout).toContain("Sources used: 2");
+    expect(result.stdout).toContain("Events appended: 0");
+    expect(result.stdout).toContain("Preview complete");
   });
 
   it("previews setup without attaching unless approved", async () => {
@@ -77,3 +90,23 @@ describe("osk CLI facade", () => {
     expect(config.mcp).toBeUndefined();
   });
 });
+
+async function runCliWithInput(args: string[], input: string, cwd: string, env: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [tsxBin, cli, ...args], {
+      cwd,
+      env: { ...process.env, ...env },
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+    setTimeout(() => child.stdin.end(input), 100);
+  });
+}

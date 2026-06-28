@@ -10,7 +10,7 @@ Teach OSK from current session, safe detected sources, or explicit imports.
 
 ## First Call
 
-Call MCP tool `osk_plan_learning_sources` first. If MCP unavailable, run `openskill-kit learn` from project root.
+Call MCP tool `osk_plan_learning_sources` first. If MCP unavailable, run `openskill-kit osk learn` from project root.
 
 ## Workflow
 

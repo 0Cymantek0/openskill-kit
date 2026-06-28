@@ -78,7 +78,7 @@ export async function finishAgentTask(input: AgentTaskFinishInput): Promise<Agen
     : await runLifecycleOnce({ projectRoot: root, maxEvents: input.maxEvents ?? 250, compileSafe: input.compileSafe === true });
   const review = lifecycle ? summarizeReview(await buildReviewQueue(root)) : undefined;
   const nextActions = [
-    lifecycle ? `${lifecycle.signals.signalCount} signal(s) extracted; ${lifecycle.graph.candidateCount} preference candidate(s) pending.` : "Learning skipped; run `openskill-kit learn` when ready.",
+    lifecycle ? `${lifecycle.signals.signalCount} signal(s) extracted; ${lifecycle.graph.candidateCount} preference candidate(s) pending.` : "Learning skipped; run `openskill-kit osk learn` when ready.",
     review && (review.pendingPreferenceCount > 0 || review.pendingWorkflowCount > 0) ? `Review pending behavior: ${review.markdownPath}` : undefined,
     input.compileSafe === true && lifecycle?.compiled ? "Safe active behavior compiled." : undefined,
     input.compileSafe === true && !lifecycle?.compiled ? "Compile skipped because no safe active behavior was available or conflicts exist." : undefined,
