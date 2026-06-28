@@ -19,6 +19,8 @@ import {
   ingestLocalOpenWorldSource,
   ingestWebOpenWorldSource,
   initOpenWorldTask,
+  OpenWorldEvalReportSchema,
+  OpenWorldHiddenOracleHarnessSchema,
   planOpenWorldResearch,
   readOpenWorldSourceContent,
   readOpenWorldSourceIndex,
@@ -247,6 +249,7 @@ describe("OpenWorld local research", () => {
       now: new Date("2026-06-26T01:04:46.000Z")
     });
     expect(harness.harness.status).toBe("pass");
+    expect(harness.harness.proofLevel).toBe("static-denied-path");
     expect(harness.harness.hiddenOracleProof).toBe(false);
     expect(harness.harness.benchmarkReadiness).toMatchObject({
       status: "not-configured",
@@ -390,6 +393,7 @@ describe("OpenWorld local research", () => {
       now: new Date("2026-06-27T03:01:00.000Z")
     });
     expect(harness.harness.status).toBe("fail");
+    expect(harness.harness.proofLevel).toBe("static-denied-path");
     expect(harness.harness.deniedPathProof.leakedReferenceCount).toBe(1);
     expect(harness.harness.leaks[0]?.artifactPath).toContain("reports/leaky.md");
     expect(JSON.stringify(harness.harness.deniedPaths)).not.toContain("hidden/oracle.txt");
@@ -410,6 +414,7 @@ describe("OpenWorld local research", () => {
     });
 
     expect(harness.harness.hiddenOracleProof).toBe(false);
+    expect(harness.harness.proofLevel).toBe("static-denied-path");
     expect(harness.harness.benchmarkReadiness).toMatchObject({
       status: "external-result-referenced",
       benchmarkName: "sample-hidden-suite",
@@ -424,6 +429,53 @@ describe("OpenWorld local research", () => {
     expect(markdown).toContain("Benchmark readiness: external-result-referenced");
     expect(markdown).toContain("Hidden-oracle proof: no");
     expect(markdown).not.toContain("hidden/oracle.txt");
+  });
+
+  it("keeps OpenWorld proof labels canonical and blocks impossible hidden-oracle claims", () => {
+    const baseReport = {
+      schemaVersion: "openskill-kit.openworld-eval-report.v1",
+      id: "oweval_schema",
+      taskId: "owtask_schema",
+      runId: "owrun_schema",
+      suiteIds: [],
+      generatedAt: "2026-06-27T03:12:00.000Z",
+      status: "pass",
+      proofLevel: "artifact-verifier",
+      hiddenOracleProof: false,
+      metrics: {
+        visiblePassRate: 1,
+        holdoutPassRate: 1,
+        roundCount: 1,
+        overfitRisk: false,
+        leakageAuditCount: 0,
+        wallClockMs: 0
+      },
+      references: {
+        verifierResultPaths: [],
+        sourceIds: [],
+        anchorIds: []
+      },
+      limitations: ["schema test"]
+    };
+    expect(() => OpenWorldEvalReportSchema.parse({ ...baseReport, proofLevel: "hidden-oracle", hiddenOracleProof: false })).toThrow(/hidden-oracle-proof requires hiddenOracleProof=true/);
+    expect(() => OpenWorldEvalReportSchema.parse({ ...baseReport, proofLevel: "artifact-verifier", hiddenOracleProof: true })).toThrow(/hiddenOracleProof=true requires proofLevel=hidden-oracle-proof/);
+    const parsedHarness = OpenWorldHiddenOracleHarnessSchema.parse({
+      schemaVersion: "openskill-kit.openworld-hidden-oracle-harness.v1",
+      id: "oworacle_schema",
+      taskId: "owtask_schema",
+      generatedAt: "2026-06-27T03:13:00.000Z",
+      status: "pass",
+      proofLevel: "denied-path-static",
+      hiddenOracleProof: false,
+      deniedPathProof: {
+        deniedPathCount: 1,
+        scannedArtifactCount: 1,
+        leakedReferenceCount: 0,
+        osBoundaryEnforced: false,
+        status: "pass"
+      }
+    });
+    expect(parsedHarness.proofLevel).toBe("static-denied-path");
   });
 
   it("blocks virtual suite artifacts before writing verifier scripts", async () => {

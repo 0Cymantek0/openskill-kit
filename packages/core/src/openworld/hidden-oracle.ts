@@ -69,7 +69,7 @@ export async function buildOpenWorldHiddenOracleHarness(
     suiteId: options.suiteId,
     generatedAt: now.toISOString(),
     status,
-    proofLevel: deniedPaths.length ? "denied-path-static" : "not-proof",
+    proofLevel: deniedPaths.length ? "static-denied-path" : "not-proof",
     hiddenOracleProof: false,
     deniedPathProof: {
       deniedPathCount: deniedPaths.length,

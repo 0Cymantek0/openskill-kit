@@ -512,6 +512,11 @@ export const OpenWorldEvolutionRunSchema = z.object({
   }).default({ wallClockMs: 0, estimatedTokens: 0 })
 });
 
+const OpenWorldEvalProofLevelSchema = z.preprocess(
+  (value) => value === "hidden-oracle" ? "hidden-oracle-proof" : value,
+  z.enum(["artifact-verifier", "hidden-oracle-proof", "not-proof"])
+);
+
 export const OpenWorldEvalReportSchema = z.object({
   schemaVersion: z.literal("openskill-kit.openworld-eval-report.v1"),
   id: z.string().min(1),
@@ -520,7 +525,7 @@ export const OpenWorldEvalReportSchema = z.object({
   suiteIds: z.array(z.string().min(1)).default([]),
   generatedAt: z.string().datetime(),
   status: z.enum(["pass", "warn", "fail"]),
-  proofLevel: z.enum(["artifact-verifier", "hidden-oracle", "not-proof"]),
+  proofLevel: OpenWorldEvalProofLevelSchema,
   hiddenOracleProof: z.boolean().default(false),
   metrics: z.object({
     visiblePassRate: z.number().min(0).max(1),
@@ -537,7 +542,27 @@ export const OpenWorldEvalReportSchema = z.object({
     anchorIds: z.array(z.string().min(1)).default([])
   }),
   limitations: z.array(z.string().min(1)).default([])
+}).superRefine((report, ctx) => {
+  if (report.proofLevel === "hidden-oracle-proof" && report.hiddenOracleProof !== true) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["hiddenOracleProof"],
+      message: "hidden-oracle-proof requires hiddenOracleProof=true."
+    });
+  }
+  if (report.hiddenOracleProof === true && report.proofLevel !== "hidden-oracle-proof") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["proofLevel"],
+      message: "hiddenOracleProof=true requires proofLevel=hidden-oracle-proof."
+    });
+  }
 });
+
+const OpenWorldHiddenOracleHarnessProofLevelSchema = z.preprocess(
+  (value) => value === "denied-path-static" ? "static-denied-path" : value,
+  z.enum(["static-denied-path", "not-proof"])
+);
 
 export const OpenWorldHiddenOracleHarnessSchema = z.object({
   schemaVersion: z.literal("openskill-kit.openworld-hidden-oracle-harness.v1"),
@@ -546,7 +571,7 @@ export const OpenWorldHiddenOracleHarnessSchema = z.object({
   suiteId: z.string().min(1).optional(),
   generatedAt: z.string().datetime(),
   status: z.enum(["pass", "fail", "warn"]),
-  proofLevel: z.enum(["denied-path-static", "not-proof"]),
+  proofLevel: OpenWorldHiddenOracleHarnessProofLevelSchema,
   hiddenOracleProof: z.literal(false),
   deniedPathProof: z.object({
     deniedPathCount: z.number().int().min(0),
