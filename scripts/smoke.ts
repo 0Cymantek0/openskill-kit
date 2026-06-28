@@ -85,22 +85,28 @@ if (pluginManifest.schemaVersion !== "openskill-kit.agent-plugin.v1") throw new 
 if (pluginAgentManifest.name !== pluginManifest.name) throw new Error("compiled .agent-plugin manifest mismatch");
 if (pluginMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("compiled plugin MCP attachment missing");
 if (pluginManifest.integrity?.descriptorsHash !== pluginMcpHashes.descriptorsHash) throw new Error("compiled plugin descriptor hash mismatch");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === "/osk status" && item.mcpTool === "osk_bootstrap_session")) throw new Error("compiled plugin command map missing status route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk import adapters" && item.mcpTool === "osk_list_interaction_adapters" && item.readOnly === true)) throw new Error("compiled plugin command map missing import adapter route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk import session" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing approved session import route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk import review" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing approved review import route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk import terminal" && item.mcpTool === "osk_import_interaction_source" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing approved terminal import route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk session imports" && item.mcpTool === "osk_list_interaction_imports" && item.readOnly === true)) throw new Error("compiled plugin command map missing session import history route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk explain import" && item.mcpTool === "osk_explain_interaction_import" && item.readOnly === true)) throw new Error("compiled plugin command map missing session import explain route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk interaction pool" && item.mcpTool === "osk_get_interaction_pool" && item.readOnly === true)) throw new Error("compiled plugin command map missing interaction pool route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk git context" && item.mcpTool === "osk_get_git_local_context" && item.readOnly === true)) throw new Error("compiled plugin command map missing git context route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk plugin install profile" && item.mcpTool === "osk_get_plugin_install_profile" && item.readOnly === true)) throw new Error("compiled plugin command map missing plugin install profile route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk openworld doctor" && item.mcpTool === "osk_openworld_doctor" && item.readOnly === true)) throw new Error("compiled plugin command map missing OpenWorld doctor route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld build verifier" && item.mcpTool === "osk_openworld_build_verifier")) throw new Error("compiled plugin command map missing OpenWorld build verifier route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; readOnly?: boolean }) => item.command === "/osk openworld verifier quality" && item.mcpTool === "osk_openworld_verifier_quality" && item.readOnly === true)) throw new Error("compiled plugin command map missing OpenWorld verifier quality route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld run verifier" && item.mcpTool === "osk_openworld_run_verifier")) throw new Error("compiled plugin command map missing OpenWorld run verifier route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === "/osk openworld hidden oracle harness" && item.mcpTool === "osk_openworld_hidden_oracle_harness")) throw new Error("compiled plugin command map missing OpenWorld hidden oracle harness route");
-if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string; approvalRequired?: boolean }) => item.command === "/osk openworld promote review" && item.mcpTool === "osk_openworld_promote_review" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing OpenWorld promote review approval");
+if (pluginCommandMap.publicFamilyCount !== 12 || pluginCommandMap.commands?.length !== 12) throw new Error("compiled plugin command map must expose 12 public families");
+const expectedFamilies = [
+  ["/osk status", "osk_get_status"],
+  ["/osk task", "osk_get_task_context"],
+  ["/osk learn", "osk_plan_learning_sources"],
+  ["/osk review", "osk_review_behavior"],
+  ["/osk research", "osk_run_openworld_workflow"],
+  ["/osk evolve", "osk_run_openworld_workflow"],
+  ["/osk verify", "osk_verify_behavior"],
+  ["/osk compile", "osk_compile_deploy"],
+  ["/osk deploy", "osk_compile_deploy"],
+  ["/osk eval", "osk_run_eval"],
+  ["/osk pack", "osk_pack_behavior"]
+] as const;
+for (const [command, mcpTool] of expectedFamilies) {
+  if (!pluginCommandMap.commands?.some((item: { command: string; mcpTool?: string }) => item.command === command && item.mcpTool === mcpTool)) {
+    throw new Error(`compiled plugin command map missing ${command} -> ${mcpTool}`);
+  }
+}
+if (!pluginCommandMap.commands?.some((item: { command: string; aliases?: string[] }) => item.command === "/osk task" && item.aliases?.includes("/osk finish task"))) throw new Error("compiled plugin command map missing task finish alias");
+if (!pluginCommandMap.commands?.some((item: { command: string; approvalRequired?: boolean }) => item.command === "/osk learn" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing learn approval gate");
+if (!pluginCommandMap.commands?.some((item: { command: string; approvalRequired?: boolean }) => item.command === "/osk deploy" && item.approvalRequired === true)) throw new Error("compiled plugin command map missing deploy approval gate");
 if (!pluginManifest.files?.includes("commands/commands.json")) throw new Error("compiled plugin manifest missing command map file");
 if (!pluginManifest.files?.includes("install-guides/codex.md")) throw new Error("compiled plugin manifest missing Codex guide");
 if (!pluginMcpHashes.approvalRequiredTools?.includes("osk_install_agent_hooks")) throw new Error("compiled plugin descriptor approvals incomplete");
@@ -121,9 +127,9 @@ if (terminalImportPlan.status !== "planned" || terminalImportPlan.parsedEventCou
 const gitContext = await runJson(["interactions", "git-context", "--json"]);
 if (gitContext.schemaVersion !== "openskill-kit.git-local-context.v1" || gitContext.adapter?.rawDiffIncluded !== false) throw new Error("git context command failed");
 const pluginInstallProfile = await runJson(["agent", "plugin-install-profile", "--json"]);
-if (pluginInstallProfile.ready !== true || pluginInstallProfile.profile?.firstCall?.mcpTool !== "osk_bootstrap_session" || pluginInstallProfile.profile?.mcp?.requiredEnv?.OPENSKILLKIT_PROJECT_ROOT !== "<absolute project root>") throw new Error("plugin install profile command failed");
+if (pluginInstallProfile.ready !== true || pluginInstallProfile.profile?.firstCall?.mcpTool !== "osk_get_status" || pluginInstallProfile.profile?.mcp?.requiredEnv?.OPENSKILLKIT_PROJECT_ROOT !== "<absolute project root>") throw new Error("plugin install profile command failed");
 const statusText = await runText(["status"]);
-if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 33") || !statusText.includes("Plugin command map:")) {
+if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 12") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
 }
 if (!statusText.includes("Plugin host attached: false")) throw new Error("status text missing plugin host attachment readiness");
@@ -145,7 +151,7 @@ const pluginHealthAttached = await runJson(["agent", "plugin-status", "--json"])
 if (pluginHealthAttached.attached !== true || !pluginHealthAttached.hosts?.some((host: { status: string }) => host.status === "attached")) throw new Error("plugin health command missing attached state");
 if (!compiledAdaptive.skillPaths?.length) throw new Error("adaptive compile failed");
 const taskContext = await runJson(["context", "--query", "run test before final", "--command", "npm test", "--json"]);
-if (taskContext.schemaVersion !== "openskill-kit.agent-task-context.v1" || !taskContext.compactMarkdown?.includes("OpenSkillKit Task Context") || taskContext.plugin?.attached !== true || taskContext.pluginInstallProfile?.ready !== true || taskContext.pluginInstallProfile?.profile?.firstCall?.mcpTool !== "osk_bootstrap_session") {
+if (taskContext.schemaVersion !== "openskill-kit.agent-task-context.v1" || !taskContext.compactMarkdown?.includes("OpenSkillKit Task Context") || taskContext.plugin?.attached !== true || taskContext.pluginInstallProfile?.ready !== true || taskContext.pluginInstallProfile?.profile?.firstCall?.mcpTool !== "osk_get_status") {
   throw new Error("agent task context command failed");
 }
 const prefs = await runJson(["prefs", "--query", "run test before final", "--json"]);

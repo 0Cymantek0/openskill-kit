@@ -59,7 +59,10 @@
       },
       "configFile": ".mcp.json",
       "descriptors": "mcp/descriptors.json",
-      "descriptorHashes": "mcp/descriptor-hashes.json"
+      "descriptorHashes": "mcp/descriptor-hashes.json",
+      "publicDescriptors": "mcp/descriptors.public.json",
+      "profiles": "mcp/profiles.json",
+      "defaultProfile": "public"
     },
     "commandRouting": {
       "map": "commands/commands.json",

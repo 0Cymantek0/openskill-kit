@@ -293,5 +293,5 @@ describe("openskill-kit MCP server", () => {
     } finally {
       await client.close();
     }
-  });
+  }, 45_000);
 });

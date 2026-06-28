@@ -1,0 +1,487 @@
+{
+  "schemaVersion": "openskill-kit.mcp-descriptors.v1",
+  "server": "openskill-kit-mcp",
+  "profile": "advanced",
+  "tools": [
+    {
+      "name": "osk_bootstrap_session",
+      "category": "bootstrap",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_status",
+      "category": "status",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_explain_status",
+      "category": "status",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_detect_environment",
+      "category": "detection",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_agent_surfaces",
+      "category": "detection",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_import_interaction_source",
+      "category": "interactions",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_list_interaction_adapters",
+      "category": "interactions",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_list_interaction_imports",
+      "category": "interactions",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_explain_interaction_import",
+      "category": "interactions",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_interaction_pool",
+      "category": "interactions",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_git_local_context",
+      "category": "interactions",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_plan_learning_sources",
+      "category": "learning",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_run_learning_plan",
+      "category": "learning",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_get_context_pack",
+      "category": "retrieval",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_relevant_preferences",
+      "category": "retrieval",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_route_behavior",
+      "category": "routing",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_agent_task_context",
+      "category": "routing",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_task_context",
+      "category": "routing",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_finish_agent_task",
+      "category": "observation",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_finish_task",
+      "category": "observation",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_record_event",
+      "category": "observation",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_learn_from_session",
+      "category": "learning",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_compile_behavior_layer",
+      "category": "compile",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_explain_preference",
+      "category": "retrieval",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_preference_evidence",
+      "category": "retrieval",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_propose_preference",
+      "category": "review",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_review_queue",
+      "category": "review",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_review_behavior",
+      "category": "review",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_apply_review_actions",
+      "category": "review",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_get_behavior_manifest",
+      "category": "manifests",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_preview_manifest_install",
+      "category": "manifests",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_apply_manifest_install",
+      "category": "manifests",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_preview_manifest_uninstall",
+      "category": "manifests",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_apply_manifest_uninstall",
+      "category": "manifests",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_validate_memory_candidate",
+      "category": "safety",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_calibration_report",
+      "category": "status",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_export_behavior_pack",
+      "category": "packs",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_export_encrypted_behavior_pack",
+      "category": "packs",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_sign_behavior_pack",
+      "category": "packs",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_verify_behavior_pack",
+      "category": "packs",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_inspect_behavior_pack",
+      "category": "packs",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_diff_behavior_pack",
+      "category": "packs",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_import_behavior_pack",
+      "category": "packs",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_import_encrypted_behavior_pack",
+      "category": "packs",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_run_eval",
+      "category": "eval",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_run_behavior_eval",
+      "category": "eval",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_run_agent_ab_eval",
+      "category": "eval",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_run_external_agent_eval",
+      "category": "eval",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_agent_doctor",
+      "category": "doctor",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_install_agent_hooks",
+      "category": "hooks",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_preview_plugin_attach",
+      "category": "plugin",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_apply_plugin_attach",
+      "category": "plugin",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_compile_deploy",
+      "category": "plugin",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_get_plugin_attach_status",
+      "category": "plugin",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_plugin_install_profile",
+      "category": "plugin",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_run_lifecycle_once",
+      "category": "lifecycle",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_mine_workflows",
+      "category": "workflows",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_workflow_graph",
+      "category": "workflows",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_run_full_doctor",
+      "category": "doctor",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_doctor",
+      "category": "openworld",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_run_openworld_workflow",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_verify_behavior",
+      "category": "verification",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_source_plan",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_ingest_source",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_execute_source_plan",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_sources",
+      "category": "openworld",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_candidate_skill",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_run_verifier",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_verifier_quality",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_refine",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_eval_report",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_hidden_oracle_harness",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_task_report",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_promote_review",
+      "category": "openworld",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_pack_behavior",
+      "category": "packs",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_get_docs_help",
+      "category": "docs",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_reset_state",
+      "category": "maintenance",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_prune_state",
+      "category": "maintenance",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_archive_state",
+      "category": "maintenance",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_compact_state",
+      "category": "maintenance",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    }
+  ]
+}

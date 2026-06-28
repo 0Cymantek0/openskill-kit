@@ -21,7 +21,7 @@ for (const [command, args] of steps) {
 }
 
 await removePythonBytecode("python");
-await runStep("npm", ["run", "package:dry-run"]);
+await verifyPackageDryRun();
 
 try {
   const result = await execFileAsync("python", ["-m", "pytest", "python", "-q"]);
@@ -44,6 +44,26 @@ async function runStep(command: string, args: string[]): Promise<void> {
   const result = await execFileAsync(executable, finalArgs);
   if (result.stdout.trim()) process.stdout.write(result.stdout);
   if (result.stderr.trim()) process.stderr.write(result.stderr);
+}
+
+async function verifyPackageDryRun(): Promise<void> {
+  const executable = process.env.npm_execpath ? process.execPath : "npm";
+  const finalArgs = process.env.npm_execpath ? [process.env.npm_execpath, "pack", "--dry-run", "--json"] : ["pack", "--dry-run", "--json"];
+  const result = await execFileAsync(executable, finalArgs);
+  if (result.stderr.trim()) process.stderr.write(result.stderr);
+  const parsed = JSON.parse(result.stdout) as Array<{ files?: Array<{ path?: string }> }>;
+  const paths = new Set((parsed[0]?.files ?? []).map((file) => file.path).filter((value): value is string => typeof value === "string"));
+  const required = [
+    "packages/agent-plugin-bundle/mcp/descriptors.public.json",
+    "packages/agent-plugin-bundle/mcp/profiles.json",
+    "packages/agent-plugin-bundle/opencode/commands/osk-learn.md",
+    "packages/agent-plugin-bundle/opencode/agents/osk-learner.md",
+    "packages/agent-plugin-bundle/opencode/plugins/openskillkit.ts",
+    "packages/agent-plugin-bundle/model-routing.resolved.json"
+  ];
+  const missing = required.filter((item) => !paths.has(item));
+  if (missing.length) throw new Error(`npm package missing harness artifact(s): ${missing.join(", ")}`);
+  process.stdout.write(`npm package dry-run includes ${paths.size} files and required harness artifacts\n`);
 }
 
 async function removePythonBytecode(dir: string): Promise<void> {

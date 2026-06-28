@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "openskill-kit.mcp-descriptors.v1",
+  "server": "openskill-kit-mcp",
+  "profile": "public",
+  "tools": [
+    {
+      "name": "osk_get_status",
+      "category": "status",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_plan_learning_sources",
+      "category": "learning",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_run_learning_plan",
+      "category": "learning",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_get_task_context",
+      "category": "routing",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_finish_task",
+      "category": "observation",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_review_behavior",
+      "category": "review",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_run_eval",
+      "category": "eval",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_compile_deploy",
+      "category": "plugin",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_run_openworld_workflow",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_verify_behavior",
+      "category": "verification",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_pack_behavior",
+      "category": "packs",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "osk_get_docs_help",
+      "category": "docs",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    }
+  ]
+}

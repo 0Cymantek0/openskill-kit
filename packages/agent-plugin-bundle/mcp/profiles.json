@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "openskill-kit.mcp-profiles.v1",
+  "defaultProfile": "public",
+  "profiles": {
+    "public": [
+      "osk_get_status",
+      "osk_get_task_context",
+      "osk_finish_task",
+      "osk_plan_learning_sources",
+      "osk_run_learning_plan",
+      "osk_review_behavior",
+      "osk_run_openworld_workflow",
+      "osk_verify_behavior",
+      "osk_compile_deploy",
+      "osk_run_eval",
+      "osk_pack_behavior",
+      "osk_get_docs_help"
+    ],
+    "advanced": [
+      "*"
+    ]
+  }
+}

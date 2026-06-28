@@ -5,6 +5,7 @@ import path from "node:path";
 describe("agent plugin manifest", () => {
   it("declares openskill-kit skill path", () => {
     const root = path.resolve("packages/agent-plugin-bundle");
+    const packageJson = JSON.parse(readFileSync(path.resolve("package.json"), "utf8"));
     const manifest = JSON.parse(readFileSync(path.join(root, ".agent-plugin", "plugin.json"), "utf8"));
     expect(manifest.schemaVersion).toBe("openskill-kit.agent-plugin.v1");
     expect(manifest.name).toBe("openskill-kit");
@@ -21,6 +22,9 @@ describe("agent plugin manifest", () => {
     expect(manifest.installProfile.pluginDirectory).toBe("packages/agent-plugin-bundle");
     expect(manifest.installProfile.firstCall).toEqual({ mcpTool: "osk_get_status", cliFallback: "openskill-kit status --json" });
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(manifest.installProfile.mcp.publicDescriptors).toBe("mcp/descriptors.public.json");
+    expect(manifest.installProfile.mcp.profiles).toBe("mcp/profiles.json");
+    expect(manifest.installProfile.mcp.defaultProfile).toBe("public");
     expect(manifest.installProfile.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
     expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host opencode --dry-run");
     expect(manifest.installProfile.attach.applyCli).toBe("openskill-kit agent attach-plugin --host opencode --yes");
@@ -56,6 +60,12 @@ describe("agent plugin manifest", () => {
     expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
     const mcp = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));
     expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
+    const mcpProfiles = JSON.parse(readFileSync(path.join(root, "mcp", "profiles.json"), "utf8"));
+    const publicDescriptors = JSON.parse(readFileSync(path.join(root, "mcp", "descriptors.public.json"), "utf8"));
+    expect(mcpProfiles.defaultProfile).toBe("public");
+    expect(mcpProfiles.profiles.public).toHaveLength(12);
+    expect(publicDescriptors.profile).toBe("public");
+    expect(publicDescriptors.tools).toHaveLength(12);
     const commandMap = JSON.parse(readFileSync(path.join(root, "commands", "commands.json"), "utf8"));
     expect(commandMap.publicFamilyCount).toBe(12);
     expect(commandMap.commands).toHaveLength(12);
@@ -75,5 +85,13 @@ describe("agent plugin manifest", () => {
     expect(opencodeGuide).toContain("preserves existing `plugin` entries");
     expect(opencodeGuide).toContain(".opencode/plugins/openskillkit.ts");
     expect(opencodeGuide).toContain(".opencode/plugins");
+    expect(readFileSync(path.join(root, "opencode", "commands", "osk-learn.md"), "utf8")).toContain("osk_plan_learning_sources");
+    expect(readFileSync(path.join(root, "opencode", "agents", "osk-learner.md"), "utf8")).toContain("question: allow");
+    expect(readFileSync(path.join(root, "opencode", "plugins", "openskillkit.ts"), "utf8")).toContain("Metadata-only by default");
+    expect(packageJson.files).toEqual(expect.arrayContaining([
+      "packages/agent-plugin-bundle/mcp/",
+      "packages/agent-plugin-bundle/model-routing.resolved.json",
+      "packages/agent-plugin-bundle/opencode/"
+    ]));
   });
 });

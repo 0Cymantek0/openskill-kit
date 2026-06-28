@@ -1,0 +1,166 @@
+{
+  "schemaVersion": "openskill-kit.model-routing.v1",
+  "defaultAgent": "osk-router",
+  "source": ".openskill-kit/model-routing.json",
+  "safety": {
+    "requireUserApprovalForModelNotInHost": true,
+    "allowNetworkModelsForPrivateSources": false,
+    "redactModelIdsInPublicArtifacts": false
+  },
+  "agents": {
+    "osk-router": {
+      "mode": "subagent",
+      "model": "default",
+      "route": "router",
+      "maxSteps": 8,
+      "reasoningEffort": "low",
+      "fallbackModels": [],
+      "permissionsProfile": "read-only",
+      "permissions": {
+        "read": "allow",
+        "list": "allow",
+        "grep": "allow",
+        "edit": "deny",
+        "bash": "deny",
+        "question": "ask",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "osk-learner": {
+      "mode": "subagent",
+      "model": "default",
+      "route": "learner",
+      "maxSteps": 24,
+      "reasoningEffort": "medium",
+      "fallbackModels": [],
+      "permissionsProfile": "learner-safe",
+      "permissions": {
+        "read": "allow",
+        "list": "allow",
+        "grep": "allow",
+        "edit": "deny",
+        "bash": "ask",
+        "question": "allow",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "osk-reviewer": {
+      "mode": "subagent",
+      "model": "default",
+      "route": "reviewer",
+      "maxSteps": 16,
+      "reasoningEffort": "medium",
+      "fallbackModels": [],
+      "permissionsProfile": "review-gate",
+      "permissions": {
+        "read": "allow",
+        "list": "allow",
+        "grep": "allow",
+        "edit": "deny",
+        "bash": "ask",
+        "question": "allow",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "osk-researcher": {
+      "mode": "subagent",
+      "model": "default",
+      "route": "researcher",
+      "maxSteps": 32,
+      "reasoningEffort": "high",
+      "fallbackModels": [],
+      "permissionsProfile": "research-ask-web",
+      "permissions": {
+        "read": "allow",
+        "list": "allow",
+        "grep": "allow",
+        "edit": "deny",
+        "bash": "ask",
+        "question": "ask",
+        "webfetch": "ask",
+        "websearch": "deny"
+      }
+    },
+    "osk-evolver": {
+      "mode": "subagent",
+      "model": "default",
+      "route": "evolver",
+      "maxSteps": 40,
+      "reasoningEffort": "high",
+      "fallbackModels": [],
+      "permissionsProfile": "evolution-safe",
+      "permissions": {
+        "read": "allow",
+        "list": "allow",
+        "grep": "allow",
+        "edit": "deny",
+        "bash": "ask",
+        "question": "ask",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "osk-verifier": {
+      "mode": "subagent",
+      "model": "default",
+      "route": "verifier",
+      "temperature": 0,
+      "maxSteps": 24,
+      "reasoningEffort": "high",
+      "fallbackModels": [],
+      "permissionsProfile": "sandboxed-verifier",
+      "permissions": {
+        "read": "allow",
+        "list": "allow",
+        "grep": "allow",
+        "edit": "deny",
+        "bash": "ask",
+        "question": "ask",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "osk-evaluator": {
+      "mode": "subagent",
+      "model": "default",
+      "route": "evaluator",
+      "temperature": 0,
+      "maxSteps": 24,
+      "reasoningEffort": "medium",
+      "fallbackModels": [],
+      "permissionsProfile": "eval-safe",
+      "permissions": {
+        "read": "allow",
+        "list": "allow",
+        "grep": "allow",
+        "edit": "deny",
+        "bash": "ask",
+        "question": "ask",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    },
+    "osk-docs": {
+      "mode": "subagent",
+      "model": "default",
+      "route": "docs",
+      "maxSteps": 12,
+      "reasoningEffort": "low",
+      "fallbackModels": [],
+      "permissionsProfile": "docs-safe",
+      "permissions": {
+        "read": "allow",
+        "list": "allow",
+        "grep": "allow",
+        "edit": "ask",
+        "bash": "ask",
+        "question": "ask",
+        "webfetch": "deny",
+        "websearch": "deny"
+      }
+    }
+  }
+}

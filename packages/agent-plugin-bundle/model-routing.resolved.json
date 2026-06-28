@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "openskill-kit.model-routing.resolved.v1",
+  "sourcePath": ".openskill-kit/model-routing.json",
+  "harness": "opencode",
+  "defaultModel": "default",
+  "safety": {
+    "requireUserApprovalForModelNotInHost": true,
+    "allowNetworkModelsForPrivateSources": false,
+    "redactModelIdsInPublicArtifacts": false
+  },
+  "routes": {
+    "router": {
+      "fallbackModels": [],
+      "reasoningEffort": "low",
+      "maxSteps": 8,
+      "permissionsProfile": "read-only",
+      "route": "router",
+      "harness": "opencode",
+      "model": "default"
+    },
+    "learner": {
+      "fallbackModels": [],
+      "reasoningEffort": "medium",
+      "maxSteps": 24,
+      "permissionsProfile": "learner-safe",
+      "route": "learner",
+      "harness": "opencode",
+      "model": "default"
+    },
+    "reviewer": {
+      "fallbackModels": [],
+      "reasoningEffort": "medium",
+      "maxSteps": 16,
+      "permissionsProfile": "review-gate",
+      "route": "reviewer",
+      "harness": "opencode",
+      "model": "default"
+    },
+    "researcher": {
+      "fallbackModels": [],
+      "reasoningEffort": "high",
+      "maxSteps": 32,
+      "permissionsProfile": "research-ask-web",
+      "route": "researcher",
+      "harness": "opencode",
+      "model": "default"
+    },
+    "evolver": {
+      "fallbackModels": [],
+      "reasoningEffort": "high",
+      "maxSteps": 40,
+      "permissionsProfile": "evolution-safe",
+      "route": "evolver",
+      "harness": "opencode",
+      "model": "default"
+    },
+    "verifier": {
+      "fallbackModels": [],
+      "reasoningEffort": "high",
+      "temperature": 0,
+      "maxSteps": 24,
+      "permissionsProfile": "sandboxed-verifier",
+      "route": "verifier",
+      "harness": "opencode",
+      "model": "default"
+    },
+    "evaluator": {
+      "fallbackModels": [],
+      "reasoningEffort": "medium",
+      "temperature": 0,
+      "maxSteps": 24,
+      "permissionsProfile": "eval-safe",
+      "route": "evaluator",
+      "harness": "opencode",
+      "model": "default"
+    },
+    "docs": {
+      "fallbackModels": [],
+      "reasoningEffort": "low",
+      "maxSteps": 12,
+      "permissionsProfile": "docs-safe",
+      "route": "docs",
+      "harness": "opencode",
+      "model": "default"
+    }
+  }
+}

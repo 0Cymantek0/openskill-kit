@@ -29,6 +29,9 @@
     "packages/agent-plugin-bundle/.agent-plugin/",
     "packages/agent-plugin-bundle/commands/",
     "packages/agent-plugin-bundle/install-guides/",
+    "packages/agent-plugin-bundle/mcp/",
+    "packages/agent-plugin-bundle/model-routing.resolved.json",
+    "packages/agent-plugin-bundle/opencode/",
     "packages/agent-plugin-bundle/skills/"
   ],
   "scripts": {
