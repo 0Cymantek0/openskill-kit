@@ -258,6 +258,24 @@ describe("openskill-kit MCP server", () => {
       const packedParsed = JSON.parse(packed.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(packedParsed.schemaVersion).toBe("openskill-kit.project-pack.v1");
       expect(packedParsed.packPath).toContain(".openskill-kit");
+      const packBlocked = await client.callTool({
+        name: "osk_pack_behavior",
+        arguments: { projectRoot: root, action: "import", packPath: packedParsed.packPath, dryRun: false }
+      });
+      expect(packBlocked.isError).toBe(true);
+      expect(packBlocked.content.find((item) => item.type === "text")?.text).toContain("requires yes=true");
+      const importBlocked = await client.callTool({
+        name: "osk_import_behavior_pack",
+        arguments: { projectRoot: root, packPath: packedParsed.packPath, dryRun: false }
+      });
+      expect(importBlocked.isError).toBe(true);
+      expect(importBlocked.content.find((item) => item.type === "text")?.text).toContain("requires yes=true");
+      const packPreview = await client.callTool({
+        name: "osk_pack_behavior",
+        arguments: { projectRoot: root, action: "import", packPath: packedParsed.packPath, review: true }
+      });
+      const packPreviewParsed = JSON.parse(packPreview.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(packPreviewParsed.status).toBe("planned");
 
       const lifecycle = await client.callTool({
         name: "osk_run_lifecycle_once",

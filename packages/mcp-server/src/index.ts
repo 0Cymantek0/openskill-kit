@@ -911,13 +911,14 @@ export function createOpenSkillMcpServer(): McpServer {
         packPath: z.string().min(1).optional(),
         otherPackPath: z.string().min(1).optional(),
         dryRun: z.boolean().default(true),
+        yes: z.boolean().default(false),
         trustHooks: z.boolean().default(false),
         review: z.boolean().default(false),
         maxChangedFiles: z.number().int().min(0).optional()
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, action, packPath, otherPackPath, dryRun, trustHooks, review, maxChangedFiles }) => {
+    async ({ projectRoot, action, packPath, otherPackPath, dryRun, yes, trustHooks, review, maxChangedFiles }) => {
       const root = resolveProjectRoot(projectRoot);
       if (action === "export") return toolResult(await exportProjectBehaviorPack(root), root);
       if (!packPath) throw new Error("packPath required for verify, inspect, diff, or import.");
@@ -928,6 +929,7 @@ export function createOpenSkillMcpServer(): McpServer {
         if (!otherPackPath) throw new Error("otherPackPath required for diff.");
         return toolResult(await diffProjectBehaviorPacks(resolvedPack, resolvePath(otherPackPath, root)), root);
       }
+      if (dryRun === false && yes !== true) throw new Error("osk_pack_behavior import requires yes=true when dryRun=false.");
       return toolResult(await importProjectBehaviorPack(root, resolvedPack, { dryRun, trustHooks, review, maxChangedFiles }), root);
     }
   );
@@ -1006,12 +1008,13 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_import_behavior_pack",
     {
       title: "OpenSkillKit Import Behavior Pack",
-      description: "Plan or import a verified Project Behavior Pack. Hooks require explicit trust.",
-      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1), dryRun: z.boolean().default(true), trustHooks: z.boolean().default(false), review: z.boolean().default(false), maxChangedFiles: z.number().int().min(0).optional() }),
+      description: "Plan or import a verified Project Behavior Pack. Writes require yes=true when dryRun=false. Hooks require explicit trust.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, packPath: z.string().min(1), dryRun: z.boolean().default(true), yes: z.boolean().default(false), trustHooks: z.boolean().default(false), review: z.boolean().default(false), maxChangedFiles: z.number().int().min(0).optional() }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, packPath, dryRun, trustHooks, review, maxChangedFiles }) => {
+    async ({ projectRoot, packPath, dryRun, yes, trustHooks, review, maxChangedFiles }) => {
       const root = resolveProjectRoot(projectRoot);
+      if (dryRun === false && yes !== true) throw new Error("osk_import_behavior_pack requires yes=true when dryRun=false.");
       return toolResult(await importProjectBehaviorPack(root, resolvePath(packPath, root), { dryRun, trustHooks, review, maxChangedFiles }), root);
     }
   );
@@ -1020,12 +1023,13 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_import_encrypted_behavior_pack",
     {
       title: "OpenSkillKit Import Encrypted Behavior Pack",
-      description: "Decrypt and plan or import an encrypted Project Behavior Pack envelope.",
-      inputSchema: z.object({ projectRoot: projectRootSchema, encryptedPath: z.string().min(1), passphrase: z.string().min(8), dryRun: z.boolean().default(true), trustHooks: z.boolean().default(false), review: z.boolean().default(false), maxChangedFiles: z.number().int().min(0).optional() }),
+      description: "Decrypt and plan or import an encrypted Project Behavior Pack envelope. Writes require yes=true when dryRun=false.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, encryptedPath: z.string().min(1), passphrase: z.string().min(8), dryRun: z.boolean().default(true), yes: z.boolean().default(false), trustHooks: z.boolean().default(false), review: z.boolean().default(false), maxChangedFiles: z.number().int().min(0).optional() }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, encryptedPath, passphrase, dryRun, trustHooks, review, maxChangedFiles }) => {
+    async ({ projectRoot, encryptedPath, passphrase, dryRun, yes, trustHooks, review, maxChangedFiles }) => {
       const root = resolveProjectRoot(projectRoot);
+      if (dryRun === false && yes !== true) throw new Error("osk_import_encrypted_behavior_pack requires yes=true when dryRun=false.");
       return toolResult(await importEncryptedProjectBehaviorPack(root, resolvePath(encryptedPath, root), { passphrase, dryRun, trustHooks, review, maxChangedFiles }), root);
     }
   );
