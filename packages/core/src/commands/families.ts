@@ -125,7 +125,7 @@ export const OSK_PUBLIC_COMMAND_FAMILIES: OskCommandFamily[] = [
     userIntent: "Use the right project behavior now, then teach OSK from the completed task.",
     whyPublic: "Task start/finish is the daily workflow loop for harness users.",
     mcpTool: "osk_get_task_context",
-    cli: "openskill-kit context --query \"<task>\"",
+    cli: "openskill-kit osk task context \"<task>\"",
     readOnly: false,
     approvalRequired: false,
     approvalClasses: ["writes-osk-state"],
@@ -133,7 +133,7 @@ export const OSK_PUBLIC_COMMAND_FAMILIES: OskCommandFamily[] = [
     subagents: ["osk-router"],
     artifactsRead: ["preferences", "workflows", "review queue", "plugin status"],
     artifactsWrite: ["route trace", "safe task events when finishing"],
-    workflowSteps: ["For context, call task-context facade first.", "For finish, call finish-task with safe summary, files, commands, and outcome.", "Stage learned behavior for review."],
+    workflowSteps: ["For context, call task-context facade first.", "For finish, call finish-task with safe summary, files, commands, outcome, patch hashes, and diff stats.", "Stage learned behavior for review unless no-learn is requested."],
     outputSummary: "Compact context or finish digest with review next actions.",
     tests: ["context returns plugin install profile", "finish stores summaries without raw diff"]
   }),

@@ -156,7 +156,7 @@ describe("deep architecture hardening", () => {
     ]));
     expect(manifest.commands).toHaveLength(12);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; aliases: string[] }) => item.command === "/osk compile" && item.mcpTool === "osk_compile_deploy" && item.aliases.includes("/osk update skills"))).toBe(true);
-    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk task" && item.mcpTool === "osk_get_task_context" && item.cli.includes("openskill-kit context"))).toBe(true);
+    expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk task" && item.mcpTool === "osk_get_task_context" && item.cli.includes("openskill-kit osk task context"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; approvalRequired: boolean }) => item.command === "/osk learn" && item.mcpTool === "osk_plan_learning_sources" && item.approvalRequired === true)).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string; cli: string }) => item.command === "/osk deploy" && item.mcpTool === "osk_compile_deploy" && item.cli.includes("opencode"))).toBe(true);
     expect(manifest.commands.some((item: { command: string; mcpTool?: string }) => item.command === "/osk eval" && item.mcpTool === "osk_run_eval")).toBe(true);

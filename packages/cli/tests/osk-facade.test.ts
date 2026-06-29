@@ -68,6 +68,51 @@ describe("osk CLI facade", () => {
     expect(result.stderr).toContain("Supported source ids: current-session, git-local");
   });
 
+  it("records full safe task finish evidence through the public /osk task facade", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-task-finish-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
+
+    const { stdout } = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "task",
+      "finish",
+      "--summary",
+      "Accepted parser change after focused tests",
+      "--outcome",
+      "accepted",
+      "--file",
+      "src/parser.ts",
+      "--command",
+      "npm test",
+      "--command-status",
+      "pass",
+      "--proposed-patch-hash",
+      "patch_123",
+      "--final-patch-hash",
+      "patch_456",
+      "--diff-added",
+      "12",
+      "--diff-removed",
+      "3",
+      "--diff-files",
+      "1",
+      "--no-learn",
+      "--json"
+    ], { cwd: root, windowsHide: true });
+    const parsed = JSON.parse(stdout);
+    expect(parsed.schemaVersion).toBe("openskill-kit.agent-task-finish.v1");
+    expect(parsed.lifecycle).toBeUndefined();
+    expect(parsed.nextActions.join(" ")).toContain("Learning skipped");
+    const eventPath = path.resolve(root, parsed.eventPaths[0]);
+    const eventText = await readFile(eventPath, "utf8");
+    const events = eventText.trim().split(/\r?\n/).map((line) => JSON.parse(line));
+    expect(events.some((event) => event.normalized.agent?.proposedPatchHash === "patch_123")).toBe(true);
+    expect(events.some((event) => event.normalized.userAction?.finalPatchHash === "patch_456")).toBe(true);
+    expect(events.some((event) => event.normalized.git?.diffStats?.added === 12 && event.normalized.git?.diffStats?.removed === 3 && event.normalized.git?.diffStats?.files === 1)).toBe(true);
+  });
+
   it("prints failing full doctor checks in human output", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-doctor-routing-"));
     await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });

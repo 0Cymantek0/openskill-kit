@@ -67,7 +67,7 @@ Workflow:
 Load task context before work and record safe outcome after work.
 
 - Why public: Task start/finish is the daily workflow loop for harness users.
-- CLI fallback: `openskill-kit context --query "<task>"`
+- CLI fallback: `openskill-kit osk task context "<task>"`
 - MCP first call: `osk_get_task_context`
 - Skills: `project-behavior`, `project-workflows`
 - Subagents: `osk-router`
@@ -76,8 +76,8 @@ Load task context before work and record safe outcome after work.
 Workflow:
 
 1. For context, call task-context facade first.
-2. For finish, call finish-task with safe summary, files, commands, and outcome.
-3. Stage learned behavior for review.
+2. For finish, call finish-task with safe summary, files, commands, outcome, patch hashes, and diff stats.
+3. Stage learned behavior for review unless no-learn is requested.
 
 ### /osk learn
 

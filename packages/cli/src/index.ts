@@ -261,6 +261,12 @@ oskTask.command("finish")
   .option("--file <path>", "Touched file path", collectOption, [])
   .option("--command <command>", "Command run", collectOption, [])
   .option("--command-status <status>", "pass|fail|blocked|timeout|unknown", parseCommandStatus, "unknown")
+  .option("--proposed-patch-hash <hash>", "Hash/reference for agent proposed patch")
+  .option("--final-patch-hash <hash>", "Hash/reference for final accepted/edited patch")
+  .option("--diff-added <number>", "Added line count metadata", parseIntegerOption)
+  .option("--diff-removed <number>", "Removed line count metadata", parseIntegerOption)
+  .option("--diff-files <number>", "Changed file count metadata", parseIntegerOption)
+  .option("--no-learn", "Record task events without running learning")
   .option("--compile-safe", "Compile only if safe active behavior exists")
   .option("--json", "Print JSON")
   .action(async (options) => {
@@ -273,6 +279,10 @@ oskTask.command("finish")
       files: options.file,
       commands: options.command,
       commandStatus: options.commandStatus,
+      proposedPatchHash: options.proposedPatchHash,
+      finalPatchHash: options.finalPatchHash,
+      diffStats: makeDiffStats(options.diffAdded, options.diffRemoved, options.diffFiles),
+      learn: options.learn !== false,
       compileSafe: options.compileSafe === true
     });
     output(options.json, result, result.nextActions.join("\n"));
