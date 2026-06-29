@@ -165,6 +165,9 @@ describe("openskill-kit MCP server", () => {
       expect(attachPlanParsed.attachment.status).toBe("planned");
       expect(attachPlanParsed.attachment.host).toBe("opencode");
       expect(attachPlanParsed.attachment.files.some((file: { destination: string }) => file.destination.endsWith("opencode.json"))).toBe(true);
+      expect(attachPlanParsed.hooks.status).toBe("planned");
+      expect(attachPlanParsed.manifests.status).toBe("planned");
+      expect(attachPlanParsed.manifests.files.some((file: { destination: string }) => file.destination.endsWith("AGENTS.md"))).toBe(true);
       const healthPlan = await client.callTool({
         name: "osk_get_plugin_attach_status",
         arguments: { projectRoot: root }
@@ -173,12 +176,16 @@ describe("openskill-kit MCP server", () => {
       expect(healthPlanParsed.attached).toBe(false);
 
       const attachApply = await client.callTool({
-        name: "osk_apply_plugin_attach",
-        arguments: { projectRoot: root, yes: true }
+        name: "osk_compile_deploy",
+        arguments: { projectRoot: root, action: "deploy", apply: true, yes: true }
       });
       const attachApplyParsed = JSON.parse(attachApply.content.find((item) => item.type === "text")?.text ?? "{}");
-      expect(attachApplyParsed.status).toBe("attached");
-      expect(attachApplyParsed.host).toBe("opencode");
+      expect(attachApplyParsed.attachment.status).toBe("attached");
+      expect(attachApplyParsed.attachment.host).toBe("opencode");
+      expect(attachApplyParsed.hooks.status).toBe("installed");
+      expect(attachApplyParsed.manifests.status).toBe("installed");
+      await expect(readFile(path.join(root, ".agents", "hooks", "openskill-kit.json"), "utf8")).resolves.toContain("openskill-kit");
+      await expect(readFile(path.join(root, "AGENTS.md"), "utf8")).resolves.toContain("BEGIN MANAGED BY OPENSKILL-KIT");
       const bootAttached = await client.callTool({
         name: "osk_get_status",
         arguments: { projectRoot: root, init: false }

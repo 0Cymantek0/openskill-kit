@@ -134,6 +134,32 @@ describe("osk CLI facade", () => {
     await expect(stat(path.join(root, "CLAUDE.md"))).rejects.toThrow();
   });
 
+  it("previews and applies /osk deploy as full OpenCode deployment", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-deploy-full-"));
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2), "utf8");
+
+    const preview = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "deploy", "--json"], { cwd: root, windowsHide: true });
+    const previewParsed = JSON.parse(preview.stdout);
+    expect(previewParsed.schemaVersion).toBe("openskill-kit.setup-wizard.v1");
+    expect(previewParsed.status).toBe("planned");
+    expect(previewParsed.plannedHookFiles).toBe(1);
+    expect(previewParsed.plannedManifestFiles).toBeGreaterThan(0);
+    expect(previewParsed.messages.join("\n")).toContain("Hooks preview:");
+    expect(previewParsed.messages.join("\n")).toContain("Instruction manifests preview:");
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
+    await expect(stat(path.join(root, ".agents", "hooks", "openskill-kit.json"))).rejects.toThrow();
+    await expect(stat(path.join(root, "AGENTS.md"))).rejects.toThrow();
+
+    const applied = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "deploy", "--yes", "--json"], { cwd: root, windowsHide: true });
+    const appliedParsed = JSON.parse(applied.stdout);
+    expect(appliedParsed.status).toBe("installed");
+    expect(appliedParsed.hooksStatus).toBe("installed");
+    expect(appliedParsed.manifestsStatus).toBe("installed");
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".agents", "hooks", "openskill-kit.json"))).resolves.toBeTruthy();
+    expect(await readFile(path.join(root, "AGENTS.md"), "utf8")).toContain("BEGIN MANAGED BY OPENSKILL-KIT");
+  });
+
   it("uses existing opencode.jsonc for setup and uninstall without creating opencode.json", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-jsonc-"));
     await writeFile(path.join(root, "opencode.jsonc"), [

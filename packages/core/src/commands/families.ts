@@ -276,17 +276,17 @@ export const OSK_PUBLIC_COMMAND_FAMILIES: OskCommandFamily[] = [
     userIntent: "Make the current harness use OSK artifacts safely.",
     whyPublic: "Deploy writes host config and must be dry-run first.",
     mcpTool: "osk_compile_deploy",
-    cli: "openskill-kit agent attach-plugin --host opencode --dry-run",
+    cli: "openskill-kit osk deploy --host opencode",
     readOnly: false,
     approvalRequired: true,
     approvalClasses: ["writes-project-config", "installs-harness-artifact"],
     skills: ["osk-operating-manual"],
     subagents: ["osk-router"],
-    artifactsRead: ["compiled plugin", "host config"],
-    artifactsWrite: ["project-local host config", ".opencode/*", "attach receipts"],
-    workflowSteps: ["Compile plugin if needed.", "Preview exact host config changes.", "Apply only with explicit approval.", "Write receipt."],
-    outputSummary: "Planned/applied files, diff summary, receipt, restart instructions.",
-    tests: ["deploy dry-run does not write host config", "OpenCode patch preserves user config"]
+    artifactsRead: ["compiled plugin", "host config", "compiled hooks", "compiled manifests"],
+    artifactsWrite: ["project-local host config", ".opencode/*", ".agents/hooks/*", "AGENTS.md/CLAUDE.md managed blocks", "attach/install receipts"],
+    workflowSteps: ["Compile plugin if needed.", "Preview host config, generated OpenCode files, hooks, and instruction manifests.", "Apply only with explicit approval.", "Write receipts."],
+    outputSummary: "Planned/applied host files, hook config, instruction manifests, receipts, restart instructions.",
+    tests: ["deploy dry-run does not write host config or hooks", "OpenCode patch preserves user config", "deploy apply installs hooks and manifests"]
   }),
   family({
     id: "eval",

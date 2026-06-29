@@ -13,7 +13,7 @@ OpenSkillKit commands are local-first and review-gated. This page records the pr
 | `/osk evolve` | Anchor Cards, verifier suites | candidate skill revisions, EvolutionRun | verifier/sandbox modes gated | review-only promotion |
 | `/osk verify` | compiled artifacts, command maps, MCP profiles, reports, verifier metadata | verification reports | sandbox/container when requested | checks command-smell/context bloat and labels `hiddenOracleProof=false` unless real hidden-oracle proof exists |
 | `/osk compile` | active reviewed behavior | `.openskill-kit/compiled/*` | no host write | compiled artifacts exclude private event logs |
-| `/osk deploy` | compiled plugin, host config | project-local host config, receipts | yes | dry-run first; no global config write by default |
+| `/osk deploy` | compiled plugin, host config, compiled hooks, compiled manifests | project-local host config, generated OpenCode files, project hooks, managed instruction blocks, receipts | yes | dry-run first; no global config write by default |
 | `/osk eval` | eval fixtures, compiled behavior | eval reports | external execution when requested | eval outputs stay local |
 | `/osk pack` | reviewed behavior and pack metadata | packs, signatures, import reviews | yes for import/sign/apply | excludes events, signals, ambient metadata, reviews, eval runs, reports, raw prompts, raw diffs, and secrets |
 

@@ -373,11 +373,24 @@ osk.command("compile")
   });
 
 osk.command("deploy")
-  .description("Preview or apply harness attachment")
+  .description("Preview or apply full OpenCode harness deployment")
   .option("--host <host>", "Attach host", parseAgentPluginAttachHost, DEFAULT_AGENT_PLUGIN_ATTACH_HOST)
   .option("--yes", "Apply after reviewing dry-run")
+  .option("--skip-hooks", "Do not install lifecycle hooks")
+  .option("--skip-manifests", "Do not install managed instruction manifests")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (options.host === "opencode") {
+      const result = await runSetupWizard(process.cwd(), options.host, {
+        yes: options.yes === true,
+        nonInteractive: true,
+        skipHooks: options.skipHooks === true,
+        skipManifests: options.skipManifests === true
+      });
+      output(options.json, result, result.messages.join("\n"));
+      process.exitCode = result.status === "blocked" ? 1 : 0;
+      return;
+    }
     const result = await attachAgentPlugin(process.cwd(), { host: options.host, dryRun: options.yes !== true, yes: options.yes === true });
     output(options.json, result, result.messages.join("\n"));
     process.exitCode = result.status === "blocked" ? 1 : 0;

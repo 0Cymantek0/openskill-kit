@@ -16,6 +16,13 @@ Manual flow:
 ```bash
 npx openskill-kit init
 npx openskill-kit compile --target plugin
+npx openskill-kit osk deploy --host opencode
+npx openskill-kit osk deploy --host opencode --yes
+```
+
+Attach-only advanced flow:
+
+```bash
 npx openskill-kit agent attach-plugin --host opencode --dry-run
 npx openskill-kit agent attach-plugin --host opencode --yes
 ```

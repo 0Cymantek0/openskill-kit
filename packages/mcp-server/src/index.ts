@@ -1182,24 +1182,40 @@ export function createOpenSkillMcpServer(): McpServer {
         targets: z.array(z.enum(CompileTargets)).optional(),
         includeStagedPreview: z.boolean().default(false),
         host: z.enum(AgentPluginAttachHosts).default("opencode"),
+        includeHooks: z.boolean().default(true),
+        includeManifests: z.boolean().default(true),
         apply: z.boolean().default(false),
         yes: z.boolean().default(false)
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, action, targets, includeStagedPreview, host, apply, yes }) => {
+    async ({ projectRoot, action, targets, includeStagedPreview, host, includeHooks, includeManifests, apply, yes }) => {
       const root = resolveProjectRoot(projectRoot);
       const compile = await compileBehaviorLayer(root, { targets: targets ?? ["plugin"], includeStagedPreview });
+      const deployApproved = apply && yes;
       const attachment = action === "deploy"
-        ? await attachAgentPlugin(root, { host, dryRun: !(apply && yes), yes: apply && yes })
+        ? await attachAgentPlugin(root, { host, dryRun: !deployApproved, yes: deployApproved })
         : undefined;
+      const hooks = action === "deploy" && includeHooks
+        ? await installAgentHooks({ projectRoot: root, target: "project", dryRun: !deployApproved, yes: deployApproved })
+        : undefined;
+      const manifests = action === "deploy" && includeManifests
+        ? await installInstructionManifests(root, { target: "project", dryRun: !deployApproved, yes: deployApproved })
+        : undefined;
+      const deploymentMessages = [
+        ...(attachment?.messages.map((message) => `Attachment: ${message}`) ?? []),
+        ...(hooks?.messages.map((message) => `Hooks: ${message}`) ?? []),
+        ...(manifests?.messages.map((message) => `Instruction manifests: ${message}`) ?? [])
+      ];
       return toolResult({
         schemaVersion: "openskill-kit.compile-deploy.v1",
         action,
         compile,
         attachment,
-        nextActions: attachment
-          ? attachment.messages
+        hooks,
+        manifests,
+        nextActions: deploymentMessages.length
+          ? deploymentMessages
           : ["Run with action `deploy` to preview harness attachment after reviewing compiled artifacts."]
       }, root);
     }

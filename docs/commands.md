@@ -13,7 +13,7 @@ OpenSkillKit exposes 12 public `/osk` command families. Low-level commands and M
 | `/osk evolve` | Create a new source-grounded skill when local memory is not enough. | Preview or staged write | `candidate skill revisions`<br>`EvolutionRun` | Not by default | `Anchor Cards`<br>`candidate skills`<br>`verifier suites` |
 | `/osk verify` | Know whether behavior or OpenWorld artifacts are safe and credible. | Preview or staged write | `verification reports` | Not by default | `compiled artifacts`<br>`verifier suites`<br>`OpenWorld reports` |
 | `/osk compile` | Refresh skills, command maps, MCP descriptors, hooks, and manifests. | Preview or staged write | `.openskill-kit/compiled/*` | Not by default | `active preferences`<br>`active workflows`<br>`config` |
-| `/osk deploy` | Make the current harness use OSK artifacts safely. | Preview or staged write | `project-local host config`<br>`.opencode/*`<br>`attach receipts` | Required | `compiled plugin`<br>`host config`<br>`project-local host config` |
+| `/osk deploy` | Make the current harness use OSK artifacts safely. | Preview or staged write | `project-local host config`<br>`.opencode/*`<br>`.agents/hooks/*`<br>`AGENTS.md/CLAUDE.md managed blocks`<br>`attach/install receipts` | Required | `compiled plugin`<br>`host config`<br>`compiled hooks`<br>`compiled manifests` |
 | `/osk eval` | Check whether OSK improves outcomes and does not bloat context. | Preview or staged write | `eval reports`<br>`calibration events` | Not by default | `eval fixtures`<br>`compiled behavior`<br>`review outcomes` |
 | `/osk pack` | Share or import reviewed behavior without private evidence leakage. | Preview or staged write | `behavior packs`<br>`pack import reviews` | Required | `active behavior`<br>`pack metadata`<br>`signatures` |
 
@@ -189,7 +189,7 @@ Workflow:
 Preview or apply project-local harness attachment with receipts.
 
 - Why public: Deploy writes host config and must be dry-run first.
-- CLI fallback: `openskill-kit agent attach-plugin --host opencode --dry-run`
+- CLI fallback: `openskill-kit osk deploy --host opencode`
 - MCP first call: `osk_compile_deploy`
 - Skills: `osk-operating-manual`
 - Subagents: `osk-router`
@@ -198,9 +198,9 @@ Preview or apply project-local harness attachment with receipts.
 Workflow:
 
 1. Compile plugin if needed.
-2. Preview exact host config changes.
+2. Preview host config, generated OpenCode files, hooks, and instruction manifests.
 3. Apply only with explicit approval.
-4. Write receipt.
+4. Write receipts.
 
 ### /osk eval
 
