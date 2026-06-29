@@ -237,8 +237,14 @@ describe("deep architecture hardening", () => {
     const ambient = await readFile(path.join(root, ".openskill-kit", "ambient", "opencode-events.jsonl"), "utf8");
     expect(ambient).toContain("\"eventType\":\"session-start\"");
     expect(ambient).toContain("\"eventType\":\"post-tool-use\"");
-    expect(ambient).toContain("\"input.command\":\"npm test\"");
+    expect(ambient).toContain("\"input.tool\":\"bash\"");
     expect(ambient).toContain("\"output.status\":\"success\"");
+    expect(ambient).toContain("\"input.commandKind\":\"package-manager\"");
+    expect(ambient).toContain("\"input.commandHash\":\"sha256:");
+    expect(ambient).toContain("\"input.commandLengthBucket\":\"short\"");
+    expect(ambient).toContain("\"input.commandRiskFlags\":[]");
+    // Commands are projected into derived fields; the raw command string never lands in ambient JSON.
+    expect(ambient).not.toContain("npm test");
     expect(ambient).not.toContain("do not store me");
     expect(ambient).not.toContain("do not store output");
     expect(readme).toContain("## Host Attach Matrix");

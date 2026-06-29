@@ -1,29 +1,54 @@
 import { mkdir, appendFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type { Plugin } from "@opencode-ai/plugin";
 
 export const OpenSkillKitPlugin: Plugin = async (context) => {
   const rawContext = context as unknown as Record<string, unknown>;
   const projectRoot = typeof rawContext.worktree === "string" ? rawContext.worktree : typeof rawContext.directory === "string" ? rawContext.directory : process.cwd();
   const client = isRecord(rawContext.client) ? rawContext.client : undefined;
+  const traceMode = resolveTraceMode();
   const emit = async (eventType: string, input?: unknown, output?: unknown) => {
-    // Metadata-only by default. Raw prompts, raw diffs, tool output, and secrets stay out.
+    // Metadata-only by default. Raw commands, raw paths, args, cwd, env, urls, prompts,
+    // diffs, tool outputs, and full message text stay out of normal ambient learning.
     const metadata = safe(input, output);
-    const record = {
+    const base = {
       schemaVersion: "openskill-kit.opencode-ambient-event.v1",
       source: "opencode-plugin",
       eventType,
       capturedAt: new Date().toISOString(),
+      traceMode,
       metadata
     };
-    const file = path.join(projectRoot, ".openskill-kit", "ambient", "opencode-events.jsonl");
+    const safeRecord = { ...base, containsRawFields: false };
+    const safeFile = path.join(projectRoot, ".openskill-kit", "ambient", "opencode-events.jsonl");
     try {
-      await mkdir(path.dirname(file), { recursive: true });
-      await appendFile(file, `${JSON.stringify(record)}\n`, "utf8");
+      await mkdir(path.dirname(safeFile), { recursive: true });
+      await appendFile(safeFile, `${JSON.stringify(safeRecord)}\n`, "utf8");
     } catch (error) {
       await log(client, "WARN", eventType, error instanceof Error ? error.message : String(error));
     }
     await log(client, "INFO", eventType);
+    // Eval/debug traces are opt-in, clearly labeled, and written to a separate file so they
+    // cannot be confused with normal privacy-safe ambient learning.
+    if (traceMode === "eval") {
+      const evalRecord = {
+        ...base,
+        schemaVersion: "openskill-kit.opencode-ambient-event-eval.v1",
+        traceMode: "eval",
+        containsRawFields: true,
+        intendedUse: "local-evaluation-only",
+        rawInput: input,
+        rawOutput: output
+      };
+      const evalFile = path.join(projectRoot, ".openskill-kit", "evals", "traces", "opencode-events.raw.jsonl");
+      try {
+        await mkdir(path.dirname(evalFile), { recursive: true });
+        await appendFile(evalFile, `${JSON.stringify(evalRecord)}\n`, "utf8");
+      } catch (error) {
+        await log(client, "WARN", eventType, error instanceof Error ? error.message : String(error));
+      }
+    }
   };
 
   return {
@@ -63,12 +88,129 @@ function safe(input: unknown, output?: unknown): Record<string, unknown> {
   return out;
 }
 
+// Only safe, low-risk primitives are copied verbatim. Commands and paths are never
+// stored raw: they are projected into deterministic derived fields (kind, hash,
+// length bucket, extension, depth, risk flags) so ambient learning keeps high-value
+// signal without leaking secrets, customer/project names, or private repo paths.
+const SAFE_PRIMITIVE_KEYS = ["id", "type", "tool", "status", "decision", "timestamp", "sessionID", "messageID"] as const;
+const COMMAND_KEYS = ["command", "cmd", "args", "argv"] as const;
+const PATH_KEYS = ["path", "file", "filePath", "filename"] as const;
+
 function copySafe(prefix: string, value: unknown, out: Record<string, unknown>) {
   if (!isRecord(value)) return;
-  for (const key of ["id", "type", "tool", "command", "path", "status", "decision", "timestamp", "sessionID", "messageID"] as const) {
+  for (const key of SAFE_PRIMITIVE_KEYS) {
     const item = value[key];
     if (typeof item === "string" || typeof item === "number" || typeof item === "boolean" || item === null) out[`${prefix}.${key}`] = item;
   }
+  const command = firstString(value, COMMAND_KEYS);
+  if (command !== undefined) Object.assign(out, projectCommand(`${prefix}.command`, command));
+  const filePath = firstString(value, PATH_KEYS);
+  if (filePath !== undefined) Object.assign(out, projectPath(`${prefix}.path`, filePath));
+}
+
+function firstString(value: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const item = value[key];
+    if (typeof item === "string" && item.length) return item;
+  }
+  return undefined;
+}
+
+function projectCommand(prefix: string, value: string): Record<string, unknown> {
+  return {
+    [`${prefix}Kind`]: classifyCommand(value),
+    [`${prefix}Hash`]: hashValue(value),
+    [`${prefix}LengthBucket`]: getCommandLengthBucket(value),
+    [`${prefix}RiskFlags`]: getRiskFlags(value)
+  };
+}
+
+function projectPath(prefix: string, value: string): Record<string, unknown> {
+  return {
+    [`${prefix}Kind`]: classifyPath(value),
+    [`${prefix}Hash`]: hashValue(value),
+    [`${prefix}Extension`]: getPathExtension(value),
+    [`${prefix}Depth`]: getPathDepth(value),
+    [`${prefix}RiskFlags`]: getPathRiskFlags(value)
+  };
+}
+
+function resolveTraceMode(): "safe" | "eval" {
+  const flag = (process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE ?? "safe").toLowerCase();
+  return flag === "eval" ? "eval" : "safe";
+}
+
+function hashValue(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 16)}`;
+}
+
+function classifyCommand(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (isGitCommand(trimmed)) return "git";
+  if (/\b(npm|npx|pnpm|yarn|bunx?)\b/.test(trimmed)) return "package-manager";
+  if (/\b(python\d?|pip\d?|poetry|pytest|uv)\b/.test(trimmed)) return "python";
+  if (/\bnode\b|\.m?js\b/.test(trimmed)) return "node";
+  if (/\b(test|spec|jest|vitest|mocha)\b/.test(trimmed)) return "test";
+  if (/\b(sh|bash|zsh|powershell|pwsh|cmd)\b/.test(trimmed)) return "shell";
+  if (/\bopenskill-kit\b/.test(trimmed)) return "osk";
+  return "other";
+}
+
+function isGitCommand(value: string): boolean {
+  return /(^|\s|;|&&|\|)git\s/.test(value);
+}
+
+function classifyPath(value: string): string {
+  if (value.startsWith("/")) return "absolute";
+  if (/^[a-zA-Z]:[\\/]/.test(value) || value.startsWith("\\\\")) return "absolute";
+  if (/^[a-zA-Z]:/.test(value)) return "absolute";
+  if (value.startsWith("~/") || value.startsWith("~\\")) return "home";
+  if (value.startsWith("./") || value.startsWith(".\\") || value.startsWith("../")) return "relative";
+  if (/^https?:\/\//.test(value)) return "url";
+  if (value.startsWith(".")) return "hidden-relative";
+  return "relative";
+}
+
+function getPathExtension(value: string): string {
+  const base = value.replace(/[?#].*$/, "").replace(/[\\/]$/, "").split(/[\\/]/).pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return "";
+  const ext = base.slice(dot).toLowerCase();
+  return ext.length > 8 ? "" : ext;
+}
+
+function getPathDepth(value: string): number {
+  const normalized = value.replace(/^[a-zA-Z]:/, "").replace(/^~\//, "").replace(/^https?:\/\/[^\\/]+/, "");
+  const segments = normalized.split(/[\\/]+/).filter((segment) => segment.length && segment !== ".");
+  return Math.max(0, segments.length - 1);
+}
+
+function getCommandLengthBucket(value: string): string {
+  const length = value.length;
+  if (length <= 32) return "short";
+  if (length <= 128) return "medium";
+  if (length <= 512) return "long";
+  return "xlong";
+}
+
+// Risk indicators flag shapes likely to carry secrets or sensitive values. They do
+// not record the value itself, only the category of risk observed.
+function getRiskFlags(value: string): string[] {
+  const flags: string[] = [];
+  if (/[A-Za-z0-9_]+\s*=\s*[^\s&|;]+/.test(value)) flags.push("assignment-like");
+  if (/\b(token|secret|password|passwd|apikey|api_key|access_key|private_key|credentials?)\b/i.test(value)) flags.push("secret-keyword");
+  if (/(sk-[A-Za-z0-9]{8,})|(gh[pousr]_[A-Za-z0-9]{10,})|(AKIA[0-9A-Z]{8,})/.test(value)) flags.push("credential-pattern");
+  if (/https?:\/\/[^\s]+[?&][^\s]+/.test(value)) flags.push("url-with-query");
+  return flags;
+}
+
+function getPathRiskFlags(value: string): string[] {
+  const flags: string[] = [];
+  if (value.startsWith("~") || /^[A-Za-z]:[\\/]?(Users|home|Documents|Desktop|Downloads)/i.test(value) || /^\/(Users|home)\//.test(value)) flags.push("home-path");
+  if (/(private|secret|internal|customer|confidential)/i.test(value)) flags.push("sensitive-name");
+  if (/https?:\/\/[^\s]+[?&][^\s]+/.test(value)) flags.push("url-with-query");
+  if (/^\./.test(value.split(/[\\/]/).pop() ?? "")) flags.push("hidden-segment");
+  return flags;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

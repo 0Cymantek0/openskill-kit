@@ -26,6 +26,9 @@ describe("harness readiness verification", () => {
     expect(report.findings.some((finding) => finding.id === "opencode-command-facade:osk-status.md" && finding.severity === "pass")).toBe(true);
     expect(report.findings.some((finding) => finding.id === "opencode-plugin-hook:session-diff" && finding.severity === "pass")).toBe(true);
     expect(report.findings.some((finding) => finding.id === "opencode-plugin-safe-key-whitelist" && finding.severity === "pass")).toBe(true);
+    expect(report.findings.some((finding) => finding.id === "opencode-plugin-derived-fields" && finding.severity === "pass")).toBe(true);
+    expect(report.findings.some((finding) => finding.id === "opencode-plugin-no-raw-copy" && finding.severity === "pass")).toBe(true);
+    expect(report.findings.some((finding) => finding.id === "opencode-plugin-eval-mode-gated" && finding.severity === "pass")).toBe(true);
 
     await attachAgentPlugin(root, { host: "opencode", dryRun: false, yes: true });
     const attachedReport = await verifyHarnessReadiness(root, new Date("2026-06-28T00:00:00.000Z"));
@@ -39,7 +42,22 @@ describe("harness readiness verification", () => {
     const pluginRoot = path.join(root, ".openskill-kit", "compiled", "plugin");
     await rename(path.join(pluginRoot, "opencode", "commands", "osk-status.md"), path.join(pluginRoot, "opencode", "commands", "help.md"));
     await rename(path.join(pluginRoot, "opencode", "agents", "osk-router.md"), path.join(pluginRoot, "opencode", "agents", "router.md"));
-    await writeFile(path.join(pluginRoot, "opencode", "plugins", "openskillkit.ts"), "export default { prompt: true }\n", "utf8");
+    await writeFile(path.join(pluginRoot, "opencode", "plugins", "openskillkit.ts"), [
+      "import type { Plugin } from \"@opencode-ai/plugin\";",
+      "export const OpenSkillKitPlugin: Plugin = async () => ({",
+      "  \"tool.execute.after\": async (input: Record<string, unknown>) => input,",
+      "  event: async () => {}",
+      "});",
+      "export const server = OpenSkillKitPlugin;",
+      "const SAFE_PRIMITIVE_KEYS = [\"command\", \"path\", \"args\", \"cwd\", \"output\"] as const;",
+      "function copySafe(prefix: string, value: Record<string, unknown>, out: Record<string, unknown>) {",
+      "  for (const key of SAFE_PRIMITIVE_KEYS) {",
+      "    const item = value[key];",
+      "    if (typeof item === \"string\") out[`${prefix}.${key}`] = item;",
+      "  }",
+      "}",
+      ""
+    ].join("\n"), "utf8");
     const publicDescriptorPath = path.join(pluginRoot, "mcp", "descriptors.public.json");
     const publicDescriptors = JSON.parse(await readFile(publicDescriptorPath, "utf8"));
     publicDescriptors.tools.push({ name: "extra_low_level_tool", category: "debug", writeRisk: "read-only", approvalRequired: false });
@@ -54,6 +72,9 @@ describe("harness readiness verification", () => {
       expect.objectContaining({ id: "opencode-command-name:help.md", severity: "fail" }),
       expect.objectContaining({ id: "opencode-agent-present:osk-router.md", severity: "fail" }),
       expect.objectContaining({ id: "opencode-plugin-safe-key-whitelist", severity: "fail" }),
+      expect.objectContaining({ id: "opencode-plugin-derived-fields", severity: "fail" }),
+      expect.objectContaining({ id: "opencode-plugin-no-raw-copy", severity: "fail" }),
+      expect.objectContaining({ id: "opencode-plugin-eval-mode-gated", severity: "fail" }),
       expect.objectContaining({ id: "opencode-config-schema:opencode.json", severity: "fail" })
     ]));
   });

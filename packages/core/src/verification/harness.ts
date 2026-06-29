@@ -44,11 +44,19 @@ const REQUIRED_COMMAND_TEXT = ["Never read raw prompts", "Never read raw diffs",
 const REQUIRED_AGENT_TEXT = ["mode: subagent", "Use OSK MCP facade tools first", "Never store raw prompts"];
 const REQUIRED_PLUGIN_TEXT = ["Metadata-only by default", "opencode-events.jsonl", "import type { Plugin } from \"@opencode-ai/plugin\"", "export const server = OpenSkillKitPlugin", "event: async", "session.created", "tool.execute.before", "tool.execute.after", "command.execute.before", "file.edited", "permission.ask", "permission.replied", "session.diff", "tui.command.execute"];
 const EXPECTED_OPENCODE_AGENTS = ["osk-router.md", "osk-learner.md", "osk-reviewer.md", "osk-researcher.md", "osk-evolver.md", "osk-verifier.md", "osk-evaluator.md", "osk-docs.md"];
-const FORBIDDEN_PLUGIN_SAFE_KEYS = ["prompt", "diff", "content", "message", "text", "output"];
+// Raw-prone keys that must never be copied verbatim into ambient metadata.
+// Commands and paths are only allowed as *projection sources* (commandHash,
+// commandKind, pathHash, pathKind, ...), never as stored raw values.
+const FORBIDDEN_PLUGIN_SAFE_KEYS = ["prompt", "diff", "content", "message", "text", "output", "command", "cmd", "args", "argv", "path", "file", "filepath", "filename", "cwd", "env", "url"];
+// Markers proving the safe-mode plugin projects commands/paths into derived
+// fields rather than storing raw values. Field keys are built with template
+// literals, so we assert on the projection helpers and suffix tokens that
+// appear literally in the generated source.
+const REQUIRED_PLUGIN_DERIVED_FIELDS = ["projectCommand", "projectPath", "classifyCommand", "classifyPath", "hashValue", "getRiskFlags", "Kind", "Hash", "LengthBucket", "Extension", "Depth"];
 const BROAD_SKILL_DESCRIPTION = /\b(use for all coding|all coding tasks|always use|preferred over all other skills)\b/i;
 const MAX_OPENCODE_COMMAND_BYTES = 6_000;
 const MAX_OPENCODE_AGENT_BYTES = 6_000;
-const MAX_OPENCODE_PLUGIN_BYTES = 8_000;
+const MAX_OPENCODE_PLUGIN_BYTES = 14_000;
 const MAX_OPENCODE_SKILL_BYTES = 8_000;
 
 export async function verifyHarnessReadiness(projectRoot: string, now: Date = new Date()): Promise<HarnessReadinessVerification> {
@@ -208,8 +216,35 @@ export async function verifyHarnessReadiness(projectRoot: string, now: Date = ne
     findings.push(finding(
       "opencode-plugin-safe-key-whitelist",
       forbiddenKeys.length ? "fail" : "pass",
-      forbiddenKeys.length ? `OpenCode plugin safe whitelist includes raw-prone key(s): ${forbiddenKeys.join(", ")}.` : "OpenCode plugin safe whitelist excludes raw-prone prompt/diff/content keys.",
-      "Keep ambient capture metadata-only; do not whitelist raw prompt, diff, content, message, text, or output fields.",
+      forbiddenKeys.length ? `OpenCode plugin safe whitelist includes raw-prone key(s): ${forbiddenKeys.join(", ")}.` : "OpenCode plugin safe whitelist excludes raw command/path/prompt/diff/content keys.",
+      "Keep ambient capture metadata-only; project commands and paths into derived fields instead of storing raw values.",
+      opencodePluginPath
+    ));
+    const missingDerived = REQUIRED_PLUGIN_DERIVED_FIELDS.filter((field) => !opencodePluginText.includes(field));
+    findings.push(finding(
+      "opencode-plugin-derived-fields",
+      missingDerived.length ? "fail" : "pass",
+      missingDerived.length ? `OpenCode plugin is missing privacy-safe derived field(s): ${missingDerived.join(", ")}.` : "OpenCode plugin projects commands and paths into privacy-safe derived metadata.",
+      "Regenerate the OpenCode plugin so commands and paths are projected into hash/kind/extension/depth fields.",
+      opencodePluginPath
+    ));
+    const unsafeRawCopy = unsafeRawCommandPathCopy(opencodePluginText);
+    findings.push(finding(
+      "opencode-plugin-no-raw-copy",
+      unsafeRawCopy.length ? "fail" : "pass",
+      unsafeRawCopy.length ? `OpenCode plugin copies raw command/path values verbatim: ${unsafeRawCopy.join(", ")}.` : "OpenCode plugin does not copy raw command/path values into ambient metadata.",
+      "Route command/path values through the projection helpers instead of copying them raw.",
+      opencodePluginPath
+    ));
+    const evalMode = opencodePluginText.includes('traceMode === "eval"')
+      && opencodePluginText.includes('containsRawFields: true')
+      && opencodePluginText.includes('intendedUse: "local-evaluation-only"')
+      && opencodePluginText.includes('opencode-events.raw.jsonl');
+    findings.push(finding(
+      "opencode-plugin-eval-mode-gated",
+      evalMode ? "pass" : "fail",
+      evalMode ? "OpenCode plugin gates high-fidelity eval traces behind an explicit, clearly-labeled eval mode." : "OpenCode plugin is missing an explicit, clearly-labeled eval/debug trace mode.",
+      "Keep eval/debug traces opt-in, labeled, and written to a separate file from normal ambient learning.",
       opencodePluginPath
     ));
   }
@@ -335,7 +370,31 @@ function commandFromFilename(relative: string): string {
 }
 
 function forbiddenPluginSafeKeys(text: string): string[] {
-  const whitelist = text.match(/for \(const key of \[([^\]]+)\]/);
+  // The primitive-copy whitelist is what gets stored verbatim. Commands and paths are
+  // never copied raw: they are only read as projection sources (COMMAND_KEYS/PATH_KEYS)
+  // and reduced to derived fields, so those source arrays are intentionally excluded.
+  const whitelist = text.match(/SAFE_PRIMITIVE_KEYS\s*=\s*\[([^\]]+)\]/);
   const haystack = whitelist?.[1] ?? text;
-  return FORBIDDEN_PLUGIN_SAFE_KEYS.filter((key) => new RegExp(`["']?${key}["']?\\s*[:,]`).test(haystack));
+  return FORBIDDEN_PLUGIN_SAFE_KEYS.filter((key) => new RegExp(`["']${key}["']`).test(haystack));
+}
+
+// Catches raw command/path values being stored verbatim into ambient metadata.
+// The safe projection path routes command/path values through projectCommand/
+// projectPath and never copies them directly into the output record. Any
+// copy-loop whose key source contains a raw-prone key (command, path, args,
+// cwd, env, output, ...) is unsafe because it stores the raw value verbatim.
+function unsafeRawCommandPathCopy(text: string): string[] {
+  // The metadata-copy loop is the only place primitive values are assigned
+  // straight to the output record. Find its key source, then flag any raw-prone
+  // keys it iterates. The safe plugin's source only carries SAFE_PRIMITIVE_KEYS
+  // here, so this stays empty for the real generated plugin.
+  const loopSource = text.match(/(?:for|forEach)\s*\(\s*(?:const\s+\w+\s+of|[^)]*\bof)\s+([A-Za-z0-9_]+)\b/);
+  const sourceName = loopSource?.[1];
+  if (!sourceName) return [];
+  const sourceDef = text.match(new RegExp(`(?:const|let|var)\\s+${sourceName}\\s*=\\s*\\[([^\\]]+)\\]`));
+  const haystack = sourceDef?.[1] ?? "";
+  if (!haystack) return [];
+  const directCopy = /\bfor\s*\(\s*const\s+\w+\s+of\b[\s\S]{0,160}?\bout\[[^\]]+\]\s*=\s*(?:value|item)\b/.test(text);
+  if (!directCopy) return [];
+  return FORBIDDEN_PLUGIN_SAFE_KEYS.filter((key) => new RegExp(`["']${key}["']`).test(haystack));
 }
