@@ -13,6 +13,20 @@ import {
 } from "../src/index.js";
 
 describe("agent plugin attach planner", () => {
+  it("defaults omitted host attachment to OpenCode generated harness files", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode-default-attach", "Prefer OpenCode when attach host is omitted", "workflow")]);
+
+    const planned = await attachAgentPlugin(root, { dryRun: true });
+
+    expect(planned.status).toBe("planned");
+    expect(planned.host).toBe("opencode");
+    expect(planned.files.some((file) => file.destination === path.join(root, "opencode.json"))).toBe(true);
+    expect(planned.files.some((file) => file.destination === path.join(root, ".opencode", "commands", "osk-learn.md"))).toBe(true);
+    expect(planned.files.some((file) => file.destination === path.join(root, ".mcp.json"))).toBe(false);
+    await expect(stat(path.join(root, "opencode.json"))).rejects.toThrow();
+  });
+
   it("previews host MCP config without writing by default", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("attach", "Prefer plugin-first harness attachment", "workflow")]);

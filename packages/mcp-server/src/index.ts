@@ -99,6 +99,7 @@ import {
   verifySkill,
   AgentPluginAttachHosts,
   CompileTargets,
+  DEFAULT_AGENT_PLUGIN_ATTACH_HOST,
   PreferenceCategories,
   SuggestedCompileTargets,
   type InstallTarget
@@ -1146,8 +1147,8 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_preview_plugin_attach",
     {
       title: "OpenSkillKit Preview Plugin Attach",
-      description: "Compile the plugin if needed and preview host MCP config changes for an existing coding harness.",
-      inputSchema: z.object({ projectRoot: projectRootSchema, host: z.enum(AgentPluginAttachHosts).default("generic-mcp") }),
+      description: "Compile the plugin if needed and preview OpenCode-first host MCP config changes for an existing coding harness.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, host: z.enum(AgentPluginAttachHosts).default(DEFAULT_AGENT_PLUGIN_ATTACH_HOST) }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
     },
     async ({ projectRoot, host }) => {
@@ -1160,8 +1161,8 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_apply_plugin_attach",
     {
       title: "OpenSkillKit Apply Plugin Attach",
-      description: "Write host MCP config for the compiled OpenSkillKit plugin only after explicit approval.",
-      inputSchema: z.object({ projectRoot: projectRootSchema, host: z.enum(AgentPluginAttachHosts).default("generic-mcp"), yes: z.boolean().default(false) }),
+      description: "Write OpenCode-first host MCP config for the compiled OpenSkillKit plugin only after explicit approval.",
+      inputSchema: z.object({ projectRoot: projectRootSchema, host: z.enum(AgentPluginAttachHosts).default(DEFAULT_AGENT_PLUGIN_ATTACH_HOST), yes: z.boolean().default(false) }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
     async ({ projectRoot, host, yes }) => {

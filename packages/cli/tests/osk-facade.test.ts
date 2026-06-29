@@ -20,6 +20,20 @@ describe("osk CLI facade", () => {
     expect(parsed.commands.some((item: { publicCommand: string }) => item.publicCommand === "/osk learn")).toBe(true);
   });
 
+  it("defaults low-level plugin attach preview to OpenCode", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-attach-default-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
+
+    const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "agent", "attach-plugin", "--dry-run", "--json"], { cwd: root, windowsHide: true });
+    const parsed = JSON.parse(stdout);
+
+    expect(parsed.status).toBe("planned");
+    expect(parsed.host).toBe("opencode");
+    expect(parsed.files.some((file: { destination: string }) => file.destination.endsWith("opencode.json"))).toBe(true);
+    expect(parsed.files.some((file: { destination: string }) => file.destination.endsWith(".mcp.json"))).toBe(false);
+    await expect(stat(path.join(root, "opencode.json"))).rejects.toThrow();
+  });
+
   it("plans /osk learn without applying imports", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-"));
     await mkdir(path.join(root, "src"), { recursive: true });

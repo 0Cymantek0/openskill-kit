@@ -88,7 +88,7 @@ export async function attachAgentPlugin(
   options: { host?: AgentPluginAttachHost; dryRun?: boolean; yes?: boolean } = {}
 ): Promise<AgentPluginAttachResult> {
   const root = path.resolve(projectRoot);
-  const host = options.host ?? "generic-mcp";
+  const host = options.host ?? DEFAULT_AGENT_PLUGIN_ATTACH_HOST;
   if (!AgentPluginAttachHosts.includes(host)) {
     return blocked(root, host, undefined, [`Unsupported attach host: ${host}`]);
   }

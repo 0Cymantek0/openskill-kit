@@ -98,6 +98,7 @@ import {
   verifySkill,
   CompileTargets,
   AgentPluginAttachHosts,
+  DEFAULT_AGENT_PLUGIN_ATTACH_HOST,
   OSK_PUBLIC_COMMAND_FAMILIES,
   type CompileTarget,
   type AgentPluginAttachHost,
@@ -373,7 +374,7 @@ osk.command("compile")
 
 osk.command("deploy")
   .description("Preview or apply harness attachment")
-  .option("--host <host>", "Attach host", parseAgentPluginAttachHost, "opencode")
+  .option("--host <host>", "Attach host", parseAgentPluginAttachHost, DEFAULT_AGENT_PLUGIN_ATTACH_HOST)
   .option("--yes", "Apply after reviewing dry-run")
   .option("--json", "Print JSON")
   .action(async (options) => {
@@ -942,7 +943,7 @@ agent.command("uninstall-manifests")
 
 agent.command("attach-plugin")
   .description("Preview or write host MCP config for the compiled OpenSkillKit plugin")
-  .option("--host <host>", "opencode|codex|claude-code|cursor|generic-mcp", "generic-mcp")
+  .option("--host <host>", "opencode|codex|claude-code|cursor|generic-mcp", DEFAULT_AGENT_PLUGIN_ATTACH_HOST)
   .option("--dry-run", "Plan without writing")
   .option("--yes", "Non-interactive approval")
   .option("--json", "Print JSON")

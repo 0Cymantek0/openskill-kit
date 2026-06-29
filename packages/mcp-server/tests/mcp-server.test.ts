@@ -152,11 +152,12 @@ describe("openskill-kit MCP server", () => {
 
       const attachPlan = await client.callTool({
         name: "osk_compile_deploy",
-        arguments: { projectRoot: root, action: "deploy", host: "generic-mcp" }
+        arguments: { projectRoot: root, action: "deploy" }
       });
       const attachPlanParsed = JSON.parse(attachPlan.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(attachPlanParsed.attachment.status).toBe("planned");
-      expect(attachPlanParsed.attachment.files[0].destination).toContain(".mcp.json");
+      expect(attachPlanParsed.attachment.host).toBe("opencode");
+      expect(attachPlanParsed.attachment.files.some((file: { destination: string }) => file.destination.endsWith("opencode.json"))).toBe(true);
       const healthPlan = await client.callTool({
         name: "osk_get_plugin_attach_status",
         arguments: { projectRoot: root }
@@ -166,10 +167,11 @@ describe("openskill-kit MCP server", () => {
 
       const attachApply = await client.callTool({
         name: "osk_apply_plugin_attach",
-        arguments: { projectRoot: root, host: "generic-mcp", yes: true }
+        arguments: { projectRoot: root, yes: true }
       });
       const attachApplyParsed = JSON.parse(attachApply.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(attachApplyParsed.status).toBe("attached");
+      expect(attachApplyParsed.host).toBe("opencode");
       const bootAttached = await client.callTool({
         name: "osk_get_status",
         arguments: { projectRoot: root, init: false }
@@ -182,6 +184,7 @@ describe("openskill-kit MCP server", () => {
       });
       const healthAttachedParsed = JSON.parse(healthAttached.content.find((item) => item.type === "text")?.text ?? "{}");
       expect(healthAttachedParsed.attached).toBe(true);
+      expect(healthAttachedParsed.defaultHostReady).toBe(true);
 
       const taskContext = await client.callTool({
         name: "osk_get_task_context",

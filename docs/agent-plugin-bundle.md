@@ -94,8 +94,11 @@ For harness compatibility, generated plugins also include:
   silently writing global settings.
 - `openskill-kit agent attach-plugin`: a safe host-config planner that compiles
   the plugin, preserves existing MCP servers/settings, writes only project-local
-  config (`.codex/config.toml`, `.mcp.json`, or `.cursor/mcp.json`), and records
-  an install receipt on apply.
+  config (`opencode.json`/`opencode.jsonc`, `.codex/config.toml`, `.mcp.json`,
+  or `.cursor/mcp.json`), and records an install receipt on apply.
+  With no `--host`, it targets the primary OpenCode harness and generated
+  `.opencode/` command, agent, skill, and plugin files. Generic MCP remains
+  available through `--host generic-mcp`.
   Applied config also sets `OPENSKILLKIT_PROJECT_ROOT` so MCP tools still bind
   to the project when a host launches the stdio server from another working
   directory.
