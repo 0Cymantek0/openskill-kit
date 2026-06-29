@@ -126,6 +126,10 @@ export async function planLearningSources(
   }
 
   const parsed = sources.map((item) => LearnSourceOptionSchema.parse(item));
+  if (options.selectedSourceIds?.length) {
+    const selectionIssue = explainSelectionIssue(options.selectedSourceIds, parsed);
+    if (selectionIssue) throw new Error(selectionIssue);
+  }
   const selectedSourceIds = options.selectedSourceIds?.length
     ? options.selectedSourceIds.filter((id) => parsed.some((item) => item.id === id && item.policy !== "blocked"))
     : options.sourceMode === "all-detected"

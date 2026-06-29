@@ -129,6 +129,13 @@ describe("openskill-kit MCP server", () => {
       const learnedText = learned.content.find((item) => item.type === "text")?.text;
       expect(learnedText).toContain("run npm test");
 
+      const badSourcePlan = await client.callTool({
+        name: "osk_plan_learning_sources",
+        arguments: { projectRoot: root, sourceMode: "selected", selectedSourceIds: ["not-a-source"] }
+      });
+      expect(badSourcePlan.isError).toBe(true);
+      expect(badSourcePlan.content.find((item) => item.type === "text")?.text).toContain("Unknown learning source(s): not-a-source");
+
       await client.callTool({
         name: "osk_apply_review_actions",
         arguments: { projectRoot: root, activateAll: true }

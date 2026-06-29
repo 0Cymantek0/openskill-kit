@@ -169,9 +169,20 @@ describe("OSK command family registry", () => {
       previewOnly: false,
       now: new Date("2026-06-27T00:04:00.000Z")
     })).rejects.toThrow(/Unknown learning source\(s\): not-a-source.*Supported source ids: current-session, git-local/s);
+    await expect(planLearningSources(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["not-a-source"],
+      now: new Date("2026-06-27T00:04:30.000Z")
+    })).rejects.toThrow(/Unknown learning source\(s\): not-a-source.*Supported source ids: current-session, git-local/s);
 
     const plan = await planLearningSources(root, { sourceMode: "ask", homeDir: home, now: new Date("2026-06-27T00:05:00.000Z") });
     const blocked = plan.options.find((option) => option.policy === "blocked" && option.path?.includes(`${path.sep}.codex${path.sep}memories`))!;
+    await expect(planLearningSources(root, {
+      sourceMode: "selected",
+      selectedSourceIds: [blocked.id],
+      homeDir: home,
+      now: new Date("2026-06-27T00:05:30.000Z")
+    })).rejects.toThrow(/Blocked learning source\(s\): blocked:/);
     await expect(runLearningPlan(root, {
       sourceMode: "selected",
       selectedSourceIds: [blocked.id],
