@@ -191,6 +191,106 @@ describe("OSK command family registry", () => {
       now: new Date("2026-06-27T00:06:00.000Z")
     })).rejects.toThrow(/Blocked learning source\(s\): blocked:/);
   });
+
+  it("preview with opencode-ambient shows transient signals and candidate behavior", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-preview-ambient-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "preview-ambient", now: new Date("2026-06-27T00:00:00.000Z") });
+    await writeText(root, ".openskill-kit/ambient/opencode-events.jsonl", [
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "post-tool-use",
+        capturedAt: "2026-06-27T00:01:00.000Z",
+        metadata: { command: "npm test", status: "pass", tool: "bash" }
+      }),
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "post-tool-use",
+        capturedAt: "2026-06-27T00:02:00.000Z",
+        metadata: { command: "npm test", status: "pass", tool: "bash" }
+      }),
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "file-changed",
+        capturedAt: "2026-06-27T00:03:00.000Z",
+        metadata: { path: "src/app.ts", status: "ok" }
+      })
+    ].join("\n") + "\n");
+
+    const preview = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["opencode-ambient"],
+      previewOnly: true,
+      now: new Date("2026-06-27T00:04:00.000Z")
+    });
+    expect(preview.previewOnly).toBe(true);
+    expect(preview.preview).toBeDefined();
+    expect(preview.preview!.eventsRead).toBe(3);
+    expect(preview.preview!.rawFieldsDetected).toBe(false);
+    expect(preview.preview!.candidateBehavior.length).toBeGreaterThan(0);
+    expect(preview.digest.signalsExtracted).toBeGreaterThan(0);
+    expect(preview.lifecycle).toBeUndefined();
+    const events = await readEvents(root);
+    const ambientEvents = events.filter((e) => e.source.adapter === "opencode-ambient");
+    expect(ambientEvents).toHaveLength(0);
+  });
+
+  it("preview with opencode-ambient warns about raw field records", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-preview-rawwarn-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "preview-rawwarn", now: new Date("2026-06-27T00:00:00.000Z") });
+    await writeText(root, ".openskill-kit/ambient/opencode-events.jsonl", [
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "file-changed",
+        capturedAt: "2026-06-27T00:01:00.000Z",
+        containsRawFields: true,
+        metadata: { path: "src/secret.ts", status: "ok", prompt: "raw prompt here" }
+      }),
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "post-tool-use",
+        capturedAt: "2026-06-27T00:02:00.000Z",
+        traceMode: "eval",
+        metadata: { command: "npm test", status: "pass" }
+      })
+    ].join("\n") + "\n");
+
+    const preview = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["opencode-ambient"],
+      previewOnly: true,
+      now: new Date("2026-06-27T00:03:00.000Z")
+    });
+    expect(preview.preview!.rawFieldsDetected).toBe(true);
+    expect(preview.preview!.rawFieldWarnings.length).toBeGreaterThan(0);
+    expect(preview.preview!.rawFieldWarnings[0]).toContain("containsRawFields");
+  });
+
+  it("writes receipt on every learning run", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-receipt-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "receipt-test", now: new Date("2026-06-27T00:00:00.000Z") });
+
+    const preview = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["git-local"],
+      previewOnly: true,
+      now: new Date("2026-06-27T00:01:00.000Z")
+    });
+    expect(preview.receipt).toBeDefined();
+    expect(preview.receipt!.schemaVersion).toBe("openskill-kit.learn-receipt.v1");
+    expect(preview.receipt!.applied).toBe(false);
+    expect(preview.receipt!.reviewRequired).toBe(true);
+    expect(preview.receipt!.nextCommand).toBe("/osk review");
+
+    const receiptPath = path.join(root, ".openskill-kit", "reviews", "learn-receipt.json");
+    const receiptOnDisk = JSON.parse(await (await import("node:fs/promises")).readFile(receiptPath, "utf8"));
+    expect(receiptOnDisk.schemaVersion).toBe("openskill-kit.learn-receipt.v1");
+    expect(receiptOnDisk.applied).toBe(false);
+  });
 });
 
 async function writeText(root: string, relative: string, content: string): Promise<void> {

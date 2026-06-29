@@ -19,17 +19,37 @@ export async function extractSignals(projectRoot: string, now = new Date()): Pro
   const root = path.resolve(projectRoot);
   const config = await readProjectConfig(root);
   const events = await readEvents(root);
+  const signals = await extractSignalsTransiently(root, config.projectId, events, now, config.learning.highValueOnly);
+  const signalsPath = path.join(root, ".openskill-kit", "signals", "normalized.jsonl");
+  await fs.mkdir(path.dirname(signalsPath), { recursive: true });
+  await fs.writeFile(signalsPath, signals.map((signal) => JSON.stringify(signal)).join("\n") + (signals.length ? "\n" : ""), "utf8");
+  return { schemaVersion: "openskill-kit.learn.v1", signalCount: signals.length, signalsPath, signals };
+}
+
+/**
+ * Pure, no-persistence signal extraction over a supplied set of events.
+ *
+ * Runs the same per-event extractors, repeated-command mining, repo-pattern
+ * mining, and semantic-proposal read that {@link extractSignals} uses, but
+ * over an in-memory event list and writes nothing to disk. Used by the
+ * `/osk learn` preview so a dry-run can show candidate behavior before any
+ * events are appended or any graph is mutated.
+ */
+export async function extractSignalsTransiently(
+  projectRoot: string,
+  projectId: string,
+  events: OpenSkillEvent[],
+  now = new Date(),
+  highValueOnly = false
+): Promise<Signal[]> {
+  const root = path.resolve(projectRoot);
+  const learnableEvents = highValueOnly ? events.filter((event) => classifyHighValueEvent(event).reasons.length > 0) : events;
   const signals: Signal[] = [];
-  const learnableEvents = config.learning.highValueOnly ? events.filter((event) => classifyHighValueEvent(event).reasons.length > 0) : events;
   for (const event of learnableEvents) signals.push(...extractFromEvent(event, now));
   signals.push(...extractRepeatedCommandSignals(learnableEvents, now));
   signals.push(...await readSemanticProposalSignals(root));
-  signals.push(...await extractRepoPatternSignals(root, config.projectId, now));
-  const deduped = dedupeSignals(signals);
-  const signalsPath = path.join(root, ".openskill-kit", "signals", "normalized.jsonl");
-  await fs.mkdir(path.dirname(signalsPath), { recursive: true });
-  await fs.writeFile(signalsPath, deduped.map((signal) => JSON.stringify(signal)).join("\n") + (deduped.length ? "\n" : ""), "utf8");
-  return { schemaVersion: "openskill-kit.learn.v1", signalCount: deduped.length, signalsPath, signals: deduped };
+  signals.push(...await extractRepoPatternSignals(root, projectId, now));
+  return dedupeSignals(signals);
 }
 
 export function extractFromEvent(event: OpenSkillEvent, now = new Date()): Signal[] {

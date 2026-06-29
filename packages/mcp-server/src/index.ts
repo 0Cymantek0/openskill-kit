@@ -345,7 +345,7 @@ export function createOpenSkillMcpServer(): McpServer {
     "osk_run_learning_plan",
     {
       title: "OpenSkillKit Run Learning Plan",
-      description: "Run /osk learn from selected safe metadata and explicit import sources. Defaults to preview-only and never activates learned behavior.",
+      description: "Run /osk learn from selected safe metadata and explicit import sources. Defaults to preview-only: parses sources transiently, shows candidate signal counts and behavior statements in plain English, and writes a receipt — without appending events or mutating the preference graph. Set previewOnly=false to apply (creates review candidates, not active behavior). Always run /osk review after applying.",
       inputSchema: z.object({
         projectRoot: projectRootSchema,
         sourceMode: z.enum(["ask", "all-detected", "selected"]).default("selected"),

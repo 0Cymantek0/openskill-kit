@@ -1821,20 +1821,45 @@ function output(json: boolean | undefined, data: unknown, text: string): void {
 }
 
 function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
-  return "digest" in result
-    ? [
-      `Sources considered: ${result.digest.sourcesConsidered}`,
-      `Sources used: ${result.digest.sourcesUsed}`,
-      `Events appended: ${result.digest.eventsAppended}`,
-      `Signals extracted: ${result.digest.signalsExtracted}`,
-      `Candidate preferences: ${result.digest.candidatePreferences}`,
-      ...result.nextActions
-    ].join("\n")
-    : [
+  if (!("digest" in result)) {
+    return [
       `Sources: ${result.summary.total} (${result.summary.safeMetadata} safe, ${result.summary.explicitImport} explicit, ${result.summary.blocked} blocked)`,
       `Default selected: ${result.defaults.selectedSourceIds.join(", ") || "none"}`,
       ...result.nextActions
     ].join("\n");
+  }
+  const lines = [
+    `Sources considered: ${result.digest.sourcesConsidered}`,
+    `Sources used: ${result.digest.sourcesUsed}`,
+    `Events appended: ${result.digest.eventsAppended}`,
+    `Signals extracted: ${result.digest.signalsExtracted}`,
+    `Candidate preferences: ${result.digest.candidatePreferences}`
+  ];
+  if (result.preview) {
+    lines.push("");
+    lines.push("--- Preview ---");
+    lines.push(`Events read (transient): ${result.preview.eventsRead}`);
+    lines.push(`Command/workflow signals: ${result.preview.commandWorkflowSignals}`);
+    lines.push(`File/repo patterns: ${result.preview.fileTouchPatterns}`);
+    lines.push(`Candidate preferences: ${result.preview.candidatePreferences}`);
+    lines.push(`Candidate workflows: ${result.preview.candidateWorkflows}`);
+    if (result.preview.rawFieldsDetected) {
+      for (const warning of result.preview.rawFieldWarnings) lines.push(`WARNING: ${warning}`);
+    }
+    if (result.preview.candidateBehavior.length > 0) {
+      lines.push("");
+      lines.push("Candidate behavior (would be learned):");
+      for (const item of result.preview.candidateBehavior) {
+        lines.push(`  [${item.kind}] ${item.statement}`);
+      }
+    }
+  }
+  if (result.receipt) {
+    lines.push("");
+    lines.push(`Receipt written. Applied: ${result.receipt.applied}. Next: ${result.receipt.nextCommand}`);
+  }
+  lines.push(...result.nextActions);
+  return lines.join("\n");
 }
 
 function renderDoctorReport(report: { status: "pass" | "warn" | "fail"; checks: Array<{ name: string; status: "pass" | "warn" | "fail"; message: string }> }): string {

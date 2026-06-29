@@ -1,11 +1,14 @@
 import { z } from "zod";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { detectAgentEnvironment } from "../detection/detector.js";
-import { appendEvent } from "../events/store.js";
-import type { OpenSkillEvent } from "../events/schema.js";
+import { appendEvent, readEvents, readProjectConfig } from "../events/store.js";
+import { EventSchema, type OpenSkillEvent } from "../events/schema.js";
 import { runLifecycleOnce, type LifecycleRunnerResult } from "../lifecycle/runner.js";
 import { buildReviewQueue } from "../preferences/proposals.js";
+import { extractSignalsTransiently } from "../signals/extract.js";
+import { writeJsonAtomic } from "../storage/atomic.js";
 import { inspectGitLocalContext, type GitLocalContextResult } from "./git-local.js";
 import { importInteractionSource, readInteractionImportRuns, type InteractionImportRun } from "./importer.js";
 
@@ -78,6 +81,31 @@ export const LearnRunSchema = z.object({
     eventIds: z.array(z.string())
   }),
   lifecycle: z.any().optional(),
+  preview: z.object({
+    eventsRead: z.number().int().min(0),
+    rawFieldsDetected: z.boolean(),
+    rawFieldWarnings: z.array(z.string()),
+    commandWorkflowSignals: z.number().int().min(0),
+    fileTouchPatterns: z.number().int().min(0),
+    candidatePreferences: z.number().int().min(0),
+    candidateWorkflows: z.number().int().min(0),
+    candidateBehavior: z.array(z.object({
+      kind: z.enum(["preference", "workflow", "command-policy", "file-pattern"]),
+      statement: z.string()
+    }))
+  }).optional(),
+  receipt: z.object({
+    schemaVersion: z.literal("openskill-kit.learn-receipt.v1"),
+    source: z.string(),
+    eventsRead: z.number().int().min(0),
+    rawFieldsDetected: z.boolean(),
+    candidatePreferences: z.number().int().min(0),
+    candidateWorkflows: z.number().int().min(0),
+    reviewRequired: z.literal(true),
+    nextCommand: z.literal("/osk review"),
+    applied: z.boolean(),
+    generatedAt: z.string().datetime()
+  }).optional(),
   digest: z.object({
     sourcesConsidered: z.number().int().min(0),
     sourcesUsed: z.number().int().min(0),
@@ -105,6 +133,12 @@ export async function planLearningSources(
   ];
   const opencodeAmbient = await inspectOpenCodeAmbientMetadata(projectRoot);
   if (opencodeAmbient.available) {
+    const ambientNotes = [
+      "Reads: event types, tool names, command categories, command hashes, path categories, path hashes, file extensions, status, permission decisions.",
+      "Does not read: raw commands, raw paths, prompts, diffs, outputs."
+    ];
+    if (opencodeAmbient.rawRecordCount > 0) ambientNotes.push(`Warning: ${opencodeAmbient.rawRecordCount} record(s) flagged containsRawFields or eval traceMode; raw values are NOT imported.`);
+    if (opencodeAmbient.hasEvalTrace) ambientNotes.push("An eval trace file exists at .openskill-kit/evals/traces/; it is segregated from learning and never imported.");
     sources.push(source(
       "opencode-ambient",
       "OpenCode ambient metadata",
@@ -112,7 +146,8 @@ export async function planLearningSources(
       "safe-metadata",
       true,
       `Use ${opencodeAmbient.eventCount} metadata-only OpenCode hook events from ${OPENCODE_AMBIENT_LOG_RELATIVE_PATH}; no raw prompts or raw diffs.`,
-      opencodeAmbient.path
+      opencodeAmbient.path,
+      ambientNotes
     ));
   }
 
@@ -205,6 +240,7 @@ export async function runLearningPlan(
   const selectedOptions = selected.map((id) => plan.options.find((sourceOption) => sourceOption.id === id)!).filter(Boolean);
   const importRuns: InteractionImportRun[] = [];
   const safeEventIds: string[] = [];
+  const transientEvents: OpenSkillEvent[] = [];
   let git: GitLocalContextResult | undefined;
   let opencode: OpenCodeAmbientAppendResult | undefined;
 
@@ -218,11 +254,11 @@ export async function runLearningPlan(
         now: options.now
       }));
     }
-    if (sourceOption.id === "git-local" && !previewOnly) {
+    if (sourceOption.id === "git-local") {
       git = await inspectGitLocalContext(projectRoot);
-      const appended = await appendEvent(projectRoot, {
+      const gitEventInput = {
         sessionId: "osk-learn-git-local",
-        eventType: "post-tool-use",
+        eventType: "post-tool-use" as const,
         source: { adapter: "git-local" },
         intent: "Learn from git metadata only.",
         normalized: {
@@ -233,14 +269,35 @@ export async function runLearningPlan(
           recentCommitSubjects: git.recentCommits.map((commit) => commit.subject)
         },
         files: git.changedFiles.map((file) => ({ path: file.path, action: "unknown" as const })),
-        commands: [{ command: "git status --porcelain && git diff --numstat", status: git.warnings.length ? "unknown" : "pass" }],
+        commands: [{ command: "git status --porcelain && git diff --numstat", status: git.warnings.length ? "unknown" as const : "pass" as const }],
         privacy: { redacted: false, rawStored: false, containsUserText: false, containsCode: false }
-      });
-      safeEventIds.push(appended.event.id);
+      };
+      if (previewOnly) {
+        const ts = (options.now ?? new Date()).toISOString();
+        const previewProjectId = `preview_${createHash("sha256").update(path.resolve(projectRoot)).digest("hex").slice(0, 16)}`;
+        transientEvents.push(EventSchema.parse({
+          schemaVersion: "openskill-kit.event.v1",
+          id: `evt_preview_${createHash("sha256").update(`${previewProjectId}:osk-learn-git-local:post-tool-use:${ts}`).digest("hex").slice(0, 16)}`,
+          projectId: previewProjectId,
+          timestamp: ts,
+          ...gitEventInput
+        }));
+      } else {
+        const appended = await appendEvent(projectRoot, gitEventInput);
+        safeEventIds.push(appended.event.id);
+      }
     }
-    if (sourceOption.id === "opencode-ambient" && !previewOnly) {
-      opencode = await appendOpenCodeAmbientEvents(projectRoot, { maxEvents: options.maxEvents ?? 200, now: options.now });
-      safeEventIds.push(...opencode.eventIds);
+    if (sourceOption.id === "opencode-ambient") {
+      if (previewOnly) {
+        const file = path.join(path.resolve(projectRoot), OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
+        const text = await fs.readFile(file, "utf8").catch(() => "");
+        const lines = text.split(/\r?\n/).filter((line) => line.trim());
+        const parsed = parseOpenCodeAmbientEvents(projectRoot, lines, { maxEvents: options.maxEvents ?? 200, now: options.now });
+        transientEvents.push(...parsed.events);
+      } else {
+        opencode = await appendOpenCodeAmbientEvents(projectRoot, { maxEvents: options.maxEvents ?? 200, now: options.now });
+        safeEventIds.push(...opencode.eventIds);
+      }
     }
   }
 
@@ -249,36 +306,97 @@ export async function runLearningPlan(
     ? undefined
     : await runLifecycleOnce({ projectRoot, maxEvents: options.maxEvents ?? 250, compileSafe: false, now: options.now });
   const review = lifecycle ? await buildReviewQueue(projectRoot) : undefined;
+
+  let preview: z.infer<typeof LearnRunSchema>["preview"] | undefined;
+  if (previewOnly && transientEvents.length > 0) {
+    const previewProjectId = `preview_${createHash("sha256").update(path.resolve(projectRoot)).digest("hex").slice(0, 16)}`;
+    const signals = await extractSignalsTransiently(projectRoot, previewProjectId, transientEvents, options.now ?? new Date(), false);
+    const commandWorkflowSignals = signals.filter((s) => s.category === "command-policy" || s.kind === "tool-choice").length;
+    const fileTouchPatterns = signals.filter((s) => s.kind === "repo-pattern").length;
+    const candidatePreferences = signals.filter((s) => s.kind === "explicit-preference" || s.kind === "acceptance" || s.kind === "rejection").length;
+    const candidateWorkflows = signals.filter((s) => s.category === "command-policy").length;
+    const candidateBehavior: Array<{ kind: "preference" | "workflow" | "command-policy" | "file-pattern"; statement: string }> = [];
+    for (const signal of signals) {
+      let kind: "preference" | "workflow" | "command-policy" | "file-pattern";
+      if (signal.kind === "explicit-preference" || signal.kind === "acceptance" || signal.kind === "rejection") kind = "preference";
+      else if (signal.category === "command-policy") kind = "command-policy";
+      else if (signal.kind === "repo-pattern") kind = "file-pattern";
+      else kind = "workflow";
+      candidateBehavior.push({ kind, statement: signal.statement });
+    }
+    const opencodeAmbient = await inspectOpenCodeAmbientMetadata(projectRoot);
+    preview = {
+      eventsRead: transientEvents.length,
+      rawFieldsDetected: opencodeAmbient.rawRecordCount > 0,
+      rawFieldWarnings: opencodeAmbient.rawRecordCount > 0
+        ? [`${opencodeAmbient.rawRecordCount} record(s) with containsRawFields or eval traceMode detected; raw values were NOT imported.`]
+        : [],
+      commandWorkflowSignals,
+      fileTouchPatterns,
+      candidatePreferences,
+      candidateWorkflows,
+      candidateBehavior
+    };
+  }
+
+  const generatedAt = (options.now ?? new Date()).toISOString();
+  const receiptData = {
+    schemaVersion: "openskill-kit.learn-receipt.v1" as const,
+    source: selected.join(", "),
+    eventsRead: previewOnly ? transientEvents.length : eventsAppended,
+    rawFieldsDetected: preview?.rawFieldsDetected ?? false,
+    candidatePreferences: previewOnly ? (preview?.candidatePreferences ?? 0) : (lifecycle?.graph.candidateCount ?? 0),
+    candidateWorkflows: previewOnly ? (preview?.candidateWorkflows ?? 0) : (review?.workflowCandidates.length ?? 0),
+    reviewRequired: true as const,
+    nextCommand: "/osk review" as const,
+    applied: !previewOnly,
+    generatedAt
+  };
+  const receiptPath = path.join(path.resolve(projectRoot), ".openskill-kit", "reviews", "learn-receipt.json");
+  await fs.mkdir(path.dirname(receiptPath), { recursive: true });
+  await writeJsonAtomic(receiptPath, receiptData);
+
   return LearnRunSchema.parse({
     schemaVersion: "openskill-kit.learn-run.v1",
     projectRoot,
-    generatedAt: (options.now ?? new Date()).toISOString(),
+    generatedAt,
     plan,
     selectedSourceIds: selected,
     previewOnly,
     importRuns,
     safeMetadata: { git, opencode, eventIds: safeEventIds },
     lifecycle,
+    preview,
+    receipt: receiptData,
     digest: {
       sourcesConsidered: plan.options.length,
       sourcesUsed: selectedOptions.length,
-      eventsAppended,
-      signalsExtracted: lifecycle?.signals.signalCount ?? 0,
-      candidatePreferences: lifecycle?.graph.candidateCount ?? 0,
-      candidateWorkflows: review?.workflowCandidates.length ?? 0,
+      eventsAppended: previewOnly ? transientEvents.length : eventsAppended,
+      signalsExtracted: previewOnly ? (preview?.candidateBehavior.length ?? 0) : (lifecycle?.signals.signalCount ?? 0),
+      candidatePreferences: previewOnly ? (preview?.candidatePreferences ?? 0) : (lifecycle?.graph.candidateCount ?? 0),
+      candidateWorkflows: previewOnly ? (preview?.candidateWorkflows ?? 0) : (review?.workflowCandidates.length ?? 0),
       highRiskItems: review?.candidates.filter((item) => item.privacy?.class === "user-private" || item.privacy?.class === "global-private").length ?? 0,
       reviewMarkdownPath: review?.markdownPath
     },
     privacy: [
       "No raw prompts, raw diffs, secrets, or hidden benchmark answers were copied.",
-      "Explicit imports used dry-run preview unless previewOnly=false.",
+      previewOnly
+        ? "Preview mode: events were parsed transiently and never written to disk."
+        : "Explicit imports used dry-run preview unless previewOnly=false.",
       "Git learning uses metadata only and never raw diff hunks.",
       "OpenCode ambient learning uses whitelisted hook metadata only and never raw message text or raw diffs.",
       "Learned behavior remains candidate/staged until `/osk review`."
     ],
     nextActions: previewOnly
-      ? ["Preview complete. Re-run with previewOnly=false only after approving selected explicit imports.", "Then run `/osk review`; activation remains review-gated."]
-      : ["Learning run complete. Run `/osk review` before compiling or deploying behavior.", "Run `/osk compile` only after review accepts desired behavior."]
+      ? [
+          "Preview complete. Review candidate behavior above.",
+          "Re-run with previewOnly=false to apply (creates review candidates, not active behavior).",
+          "Then run `/osk review` to activate."
+        ]
+      : [
+          "Learning run complete. Run `/osk review` before compiling or deploying behavior.",
+          "Run `/osk compile` only after review accepts desired behavior."
+        ]
   });
 }
 
@@ -303,6 +421,8 @@ interface OpenCodeAmbientInspection {
   available: boolean;
   path: string;
   eventCount: number;
+  rawRecordCount: number;
+  hasEvalTrace: boolean;
 }
 
 interface OpenCodeAmbientAppendResult {
@@ -314,29 +434,62 @@ interface OpenCodeAmbientAppendResult {
 }
 
 async function inspectOpenCodeAmbientMetadata(projectRoot: string): Promise<OpenCodeAmbientInspection> {
-  const file = path.join(path.resolve(projectRoot), OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
-  const text = await fs.readFile(file, "utf8").catch(() => "");
-  const eventCount = text.split(/\r?\n/).filter((line) => line.trim()).length;
-  return { available: eventCount > 0, path: file, eventCount };
-}
-
-async function appendOpenCodeAmbientEvents(projectRoot: string, options: { maxEvents: number; now?: Date }): Promise<OpenCodeAmbientAppendResult> {
-  const file = path.join(path.resolve(projectRoot), OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
+  const root = path.resolve(projectRoot);
+  const file = path.join(root, OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
   const text = await fs.readFile(file, "utf8").catch(() => "");
   const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  let rawRecordCount = 0;
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      if (parsed.containsRawFields === true || parsed.traceMode === "eval") rawRecordCount += 1;
+    } catch { /* skip malformed */ }
+  }
+  const evalTracePath = path.join(root, ".openskill-kit", "evals", "traces", "opencode-events.raw.jsonl");
+  const hasEvalTrace = await fs.stat(evalTracePath).then(() => true, () => false);
+  return { available: lines.length > 0, path: file, eventCount: lines.length, rawRecordCount, hasEvalTrace };
+}
+
+interface OpenCodeAmbientParseResult {
+  path: string;
+  readCount: number;
+  skippedCount: number;
+  rawFieldsDetected: boolean;
+  rawFieldWarnings: string[];
+  events: OpenSkillEvent[];
+}
+
+function parseOpenCodeAmbientEvents(projectRoot: string, lines: string[], options: { maxEvents: number; now?: Date }): OpenCodeAmbientParseResult {
+  const root = path.resolve(projectRoot);
+  const file = path.join(root, OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
   const selected = lines.slice(-Math.max(0, options.maxEvents));
-  const eventIds: string[] = [];
+  const events: OpenSkillEvent[] = [];
   let skippedCount = lines.length - selected.length;
-  for (const line of selected) {
+  let rawFieldsDetected = false;
+  const rawFieldWarnings: string[] = [];
+  const projectId = `preview_${createHash("sha256").update(root).digest("hex").slice(0, 16)}`;
+  for (const [index, line] of selected.entries()) {
     const record = parseOpenCodeAmbientRecord(line);
     if (!record) {
       skippedCount += 1;
       continue;
     }
-    const appended = await appendEvent(projectRoot, {
+    try {
+      const raw = JSON.parse(line) as Record<string, unknown>;
+      if (raw.containsRawFields === true || raw.traceMode === "eval") {
+        rawFieldsDetected = true;
+        rawFieldWarnings.push(`Record ${index}: containsRawFields=${raw.containsRawFields}, traceMode=${raw.traceMode}; raw values not imported.`);
+      }
+    } catch { /* already handled by parseOpenCodeAmbientRecord */ }
+    const ts = timestampOrUndefined(record.metadata.timestamp) ?? record.capturedAt ?? options.now?.toISOString() ?? new Date().toISOString();
+    const eventId = `evt_preview_${createHash("sha256").update(`${projectId}:osk-learn-opencode-ambient:${record.eventType}:${ts}:${index}`).digest("hex").slice(0, 16)}`;
+    const event = EventSchema.parse({
+      schemaVersion: "openskill-kit.event.v1",
+      id: eventId,
+      projectId,
       sessionId: "osk-learn-opencode-ambient",
+      timestamp: ts,
       eventType: mapOpenCodeAmbientEventType(record.eventType, record.metadata),
-      timestamp: timestampOrUndefined(record.metadata.timestamp) ?? record.capturedAt ?? options.now?.toISOString(),
       source: { adapter: "opencode-ambient", host: "opencode" },
       intent: `Learn from OpenCode metadata-only hook event: ${record.eventType}.`,
       normalized: {
@@ -347,15 +500,38 @@ async function appendOpenCodeAmbientEvents(projectRoot: string, options: { maxEv
         rawDiffIncluded: false,
         metadata: record.metadata
       },
-      files: typeof record.metadata.path === "string" ? [{ path: record.metadata.path, action: "unknown" as const }] : [],
+      files: typeof record.metadata.path === "string" ? [{ path: record.metadata.path as string, action: "unknown" }] : [],
       commands: typeof record.metadata.command === "string"
-        ? [{ command: record.metadata.command, status: statusFromMetadata(record.metadata.status) }]
+        ? [{ command: record.metadata.command as string, status: statusFromMetadata(record.metadata.status) }]
         : [],
       privacy: { redacted: false, rawStored: false, containsUserText: false, containsCode: false }
     });
+    events.push(event);
+  }
+  return { path: file, readCount: lines.length, skippedCount, rawFieldsDetected, rawFieldWarnings, events };
+}
+
+async function appendOpenCodeAmbientEvents(projectRoot: string, options: { maxEvents: number; now?: Date }): Promise<OpenCodeAmbientAppendResult> {
+  const file = path.join(path.resolve(projectRoot), OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
+  const text = await fs.readFile(file, "utf8").catch(() => "");
+  const lines = text.split(/\r?\n/).filter((line) => line.trim());
+  const parsed = parseOpenCodeAmbientEvents(projectRoot, lines, options);
+  const eventIds: string[] = [];
+  for (const event of parsed.events) {
+    const appended = await appendEvent(projectRoot, {
+      sessionId: event.sessionId,
+      eventType: event.eventType,
+      timestamp: event.timestamp,
+      source: event.source,
+      intent: event.intent,
+      normalized: event.normalized,
+      files: event.files,
+      commands: event.commands,
+      privacy: event.privacy
+    });
     eventIds.push(appended.event.id);
   }
-  return { path: file, readCount: lines.length, appendedCount: eventIds.length, skippedCount, eventIds };
+  return { path: file, readCount: parsed.readCount, appendedCount: eventIds.length, skippedCount: parsed.skippedCount, eventIds };
 }
 
 function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; metadata: Record<string, unknown> } | undefined {
@@ -413,7 +589,7 @@ function timestampOrUndefined(value: unknown): string | undefined {
   return Number.isNaN(Date.parse(value)) ? undefined : new Date(value).toISOString();
 }
 
-function source(id: string, label: string, adapter: string, policy: LearnSourcePolicy, defaultSelected: boolean, reason: string, sourcePath?: string): LearnSourceOption {
+function source(id: string, label: string, adapter: string, policy: LearnSourcePolicy, defaultSelected: boolean, reason: string, sourcePath?: string, privacyNotes?: string[]): LearnSourceOption {
   return {
     id,
     label,
@@ -427,11 +603,11 @@ function source(id: string, label: string, adapter: string, policy: LearnSourceP
       rawPromptRead: false,
       rawDiffRead: false,
       rawTranscriptCopied: false,
-      notes: policy === "blocked"
+      notes: privacyNotes ?? (policy === "blocked"
         ? ["Blocked by ambient-not-silent learning policy."]
         : policy === "explicit-import"
           ? ["Dry-run preview required before appending redacted events."]
-          : ["Metadata-only source can be planned without import approval."]
+          : ["Metadata-only source can be planned without import approval."])
     }
   };
 }
