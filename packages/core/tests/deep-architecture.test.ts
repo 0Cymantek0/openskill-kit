@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   appendEvent,
   applyPreferenceReview,
@@ -66,7 +67,8 @@ describe("deep architecture hardening", () => {
     const opencodeCommand = await readFile(path.join(pluginRoot, "opencode", "commands", "osk-learn.md"), "utf8");
     const opencodeAgent = await readFile(path.join(pluginRoot, "opencode", "agents", "osk-learner.md"), "utf8");
     const opencodeSkill = await readFile(path.join(pluginRoot, "opencode", "skills", "osk-learning", "SKILL.md"), "utf8");
-    const opencodePlugin = await readFile(path.join(pluginRoot, "opencode", "plugins", "openskillkit.ts"), "utf8");
+    const opencodePluginPath = path.join(pluginRoot, "opencode", "plugins", "openskillkit.ts");
+    const opencodePlugin = await readFile(opencodePluginPath, "utf8");
     const codexGuide = await readFile(path.join(pluginRoot, "install-guides", "codex.md"), "utf8");
     const genericMcpGuide = await readFile(path.join(pluginRoot, "install-guides", "generic-mcp.md"), "utf8");
     const readme = await readFile(path.join(pluginRoot, "README.md"), "utf8");
@@ -194,6 +196,30 @@ describe("deep architecture hardening", () => {
     expect(opencodeSkill).toContain("Preview imports before apply.");
     expect(opencodeSkill).toContain("Learning produces candidate or staged behavior only");
     expect(opencodePlugin).toContain("Metadata-only by default");
+    expect(opencodePlugin).toContain("return {");
+    expect(opencodePlugin).toContain("\"session.created\"");
+    expect(opencodePlugin).toContain("\"tool.execute.after\"");
+    expect(opencodePlugin).toContain("\"command.executed\"");
+    expect(opencodePlugin).not.toContain("from \"opencode\"");
+    expect(opencodePlugin).not.toContain("app.on");
+    const importedPlugin = await import(`${pathToFileURL(opencodePluginPath).href}?case=${Date.now()}`);
+    expect(typeof importedPlugin.OpenSkillKitPlugin).toBe("function");
+    const hooks = await importedPlugin.OpenSkillKitPlugin({
+      worktree: root,
+      client: {
+        app: {
+          log: async () => ({})
+        }
+      }
+    });
+    expect(Object.keys(hooks)).toEqual(expect.arrayContaining(["session.created", "tool.execute.after", "command.executed"]));
+    await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", rawPrompt: "do not store me" }, { status: "success", output: "do not store output" });
+    const ambient = await readFile(path.join(root, ".openskill-kit", "ambient", "opencode-events.jsonl"), "utf8");
+    expect(ambient).toContain("\"eventType\":\"post-tool-use\"");
+    expect(ambient).toContain("\"input.command\":\"npm test\"");
+    expect(ambient).toContain("\"output.status\":\"success\"");
+    expect(ambient).not.toContain("do not store me");
+    expect(ambient).not.toContain("do not store output");
     expect(readme).toContain("## Host Attach Matrix");
     expect(readme).toContain("opencode (supported, opencode-json)");
     expect(readme).toContain("codex (supported, codex-toml)");

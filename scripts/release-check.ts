@@ -21,6 +21,7 @@ for (const [command, args] of steps) {
 }
 
 await removePythonBytecode("python");
+await verifyStaticOpenCodePlugin();
 await verifyPackageManifest();
 await verifyPackageDryRun();
 
@@ -65,6 +66,17 @@ async function verifyPackageDryRun(): Promise<void> {
   const missing = required.filter((item) => !paths.has(item));
   if (missing.length) throw new Error(`npm package missing harness artifact(s): ${missing.join(", ")}`);
   process.stdout.write(`npm package dry-run includes ${paths.size} files and required harness artifacts\n`);
+}
+
+async function verifyStaticOpenCodePlugin(): Promise<void> {
+  const plugin = await readFile("packages/agent-plugin-bundle/opencode/plugins/openskillkit.ts", "utf8");
+  const required = ["return {", "\"session.created\"", "\"tool.execute.after\"", "\"command.executed\"", "Metadata-only by default"];
+  const missing = required.filter((item) => !plugin.includes(item));
+  if (missing.length) throw new Error(`static OpenCode plugin missing hook contract marker(s): ${missing.join(", ")}`);
+  if (plugin.includes("from \"opencode\"") || plugin.includes("app.on")) {
+    throw new Error("static OpenCode plugin must use the hook-object API, not app.on or a runtime opencode import");
+  }
+  process.stdout.write("static OpenCode plugin uses hook-object API and metadata-only markers\n");
 }
 
 async function verifyPackageManifest(): Promise<void> {
