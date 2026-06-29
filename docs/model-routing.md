@@ -117,7 +117,9 @@ must be one of these built-in profiles:
 
 OpenCode agents use singular `permission:` frontmatter. Shell permissions are
 generated as pattern maps where supported, so "ask OSK only" remains explicit
-instead of becoming broad shell access.
+instead of becoming broad shell access. OpenCode applies the last matching
+permission pattern, so generated catch-all denies appear before specific
+`openskill-kit`, `git`, test, or docs patterns.
 
 ## Validation
 

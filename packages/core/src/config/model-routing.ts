@@ -15,16 +15,17 @@ export type OpenCodePermissionRule = OpenCodePermissionValue | Record<string, Op
 export type OpenCodePermissionMap = Record<string, OpenCodePermissionRule>;
 
 const askOskOnlyBash: Record<string, OpenCodePermissionValue> = {
+  "*": "deny",
   "openskill-kit *": "ask",
   "npx openskill-kit *": "ask",
   "node *openskill-kit*": "ask",
   "git status*": "allow",
   "git log*": "allow",
-  "git diff*": "deny",
-  "*": "deny"
+  "git diff*": "deny"
 };
 
 const verifierBash: Record<string, OpenCodePermissionValue> = {
+  "*": "deny",
   "openskill-kit *": "ask",
   "npx openskill-kit *": "ask",
   "node *openskill-kit*": "ask",
@@ -32,8 +33,7 @@ const verifierBash: Record<string, OpenCodePermissionValue> = {
   "npm run test*": "ask",
   "npm run release-check": "ask",
   "pnpm test*": "ask",
-  "pnpm run test*": "ask",
-  "*": "deny"
+  "pnpm run test*": "ask"
 };
 
 const readOnlyBase: OpenCodePermissionMap = {
@@ -55,12 +55,12 @@ export const OpenCodePermissionProfiles: Record<OpenCodePermissionProfileName, O
   "read-only": {
     ...readOnlyBase,
     bash: {
+      "*": "deny",
       "openskill-kit status*": "allow",
       "openskill-kit osk status*": "allow",
       "openskill-kit osk task context*": "allow",
       "git status*": "allow",
-      "git log*": "allow",
-      "*": "deny"
+      "git log*": "allow"
     }
   },
   "learner-safe": {
@@ -97,10 +97,10 @@ export const OpenCodePermissionProfiles: Record<OpenCodePermissionProfileName, O
   "docs-safe": {
     ...readOnlyBase,
     edit: {
+      "*": "deny",
       "docs/**": "ask",
       "*.md": "ask",
-      ".openskill-kit/compiled/plugin/README.md": "ask",
-      "*": "deny"
+      ".openskill-kit/compiled/plugin/README.md": "ask"
     },
     bash: askOskOnlyBash
   }

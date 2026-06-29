@@ -66,6 +66,7 @@ describe("deep architecture hardening", () => {
     const opencodeModelRouting = JSON.parse(await readFile(path.join(pluginRoot, "opencode", "model-routing.json"), "utf8"));
     const opencodeCommand = await readFile(path.join(pluginRoot, "opencode", "commands", "osk-learn.md"), "utf8");
     const opencodeAgent = await readFile(path.join(pluginRoot, "opencode", "agents", "osk-learner.md"), "utf8");
+    const opencodeDocsAgent = await readFile(path.join(pluginRoot, "opencode", "agents", "osk-docs.md"), "utf8");
     const opencodeSkill = await readFile(path.join(pluginRoot, "opencode", "skills", "osk-learning", "SKILL.md"), "utf8");
     const opencodePluginPath = path.join(pluginRoot, "opencode", "plugins", "openskillkit.ts");
     const opencodePlugin = await readFile(opencodePluginPath, "utf8");
@@ -190,6 +191,8 @@ describe("deep architecture hardening", () => {
     expect(opencodeAgent).toContain("question: allow");
     expect(opencodeAgent).toContain("external_directory: ask");
     expect(opencodeAgent).toContain("\"openskill-kit *\": ask");
+    expect(opencodeAgent.indexOf("\"*\": deny")).toBeLessThan(opencodeAgent.indexOf("\"openskill-kit *\": ask"));
+    expect(opencodeDocsAgent.indexOf("\"*\": deny")).toBeLessThan(opencodeDocsAgent.indexOf("\"docs/**\": ask"));
     expect(opencodeAgent).toContain("Model route: learner.");
     expect(resolvedModelRouting.schemaVersion).toBe("openskill-kit.model-routing.resolved.v1");
     expect(resolvedModelRouting.routes.learner.model).toBe("default");
@@ -318,6 +321,7 @@ describe("deep architecture hardening", () => {
     expect(opencodeAgent).toContain("steps: 31");
     expect(opencodeAgent).toContain("permission:");
     expect(opencodeAgent).toContain("\"openskill-kit *\": ask");
+    expect(opencodeAgent.indexOf("\"*\": deny")).toBeLessThan(opencodeAgent.indexOf("\"openskill-kit *\": ask"));
     expect(opencodeAgent).toContain("webfetch: deny");
     expect(resolved.routes.learner.model).toBe("opencode/gpt-5-test");
     expect(resolved.routes.learner.temperature).toBe(0.2);
