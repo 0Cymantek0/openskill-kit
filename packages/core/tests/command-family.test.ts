@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   OSK_PUBLIC_COMMAND_COUNT,
   OSK_PUBLIC_COMMAND_FAMILIES,
+  getAdaptiveStatus,
   initAdaptiveProject,
   planLearningSources,
   pluginCommandProjections,
@@ -381,6 +382,17 @@ describe("OSK command family registry", () => {
     const receiptOnDisk = JSON.parse(await (await import("node:fs/promises")).readFile(receiptPath, "utf8"));
     expect(receiptOnDisk.schemaVersion).toBe("openskill-kit.learn-receipt.v1");
     expect(receiptOnDisk.applied).toBe(false);
+    const status = await getAdaptiveStatus(root);
+    expect(status.operations.learn.receiptPresent).toBe(true);
+    expect(status.operations.learn.latest).toMatchObject({
+      applied: false,
+      previewOnly: true,
+      selectedSourceCount: 1,
+      eventsAppended: 0,
+      reviewRequired: true,
+      nextCommand: "/osk review"
+    });
+    expect(status.operations.learn.latest!.sourceIds).toEqual(["git-local"]);
   });
 });
 

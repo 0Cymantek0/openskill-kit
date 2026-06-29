@@ -152,5 +152,14 @@ describe("adaptive behavior layer", () => {
     expect(status.compiled.pluginStatus.ready).toBe(true);
     expect(status.compiled.pluginStatus.skills).toEqual(expect.arrayContaining(["skills/project-behavior", "skills/project-testing"]));
     expect(status.compiled.pluginStatus.commands.some((item) => item.command === "/osk status" && item.mcpTool === "osk_get_status")).toBe(true);
+    expect(status.operations.installs.receiptCount).toBeGreaterThan(0);
+    expect(status.operations.installs.latest?.path).toContain(".openskill-kit/installs/");
+    expect(status.operations.evals.runCount).toBe(1);
+    expect(status.operations.evals.latest?.status).toBe("pass");
+    expect(status.operations.evals.latest?.scenarioCount).toBeGreaterThan(0);
+    expect(status.operations.evals.latest?.passCount).toBe(status.operations.evals.latest?.scenarioCount);
+    expect(status.operations.packs.projectPackReady).toBe(true);
+    expect(status.operations.packs.fileCount).toBeGreaterThan(0);
+    expect(status.operations.packs.encryptedPackPresent).toBe(true);
   });
 });

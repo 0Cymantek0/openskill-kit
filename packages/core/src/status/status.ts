@@ -24,6 +24,7 @@ export interface AdaptiveStatus {
   importedInteractionEventCount: number;
   blockedInteractionImportCount: number;
   pendingReviewCount: number;
+  operations: OperationsStatusSummary;
   openWorld: OpenWorldStatusSummary;
   compiled: {
     contextPack: boolean;
@@ -32,6 +33,47 @@ export interface AdaptiveStatus {
     plugin: boolean;
     pluginStatus: CompiledPluginStatus;
     pluginAttachment: AgentPluginAttachStatus;
+  };
+}
+
+export interface OperationsStatusSummary {
+  learn: {
+    receiptPresent: boolean;
+    latest?: {
+      applied: boolean;
+      previewOnly: boolean;
+      sourceIds: string[];
+      selectedSourceCount: number;
+      eventsRead: number;
+      eventsAppended: number;
+      signalsExtracted: number;
+      reviewRequired: boolean;
+      nextCommand?: string;
+    };
+  };
+  installs: {
+    receiptCount: number;
+    latest?: {
+      path: string;
+      schemaVersion?: string;
+      kind: string;
+      at?: string;
+    };
+  };
+  evals: {
+    runCount: number;
+    latest?: {
+      path: string;
+      status?: string;
+      scenarioCount?: number;
+      passCount?: number;
+    };
+  };
+  packs: {
+    projectPackReady: boolean;
+    manifestPath?: string;
+    fileCount: number;
+    encryptedPackPresent: boolean;
   };
 }
 
@@ -86,6 +128,7 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
   const pluginStatus = await getCompiledPluginStatus(root);
   const pluginAttachment = await getAgentPluginAttachStatus(root);
   const openWorld = await summarizeOpenWorldStatus(root);
+  const operations = await summarizeOperationsStatus(root);
   return {
     schemaVersion: "openskill-kit.status.v1",
     initialized: Boolean(config),
@@ -104,6 +147,7 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
     importedInteractionEventCount: interactionImports.reduce((sum, run) => sum + run.appendedEventCount, 0),
     blockedInteractionImportCount: interactionImports.filter((run) => run.status === "blocked").length,
     pendingReviewCount: preferenceCandidates + workflowCandidates,
+    operations,
     openWorld,
     compiled: {
       contextPack: await exists(path.join(root, ".openskill-kit", "compiled", "context-pack.md")),
@@ -131,6 +175,7 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
   if (status.eventCount === 0) nextActions.push("Record lifecycle events with observe or installed hooks.");
   if (status.signalCount === 0 && status.eventCount > 0) nextActions.push("Run learn or daemon to extract signals.");
   if (status.blockedInteractionImportCount > 0) nextActions.push("Inspect interactions imports; at least one import was blocked.");
+  if (status.operations.learn.latest && !status.operations.learn.latest.applied) nextActions.push("Latest learning run is preview-only; apply selected safe sources only after reviewing the preview.");
   if (status.pendingReviewCount > 0) nextActions.push("Run review --queue, then accept or reject candidates and staged previews.");
   if (status.openWorld.taskCount > 0) {
     const proof = status.openWorld.latest?.proofLevel ?? "not-proof";
@@ -157,6 +202,104 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
       evalOutcomes: calibration.evalOutcomes
     } : undefined
   };
+}
+
+async function summarizeOperationsStatus(root: string): Promise<OperationsStatusSummary> {
+  const latestLearnReceipt = await readJson(path.join(root, ".openskill-kit", "reviews", "learn-receipt.json")).catch(() => undefined);
+  const installReceipts = await readReceiptSummaries(path.join(root, ".openskill-kit", "installs"));
+  const evalReports = await readEvalReportSummaries(root);
+  const latestEval = evalReports[0];
+  const packManifest = await readJson(path.join(root, ".openskill-kit", "compiled", "project-behavior-pack", "manifest.json")).catch(() => undefined);
+  const packManifestRecord = isRecord(packManifest) ? packManifest : undefined;
+  return {
+    learn: {
+      receiptPresent: isRecord(latestLearnReceipt),
+      latest: summarizeLearnReceipt(latestLearnReceipt)
+    },
+    installs: {
+      receiptCount: installReceipts.length,
+      latest: installReceipts[0]
+    },
+    evals: {
+      runCount: evalReports.length,
+      latest: latestEval
+    },
+    packs: {
+      projectPackReady: packManifestRecord?.schemaVersion === "openskill-kit.project-pack.v1",
+      manifestPath: packManifestRecord ? normalizeRelative(root, path.join(root, ".openskill-kit", "compiled", "project-behavior-pack", "manifest.json")) : undefined,
+      fileCount: Array.isArray(packManifestRecord?.files) ? packManifestRecord.files.length : 0,
+      encryptedPackPresent: await exists(path.join(root, ".openskill-kit", "sync", "project-behavior-pack.enc.json"))
+    }
+  };
+}
+
+function summarizeLearnReceipt(value: unknown): OperationsStatusSummary["learn"]["latest"] | undefined {
+  if (!isRecord(value) || value.schemaVersion !== "openskill-kit.learn-receipt.v1") return undefined;
+  const sourceIdsFromArray = Array.isArray(value.sourceIds)
+    ? value.sourceIds.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  const sourceIds = sourceIdsFromArray.length
+    ? sourceIdsFromArray
+    : stringValue(value.source)?.split(",").map((item) => item.trim()).filter((item) => item.length) ?? [];
+  const applied = value.applied === true;
+  return {
+    applied,
+    previewOnly: value.previewOnly === true || !applied,
+    sourceIds,
+    selectedSourceCount: numberValue(value.selectedSourceCount) ?? sourceIds.length,
+    eventsRead: numberValue(value.eventsRead) ?? 0,
+    eventsAppended: numberValue(value.eventsAppended) ?? 0,
+    signalsExtracted: numberValue(value.signalsExtracted) ?? 0,
+    reviewRequired: value.reviewRequired !== false,
+    nextCommand: stringValue(value.nextCommand)
+  };
+}
+
+async function readReceiptSummaries(root: string): Promise<Array<NonNullable<OperationsStatusSummary["installs"]["latest"]>>> {
+  const files = (await listFiles(root)).filter((file) => file.endsWith(".json"));
+  const summaries = await Promise.all(files.map(async (file) => {
+    const full = path.join(root, file);
+    const json = await readJson(full).catch(() => undefined);
+    const stat = await fs.stat(full).catch(() => undefined);
+    const record = isRecord(json) ? json : {};
+    return {
+      path: normalizeRelative(path.dirname(path.dirname(root)), full),
+      schemaVersion: stringValue(record.schemaVersion),
+      kind: receiptKind(stringValue(record.schemaVersion), file),
+      at: receiptTimestamp(record) ?? stat?.mtime.toISOString()
+    };
+  }));
+  return summaries.sort((left, right) => String(right.at ?? "").localeCompare(String(left.at ?? "")));
+}
+
+async function readEvalReportSummaries(root: string): Promise<Array<NonNullable<OperationsStatusSummary["evals"]["latest"]>>> {
+  const reports = await readJsonFiles(path.join(root, ".openskill-kit", "evals", "runs"), (file) => file.endsWith("behavior-eval.json") || file.endsWith("behavior-compare.json"));
+  return reports
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((report) => ({
+      path: normalizeRelative(root, stringValue(isRecord(report.artifacts) ? report.artifacts.json : undefined) ?? ""),
+      status: stringValue(report.status),
+      scenarioCount: numberValue(report.scenarioCount),
+      passCount: numberValue(report.passCount)
+    }))
+    .sort((left, right) => right.path.localeCompare(left.path));
+}
+
+function receiptKind(schemaVersion: string | undefined, file: string): string {
+  if (schemaVersion?.includes("agent-plugin-attach")) return "plugin-attach";
+  if (schemaVersion?.includes("instruction-manifest-install")) return "instruction-manifest-install";
+  if (schemaVersion?.includes("instruction-manifest-uninstall")) return "instruction-manifest-uninstall";
+  if (schemaVersion?.includes("install-receipt")) return "skill-install";
+  if (file.includes("plugin-attach-")) return "plugin-attach";
+  if (file.includes("instruction-manifests-")) return "instruction-manifest";
+  return "install";
+}
+
+function receiptTimestamp(record: Record<string, unknown>): string | undefined {
+  return stringValue(record.attachedAt)
+    ?? stringValue(record.installedAt)
+    ?? stringValue(record.uninstalledAt)
+    ?? stringValue(record.timestamp);
 }
 
 async function summarizeOpenWorldStatus(root: string): Promise<OpenWorldStatusSummary> {
@@ -245,4 +388,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function normalizeRelative(root: string, file: string): string {
+  if (!file) return "";
+  return path.relative(root, file).replace(/\\/g, "/");
 }
