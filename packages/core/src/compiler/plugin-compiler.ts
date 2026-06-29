@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { OSK_PUBLIC_COMMAND_FAMILIES, pluginCommandProjections, type OskCommandFamily } from "../commands/families.js";
-import { readOrCreateModelRouting, resolveModelRouting, type ModelRouteName, type ResolvedModelRouting } from "../config/model-routing.js";
+import { OpenCodePermissionProfiles, readOrCreateModelRouting, resolveModelRouting, type ModelRouteName, type OpenCodePermissionMap, type ResolvedModelRouting } from "../config/model-routing.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
 export interface CompilePluginResult {
@@ -600,7 +600,7 @@ async function writeOpenCodeArtifacts(pluginDir: string, families: OskCommandFam
       reasoningEffort: agent.reasoningEffort,
       fallbackModels: agent.fallbackModels,
       permissionsProfile: agent.permissionsProfile,
-      permissions: agent.permissions
+      permission: agent.permission
     }]))
   });
 }
@@ -655,27 +655,28 @@ interface OpenCodeAgentSpec {
   temperature?: number;
   maxSteps?: number;
   permissionsProfile?: string;
-  permissions: Record<string, "allow" | "ask" | "deny">;
+  permission: OpenCodePermissionMap;
 }
 
 function openCodeAgents(modelRouting: ResolvedModelRouting): OpenCodeAgentSpec[] {
-  const withRoute = (route: ModelRouteName, id: string, description: string, permissions: OpenCodeAgentSpec["permissions"]): OpenCodeAgentSpec => {
+  const withRoute = (route: ModelRouteName, id: string, description: string): OpenCodeAgentSpec => {
     const modelRoute = modelRouting.routes[route];
-    return agent(id, route, description, modelRoute.model, permissions, modelRoute);
+    return agent(id, route, description, modelRoute.model, modelRoute);
   };
   return [
-    withRoute("router", "osk-router", "Route OSK commands, read status, and keep context compact.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "deny", question: "ask", webfetch: "deny", websearch: "deny" }),
-    withRoute("learner", "osk-learner", "Plan explicit learning sources and run review-gated learning.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "allow", webfetch: "deny", websearch: "deny" }),
-    withRoute("reviewer", "osk-reviewer", "Explain and apply behavior review decisions.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "allow", webfetch: "deny", websearch: "deny" }),
-    withRoute("researcher", "osk-researcher", "Plan OpenWorld sources and anchors under leakage policy.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "ask", websearch: "deny" }),
-    withRoute("evolver", "osk-evolver", "Generate and refine review-only candidate skills.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
-    withRoute("verifier", "osk-verifier", "Run integrity, privacy, verifier, and proof-boundary checks.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
-    withRoute("evaluator", "osk-evaluator", "Run replay and external-agent eval workflows.", { read: "allow", list: "allow", grep: "allow", edit: "deny", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" }),
-    withRoute("docs", "osk-docs", "Polish generated OSK documentation with approval for docs edits.", { read: "allow", list: "allow", grep: "allow", edit: "ask", bash: "ask", question: "ask", webfetch: "deny", websearch: "deny" })
+    withRoute("router", "osk-router", "Route OSK commands, read status, and keep context compact."),
+    withRoute("learner", "osk-learner", "Plan explicit learning sources and run review-gated learning."),
+    withRoute("reviewer", "osk-reviewer", "Explain and apply behavior review decisions."),
+    withRoute("researcher", "osk-researcher", "Plan OpenWorld sources and anchors under leakage policy."),
+    withRoute("evolver", "osk-evolver", "Generate and refine review-only candidate skills."),
+    withRoute("verifier", "osk-verifier", "Run integrity, privacy, verifier, and proof-boundary checks."),
+    withRoute("evaluator", "osk-evaluator", "Run replay and external-agent eval workflows."),
+    withRoute("docs", "osk-docs", "Polish generated OSK documentation with approval for docs edits.")
   ];
 }
 
-function agent(id: string, route: ModelRouteName, description: string, model: string, permissions: OpenCodeAgentSpec["permissions"], modelRoute: ResolvedModelRouting["routes"][ModelRouteName]): OpenCodeAgentSpec {
+function agent(id: string, route: ModelRouteName, description: string, model: string, modelRoute: ResolvedModelRouting["routes"][ModelRouteName]): OpenCodeAgentSpec {
+  const profile = modelRoute.permissionsProfile ?? "read-only";
   return {
     id,
     route,
@@ -685,8 +686,8 @@ function agent(id: string, route: ModelRouteName, description: string, model: st
     reasoningEffort: modelRoute.reasoningEffort,
     temperature: modelRoute.temperature,
     maxSteps: modelRoute.maxSteps,
-    permissionsProfile: modelRoute.permissionsProfile,
-    permissions
+    permissionsProfile: profile,
+    permission: OpenCodePermissionProfiles[profile]
   };
 }
 
@@ -699,8 +700,7 @@ function renderOpenCodeAgent(agentSpec: OpenCodeAgentSpec): string {
     agentSpec.maxSteps === undefined ? undefined : `steps: ${agentSpec.maxSteps}`,
     agentSpec.reasoningEffort === undefined ? undefined : `reasoning: ${agentSpec.reasoningEffort}`,
     "mode: subagent",
-    "permissions:",
-    ...Object.entries(agentSpec.permissions).map(([key, value]) => `  ${key}: ${value}`),
+    ...renderOpenCodePermission(agentSpec.permission),
     "---",
     "",
     `# ${agentSpec.id}`,
@@ -713,6 +713,21 @@ function renderOpenCodeAgent(agentSpec: OpenCodeAgentSpec): string {
     "Never store raw prompts, raw diffs, secrets, user/global memories, or hidden benchmark answers.",
     ""
   ].filter((line): line is string => line !== undefined).join("\n");
+}
+
+function renderOpenCodePermission(permission: OpenCodePermissionMap): string[] {
+  const lines = ["permission:"];
+  for (const [name, rule] of Object.entries(permission)) {
+    if (typeof rule === "string") {
+      lines.push(`  ${name}: ${rule}`);
+      continue;
+    }
+    lines.push(`  ${name}:`);
+    for (const [pattern, value] of Object.entries(rule)) {
+      lines.push(`    ${JSON.stringify(pattern)}: ${value}`);
+    }
+  }
+  return lines;
 }
 
 interface OpenCodeSkillSpec {

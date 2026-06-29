@@ -81,7 +81,7 @@ Supported route fields:
 | `topP` | Number from `0` to `1`. |
 | `maxSteps` | Integer from `1` to `200`; projected to OpenCode `steps`. |
 | `timeoutMs` | Minimum `1000`; for future harness projections. |
-| `permissionsProfile` | Human-readable safety profile label. |
+| `permissionsProfile` | Validated safety profile projected into generated OpenCode agent permissions. |
 | `notes` | Local notes for maintainers. |
 
 ## OpenCode Projection
@@ -100,9 +100,24 @@ and writes:
 - `.openskill-kit/compiled/plugin/opencode/agents/osk-evaluator.md`
 - `.openskill-kit/compiled/plugin/opencode/agents/osk-docs.md`
 
-OpenCode agent frontmatter receives `model`, `temperature`, `steps`, and
-`reasoning` when those fields are set. Permissions still come from the OSK
-safety profile in code, not from arbitrary user JSON.
+OpenCode agent frontmatter receives `model`, `temperature`, `steps`,
+`reasoning`, and `permission` when those fields are set. `permissionsProfile`
+must be one of these built-in profiles:
+
+| Profile | Permission intent |
+|---|---|
+| `read-only` | Read/list/grep/glob allowed; edits, network, task, and general shell denied. |
+| `learner-safe` | Read allowed, questions allowed, external directories ask, OSK CLI shell patterns ask, edits/network denied. |
+| `review-gate` | Read and questions allowed, OSK CLI shell patterns ask, edits/network denied. |
+| `research-ask-web` | Read allowed, OSK CLI shell patterns ask, `webfetch` ask, `websearch` denied by default. |
+| `evolution-safe` | Read allowed, OSK CLI shell patterns ask, task ask, direct edits/network denied. |
+| `sandboxed-verifier` | Read allowed, OSK/test shell patterns ask, edits/network denied. |
+| `eval-safe` | Read allowed, OSK/test shell patterns ask, edits/network denied. |
+| `docs-safe` | Read allowed, docs markdown edits ask, OSK CLI shell patterns ask, network denied. |
+
+OpenCode agents use singular `permission:` frontmatter. Shell permissions are
+generated as pattern maps where supported, so "ask OSK only" remains explicit
+instead of becoming broad shell access.
 
 ## Validation
 
@@ -122,5 +137,5 @@ npx openskill-kit osk compile
 Compilation reads `.openskill-kit/model-routing.json`, validates schema and
 bounds, and fails before writing a plugin if the file is invalid. Unknown route
 keys such as `learn` instead of `learner`, misspelled fields such as `maxStep`,
-and unknown harness override names are treated as errors instead of silently
-being ignored.
+unknown `permissionsProfile` labels such as `learner-sfae`, and unknown
+harness override names are treated as errors instead of silently being ignored.

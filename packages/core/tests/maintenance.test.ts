@@ -84,5 +84,20 @@ describe("maintenance and full status", () => {
     expect(check?.status).toBe("fail");
     expect(check?.message).toContain("routes.learner");
     expect(check?.message).toContain("maxStep");
+
+    await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.model-routing.v1",
+      routes: {
+        learner: {
+          permissionsProfile: "learner-sfae"
+        }
+      }
+    }, null, 2), "utf8");
+
+    const profileDoctor = await runFullDoctor(root);
+    const profileCheck = profileDoctor.checks.find((item) => item.name === "Model routing");
+    expect(profileDoctor.status).toBe("fail");
+    expect(profileCheck?.status).toBe("fail");
+    expect(profileCheck?.message).toContain("permissionsProfile");
   });
 });

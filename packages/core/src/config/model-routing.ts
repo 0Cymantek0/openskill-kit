@@ -8,6 +8,104 @@ export type ModelRouteName = typeof ModelRouteNames[number];
 export const HarnessNames = ["opencode", "codex", "claude-code", "cursor", "generic-mcp"] as const;
 export type HarnessName = typeof HarnessNames[number];
 
+export const OpenCodePermissionProfileNames = ["read-only", "learner-safe", "review-gate", "research-ask-web", "evolution-safe", "sandboxed-verifier", "eval-safe", "docs-safe"] as const;
+export type OpenCodePermissionProfileName = typeof OpenCodePermissionProfileNames[number];
+export type OpenCodePermissionValue = "allow" | "ask" | "deny";
+export type OpenCodePermissionRule = OpenCodePermissionValue | Record<string, OpenCodePermissionValue>;
+export type OpenCodePermissionMap = Record<string, OpenCodePermissionRule>;
+
+const askOskOnlyBash: Record<string, OpenCodePermissionValue> = {
+  "openskill-kit *": "ask",
+  "npx openskill-kit *": "ask",
+  "node *openskill-kit*": "ask",
+  "git status*": "allow",
+  "git log*": "allow",
+  "git diff*": "deny",
+  "*": "deny"
+};
+
+const verifierBash: Record<string, OpenCodePermissionValue> = {
+  "openskill-kit *": "ask",
+  "npx openskill-kit *": "ask",
+  "node *openskill-kit*": "ask",
+  "npm test*": "ask",
+  "npm run test*": "ask",
+  "npm run release-check": "ask",
+  "pnpm test*": "ask",
+  "pnpm run test*": "ask",
+  "*": "deny"
+};
+
+const readOnlyBase: OpenCodePermissionMap = {
+  read: "allow",
+  list: "allow",
+  grep: "allow",
+  glob: "allow",
+  edit: "deny",
+  bash: "deny",
+  question: "ask",
+  external_directory: "deny",
+  webfetch: "deny",
+  websearch: "deny",
+  task: "deny",
+  skill: "allow"
+};
+
+export const OpenCodePermissionProfiles: Record<OpenCodePermissionProfileName, OpenCodePermissionMap> = {
+  "read-only": {
+    ...readOnlyBase,
+    bash: {
+      "openskill-kit status*": "allow",
+      "openskill-kit osk status*": "allow",
+      "openskill-kit osk task context*": "allow",
+      "git status*": "allow",
+      "git log*": "allow",
+      "*": "deny"
+    }
+  },
+  "learner-safe": {
+    ...readOnlyBase,
+    bash: askOskOnlyBash,
+    question: "allow",
+    external_directory: "ask"
+  },
+  "review-gate": {
+    ...readOnlyBase,
+    bash: askOskOnlyBash,
+    question: "allow"
+  },
+  "research-ask-web": {
+    ...readOnlyBase,
+    bash: askOskOnlyBash,
+    question: "ask",
+    webfetch: "ask",
+    websearch: "deny"
+  },
+  "evolution-safe": {
+    ...readOnlyBase,
+    bash: askOskOnlyBash,
+    task: "ask"
+  },
+  "sandboxed-verifier": {
+    ...readOnlyBase,
+    bash: verifierBash
+  },
+  "eval-safe": {
+    ...readOnlyBase,
+    bash: verifierBash
+  },
+  "docs-safe": {
+    ...readOnlyBase,
+    edit: {
+      "docs/**": "ask",
+      "*.md": "ask",
+      ".openskill-kit/compiled/plugin/README.md": "ask",
+      "*": "deny"
+    },
+    bash: askOskOnlyBash
+  }
+};
+
 export const ModelRouteSchema = z.object({
   model: z.string().min(1).optional(),
   fallbackModels: z.array(z.string().min(1)).default([]),
@@ -16,7 +114,7 @@ export const ModelRouteSchema = z.object({
   topP: z.number().min(0).max(1).optional(),
   maxSteps: z.number().int().min(1).max(200).optional(),
   timeoutMs: z.number().int().min(1000).optional(),
-  permissionsProfile: z.string().min(1).optional(),
+  permissionsProfile: z.enum(OpenCodePermissionProfileNames).optional(),
   notes: z.string().optional()
 }).strict();
 

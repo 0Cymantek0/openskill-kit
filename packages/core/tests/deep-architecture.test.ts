@@ -185,7 +185,11 @@ describe("deep architecture hardening", () => {
     expect(commandGuide).toContain("openskill-kit status");
     expect(opencodeCommand).toContain("agent: osk-learner");
     expect(opencodeCommand).toContain("Never read raw prompts by default.");
+    expect(opencodeAgent).toContain("permission:");
+    expect(opencodeAgent).not.toContain("permissions:");
     expect(opencodeAgent).toContain("question: allow");
+    expect(opencodeAgent).toContain("external_directory: ask");
+    expect(opencodeAgent).toContain("\"openskill-kit *\": ask");
     expect(opencodeAgent).toContain("Model route: learner.");
     expect(resolvedModelRouting.schemaVersion).toBe("openskill-kit.model-routing.resolved.v1");
     expect(resolvedModelRouting.routes.learner.model).toBe("default");
@@ -193,6 +197,8 @@ describe("deep architecture hardening", () => {
     expect(opencodeModelRouting.source).toBe(".openskill-kit/model-routing.json");
     expect(opencodeModelRouting.agents["osk-learner"].route).toBe("learner");
     expect(opencodeModelRouting.agents["osk-learner"].maxSteps).toBe(24);
+    expect(opencodeModelRouting.agents["osk-learner"].permissionsProfile).toBe("learner-safe");
+    expect(opencodeModelRouting.agents["osk-learner"].permission.external_directory).toBe("ask");
     expect(opencodeSkill).toContain("Preview imports before apply.");
     expect(opencodeSkill).toContain("Learning produces candidate or staged behavior only");
     expect(opencodePlugin).toContain("Metadata-only by default");
@@ -310,8 +316,26 @@ describe("deep architecture hardening", () => {
     expect(opencodeAgent).toContain("model: opencode/gpt-5-test");
     expect(opencodeAgent).toContain("temperature: 0.2");
     expect(opencodeAgent).toContain("steps: 31");
+    expect(opencodeAgent).toContain("permission:");
+    expect(opencodeAgent).toContain("\"openskill-kit *\": ask");
+    expect(opencodeAgent).toContain("webfetch: deny");
     expect(resolved.routes.learner.model).toBe("opencode/gpt-5-test");
     expect(resolved.routes.learner.temperature).toBe(0.2);
+
+    await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.model-routing.v1",
+      routes: {
+        researcher: {
+          permissionsProfile: "research-ask-web"
+        }
+      }
+    }, null, 2), "utf8");
+    await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const researcherAgent = await readFile(path.join(pluginRoot, "opencode", "agents", "osk-researcher.md"), "utf8");
+    const researcherProjection = JSON.parse(await readFile(path.join(pluginRoot, "opencode", "model-routing.json"), "utf8"));
+    expect(researcherAgent).toContain("webfetch: ask");
+    expect(researcherAgent).toContain("websearch: deny");
+    expect(researcherProjection.agents["osk-researcher"].permission.webfetch).toBe("ask");
 
     await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
       schemaVersion: "openskill-kit.model-routing.v1",
@@ -332,6 +356,16 @@ describe("deep architecture hardening", () => {
       }
     }, null, 2), "utf8");
     await expect(compileBehaviorLayer(root, { targets: ["plugin"] })).rejects.toThrow(/routes Unrecognized key: "learn"/);
+
+    await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.model-routing.v1",
+      routes: {
+        learner: {
+          permissionsProfile: "learner-sfae"
+        }
+      }
+    }, null, 2), "utf8");
+    await expect(compileBehaviorLayer(root, { targets: ["plugin"] })).rejects.toThrow(/permissionsProfile/);
   });
 
   it("keeps generated OpenCode launch artifacts on the golden path", async () => {
