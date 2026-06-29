@@ -43,6 +43,7 @@
     "release-check": "tsx scripts/release-check.ts"
   },
   "devDependencies": {
+    "@modelcontextprotocol/inspector": "^0.22.0",
     "@opencode-ai/plugin": "^1.17.11",
     "@opencode-ai/sdk": "^1.17.11",
     "@types/node": "^24.10.2",
