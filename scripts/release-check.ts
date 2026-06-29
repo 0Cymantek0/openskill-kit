@@ -22,6 +22,7 @@ for (const [command, args] of steps) {
 
 await removePythonBytecode("python");
 await verifyStaticOpenCodePlugin();
+await verifyQuickstartHarnessFlow();
 await verifyPackageManifest();
 await verifyPackageDryRun();
 
@@ -77,6 +78,27 @@ async function verifyStaticOpenCodePlugin(): Promise<void> {
     throw new Error("static OpenCode plugin must use the hook-object API, not app.on or a runtime opencode import");
   }
   process.stdout.write("static OpenCode plugin uses hook-object API and metadata-only markers\n");
+}
+
+async function verifyQuickstartHarnessFlow(): Promise<void> {
+  const quickstart = await readFile("docs/quickstart.md", "utf8");
+  const required = [
+    "npx openskill-kit osk setup --host opencode",
+    "npx openskill-kit osk setup --host opencode --yes",
+    "/osk task context",
+    "/osk task finish",
+    "OpenCode ambient learning reads only",
+    "opencode-events.raw.jsonl`: opt-in eval/debug trace file, never imported as normal learning",
+    "npx openskill-kit osk uninstall --host opencode --yes"
+  ];
+  const missing = required.filter((item) => !quickstart.includes(item));
+  if (missing.length) throw new Error(`quickstart missing harness-first marker(s): ${missing.join(", ")}`);
+  const setupIndex = quickstart.indexOf("npx openskill-kit osk setup --host opencode");
+  const lowLevelInstallIndex = quickstart.indexOf("agent install-hooks");
+  if (lowLevelInstallIndex !== -1 && lowLevelInstallIndex < setupIndex) {
+    throw new Error("quickstart must present OpenCode setup before low-level hook install commands");
+  }
+  process.stdout.write("quickstart documents OpenCode-first harness setup and safe learning flow\n");
 }
 
 async function verifyPackageManifest(): Promise<void> {
