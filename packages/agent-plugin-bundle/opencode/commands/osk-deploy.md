@@ -10,15 +10,15 @@ Make the current harness use OSK artifacts safely.
 
 ## First Call
 
-Call MCP tool `osk_compile_deploy` first. If MCP unavailable, run `openskill-kit agent attach-plugin --host opencode --dry-run` from project root.
+Call MCP tool `osk_compile_deploy` first. If MCP unavailable, run `openskill-kit osk deploy --host opencode` from project root.
 Use action `deploy` for this command family.
 
 ## Workflow
 
 1. Compile plugin if needed.
-2. Preview exact host config changes.
+2. Preview host config, generated OpenCode files, hooks, and instruction manifests.
 3. Apply only with explicit approval.
-4. Write receipt.
+4. Write receipts.
 
 ## Safety
 
@@ -34,4 +34,4 @@ Approval required: yes.
 
 ## Return
 
-Planned/applied files, diff summary, receipt, restart instructions.
+Planned/applied host files, hook config, instruction manifests, receipts, restart instructions.

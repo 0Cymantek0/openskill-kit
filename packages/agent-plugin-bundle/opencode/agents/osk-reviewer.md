@@ -2,17 +2,28 @@
 description: "Explain and apply behavior review decisions."
 model: default
 steps: 16
-reasoning: medium
+reasoningEffort: medium
 mode: subagent
-permissions:
+permission:
   read: allow
   list: allow
   grep: allow
+  glob: allow
   edit: deny
-  bash: ask
+  bash:
+    "*": deny
+    "openskill-kit *": ask
+    "npx openskill-kit *": ask
+    "node *openskill-kit*": ask
+    "git status*": allow
+    "git log*": allow
+    "git diff*": deny
   question: allow
+  external_directory: deny
   webfetch: deny
   websearch: deny
+  task: deny
+  skill: allow
 ---
 
 # osk-reviewer

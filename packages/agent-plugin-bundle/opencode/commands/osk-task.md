@@ -10,13 +10,13 @@ Use the right project behavior now, then teach OSK from the completed task.
 
 ## First Call
 
-Call MCP tool `osk_get_task_context` first. If MCP unavailable, run `openskill-kit context --query "<task>"` from project root.
+Call MCP tool `osk_get_task_context` first. If MCP unavailable, run `openskill-kit osk task context "<task>"` from project root.
 
 ## Workflow
 
 1. For context, call task-context facade first.
-2. For finish, call finish-task with safe summary, files, commands, and outcome.
-3. Stage learned behavior for review.
+2. For finish, call finish-task with safe summary, files, commands, outcome, patch hashes, and diff stats.
+3. Stage learned behavior for review unless no-learn is requested.
 
 ## Safety
 

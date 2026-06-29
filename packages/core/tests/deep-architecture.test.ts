@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import {
   appendEvent,
   applyPreferenceReview,
@@ -28,6 +30,8 @@ import {
   type PreferenceGraph,
   type PreferenceNode
 } from "../src/index.js";
+
+const execFileAsync = promisify(execFile);
 
 describe("deep architecture hardening", () => {
   it("filters compile targets without generating unrelated artifacts", async () => {
@@ -205,14 +209,20 @@ describe("deep architecture hardening", () => {
     expect(opencodeSkill).toContain("Preview imports before apply.");
     expect(opencodeSkill).toContain("Learning produces candidate or staged behavior only");
     expect(opencodePlugin).toContain("Metadata-only by default");
+    expect(opencodePlugin).toContain("import type { Plugin } from \"@opencode-ai/plugin\"");
+    expect(opencodePlugin).toContain("export const server = OpenSkillKitPlugin");
     expect(opencodePlugin).toContain("return {");
-    expect(opencodePlugin).toContain("\"session.created\"");
+    expect(opencodePlugin).toContain("event: async");
     expect(opencodePlugin).toContain("\"tool.execute.after\"");
-    expect(opencodePlugin).toContain("\"command.executed\"");
+    expect(opencodePlugin).toContain("\"command.execute.before\"");
+    expect(opencodePlugin).toContain("\"permission.ask\"");
+    expect(opencodePlugin).not.toContain("\"permission.asked\"");
     expect(opencodePlugin).not.toContain("from \"opencode\"");
     expect(opencodePlugin).not.toContain("app.on");
+    await assertGeneratedOpenCodeTypes(pluginRoot);
     const importedPlugin = await import(`${pathToFileURL(opencodePluginPath).href}?case=${Date.now()}`);
     expect(typeof importedPlugin.OpenSkillKitPlugin).toBe("function");
+    expect(importedPlugin.server).toBe(importedPlugin.OpenSkillKitPlugin);
     const hooks = await importedPlugin.OpenSkillKitPlugin({
       worktree: root,
       client: {
@@ -221,9 +231,11 @@ describe("deep architecture hardening", () => {
         }
       }
     });
-    expect(Object.keys(hooks)).toEqual(expect.arrayContaining(["session.created", "tool.execute.after", "command.executed"]));
+    expect(Object.keys(hooks)).toEqual(expect.arrayContaining(["event", "tool.execute.after", "command.execute.before", "permission.ask"]));
+    await hooks.event({ event: { type: "session.created", sessionID: "s1" } });
     await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", rawPrompt: "do not store me" }, { status: "success", output: "do not store output" });
     const ambient = await readFile(path.join(root, ".openskill-kit", "ambient", "opencode-events.jsonl"), "utf8");
+    expect(ambient).toContain("\"eventType\":\"session-start\"");
     expect(ambient).toContain("\"eventType\":\"post-tool-use\"");
     expect(ambient).toContain("\"input.command\":\"npm test\"");
     expect(ambient).toContain("\"output.status\":\"success\"");
@@ -301,7 +313,9 @@ describe("deep architecture hardening", () => {
       routes: {
         learner: {
           model: "opencode/gpt-5-test",
+          reasoningEffort: "high",
           temperature: 0.2,
+          topP: 0.8,
           maxSteps: 31,
           permissionsProfile: "learner-safe"
         }
@@ -318,13 +332,16 @@ describe("deep architecture hardening", () => {
     const resolved = JSON.parse(await readFile(path.join(pluginRoot, "model-routing.resolved.json"), "utf8"));
     expect(opencodeAgent).toContain("model: opencode/gpt-5-test");
     expect(opencodeAgent).toContain("temperature: 0.2");
+    expect(opencodeAgent).toContain("top_p: 0.8");
     expect(opencodeAgent).toContain("steps: 31");
+    expect(opencodeAgent).toContain("reasoningEffort: high");
     expect(opencodeAgent).toContain("permission:");
     expect(opencodeAgent).toContain("\"openskill-kit *\": ask");
     expect(opencodeAgent.indexOf("\"*\": deny")).toBeLessThan(opencodeAgent.indexOf("\"openskill-kit *\": ask"));
     expect(opencodeAgent).toContain("webfetch: deny");
     expect(resolved.routes.learner.model).toBe("opencode/gpt-5-test");
     expect(resolved.routes.learner.temperature).toBe(0.2);
+    expect(resolved.routes.learner.topP).toBe(0.8);
 
     await writeFile(path.join(root, ".openskill-kit", "model-routing.json"), JSON.stringify({
       schemaVersion: "openskill-kit.model-routing.v1",
@@ -776,6 +793,66 @@ async function writeGraph(root: string, nodes: PreferenceNode[]): Promise<void> 
   const file = path.join(root, ".openskill-kit", "preferences", "graph.json");
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify(graph, null, 2)}\n`, "utf8");
+}
+
+async function assertGeneratedOpenCodeTypes(pluginRoot: string): Promise<void> {
+  const typeRoot = path.resolve("tmp", `opencode-typecheck-${process.pid}-${Date.now()}`);
+  try {
+    const pluginCopy = path.join(typeRoot, "opencode", "plugins", "openskillkit.ts");
+    await mkdir(path.dirname(pluginCopy), { recursive: true });
+    await writeFile(pluginCopy, await readFile(path.join(pluginRoot, "opencode", "plugins", "openskillkit.ts"), "utf8"), "utf8");
+    const contractPath = path.join(typeRoot, "opencode-contract.ts");
+    await writeFile(contractPath, [
+      "import type { Plugin } from \"@opencode-ai/plugin\";",
+      "import type { AgentConfig } from \"@opencode-ai/sdk\";",
+      "import { OpenSkillKitPlugin, server } from \"./opencode/plugins/openskillkit.ts\";",
+      "",
+      "const plugin: Plugin = OpenSkillKitPlugin;",
+      "const moduleServer: Plugin = server;",
+      "const agent: AgentConfig = {",
+      "  description: \"Plan explicit learning sources and run review-gated learning.\",",
+      "  mode: \"subagent\",",
+      "  model: \"default\",",
+      "  steps: 24,",
+      "  reasoningEffort: \"medium\",",
+      "  top_p: 0.8,",
+      "  permission: {",
+      "    edit: \"deny\",",
+      "    bash: {",
+      "      \"*\": \"deny\",",
+      "      \"openskill-kit *\": \"ask\"",
+      "    },",
+      "    webfetch: \"deny\",",
+      "    external_directory: \"ask\"",
+      "  }",
+      "};",
+      "",
+      "void plugin;",
+      "void moduleServer;",
+      "void agent;",
+      ""
+    ].join("\n"), "utf8");
+    try {
+      await execFileAsync(process.execPath, [
+        path.resolve("node_modules", "typescript", "bin", "tsc"),
+        "--noEmit",
+        "--module", "NodeNext",
+        "--moduleResolution", "NodeNext",
+        "--target", "ES2022",
+        "--types", "node",
+        "--strict",
+        "--skipLibCheck",
+        "--allowImportingTsExtensions",
+        contractPath
+      ], { cwd: path.resolve(".") });
+    } catch (error) {
+      const typed = error as { stderr?: unknown; stdout?: unknown; message?: unknown };
+      const details = [typed.stderr, typed.stdout, typed.message].map((item) => String(item ?? "")).filter(Boolean).join("\n");
+      throw new Error(`Generated OpenCode type contract failed:\n${details}`);
+    }
+  } finally {
+    await rm(typeRoot, { recursive: true, force: true });
+  }
 }
 
 function pref(id: string, statement: string, category: PreferenceNode["category"], paths: string[]): PreferenceNode {

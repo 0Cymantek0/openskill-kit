@@ -2,17 +2,28 @@
 description: "Generate and refine review-only candidate skills."
 model: default
 steps: 40
-reasoning: high
+reasoningEffort: high
 mode: subagent
-permissions:
+permission:
   read: allow
   list: allow
   grep: allow
+  glob: allow
   edit: deny
-  bash: ask
+  bash:
+    "*": deny
+    "openskill-kit *": ask
+    "npx openskill-kit *": ask
+    "node *openskill-kit*": ask
+    "git status*": allow
+    "git log*": allow
+    "git diff*": deny
   question: ask
+  external_directory: deny
   webfetch: deny
   websearch: deny
+  task: ask
+  skill: allow
 ---
 
 # osk-evolver

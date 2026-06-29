@@ -2,17 +2,27 @@
 description: "Route OSK commands, read status, and keep context compact."
 model: default
 steps: 8
-reasoning: low
+reasoningEffort: low
 mode: subagent
-permissions:
+permission:
   read: allow
   list: allow
   grep: allow
+  glob: allow
   edit: deny
-  bash: deny
+  bash:
+    "*": deny
+    "openskill-kit status*": allow
+    "openskill-kit osk status*": allow
+    "openskill-kit osk task context*": allow
+    "git status*": allow
+    "git log*": allow
   question: ask
+  external_directory: deny
   webfetch: deny
   websearch: deny
+  task: deny
+  skill: allow
 ---
 
 # osk-router

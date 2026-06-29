@@ -78,7 +78,7 @@ Supported route fields:
 | `fallbackModels` | Ordered fallback model ids for harnesses that support fallback. |
 | `reasoningEffort` | `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
 | `temperature` | Number from `0` to `2`. |
-| `topP` | Number from `0` to `1`. |
+| `topP` | Number from `0` to `1`; projected to OpenCode `top_p`. |
 | `maxSteps` | Integer from `1` to `200`; projected to OpenCode `steps`. |
 | `timeoutMs` | Minimum `1000`; for future harness projections. |
 | `permissionsProfile` | Validated safety profile projected into generated OpenCode agent permissions. |
@@ -100,8 +100,8 @@ and writes:
 - `.openskill-kit/compiled/plugin/opencode/agents/osk-evaluator.md`
 - `.openskill-kit/compiled/plugin/opencode/agents/osk-docs.md`
 
-OpenCode agent frontmatter receives `model`, `temperature`, `steps`,
-`reasoning`, and `permission` when those fields are set. `permissionsProfile`
+OpenCode agent frontmatter receives `model`, `temperature`, `top_p`, `steps`,
+`reasoningEffort`, and `permission` when those fields are set. `permissionsProfile`
 must be one of these built-in profiles:
 
 | Profile | Permission intent |

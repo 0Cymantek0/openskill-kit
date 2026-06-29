@@ -135,7 +135,7 @@
       "userIntent": "Use the right project behavior now, then teach OSK from the completed task.",
       "whyPublic": "Task start/finish is the daily workflow loop for harness users.",
       "mcpTool": "osk_get_task_context",
-      "cli": "openskill-kit context --query \"<task>\"",
+      "cli": "openskill-kit osk task context \"<task>\"",
       "readOnly": false,
       "approvalRequired": false,
       "approvalClasses": [
@@ -172,8 +172,8 @@
       ],
       "workflowSteps": [
         "For context, call task-context facade first.",
-        "For finish, call finish-task with safe summary, files, commands, and outcome.",
-        "Stage learned behavior for review."
+        "For finish, call finish-task with safe summary, files, commands, outcome, patch hashes, and diff stats.",
+        "Stage learned behavior for review unless no-learn is requested."
       ],
       "outputSummary": "Compact context or finish digest with review next actions.",
       "failureModes": [],
@@ -490,7 +490,7 @@
         "raw transcript copies into compiled artifacts"
       ],
       "workflowSteps": [
-        "Check descriptor integrity and command bloat.",
+        "Check descriptor integrity, command smell, OpenCode collisions, public MCP profile size, and generated artifact bloat.",
         "Check leakage and proof labels.",
         "Run verifier/sandbox only with explicit mode."
       ],
@@ -573,7 +573,7 @@
       "userIntent": "Make the current harness use OSK artifacts safely.",
       "whyPublic": "Deploy writes host config and must be dry-run first.",
       "mcpTool": "osk_compile_deploy",
-      "cli": "openskill-kit agent attach-plugin --host opencode --dry-run",
+      "cli": "openskill-kit osk deploy --host opencode",
       "readOnly": false,
       "approvalRequired": true,
       "approvalClasses": [
@@ -588,12 +588,16 @@
       ],
       "artifactsRead": [
         "compiled plugin",
-        "host config"
+        "host config",
+        "compiled hooks",
+        "compiled manifests"
       ],
       "artifactsWrite": [
         "project-local host config",
         ".opencode/*",
-        "attach receipts"
+        ".agents/hooks/*",
+        "AGENTS.md/CLAUDE.md managed blocks",
+        "attach/install receipts"
       ],
       "neverReads": [
         "raw prompts by default",
@@ -609,15 +613,16 @@
       ],
       "workflowSteps": [
         "Compile plugin if needed.",
-        "Preview exact host config changes.",
+        "Preview host config, generated OpenCode files, hooks, and instruction manifests.",
         "Apply only with explicit approval.",
-        "Write receipt."
+        "Write receipts."
       ],
-      "outputSummary": "Planned/applied files, diff summary, receipt, restart instructions.",
+      "outputSummary": "Planned/applied host files, hook config, instruction manifests, receipts, restart instructions.",
       "failureModes": [],
       "tests": [
-        "deploy dry-run does not write host config",
-        "OpenCode patch preserves user config"
+        "deploy dry-run does not write host config or hooks",
+        "OpenCode patch preserves user config",
+        "deploy apply installs hooks and manifests"
       ]
     },
     {
@@ -740,4 +745,3 @@
     }
   ]
 }
-

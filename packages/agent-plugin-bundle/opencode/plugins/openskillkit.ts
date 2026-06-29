@@ -1,9 +1,11 @@
 import { mkdir, appendFile } from "node:fs/promises";
 import path from "node:path";
+import type { Plugin } from "@opencode-ai/plugin";
 
-export const OpenSkillKitPlugin = async (context: Record<string, unknown> = {}) => {
-  const projectRoot = typeof context.worktree === "string" ? context.worktree : typeof context.directory === "string" ? context.directory : process.cwd();
-  const client = isRecord(context.client) ? context.client : undefined;
+export const OpenSkillKitPlugin: Plugin = async (context) => {
+  const rawContext = context as unknown as Record<string, unknown>;
+  const projectRoot = typeof rawContext.worktree === "string" ? rawContext.worktree : typeof rawContext.directory === "string" ? rawContext.directory : process.cwd();
+  const client = isRecord(rawContext.client) ? rawContext.client : undefined;
   const emit = async (eventType: string, input?: unknown, output?: unknown) => {
     // Metadata-only by default. Raw prompts, raw diffs, tool output, and secrets stay out.
     const metadata = safe(input, output);
@@ -25,19 +27,34 @@ export const OpenSkillKitPlugin = async (context: Record<string, unknown> = {}) 
   };
 
   return {
-    "session.created": async (input: unknown, output?: unknown) => emit("session-start", input, output),
-    "session.compacted": async (input: unknown, output?: unknown) => emit("session-compacted", input, output),
-    "session.diff": async (input: unknown, output?: unknown) => emit("diff-stats", input, output),
-    "session.idle": async (input: unknown, output?: unknown) => emit("finish-task-suggestion", input, output),
-    "file.edited": async (input: unknown, output?: unknown) => emit("file-changed", input, output),
-    "tool.execute.before": async (input: unknown, output?: unknown) => emit("pre-tool-use", input, output),
-    "tool.execute.after": async (input: unknown, output?: unknown) => emit("post-tool-use", input, output),
-    "permission.asked": async (input: unknown, output?: unknown) => emit("permission-request", input, output),
-    "permission.replied": async (input: unknown, output?: unknown) => emit("permission-decision", input, output),
-    "command.executed": async (input: unknown, output?: unknown) => emit("command-intent", input, output),
-    "tui.command.execute": async (input: unknown, output?: unknown) => emit("command-intent", input, output)
+    event: async (input) => {
+      const event: Record<string, unknown> = isRecord(input.event) ? input.event : {};
+      const rawEventType = event["type"];
+      const eventType = typeof rawEventType === "string" ? rawEventType : "event";
+      await emit(mapOpenCodeEvent(eventType), event);
+    },
+    "tool.execute.before": async (input, output) => emit("pre-tool-use", input, output),
+    "tool.execute.after": async (input, output) => emit("post-tool-use", input, output),
+    "command.execute.before": async (input, output) => emit("command-intent", input, output),
+    "permission.ask": async (input, output) => emit("permission-request", input, output)
   };
 };
+
+export const server = OpenSkillKitPlugin;
+
+function mapOpenCodeEvent(eventType: string): string {
+  const mapped: Record<string, string> = {
+    "session.created": "session-start",
+    "session.compacted": "session-compacted",
+    "session.diff": "diff-stats",
+    "session.idle": "finish-task-suggestion",
+    "file.edited": "file-changed",
+    "permission.replied": "permission-decision",
+    "command.executed": "command-intent",
+    "tui.command.execute": "command-intent"
+  };
+  return mapped[eventType] ?? eventType;
+}
 
 function safe(input: unknown, output?: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};

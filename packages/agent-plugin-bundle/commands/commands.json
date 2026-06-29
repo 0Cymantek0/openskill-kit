@@ -43,7 +43,7 @@
       ],
       "description": "Load task context before work and record safe outcome after work.",
       "mcpTool": "osk_get_task_context",
-      "cli": "openskill-kit context --query \"<task>\"",
+      "cli": "openskill-kit osk task context \"<task>\"",
       "readOnly": false,
       "approvalRequired": false,
       "fallback": "cli",
@@ -151,7 +151,7 @@
       ],
       "description": "Preview or apply project-local harness attachment with receipts.",
       "mcpTool": "osk_compile_deploy",
-      "cli": "openskill-kit agent attach-plugin --host opencode --dry-run",
+      "cli": "openskill-kit osk deploy --host opencode",
       "readOnly": false,
       "approvalRequired": true,
       "fallback": "cli",
@@ -190,4 +190,3 @@
     }
   ]
 }
-

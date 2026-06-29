@@ -16,15 +16,26 @@
       "reasoningEffort": "low",
       "fallbackModels": [],
       "permissionsProfile": "read-only",
-      "permissions": {
+      "permission": {
         "read": "allow",
         "list": "allow",
         "grep": "allow",
+        "glob": "allow",
         "edit": "deny",
-        "bash": "deny",
+        "bash": {
+          "*": "deny",
+          "openskill-kit status*": "allow",
+          "openskill-kit osk status*": "allow",
+          "openskill-kit osk task context*": "allow",
+          "git status*": "allow",
+          "git log*": "allow"
+        },
         "question": "ask",
+        "external_directory": "deny",
         "webfetch": "deny",
-        "websearch": "deny"
+        "websearch": "deny",
+        "task": "deny",
+        "skill": "allow"
       }
     },
     "osk-learner": {
@@ -35,15 +46,27 @@
       "reasoningEffort": "medium",
       "fallbackModels": [],
       "permissionsProfile": "learner-safe",
-      "permissions": {
+      "permission": {
         "read": "allow",
         "list": "allow",
         "grep": "allow",
+        "glob": "allow",
         "edit": "deny",
-        "bash": "ask",
+        "bash": {
+          "*": "deny",
+          "openskill-kit *": "ask",
+          "npx openskill-kit *": "ask",
+          "node *openskill-kit*": "ask",
+          "git status*": "allow",
+          "git log*": "allow",
+          "git diff*": "deny"
+        },
         "question": "allow",
+        "external_directory": "ask",
         "webfetch": "deny",
-        "websearch": "deny"
+        "websearch": "deny",
+        "task": "deny",
+        "skill": "allow"
       }
     },
     "osk-reviewer": {
@@ -54,15 +77,27 @@
       "reasoningEffort": "medium",
       "fallbackModels": [],
       "permissionsProfile": "review-gate",
-      "permissions": {
+      "permission": {
         "read": "allow",
         "list": "allow",
         "grep": "allow",
+        "glob": "allow",
         "edit": "deny",
-        "bash": "ask",
+        "bash": {
+          "*": "deny",
+          "openskill-kit *": "ask",
+          "npx openskill-kit *": "ask",
+          "node *openskill-kit*": "ask",
+          "git status*": "allow",
+          "git log*": "allow",
+          "git diff*": "deny"
+        },
         "question": "allow",
+        "external_directory": "deny",
         "webfetch": "deny",
-        "websearch": "deny"
+        "websearch": "deny",
+        "task": "deny",
+        "skill": "allow"
       }
     },
     "osk-researcher": {
@@ -73,15 +108,27 @@
       "reasoningEffort": "high",
       "fallbackModels": [],
       "permissionsProfile": "research-ask-web",
-      "permissions": {
+      "permission": {
         "read": "allow",
         "list": "allow",
         "grep": "allow",
+        "glob": "allow",
         "edit": "deny",
-        "bash": "ask",
+        "bash": {
+          "*": "deny",
+          "openskill-kit *": "ask",
+          "npx openskill-kit *": "ask",
+          "node *openskill-kit*": "ask",
+          "git status*": "allow",
+          "git log*": "allow",
+          "git diff*": "deny"
+        },
         "question": "ask",
+        "external_directory": "deny",
         "webfetch": "ask",
-        "websearch": "deny"
+        "websearch": "deny",
+        "task": "deny",
+        "skill": "allow"
       }
     },
     "osk-evolver": {
@@ -92,15 +139,27 @@
       "reasoningEffort": "high",
       "fallbackModels": [],
       "permissionsProfile": "evolution-safe",
-      "permissions": {
+      "permission": {
         "read": "allow",
         "list": "allow",
         "grep": "allow",
+        "glob": "allow",
         "edit": "deny",
-        "bash": "ask",
+        "bash": {
+          "*": "deny",
+          "openskill-kit *": "ask",
+          "npx openskill-kit *": "ask",
+          "node *openskill-kit*": "ask",
+          "git status*": "allow",
+          "git log*": "allow",
+          "git diff*": "deny"
+        },
         "question": "ask",
+        "external_directory": "deny",
         "webfetch": "deny",
-        "websearch": "deny"
+        "websearch": "deny",
+        "task": "ask",
+        "skill": "allow"
       }
     },
     "osk-verifier": {
@@ -112,15 +171,29 @@
       "reasoningEffort": "high",
       "fallbackModels": [],
       "permissionsProfile": "sandboxed-verifier",
-      "permissions": {
+      "permission": {
         "read": "allow",
         "list": "allow",
         "grep": "allow",
+        "glob": "allow",
         "edit": "deny",
-        "bash": "ask",
+        "bash": {
+          "*": "deny",
+          "openskill-kit *": "ask",
+          "npx openskill-kit *": "ask",
+          "node *openskill-kit*": "ask",
+          "npm test*": "ask",
+          "npm run test*": "ask",
+          "npm run release-check": "ask",
+          "pnpm test*": "ask",
+          "pnpm run test*": "ask"
+        },
         "question": "ask",
+        "external_directory": "deny",
         "webfetch": "deny",
-        "websearch": "deny"
+        "websearch": "deny",
+        "task": "deny",
+        "skill": "allow"
       }
     },
     "osk-evaluator": {
@@ -132,15 +205,29 @@
       "reasoningEffort": "medium",
       "fallbackModels": [],
       "permissionsProfile": "eval-safe",
-      "permissions": {
+      "permission": {
         "read": "allow",
         "list": "allow",
         "grep": "allow",
+        "glob": "allow",
         "edit": "deny",
-        "bash": "ask",
+        "bash": {
+          "*": "deny",
+          "openskill-kit *": "ask",
+          "npx openskill-kit *": "ask",
+          "node *openskill-kit*": "ask",
+          "npm test*": "ask",
+          "npm run test*": "ask",
+          "npm run release-check": "ask",
+          "pnpm test*": "ask",
+          "pnpm run test*": "ask"
+        },
         "question": "ask",
+        "external_directory": "deny",
         "webfetch": "deny",
-        "websearch": "deny"
+        "websearch": "deny",
+        "task": "deny",
+        "skill": "allow"
       }
     },
     "osk-docs": {
@@ -151,15 +238,32 @@
       "reasoningEffort": "low",
       "fallbackModels": [],
       "permissionsProfile": "docs-safe",
-      "permissions": {
+      "permission": {
         "read": "allow",
         "list": "allow",
         "grep": "allow",
-        "edit": "ask",
-        "bash": "ask",
+        "glob": "allow",
+        "edit": {
+          "*": "deny",
+          "docs/**": "ask",
+          "*.md": "ask",
+          ".openskill-kit/compiled/plugin/README.md": "ask"
+        },
+        "bash": {
+          "*": "deny",
+          "openskill-kit *": "ask",
+          "npx openskill-kit *": "ask",
+          "node *openskill-kit*": "ask",
+          "git status*": "allow",
+          "git log*": "allow",
+          "git diff*": "deny"
+        },
         "question": "ask",
+        "external_directory": "deny",
         "webfetch": "deny",
-        "websearch": "deny"
+        "websearch": "deny",
+        "task": "deny",
+        "skill": "allow"
       }
     }
   }

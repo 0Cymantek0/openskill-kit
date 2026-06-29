@@ -25,14 +25,12 @@ Show behavior, review, plugin, and harness health.
 - Read-only: `yes`
 - Explicit approval required: `no`
 
-Status output includes the OpenWorld proof boundary and never treats artifact-verifier results as hidden-oracle benchmark proof.
-
 ### /osk task
 
 Load task context before work and record safe outcome after work.
 
 - MCP tool: `osk_get_task_context`
-- CLI fallback: `openskill-kit context --query "<task>"`
+- CLI fallback: `openskill-kit osk task context "<task>"`
 - Read-only: `no`
 - Explicit approval required: `no`
 
@@ -95,7 +93,7 @@ Compile active reviewed behavior into harness artifacts.
 Preview or apply project-local harness attachment with receipts.
 
 - MCP tool: `osk_compile_deploy`
-- CLI fallback: `openskill-kit agent attach-plugin --host opencode --dry-run`
+- CLI fallback: `openskill-kit osk deploy --host opencode`
 - Read-only: `no`
 - Explicit approval required: `yes`
 
@@ -116,4 +114,3 @@ Export, verify, diff, sign, or import behavior packs through trust gates.
 - CLI fallback: `openskill-kit osk pack export`
 - Read-only: `no`
 - Explicit approval required: `yes`
-

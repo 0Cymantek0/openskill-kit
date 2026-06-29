@@ -3,17 +3,30 @@ description: "Run integrity, privacy, verifier, and proof-boundary checks."
 model: default
 temperature: 0
 steps: 24
-reasoning: high
+reasoningEffort: high
 mode: subagent
-permissions:
+permission:
   read: allow
   list: allow
   grep: allow
+  glob: allow
   edit: deny
-  bash: ask
+  bash:
+    "*": deny
+    "openskill-kit *": ask
+    "npx openskill-kit *": ask
+    "node *openskill-kit*": ask
+    "npm test*": ask
+    "npm run test*": ask
+    "npm run release-check": ask
+    "pnpm test*": ask
+    "pnpm run test*": ask
   question: ask
+  external_directory: deny
   webfetch: deny
   websearch: deny
+  task: deny
+  skill: allow
 ---
 
 # osk-verifier

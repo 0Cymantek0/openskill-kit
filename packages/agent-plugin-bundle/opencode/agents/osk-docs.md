@@ -2,17 +2,32 @@
 description: "Polish generated OSK documentation with approval for docs edits."
 model: default
 steps: 12
-reasoning: low
+reasoningEffort: low
 mode: subagent
-permissions:
+permission:
   read: allow
   list: allow
   grep: allow
-  edit: ask
-  bash: ask
+  glob: allow
+  edit:
+    "*": deny
+    "docs/**": ask
+    "*.md": ask
+    ".openskill-kit/compiled/plugin/README.md": ask
+  bash:
+    "*": deny
+    "openskill-kit *": ask
+    "npx openskill-kit *": ask
+    "node *openskill-kit*": ask
+    "git status*": allow
+    "git log*": allow
+    "git diff*": deny
   question: ask
+  external_directory: deny
   webfetch: deny
   websearch: deny
+  task: deny
+  skill: allow
 ---
 
 # osk-docs

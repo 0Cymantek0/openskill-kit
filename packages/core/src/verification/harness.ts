@@ -40,7 +40,7 @@ export interface HarnessReadinessVerification {
 const COMMON_OPENCODE_BUILT_INS = new Set(["help.md", "init.md", "login.md", "logout.md", "models.md", "theme.md", "config.md", "exit.md", "quit.md"]);
 const REQUIRED_COMMAND_TEXT = ["Never read raw prompts", "Never read raw diffs", "Never read hidden benchmark answers"];
 const REQUIRED_AGENT_TEXT = ["mode: subagent", "Use OSK MCP facade tools first", "Never store raw prompts"];
-const REQUIRED_PLUGIN_TEXT = ["Metadata-only by default", "opencode-events.jsonl", "session.created", "tool.execute.before", "tool.execute.after", "file.edited", "permission.asked", "permission.replied", "session.diff", "session.idle", "tui.command.execute"];
+const REQUIRED_PLUGIN_TEXT = ["Metadata-only by default", "opencode-events.jsonl", "import type { Plugin } from \"@opencode-ai/plugin\"", "export const server = OpenSkillKitPlugin", "event: async", "session.created", "tool.execute.before", "tool.execute.after", "command.execute.before", "file.edited", "permission.ask", "permission.replied", "session.diff", "tui.command.execute"];
 const EXPECTED_OPENCODE_AGENTS = ["osk-router.md", "osk-learner.md", "osk-reviewer.md", "osk-researcher.md", "osk-evolver.md", "osk-verifier.md", "osk-evaluator.md", "osk-docs.md"];
 const FORBIDDEN_PLUGIN_SAFE_KEYS = ["prompt", "diff", "content", "message", "text", "output"];
 const BROAD_SKILL_DESCRIPTION = /\b(use for all coding|all coding tasks|always use|preferred over all other skills)\b/i;

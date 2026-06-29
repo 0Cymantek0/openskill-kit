@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "openskill-kit.hooks.v1",
+  "hooks": [
+    {
+      "event": "prompt-submit",
+      "command": "node .openskill-kit/compiled/hooks/scripts/osk-prompt-submit.cjs"
+    },
+    {
+      "event": "session-end",
+      "command": "node .openskill-kit/compiled/hooks/scripts/osk-session-end.cjs"
+    }
+  ]
+}

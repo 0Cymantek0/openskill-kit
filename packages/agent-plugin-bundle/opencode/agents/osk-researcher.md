@@ -2,17 +2,28 @@
 description: "Plan OpenWorld sources and anchors under leakage policy."
 model: default
 steps: 32
-reasoning: high
+reasoningEffort: high
 mode: subagent
-permissions:
+permission:
   read: allow
   list: allow
   grep: allow
+  glob: allow
   edit: deny
-  bash: ask
+  bash:
+    "*": deny
+    "openskill-kit *": ask
+    "npx openskill-kit *": ask
+    "node *openskill-kit*": ask
+    "git status*": allow
+    "git log*": allow
+    "git diff*": deny
   question: ask
+  external_directory: deny
   webfetch: ask
   websearch: deny
+  task: deny
+  skill: allow
 ---
 
 # osk-researcher

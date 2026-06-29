@@ -6,9 +6,9 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 const steps = [
+  ["npm", ["run", "build"]],
   ["npm", ["test"]],
   ["npm", ["run", "typecheck"]],
-  ["npm", ["run", "build"]],
   ["npm", ["run", "smoke"]]
 ] as const;
 
@@ -70,7 +70,7 @@ async function verifyPackageDryRun(): Promise<void> {
 
 async function verifyStaticOpenCodePlugin(): Promise<void> {
   const plugin = await readFile("packages/agent-plugin-bundle/opencode/plugins/openskillkit.ts", "utf8");
-  const required = ["return {", "\"session.created\"", "\"tool.execute.after\"", "\"command.executed\"", "Metadata-only by default"];
+  const required = ["import type { Plugin } from \"@opencode-ai/plugin\"", "export const server = OpenSkillKitPlugin", "return {", "event: async", "\"tool.execute.after\"", "\"command.execute.before\"", "\"permission.ask\"", "Metadata-only by default"];
   const missing = required.filter((item) => !plugin.includes(item));
   if (missing.length) throw new Error(`static OpenCode plugin missing hook contract marker(s): ${missing.join(", ")}`);
   if (plugin.includes("from \"opencode\"") || plugin.includes("app.on")) {
