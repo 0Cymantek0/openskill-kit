@@ -184,6 +184,26 @@ describe("agent plugin attach planner", () => {
     expect(status.defaultHostStatus.status).toBe("attached");
   });
 
+  it("accepts UTF-8 BOM OpenCode configs created by Windows editors", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode-bom", "Prefer Windows-authored OpenCode config files", "workflow")]);
+    await writeFile(path.join(root, "opencode.json"), `\uFEFF${JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2)}\n`, "utf8");
+
+    const planned = await attachAgentPlugin(root, { host: "opencode", dryRun: true });
+    expect(planned.status).toBe("planned");
+    expect(planned.files.some((file) => file.destination === path.join(root, "opencode.json") && file.action === "update")).toBe(true);
+
+    const attached = await attachAgentPlugin(root, { host: "opencode", dryRun: false, yes: true });
+    expect(attached.status).toBe("attached");
+    const text = await readFile(path.join(root, "opencode.json"), "utf8");
+    expect(text.charCodeAt(0)).toBe(0xfeff);
+    const config = JSON.parse(text.replace(/^\uFEFF/, ""));
+    expect(config.plugin).toEqual(["./custom.ts", ".opencode/plugins/openskillkit.ts"]);
+    expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
+    const status = await getAgentPluginAttachStatus(root);
+    expect(status.defaultHostStatus.status).toBe("attached");
+  });
+
   it("targets existing OpenCode JSONC config without creating duplicate opencode.json", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("opencode-jsonc", "Prefer existing OpenCode JSONC config patching", "workflow")]);

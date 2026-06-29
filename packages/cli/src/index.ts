@@ -2602,7 +2602,7 @@ async function resolveOpenCodeConfigPath(projectRoot: string): Promise<string> {
 
 function parseOpenCodeConfig(text: string, filePath: string): Record<string, unknown> {
   const errors: ParseError[] = [];
-  const parsed = parseJsonc(text, errors, { allowTrailingComma: true, disallowComments: false });
+  const parsed = parseJsonc(stripUtf8Bom(text), errors, { allowTrailingComma: true, disallowComments: false });
   if (errors.length) {
     const format = filePath.endsWith(".jsonc") ? "JSONC" : "JSON";
     throw new Error(`Existing OpenCode config is not valid ${format}: ${errors.map((error) => `error ${error.error} at offset ${error.offset}`).join(", ")}`);
@@ -2611,9 +2611,16 @@ function parseOpenCodeConfig(text: string, filePath: string): Record<string, unk
 }
 
 function applyOpenCodeJsoncEdits(text: string, edits: Array<{ path: Array<string | number>; value: unknown }>): string {
-  return edits.reduce((current, edit) => applyEdits(current, modify(current, edit.path, edit.value, {
+  const hadBom = text.charCodeAt(0) === 0xfeff;
+  const body = stripUtf8Bom(text);
+  const edited = edits.reduce((current, edit) => applyEdits(current, modify(current, edit.path, edit.value, {
     formattingOptions: { insertSpaces: true, tabSize: 2 }
-  })), text);
+  })), body);
+  return hadBom ? `\uFEFF${edited}` : edited;
+}
+
+function stripUtf8Bom(text: string): string {
+  return text.replace(/^\uFEFF+/, "");
 }
 
 async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean): Promise<{ configChanged: boolean; nextConfig?: Record<string, unknown> | string; paths: string[] }> {
@@ -2651,7 +2658,7 @@ async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean):
       else delete nextConfig.command;
     }
     if (!configChanged) nextConfig = undefined;
-    else if (opencodeJsonPath.endsWith(".jsonc")) {
+    else {
       nextConfig = applyOpenCodeJsoncEdits(existing, [
         { path: ["plugin"], value: nextConfig.plugin },
         { path: ["mcp"], value: nextConfig.mcp },

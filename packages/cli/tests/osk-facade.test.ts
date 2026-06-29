@@ -296,6 +296,27 @@ describe("osk CLI facade", () => {
     expect(config.mcp).toBeUndefined();
   });
 
+  it("sets up and uninstalls when opencode.json has a UTF-8 BOM", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-bom-"));
+    await writeFile(path.join(root, "opencode.json"), `\uFEFF${JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2)}\n`, "utf8");
+
+    const setup = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "setup", "--non-interactive", "--yes", "--skip-hooks", "--skip-manifests", "--json"], { cwd: root, windowsHide: true });
+    expect(JSON.parse(setup.stdout).status).toBe("installed");
+    let text = await readFile(path.join(root, "opencode.json"), "utf8");
+    expect(text.charCodeAt(0)).toBe(0xfeff);
+    let config = JSON.parse(text.replace(/^\uFEFF/, ""));
+    expect(config.plugin).toEqual(["./custom.ts", ".opencode/plugins/openskillkit.ts"]);
+    expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
+
+    const uninstalled = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "uninstall", "--non-interactive", "--yes", "--json"], { cwd: root, windowsHide: true });
+    expect(JSON.parse(uninstalled.stdout).status).toBe("uninstalled");
+    text = await readFile(path.join(root, "opencode.json"), "utf8");
+    expect(text.charCodeAt(0)).toBe(0xfeff);
+    config = JSON.parse(text.replace(/^\uFEFF/, ""));
+    expect(config.plugin).toEqual(["./custom.ts"]);
+    expect(config.mcp).toBeUndefined();
+  });
+
   it("blocks OpenCode setup and uninstall facade when a different host is requested", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-host-block-"));
     await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], mcp: { keep: { type: "local", command: ["keep"] } } }, null, 2), "utf8");

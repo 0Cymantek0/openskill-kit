@@ -34,6 +34,12 @@ describe("harness readiness verification", () => {
     const attachedReport = await verifyHarnessReadiness(root, new Date("2026-06-28T00:00:00.000Z"));
     expect(attachedReport.status).toBe("pass");
     expect(attachedReport.findings.some((finding) => finding.id === "opencode-config-schema:opencode.json" && finding.severity === "pass")).toBe(true);
+
+    const opencodeConfig = path.join(root, "opencode.json");
+    await writeFile(opencodeConfig, `\uFEFF${await readFile(opencodeConfig, "utf8")}`, "utf8");
+    const bomReport = await verifyHarnessReadiness(root, new Date("2026-06-28T00:00:00.000Z"));
+    expect(bomReport.status).toBe("pass");
+    expect(bomReport.findings.some((finding) => finding.id === "opencode-config-schema:opencode.json" && finding.severity === "pass")).toBe(true);
   });
 
   it("fails when generated OpenCode commands collide or public MCP profile bloats", async () => {

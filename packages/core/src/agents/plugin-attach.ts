@@ -485,14 +485,21 @@ async function planCopyFile(target: HostConfigTarget): Promise<AgentPluginAttach
 
 function parseOpenCodeConfig(text: string): { value: Record<string, unknown>; errors: ParseError[] } {
   const errors: ParseError[] = [];
-  const parsed = parseJsonc(text, errors, { allowTrailingComma: true, disallowComments: false });
+  const parsed = parseJsonc(stripUtf8Bom(text), errors, { allowTrailingComma: true, disallowComments: false });
   return { value: isRecord(parsed) ? parsed : {}, errors };
 }
 
 function applyOpenCodeJsoncEdits(text: string, edits: Array<{ path: Array<string | number>; value: unknown }>): string {
-  return edits.reduce((current, edit) => applyEdits(current, modify(current, edit.path, edit.value, {
+  const hadBom = text.charCodeAt(0) === 0xfeff;
+  const body = stripUtf8Bom(text);
+  const edited = edits.reduce((current, edit) => applyEdits(current, modify(current, edit.path, edit.value, {
     formattingOptions: { insertSpaces: true, tabSize: 2 }
-  })), text);
+  })), body);
+  return hadBom ? `\uFEFF${edited}` : edited;
+}
+
+function stripUtf8Bom(text: string): string {
+  return text.replace(/^\uFEFF+/, "");
 }
 
 function existingOpenCodeIssue(destination: string, errors: ParseError[]): string {

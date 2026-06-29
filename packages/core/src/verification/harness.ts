@@ -333,7 +333,7 @@ async function addOpenCodeConfigSchemaFindings(root: string, findings: HarnessVe
     const text = await fs.readFile(file, "utf8").catch(() => undefined);
     if (text === undefined) continue;
     const errors: ParseError[] = [];
-    const parsed = parseJsonc(text, errors, { allowTrailingComma: true, disallowComments: false });
+    const parsed = parseJsonc(stripUtf8Bom(text), errors, { allowTrailingComma: true, disallowComments: false });
     if (errors.length) {
       findings.push(finding(
         `opencode-config-schema:${path.basename(file)}`,
@@ -355,6 +355,10 @@ async function addOpenCodeConfigSchemaFindings(root: string, findings: HarnessVe
       file
     ));
   }
+}
+
+function stripUtf8Bom(text: string): string {
+  return text.replace(/^\uFEFF+/, "");
 }
 
 function finding(id: string, severity: HarnessVerificationFinding["severity"], message: string, recommendation?: string, file?: string): HarnessVerificationFinding {
