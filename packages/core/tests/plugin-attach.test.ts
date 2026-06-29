@@ -154,7 +154,7 @@ describe("agent plugin attach planner", () => {
   it("previews and applies OpenCode config plus generated command artifacts", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("opencode", "Prefer OpenCode command files for OSK workflows", "workflow")]);
-    await writeFile(path.join(root, "opencode.json"), `${JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2)}\n`, "utf8");
+    await writeFile(path.join(root, "opencode.json"), `${JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2)}\n`, "utf8");
 
     const planned = await attachAgentPlugin(root, { host: "opencode", dryRun: true });
 
@@ -169,7 +169,8 @@ describe("agent plugin attach planner", () => {
     const attached = await attachAgentPlugin(root, { host: "opencode", dryRun: false, yes: true });
     expect(attached.status).toBe("attached");
     const config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
-    expect(config.keep).toBe(true);
+    expect(config.$schema).toBe("https://opencode.ai/config.json");
+    expect(config.share).toBe("manual");
     expect(config.plugin).toEqual(["./custom.ts", ".opencode/plugins/openskillkit.ts"]);
     expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
     expect(config.mcp["openskill-kit"].environment.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
@@ -190,7 +191,7 @@ describe("agent plugin attach planner", () => {
       "{",
       "  // user comment must survive attach",
       "  \"plugin\": [\"./custom.ts\",],",
-      "  \"keep\": true,",
+      "  \"username\": \"osk-user\",",
       "}",
       ""
     ].join("\n"), "utf8");
@@ -206,13 +207,46 @@ describe("agent plugin attach planner", () => {
     await expect(stat(path.join(root, "opencode.json"))).rejects.toThrow();
     const text = await readFile(path.join(root, "opencode.jsonc"), "utf8");
     expect(text).toContain("// user comment must survive attach");
-    expect(text).toContain("\"keep\": true");
+    expect(text).toContain("\"username\": \"osk-user\"");
     expect(text).toContain("\".opencode/plugins/openskillkit.ts\"");
     expect(text).toContain("\"openskill-kit\"");
     const status = await getAgentPluginAttachStatus(root);
     expect(status.defaultHostStatus.destination).toBe(path.join(root, "opencode.jsonc"));
     expect(status.defaultHostStatus.status).toBe("attached");
     expect(status.defaultHostReady).toBe(true);
+  });
+
+  it("preserves valid OpenCode plugin tuples when attaching OSK", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode-plugin-tuple", "Prefer OpenCode plugin options for local harness", "workflow")]);
+    await writeFile(path.join(root, "opencode.json"), `${JSON.stringify({
+      plugin: [["./custom.ts", { strict: true }]],
+      mcp: {
+        disabledTool: { enabled: false }
+      }
+    }, null, 2)}\n`, "utf8");
+
+    const attached = await attachAgentPlugin(root, { host: "opencode", dryRun: false, yes: true });
+
+    expect(attached.status).toBe("attached");
+    const config = JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8"));
+    expect(config.plugin).toEqual([["./custom.ts", { strict: true }], ".opencode/plugins/openskillkit.ts"]);
+    expect(config.mcp.disabledTool).toEqual({ enabled: false });
+  });
+
+  it("blocks OpenCode attach when preserved user config fails the official schema", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode-schema", "Prefer schema validated OpenCode config attach", "workflow")]);
+    await writeFile(path.join(root, "opencode.json"), `${JSON.stringify({
+      plugin: ["./custom.ts"],
+      tools: { bash: "yes" }
+    }, null, 2)}\n`, "utf8");
+
+    const planned = await attachAgentPlugin(root, { host: "opencode", dryRun: true });
+
+    expect(planned.status).toBe("blocked");
+    expect(planned.messages.join(" ")).toContain("https://opencode.ai/config.json");
+    expect(planned.files.find((file) => file.destination === path.join(root, "opencode.json"))?.action).toBe("blocked");
   });
 
   it("reports OpenCode attachment incomplete when the generated plugin is not registered", async () => {

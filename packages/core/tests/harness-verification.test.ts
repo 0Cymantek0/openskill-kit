@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { compileBehaviorLayer, initAdaptiveProject, verifyHarnessReadiness, type PreferenceGraph, type PreferenceNode } from "../src/index.js";
+import { attachAgentPlugin, compileBehaviorLayer, initAdaptiveProject, verifyHarnessReadiness, type PreferenceGraph, type PreferenceNode } from "../src/index.js";
 
 describe("harness readiness verification", () => {
   it("passes generated OpenCode commands and public MCP profile budgets", async () => {
@@ -26,6 +26,11 @@ describe("harness readiness verification", () => {
     expect(report.findings.some((finding) => finding.id === "opencode-command-facade:osk-status.md" && finding.severity === "pass")).toBe(true);
     expect(report.findings.some((finding) => finding.id === "opencode-plugin-hook:session-diff" && finding.severity === "pass")).toBe(true);
     expect(report.findings.some((finding) => finding.id === "opencode-plugin-safe-key-whitelist" && finding.severity === "pass")).toBe(true);
+
+    await attachAgentPlugin(root, { host: "opencode", dryRun: false, yes: true });
+    const attachedReport = await verifyHarnessReadiness(root, new Date("2026-06-28T00:00:00.000Z"));
+    expect(attachedReport.status).toBe("pass");
+    expect(attachedReport.findings.some((finding) => finding.id === "opencode-config-schema:opencode.json" && finding.severity === "pass")).toBe(true);
   });
 
   it("fails when generated OpenCode commands collide or public MCP profile bloats", async () => {
@@ -39,6 +44,7 @@ describe("harness readiness verification", () => {
     const publicDescriptors = JSON.parse(await readFile(publicDescriptorPath, "utf8"));
     publicDescriptors.tools.push({ name: "extra_low_level_tool", category: "debug", writeRisk: "read-only", approvalRequired: false });
     await writeFile(publicDescriptorPath, `${JSON.stringify(publicDescriptors, null, 2)}\n`, "utf8");
+    await writeFile(path.join(root, "opencode.json"), `${JSON.stringify({ tools: { bash: "yes" } }, null, 2)}\n`, "utf8");
 
     const report = await verifyHarnessReadiness(root);
 
@@ -47,7 +53,8 @@ describe("harness readiness verification", () => {
       expect.objectContaining({ id: "public-mcp-tool-count", severity: "fail" }),
       expect.objectContaining({ id: "opencode-command-name:help.md", severity: "fail" }),
       expect.objectContaining({ id: "opencode-agent-present:osk-router.md", severity: "fail" }),
-      expect.objectContaining({ id: "opencode-plugin-safe-key-whitelist", severity: "fail" })
+      expect.objectContaining({ id: "opencode-plugin-safe-key-whitelist", severity: "fail" }),
+      expect.objectContaining({ id: "opencode-config-schema:opencode.json", severity: "fail" })
     ]));
   });
 });

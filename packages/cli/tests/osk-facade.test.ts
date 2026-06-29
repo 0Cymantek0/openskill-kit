@@ -136,7 +136,7 @@ describe("osk CLI facade", () => {
 
   it("previews setup without attaching unless approved", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-preview-"));
-    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2), "utf8");
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2), "utf8");
 
     const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "setup", "--non-interactive", "--json"], { cwd: root, windowsHide: true });
     const parsed = JSON.parse(stdout);
@@ -158,7 +158,7 @@ describe("osk CLI facade", () => {
 
   it("applies default setup surfaces and uninstall removes generated hooks/manifests", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-default-"));
-    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2), "utf8");
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2), "utf8");
 
     const setup = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "setup", "--non-interactive", "--yes", "--json"], { cwd: root, windowsHide: true });
     const setupParsed = JSON.parse(setup.stdout);
@@ -181,7 +181,7 @@ describe("osk CLI facade", () => {
 
   it("previews and applies /osk deploy as full OpenCode deployment", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-deploy-full-"));
-    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2), "utf8");
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2), "utf8");
 
     const preview = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "deploy", "--json"], { cwd: root, windowsHide: true });
     const previewParsed = JSON.parse(preview.stdout);
@@ -211,7 +211,7 @@ describe("osk CLI facade", () => {
       "{",
       "  // keep this OpenCode comment",
       "  \"plugin\": [\"./custom.ts\",],",
-      "  \"keep\": true,",
+      "  \"username\": \"osk-user\",",
       "}",
       ""
     ].join("\n"), "utf8");
@@ -236,7 +236,7 @@ describe("osk CLI facade", () => {
 
   it("applies setup and safely previews/applies uninstall", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-apply-"));
-    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2), "utf8");
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2), "utf8");
 
     const setup = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "setup", "--non-interactive", "--yes", "--skip-hooks", "--skip-manifests", "--json"], { cwd: root, windowsHide: true });
     const setupParsed = JSON.parse(setup.stdout);
@@ -274,7 +274,7 @@ describe("osk CLI facade", () => {
 
   it("blocks OpenCode setup and uninstall facade when a different host is requested", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-host-block-"));
-    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], mcp: { keep: { command: ["keep"] } } }, null, 2), "utf8");
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], mcp: { keep: { type: "local", command: ["keep"] } } }, null, 2), "utf8");
 
     const setup = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "setup", "--host", "codex", "--non-interactive", "--yes", "--json"], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
     expect(setup.code).toBe(1);

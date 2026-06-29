@@ -5,12 +5,14 @@ import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-
 import { compileBehaviorLayer } from "../compiler/package-compiler.js";
 import { getCompiledPluginStatus, type AgentPluginInstallProfile, type CompiledPluginStatus } from "../compiler/plugin-compiler.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
+import { validateOpenCodeConfigSchema } from "../verification/opencode-config.js";
 
 export const AgentPluginAttachHosts = ["opencode", "codex", "claude-code", "cursor", "generic-mcp"] as const;
 export type AgentPluginAttachHost = typeof AgentPluginAttachHosts[number];
 export const AGENT_PLUGIN_PROJECT_ROOT_ENV = "OPENSKILLKIT_PROJECT_ROOT";
 export const DEFAULT_AGENT_PLUGIN_ATTACH_HOST: AgentPluginAttachHost = "opencode";
 const OPENCODE_PLUGIN_PATH = ".opencode/plugins/openskillkit.ts";
+const OPENCODE_CONFIG_SCHEMA_URL = "https://opencode.ai/config.json";
 
 export interface AgentPluginAttachResult {
   schemaVersion: "openskill-kit.agent-plugin-attach.v1";
@@ -431,7 +433,7 @@ async function planOpenCodeConfig(destination: string, command: string, projectR
       diff: unifiedDiff(destination, before, before)
     };
   }
-  const plugin = pluginList.items.includes(OPENCODE_PLUGIN_PATH) ? pluginList.items : [...pluginList.items, OPENCODE_PLUGIN_PATH];
+  const plugin = pluginList.paths.includes(OPENCODE_PLUGIN_PATH) ? pluginList.items : [...pluginList.items, OPENCODE_PLUGIN_PATH];
   const mcp = {
     ...currentMcp,
     "openskill-kit": {
@@ -443,10 +445,21 @@ async function planOpenCodeConfig(destination: string, command: string, projectR
       }
     }
   };
-  const next: Record<string, unknown> = { ...parsed, plugin, mcp };
+  const schemaRef = typeof parsed.$schema === "string" ? parsed.$schema : OPENCODE_CONFIG_SCHEMA_URL;
+  const next: Record<string, unknown> = { ...parsed, $schema: schemaRef, plugin, mcp };
+  const schemaValidation = validateOpenCodeConfigSchema(next);
+  if (!schemaValidation.valid) {
+    return {
+      destination,
+      action: "blocked",
+      issue: `Generated OpenCode config does not match ${OPENCODE_CONFIG_SCHEMA_URL}: ${schemaValidation.errors.slice(0, 5).join("; ")}`,
+      diff: unifiedDiff(destination, before, before)
+    };
+  }
   const after = existing === undefined
     ? `${JSON.stringify(next, null, 2)}\n`
     : applyOpenCodeJsoncEdits(existing, [
+      { path: ["$schema"], value: schemaRef },
       { path: ["plugin"], value: plugin },
       { path: ["mcp"], value: mcp }
     ]);
@@ -513,7 +526,7 @@ function inspectOpenCodeConfig(
   const attached = inspectAttachedServer(root, host, destination, { command, projectRootBound: environment[AGENT_PLUGIN_PROJECT_ROOT_ENV] === root, serverPresent: Boolean(server) }, plugin, receipts);
   if (attached.status !== "attached") return attached;
   const pluginList = openCodePluginList(parsed.plugin);
-  if (pluginList.issue || !pluginList.items.includes(OPENCODE_PLUGIN_PATH)) {
+  if (pluginList.issue || !pluginList.paths.includes(OPENCODE_PLUGIN_PATH)) {
     return {
       ...attached,
       status: "plugin-missing",
@@ -657,10 +670,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function openCodePluginList(value: unknown): { items: string[]; issue?: string } {
-  if (value === undefined) return { items: [] };
-  if (typeof value === "string") return { items: [value] };
-  if (!Array.isArray(value)) return { items: [], issue: "Existing OpenCode plugin config must be a string or string array." };
-  if (!value.every((item) => typeof item === "string")) return { items: [], issue: "Existing OpenCode plugin array contains non-string entries." };
-  return { items: [...new Set(value)] };
+type OpenCodePluginEntry = string | [string, Record<string, unknown>];
+
+function openCodePluginList(value: unknown): { items: OpenCodePluginEntry[]; paths: string[]; issue?: string } {
+  if (value === undefined) return { items: [], paths: [] };
+  if (typeof value === "string") return { items: [value], paths: [value] };
+  if (!Array.isArray(value)) return { items: [], paths: [], issue: "Existing OpenCode plugin config must be a string or string array." };
+  const items: OpenCodePluginEntry[] = [];
+  const paths: string[] = [];
+  for (const item of value) {
+    let entry: OpenCodePluginEntry;
+    let pluginPath: string;
+    if (typeof item === "string") {
+      entry = item;
+      pluginPath = item;
+    } else if (Array.isArray(item) && item.length === 2 && typeof item[0] === "string" && isRecord(item[1])) {
+      entry = [item[0], item[1]];
+      pluginPath = item[0];
+    } else {
+      return { items: [], paths: [], issue: "Existing OpenCode plugin array must contain strings or [path, options] tuples." };
+    }
+    if (!paths.includes(pluginPath)) {
+      paths.push(pluginPath);
+      items.push(entry);
+    }
+  }
+  return { items, paths };
 }

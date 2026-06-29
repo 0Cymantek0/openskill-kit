@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { OSK_PUBLIC_COMMAND_COUNT } from "../commands/families.js";
+import { validateOpenCodeConfigSchema } from "./opencode-config.js";
 
 export interface HarnessVerificationFinding {
   id: string;
@@ -60,6 +62,7 @@ export async function verifyHarnessReadiness(projectRoot: string, now: Date = ne
   const opencodeAgentFiles = await listFiles(path.join(pluginRoot, "opencode", "agents"));
   const opencodePluginPath = path.join(pluginRoot, "opencode", "plugins", "openskillkit.ts");
   const opencodeSkillFiles = (await listFiles(path.join(pluginRoot, "opencode", "skills"))).filter((file) => file.endsWith("SKILL.md"));
+  await addOpenCodeConfigSchemaFindings(root, findings);
 
   if (!commandMap) {
     findings.push(finding("command-map-missing", "fail", "Compiled plugin command map is missing.", "Run `openskill-kit compile --target plugin`."));
@@ -287,6 +290,36 @@ async function listFiles(root: string): Promise<string[]> {
 
 async function fileBytes(file: string): Promise<number> {
   return (await fs.stat(file)).size;
+}
+
+async function addOpenCodeConfigSchemaFindings(root: string, findings: HarnessVerificationFinding[]): Promise<void> {
+  const candidates = [path.join(root, "opencode.json"), path.join(root, "opencode.jsonc")];
+  for (const file of candidates) {
+    const text = await fs.readFile(file, "utf8").catch(() => undefined);
+    if (text === undefined) continue;
+    const errors: ParseError[] = [];
+    const parsed = parseJsonc(text, errors, { allowTrailingComma: true, disallowComments: false });
+    if (errors.length) {
+      findings.push(finding(
+        `opencode-config-schema:${path.basename(file)}`,
+        "fail",
+        `OpenCode config ${path.basename(file)} is not valid JSONC: ${errors.map((error) => `error ${error.error} at offset ${error.offset}`).join(", ")}.`,
+        "Fix syntax before running OpenCode or attaching OSK.",
+        file
+      ));
+      continue;
+    }
+    const validation = validateOpenCodeConfigSchema(parsed);
+    findings.push(finding(
+      `opencode-config-schema:${path.basename(file)}`,
+      validation.valid ? "pass" : "fail",
+      validation.valid
+        ? `OpenCode config ${path.basename(file)} matches https://opencode.ai/config.json.`
+        : `OpenCode config ${path.basename(file)} fails https://opencode.ai/config.json: ${validation.errors.slice(0, 5).join("; ")}.`,
+      "Align opencode.json/jsonc with the OpenCode config schema.",
+      file
+    ));
+  }
 }
 
 function finding(id: string, severity: HarnessVerificationFinding["severity"], message: string, recommendation?: string, file?: string): HarnessVerificationFinding {
