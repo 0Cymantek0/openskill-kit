@@ -71,6 +71,7 @@ export * from "./lifecycle/runner.js";
 export * from "./status/status.js";
 export * from "./sync/bundle.js";
 export * from "./storage/atomic.js";
+export * from "./telemetry/local.js";
 export * from "./evals/schema.js";
 export * from "./evals/replay.js";
 export * from "./evals/agent-ab.js";

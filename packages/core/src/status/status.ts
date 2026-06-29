@@ -5,6 +5,7 @@ import { getCompiledPluginStatus, type CompiledPluginStatus } from "../compiler/
 import { readProjectConfig } from "../events/store.js";
 import { readInteractionImportRuns } from "../interactions/importer.js";
 import { getAgentPluginAttachStatus, type AgentPluginAttachStatus } from "../agents/plugin-attach.js";
+import { summarizeCommandTelemetry, type CommandTelemetrySummary } from "../telemetry/local.js";
 
 export interface AdaptiveStatus {
   schemaVersion: "openskill-kit.status.v1";
@@ -37,6 +38,7 @@ export interface AdaptiveStatus {
 }
 
 export interface OperationsStatusSummary {
+  commandTelemetry: CommandTelemetrySummary;
   learn: {
     receiptPresent: boolean;
     latest?: {
@@ -206,12 +208,14 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
 
 async function summarizeOperationsStatus(root: string): Promise<OperationsStatusSummary> {
   const latestLearnReceipt = await readJson(path.join(root, ".openskill-kit", "reviews", "learn-receipt.json")).catch(() => undefined);
+  const commandTelemetry = await summarizeCommandTelemetry(root);
   const installReceipts = await readReceiptSummaries(path.join(root, ".openskill-kit", "installs"));
   const evalReports = await readEvalReportSummaries(root);
   const latestEval = evalReports[0];
   const packManifest = await readJson(path.join(root, ".openskill-kit", "compiled", "project-behavior-pack", "manifest.json")).catch(() => undefined);
   const packManifestRecord = isRecord(packManifest) ? packManifest : undefined;
   return {
+    commandTelemetry,
     learn: {
       receiptPresent: isRecord(latestLearnReceipt),
       latest: summarizeLearnReceipt(latestLearnReceipt)

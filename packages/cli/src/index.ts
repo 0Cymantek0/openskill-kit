@@ -84,6 +84,7 @@ import {
   runDoctor,
   runFullDoctor,
   resetProjectState,
+  recordCommandTelemetry,
   pruneProjectState,
   archiveProjectState,
   compactProjectState,
@@ -104,7 +105,8 @@ import {
   type AgentPluginAttachHost,
   type InstallTarget,
   type LearnRun,
-  type LearnSourcePlan
+  type LearnSourcePlan,
+  type CommandTelemetryFamily
 } from "@openskill-kit/core";
 
 const program = new Command();
@@ -202,6 +204,17 @@ program.command("detect")
 
 const osk = program.command("osk")
   .description("Run harness-native OpenSkillKit command-family workflows");
+
+let activeOskTelemetry: { family: CommandTelemetryFamily; startedAt: number; recorded: boolean } | undefined;
+
+osk.hook("preAction", (_thisCommand, actionCommand) => {
+  const family = oskTelemetryFamily(actionCommand);
+  activeOskTelemetry = family ? { family, startedAt: Date.now(), recorded: false } : undefined;
+});
+
+osk.hook("postAction", async () => {
+  await finishOskTelemetry(process.exitCode && process.exitCode !== 0 ? "failure" : "success");
+});
 
 osk.command("help")
   .description("Show the 12 public OSK command families")
@@ -1810,10 +1823,42 @@ program.command("inspect")
     output(options.json, pkg, `${pkg.manifest.name}: ${pkg.manifest.description}\n${pkg.root}`);
   });
 
-program.parseAsync(process.argv).catch((error) => {
+program.parseAsync(process.argv).catch(async (error) => {
+  await finishOskTelemetry("failure");
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+
+function oskTelemetryFamily(actionCommand: Command): CommandTelemetryFamily | undefined {
+  const chain: string[] = [];
+  let current: Command | undefined = actionCommand;
+  while (current) {
+    chain.unshift(current.name());
+    current = current.parent ?? undefined;
+  }
+  const oskIndex = chain.indexOf("osk");
+  const raw = oskIndex >= 0 ? chain[oskIndex + 1] : undefined;
+  const family = raw === "setup" || raw === "uninstall" ? "deploy" : raw;
+  return isOskTelemetryFamily(family) ? family : undefined;
+}
+
+function isOskTelemetryFamily(value: unknown): value is CommandTelemetryFamily {
+  return typeof value === "string" && OSK_PUBLIC_COMMAND_FAMILIES.some((family) => family.id === value);
+}
+
+async function finishOskTelemetry(status: "success" | "failure"): Promise<void> {
+  if (!activeOskTelemetry || activeOskTelemetry.recorded) return;
+  activeOskTelemetry.recorded = true;
+  const configExists = await fs.stat(path.join(process.cwd(), ".openskill-kit", "config.json")).then(() => true).catch(() => false);
+  if (!configExists) return;
+  await recordCommandTelemetry(process.cwd(), {
+    surface: "cli",
+    family: activeOskTelemetry.family,
+    status,
+    durationMs: Date.now() - activeOskTelemetry.startedAt,
+    exitCode: process.exitCode && process.exitCode !== 0 ? Number(process.exitCode) : undefined
+  }).catch(() => undefined);
+}
 
 function output(json: boolean | undefined, data: unknown, text: string): void {
   if (json) console.log(JSON.stringify(sanitizeForOutput(data), null, 2));

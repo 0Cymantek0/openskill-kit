@@ -68,6 +68,30 @@ describe("osk CLI facade", () => {
     expect(result.stderr).toContain("Supported source ids: current-session, git-local");
   });
 
+  it("records private-safe /osk command telemetry in status", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-telemetry-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "osk", "init", "--json"], { cwd: root, windowsHide: true });
+    await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--source", "not-a-source", "--json"], { cwd: root, windowsHide: true }).catch(() => undefined);
+
+    const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "status", "--json"], { cwd: root, windowsHide: true });
+    const parsed = JSON.parse(stdout);
+    const telemetry = parsed.status.operations.commandTelemetry;
+    expect(telemetry.total).toBeGreaterThanOrEqual(2);
+    expect(telemetry.byFamily.init.success).toBe(1);
+    expect(telemetry.byFamily.learn.failure).toBe(1);
+    expect(telemetry.bySurface.cli.total).toBeGreaterThanOrEqual(2);
+    const text = await readFile(path.join(root, ".openskill-kit", "telemetry", "commands.jsonl"), "utf8");
+    expect(text).not.toContain("not-a-source");
+  });
+
+  it("does not create telemetry state for read-only status before init", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-status-readonly-"));
+    const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "status", "--json"], { cwd: root, windowsHide: true });
+    const parsed = JSON.parse(stdout);
+    expect(parsed.status.initialized).toBe(false);
+    await expect(stat(path.join(root, ".openskill-kit", "telemetry", "commands.jsonl"))).rejects.toThrow();
+  });
+
   it("records full safe task finish evidence through the public /osk task facade", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-task-finish-"));
     await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
