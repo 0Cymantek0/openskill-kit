@@ -52,7 +52,7 @@ function extractExplicitPreferences(event: OpenSkillEvent, context: ExtractorCon
 
 function extractToolChoice(event: OpenSkillEvent, context: ExtractorContext): Signal[] {
   if (event.eventType !== "post-tool-use" && event.eventType !== "pre-tool-use") return [];
-  return event.commands.map((command) => signalFromEvent(
+  return event.commands.filter((command) => !command.command.startsWith("opencode-derived:")).map((command) => signalFromEvent(
     event,
     context.now,
     "tool-choice",

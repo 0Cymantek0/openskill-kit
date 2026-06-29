@@ -83,6 +83,8 @@ export const LearnRunSchema = z.object({
   lifecycle: z.any().optional(),
   preview: z.object({
     eventsRead: z.number().int().min(0),
+    recordsRead: z.number().int().min(0).optional(),
+    recordsSkipped: z.number().int().min(0).optional(),
     rawFieldsDetected: z.boolean(),
     rawFieldWarnings: z.array(z.string()),
     commandWorkflowSignals: z.number().int().min(0),
@@ -241,6 +243,10 @@ export async function runLearningPlan(
   const importRuns: InteractionImportRun[] = [];
   const safeEventIds: string[] = [];
   const transientEvents: OpenSkillEvent[] = [];
+  let ambientRecordsRead = 0;
+  let ambientRecordsSkipped = 0;
+  let ambientRawFieldsDetected = false;
+  const ambientRawFieldWarnings: string[] = [];
   let git: GitLocalContextResult | undefined;
   let opencode: OpenCodeAmbientAppendResult | undefined;
 
@@ -293,6 +299,10 @@ export async function runLearningPlan(
         const text = await fs.readFile(file, "utf8").catch(() => "");
         const lines = text.split(/\r?\n/).filter((line) => line.trim());
         const parsed = parseOpenCodeAmbientEvents(projectRoot, lines, { maxEvents: options.maxEvents ?? 200, now: options.now });
+        ambientRecordsRead += parsed.readCount;
+        ambientRecordsSkipped += parsed.skippedCount;
+        ambientRawFieldsDetected = ambientRawFieldsDetected || parsed.rawFieldsDetected;
+        ambientRawFieldWarnings.push(...parsed.rawFieldWarnings);
         transientEvents.push(...parsed.events);
       } else {
         opencode = await appendOpenCodeAmbientEvents(projectRoot, { maxEvents: options.maxEvents ?? 200, now: options.now });
@@ -308,7 +318,7 @@ export async function runLearningPlan(
   const review = lifecycle ? await buildReviewQueue(projectRoot) : undefined;
 
   let preview: z.infer<typeof LearnRunSchema>["preview"] | undefined;
-  if (previewOnly && transientEvents.length > 0) {
+  if (previewOnly && (transientEvents.length > 0 || ambientRawFieldsDetected)) {
     const previewProjectId = `preview_${createHash("sha256").update(path.resolve(projectRoot)).digest("hex").slice(0, 16)}`;
     const signals = await extractSignalsTransiently(projectRoot, previewProjectId, transientEvents, options.now ?? new Date(), false);
     const commandWorkflowSignals = signals.filter((s) => s.category === "command-policy" || s.kind === "tool-choice").length;
@@ -327,10 +337,14 @@ export async function runLearningPlan(
     const opencodeAmbient = await inspectOpenCodeAmbientMetadata(projectRoot);
     preview = {
       eventsRead: transientEvents.length,
-      rawFieldsDetected: opencodeAmbient.rawRecordCount > 0,
-      rawFieldWarnings: opencodeAmbient.rawRecordCount > 0
-        ? [`${opencodeAmbient.rawRecordCount} record(s) with containsRawFields or eval traceMode detected; raw values were NOT imported.`]
-        : [],
+      recordsRead: ambientRecordsRead || undefined,
+      recordsSkipped: ambientRecordsSkipped || undefined,
+      rawFieldsDetected: ambientRawFieldsDetected || opencodeAmbient.rawRecordCount > 0,
+      rawFieldWarnings: ambientRawFieldWarnings.length
+        ? ambientRawFieldWarnings
+        : opencodeAmbient.rawRecordCount > 0
+          ? [`${opencodeAmbient.rawRecordCount} record(s) with containsRawFields or eval traceMode detected; raw values were NOT imported.`]
+          : [],
       commandWorkflowSignals,
       fileTouchPatterns,
       candidatePreferences,
@@ -371,7 +385,7 @@ export async function runLearningPlan(
     digest: {
       sourcesConsidered: plan.options.length,
       sourcesUsed: selectedOptions.length,
-      eventsAppended: previewOnly ? transientEvents.length : eventsAppended,
+      eventsAppended,
       signalsExtracted: previewOnly ? (preview?.candidateBehavior.length ?? 0) : (lifecycle?.signals.signalCount ?? 0),
       candidatePreferences: previewOnly ? (preview?.candidatePreferences ?? 0) : (lifecycle?.graph.candidateCount ?? 0),
       candidateWorkflows: previewOnly ? (preview?.candidateWorkflows ?? 0) : (review?.workflowCandidates.length ?? 0),
@@ -474,15 +488,16 @@ function parseOpenCodeAmbientEvents(projectRoot: string, lines: string[], option
       skippedCount += 1;
       continue;
     }
-    try {
-      const raw = JSON.parse(line) as Record<string, unknown>;
-      if (raw.containsRawFields === true || raw.traceMode === "eval") {
-        rawFieldsDetected = true;
-        rawFieldWarnings.push(`Record ${index}: containsRawFields=${raw.containsRawFields}, traceMode=${raw.traceMode}; raw values not imported.`);
-      }
-    } catch { /* already handled by parseOpenCodeAmbientRecord */ }
+    if (record.containsRawFields || record.traceMode === "eval") {
+      rawFieldsDetected = true;
+      skippedCount += 1;
+      rawFieldWarnings.push(`Record ${index}: containsRawFields=${record.containsRawFields}, traceMode=${record.traceMode ?? "safe"}; raw/eval-origin values were NOT imported.`);
+      continue;
+    }
     const ts = timestampOrUndefined(record.metadata.timestamp) ?? record.capturedAt ?? options.now?.toISOString() ?? new Date().toISOString();
     const eventId = `evt_preview_${createHash("sha256").update(`${projectId}:osk-learn-opencode-ambient:${record.eventType}:${ts}:${index}`).digest("hex").slice(0, 16)}`;
+    const commands = derivedCommandsFromOpenCodeMetadata(record.metadata);
+    const files = derivedFilesFromOpenCodeMetadata(record.metadata);
     const event = EventSchema.parse({
       schemaVersion: "openskill-kit.event.v1",
       id: eventId,
@@ -496,14 +511,14 @@ function parseOpenCodeAmbientEvents(projectRoot: string, lines: string[], option
         adapter: "opencode",
         source: "opencode-plugin",
         eventType: record.eventType,
+        traceMode: record.traceMode ?? "safe",
+        containsRawFields: false,
         rawPromptIncluded: false,
         rawDiffIncluded: false,
         metadata: record.metadata
       },
-      files: typeof record.metadata.path === "string" ? [{ path: record.metadata.path as string, action: "unknown" }] : [],
-      commands: typeof record.metadata.command === "string"
-        ? [{ command: record.metadata.command as string, status: statusFromMetadata(record.metadata.status) }]
-        : [],
+      files,
+      commands,
       privacy: { redacted: false, rawStored: false, containsUserText: false, containsCode: false }
     });
     events.push(event);
@@ -534,7 +549,7 @@ async function appendOpenCodeAmbientEvents(projectRoot: string, options: { maxEv
   return { path: file, readCount: parsed.readCount, appendedCount: eventIds.length, skippedCount: parsed.skippedCount, eventIds };
 }
 
-function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; metadata: Record<string, unknown> } | undefined {
+function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; traceMode?: string; containsRawFields: boolean; metadata: Record<string, unknown> } | undefined {
   try {
     const parsed = JSON.parse(line) as Record<string, unknown>;
     const eventType = typeof parsed.eventType === "string" ? parsed.eventType : undefined;
@@ -545,6 +560,8 @@ function parseOpenCodeAmbientRecord(line: string): { eventType: string; captured
     return {
       eventType,
       capturedAt: typeof parsed.capturedAt === "string" ? parsed.capturedAt : undefined,
+      traceMode: typeof parsed.traceMode === "string" ? parsed.traceMode : undefined,
+      containsRawFields: parsed.containsRawFields === true,
       metadata
     };
   } catch {
@@ -558,13 +575,18 @@ function sanitizeOpenCodeMetadata(metadata: Record<string, unknown>): Record<str
     const value = metadata[key];
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null) out[key] = value;
   }
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!isSafeOpenCodeDerivedMetadataKey(key)) continue;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null) out[key] = value;
+    else if (Array.isArray(value) && value.every((item) => typeof item === "string")) out[key] = value;
+  }
   return out;
 }
 
 function mapOpenCodeAmbientEventType(eventType: string, metadata: Record<string, unknown>): OpenSkillEvent["eventType"] {
   if (eventType === "session-start") return "session-start";
   if (eventType === "pre-tool-use" || eventType === "permission-request" || eventType === "command-intent") return "pre-tool-use";
-  if (eventType === "post-tool-use") return metadata.status === "fail" ? "post-tool-use-failure" : "post-tool-use";
+  if (eventType === "post-tool-use") return statusFromMetadata(metadata.status ?? metadata["output.status"]) === "fail" ? "post-tool-use-failure" : "post-tool-use";
   if (eventType === "file-changed" || eventType === "diff-stats") return "file-changed";
   if (eventType === "permission-decision") {
     const decision = String(metadata.decision ?? "").toLowerCase();
@@ -573,6 +595,50 @@ function mapOpenCodeAmbientEventType(eventType: string, metadata: Record<string,
   }
   if (eventType === "finish-task-suggestion") return "task-completed";
   return "assistant-message";
+}
+
+function isSafeOpenCodeDerivedMetadataKey(key: string): boolean {
+  return /^(input|output)\.(tool|type|status|decision|timestamp|sessionID|messageID|commandKind|commandHash|commandLengthBucket|commandRiskFlags|pathKind|pathHash|pathExtension|pathDepth|pathRiskFlags)$/.test(key);
+}
+
+function derivedCommandsFromOpenCodeMetadata(metadata: Record<string, unknown>): OpenSkillEvent["commands"] {
+  const out: OpenSkillEvent["commands"] = [];
+  for (const prefix of ["input", "output"] as const) {
+    const hash = stringValue(metadata[`${prefix}.commandHash`]);
+    if (!hash) continue;
+    const kind = stringValue(metadata[`${prefix}.commandKind`]) ?? "unknown";
+    const lengthBucket = stringValue(metadata[`${prefix}.commandLengthBucket`]) ?? "unknown-length";
+    const riskFlags = stringArrayValue(metadata[`${prefix}.commandRiskFlags`]);
+    out.push({
+      command: `opencode-derived:${kind}:${hash}`,
+      args: [`length=${lengthBucket}`, ...riskFlags.map((flag) => `risk=${flag}`)],
+      status: statusFromMetadata(metadata.status ?? metadata["output.status"] ?? metadata[`${prefix}.status`])
+    });
+  }
+  return out;
+}
+
+function derivedFilesFromOpenCodeMetadata(metadata: Record<string, unknown>): OpenSkillEvent["files"] {
+  const out: OpenSkillEvent["files"] = [];
+  for (const prefix of ["input", "output"] as const) {
+    const hash = stringValue(metadata[`${prefix}.pathHash`]);
+    if (!hash) continue;
+    const kind = stringValue(metadata[`${prefix}.pathKind`]) ?? "unknown";
+    const extension = stringValue(metadata[`${prefix}.pathExtension`]) ?? "";
+    out.push({
+      path: `opencode-derived:${kind}:${hash}${extension}`,
+      action: "unknown"
+    });
+  }
+  return out;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
 }
 
 function statusFromMetadata(value: unknown): "pass" | "fail" | "blocked" | "timeout" | "unknown" {

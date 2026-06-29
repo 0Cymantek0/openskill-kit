@@ -201,21 +201,42 @@ describe("OSK command family registry", () => {
         source: "opencode-plugin",
         eventType: "post-tool-use",
         capturedAt: "2026-06-27T00:01:00.000Z",
-        metadata: { command: "npm test", status: "pass", tool: "bash" }
+        metadata: {
+          "input.tool": "bash",
+          "input.commandKind": "package-manager",
+          "input.commandHash": "sha256:testcmd",
+          "input.commandLengthBucket": "short",
+          "input.commandRiskFlags": [],
+          "output.status": "success"
+        }
       }),
       JSON.stringify({
         schemaVersion: "openskill-kit.opencode-ambient-event.v1",
         source: "opencode-plugin",
         eventType: "post-tool-use",
         capturedAt: "2026-06-27T00:02:00.000Z",
-        metadata: { command: "npm test", status: "pass", tool: "bash" }
+        metadata: {
+          "input.tool": "bash",
+          "input.commandKind": "package-manager",
+          "input.commandHash": "sha256:testcmd",
+          "input.commandLengthBucket": "short",
+          "input.commandRiskFlags": [],
+          "output.status": "success"
+        }
       }),
       JSON.stringify({
         schemaVersion: "openskill-kit.opencode-ambient-event.v1",
         source: "opencode-plugin",
         eventType: "file-changed",
         capturedAt: "2026-06-27T00:03:00.000Z",
-        metadata: { path: "src/app.ts", status: "ok" }
+        metadata: {
+          "input.pathKind": "relative",
+          "input.pathHash": "sha256:fileone",
+          "input.pathExtension": ".ts",
+          "input.pathDepth": 1,
+          "input.pathRiskFlags": [],
+          "output.status": "ok"
+        }
       })
     ].join("\n") + "\n");
 
@@ -228,8 +249,12 @@ describe("OSK command family registry", () => {
     expect(preview.previewOnly).toBe(true);
     expect(preview.preview).toBeDefined();
     expect(preview.preview!.eventsRead).toBe(3);
+    expect(preview.preview!.recordsRead).toBe(3);
+    expect(preview.preview!.recordsSkipped).toBeUndefined();
     expect(preview.preview!.rawFieldsDetected).toBe(false);
     expect(preview.preview!.candidateBehavior.length).toBeGreaterThan(0);
+    expect(preview.preview!.candidateBehavior.some((item) => item.statement.includes("package-manager command pattern"))).toBe(true);
+    expect(preview.digest.eventsAppended).toBe(0);
     expect(preview.digest.signalsExtracted).toBeGreaterThan(0);
     expect(preview.lifecycle).toBeUndefined();
     const events = await readEvents(root);
@@ -266,8 +291,74 @@ describe("OSK command family registry", () => {
       now: new Date("2026-06-27T00:03:00.000Z")
     });
     expect(preview.preview!.rawFieldsDetected).toBe(true);
+    expect(preview.preview!.recordsRead).toBe(2);
+    expect(preview.preview!.recordsSkipped).toBe(2);
     expect(preview.preview!.rawFieldWarnings.length).toBeGreaterThan(0);
     expect(preview.preview!.rawFieldWarnings[0]).toContain("containsRawFields");
+  });
+
+  it("preview skips eval-origin safe records instead of learning them as normal behavior", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-preview-eval-skip-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "preview-eval-skip", now: new Date("2026-06-27T00:00:00.000Z") });
+    await writeText(root, ".openskill-kit/ambient/opencode-events.jsonl", [
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "post-tool-use",
+        capturedAt: "2026-06-27T00:01:00.000Z",
+        traceMode: "eval",
+        containsRawFields: false,
+        metadata: {
+          "input.tool": "bash",
+          "input.commandKind": "package-manager",
+          "input.commandHash": "sha256:evalcmd",
+          "input.commandLengthBucket": "short",
+          "input.commandRiskFlags": [],
+          "output.status": "success"
+        }
+      }),
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "post-tool-use",
+        capturedAt: "2026-06-27T00:02:00.000Z",
+        traceMode: "eval",
+        containsRawFields: false,
+        metadata: {
+          "input.tool": "bash",
+          "input.commandKind": "package-manager",
+          "input.commandHash": "sha256:evalcmd",
+          "input.commandLengthBucket": "short",
+          "input.commandRiskFlags": [],
+          "output.status": "success"
+        }
+      })
+    ].join("\n") + "\n");
+    await writeText(root, ".openskill-kit/evals/traces/opencode-events.raw.jsonl", [
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event-eval.v1",
+        traceMode: "eval",
+        containsRawFields: true,
+        intendedUse: "local-evaluation-only",
+        rawInput: { command: "SECRET_TOKEN=abc npm test" }
+      })
+    ].join("\n") + "\n");
+
+    const preview = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["opencode-ambient"],
+      previewOnly: true,
+      now: new Date("2026-06-27T00:03:00.000Z")
+    });
+
+    expect(preview.preview!.eventsRead).toBe(0);
+    expect(preview.preview!.recordsRead).toBe(2);
+    expect(preview.preview!.recordsSkipped).toBe(2);
+    expect(preview.preview!.rawFieldsDetected).toBe(true);
+    expect(preview.preview!.rawFieldWarnings.join(" ")).toContain("traceMode=eval");
+    expect(preview.preview!.candidateBehavior).toHaveLength(0);
+    expect(JSON.stringify(preview)).not.toContain("SECRET_TOKEN");
+    expect(await readEvents(root)).toHaveLength(0);
   });
 
   it("writes receipt on every learning run", async () => {

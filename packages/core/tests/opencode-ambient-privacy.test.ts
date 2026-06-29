@@ -3,7 +3,8 @@ import { mkdtemp, readFile, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { compileBehaviorLayer, initAdaptiveProject, type PreferenceGraph, type PreferenceNode } from "../src/index.js";
+import { compileBehaviorLayer, initAdaptiveProject, runLearningPlan, type PreferenceGraph, type PreferenceNode } from "../src/index.js";
+import { readEvents } from "../src/events/store.js";
 
 // These are the fake sensitive values ambient telemetry must never store verbatim.
 const SECRET_COMMAND = "GITHUB_TOKEN=abc123 npm test";
@@ -112,6 +113,51 @@ describe("OpenCode ambient telemetry privacy", () => {
     expect(ambient).not.toContain(SECRET_COMMAND);
     expect(ambient).not.toContain(SECRET_PATH);
     expect(evalText).toContain(SECRET_COMMAND);
+  });
+
+  it("learn preview and apply understand generated safe derived telemetry", async () => {
+    const root = await tempProject();
+    await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const pluginPath = path.join(root, ".openskill-kit", "compiled", "plugin", "opencode", "plugins", "openskillkit.ts");
+    const previousTrace = process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE;
+    delete process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE;
+    try {
+      const imported = await import(`${pathToFileURL(pluginPath).href}?case=${Date.now()}-learn`);
+      const hooks = await imported.OpenSkillKitPlugin({
+        worktree: root,
+        client: { app: { log: async () => ({}) } }
+      });
+      await hooks["tool.execute.after"]({ tool: "bash", command: "npm test" }, { status: "success" });
+      await hooks["tool.execute.after"]({ tool: "bash", command: "npm test" }, { status: "success" });
+    } finally {
+      if (previousTrace === undefined) delete process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE;
+      else process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE = previousTrace;
+    }
+
+    const preview = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["opencode-ambient"],
+      previewOnly: true,
+      now: new Date("2026-06-28T00:10:00.000Z")
+    });
+    expect(preview.preview!.eventsRead).toBe(2);
+    expect(preview.preview!.recordsRead).toBe(2);
+    expect(preview.preview!.recordsSkipped).toBeUndefined();
+    expect(preview.digest.eventsAppended).toBe(0);
+    expect(preview.preview!.candidateBehavior.some((item) => item.statement.includes("package-manager command pattern"))).toBe(true);
+    expect(await readEvents(root)).toHaveLength(0);
+
+    const applied = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["opencode-ambient"],
+      previewOnly: false,
+      now: new Date("2026-06-28T00:11:00.000Z")
+    });
+    expect(applied.digest.eventsAppended).toBe(2);
+    expect(applied.digest.signalsExtracted).toBeGreaterThan(0);
+    const stored = JSON.stringify(await readEvents(root));
+    expect(stored).toContain("opencode-derived:package-manager:sha256:");
+    expect(stored).not.toContain("npm test");
   });
 });
 

@@ -1838,7 +1838,9 @@ function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
   if (result.preview) {
     lines.push("");
     lines.push("--- Preview ---");
-    lines.push(`Events read (transient): ${result.preview.eventsRead}`);
+    lines.push(`Events accepted (transient): ${result.preview.eventsRead}`);
+    if (result.preview.recordsRead !== undefined) lines.push(`Ambient records read: ${result.preview.recordsRead}`);
+    if (result.preview.recordsSkipped !== undefined) lines.push(`Ambient records skipped: ${result.preview.recordsSkipped}`);
     lines.push(`Command/workflow signals: ${result.preview.commandWorkflowSignals}`);
     lines.push(`File/repo patterns: ${result.preview.fileTouchPatterns}`);
     lines.push(`Candidate preferences: ${result.preview.candidatePreferences}`);

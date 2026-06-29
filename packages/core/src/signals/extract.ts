@@ -47,6 +47,7 @@ export async function extractSignalsTransiently(
   const signals: Signal[] = [];
   for (const event of learnableEvents) signals.push(...extractFromEvent(event, now));
   signals.push(...extractRepeatedCommandSignals(learnableEvents, now));
+  signals.push(...extractOpenCodeDerivedTelemetrySignals(learnableEvents, now));
   signals.push(...await readSemanticProposalSignals(root));
   signals.push(...await extractRepoPatternSignals(root, projectId, now));
   return dedupeSignals(signals);
@@ -91,6 +92,7 @@ function extractRepeatedCommandSignals(events: OpenSkillEvent[], now: Date): Sig
     for (const command of event.commands) {
       if (command.status !== "pass") continue;
       const key = [command.command, ...command.args].join(" ").trim();
+      if (key.startsWith("opencode-derived:")) continue;
       if (!key) continue;
       groups.set(key, [...(groups.get(key) ?? []), { event, command }]);
     }
@@ -111,6 +113,86 @@ function extractRepeatedCommandSignals(events: OpenSkillEvent[], now: Date): Sig
       weight: Math.min(0.9, 0.55 + items.length * 0.08),
       evidence: items.map((item) => ({ eventId: item.event.id, command: commandText }))
     }));
+}
+
+function extractOpenCodeDerivedTelemetrySignals(events: OpenSkillEvent[], now: Date): Signal[] {
+  const commandGroups = new Map<string, Array<{ event: OpenSkillEvent; kind: string; lengthBucket: string; riskFlags: string[] }>>();
+  const fileGroups = new Map<string, Array<{ event: OpenSkillEvent; extension: string; kind: string; depth: number; riskFlags: string[] }>>();
+  for (const event of events) {
+    if (event.source.adapter !== "opencode-ambient") continue;
+    const metadata = isRecord(event.normalized.metadata) ? event.normalized.metadata : {};
+    if (event.normalized.traceMode === "eval" || event.normalized.containsRawFields === true) continue;
+    const commandHash = stringValue(metadata["input.commandHash"]) ?? stringValue(metadata["output.commandHash"]);
+    if (commandHash && isSuccessfulOpenCodeMetadata(event, metadata)) {
+      const riskFlags = stringArrayValue(metadata["input.commandRiskFlags"] ?? metadata["output.commandRiskFlags"]);
+      if (!hasSensitiveRiskFlag(riskFlags)) {
+        const kind = stringValue(metadata["input.commandKind"]) ?? stringValue(metadata["output.commandKind"]) ?? "unknown";
+        const lengthBucket = stringValue(metadata["input.commandLengthBucket"]) ?? stringValue(metadata["output.commandLengthBucket"]) ?? "unknown";
+        commandGroups.set(commandHash, [...(commandGroups.get(commandHash) ?? []), { event, kind, lengthBucket, riskFlags }]);
+      }
+    }
+    const pathHash = stringValue(metadata["input.pathHash"]) ?? stringValue(metadata["output.pathHash"]);
+    if (pathHash) {
+      const riskFlags = stringArrayValue(metadata["input.pathRiskFlags"] ?? metadata["output.pathRiskFlags"]);
+      if (!hasSensitiveRiskFlag(riskFlags)) {
+        const extension = stringValue(metadata["input.pathExtension"]) ?? stringValue(metadata["output.pathExtension"]) ?? "";
+        const kind = stringValue(metadata["input.pathKind"]) ?? stringValue(metadata["output.pathKind"]) ?? "unknown";
+        const depth = numberValue(metadata["input.pathDepth"] ?? metadata["output.pathDepth"]) ?? 0;
+        const key = `${kind}:${extension || "extensionless"}:${depth}`;
+        fileGroups.set(key, [...(fileGroups.get(key) ?? []), { event, extension, kind, depth, riskFlags }]);
+      }
+    }
+  }
+  const commandSignals = [...commandGroups.entries()]
+    .filter(([, items]) => items.length >= 2)
+    .map(([hash, items]) => {
+      const first = items[0]!;
+      return SignalSchema.parse({
+        schemaVersion: "openskill-kit.signal.v1",
+        id: `sig_${shortHash(`opencode-derived-command:${hash}:${items.map((item) => item.event.id).join(",")}`)}`,
+        eventIds: items.map((item) => item.event.id),
+        extractedAt: now.toISOString(),
+        extractorId: "opencode-derived-command-v1",
+        kind: "tool-choice",
+        category: "command-policy",
+        scope: { level: "project", paths: [] },
+        statement: `Prefer repeated successful ${first.kind} command pattern observed by OpenCode ambient telemetry (${first.lengthBucket}, ${hash}).`,
+        polarity: "positive",
+        weight: Math.min(0.84, 0.5 + items.length * 0.08),
+        evidence: items.map((item) => ({ eventId: item.event.id, command: `opencode-derived:${first.kind}:${hash}` }))
+      });
+    });
+  const fileSignals = [...fileGroups.values()]
+    .filter((items) => items.length >= 2)
+    .map((items) => {
+      const first = items[0]!;
+      const extension = first.extension || "extensionless";
+      return SignalSchema.parse({
+        schemaVersion: "openskill-kit.signal.v1",
+        id: `sig_${shortHash(`opencode-derived-file:${first.kind}:${extension}:${first.depth}:${items.map((item) => item.event.id).join(",")}`)}`,
+        eventIds: items.map((item) => item.event.id),
+        extractedAt: now.toISOString(),
+        extractorId: "opencode-derived-file-v1",
+        kind: "repo-pattern",
+        category: "workflow",
+        scope: { level: "project", paths: [] },
+        statement: `OpenCode ambient telemetry repeatedly touched ${extension} files (${first.kind}, depth ${first.depth}); prefer matching focused checks before finishing related work.`,
+        polarity: "positive",
+        weight: Math.min(0.74, 0.42 + items.length * 0.06),
+        evidence: items.map((item) => ({ eventId: item.event.id }))
+      });
+    });
+  return [...commandSignals, ...fileSignals];
+}
+
+function isSuccessfulOpenCodeMetadata(event: OpenSkillEvent, metadata: Record<string, unknown>): boolean {
+  if (event.commands.some((command) => command.status === "pass")) return true;
+  const status = String(metadata["output.status"] ?? metadata.status ?? "").toLowerCase();
+  return status === "pass" || status === "success" || status === "ok";
+}
+
+function hasSensitiveRiskFlag(flags: string[]): boolean {
+  return flags.some((flag) => ["secret-keyword", "credential-pattern", "url-with-query", "sensitive-name"].includes(flag));
 }
 
 async function extractRepoPatternSignals(root: string, projectId: string, now: Date): Promise<Signal[]> {
@@ -159,6 +241,22 @@ function eventText(event: OpenSkillEvent): string {
     normalized.content,
     normalized.contentSnippet
   ].filter((value): value is string => typeof value === "string").join("\n");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function dedupeSignals(signals: Signal[]): Signal[] {
