@@ -169,6 +169,38 @@ describe("agent plugin attach planner", () => {
     expect(status.defaultHostStatus.status).toBe("attached");
   });
 
+  it("targets existing OpenCode JSONC config without creating duplicate opencode.json", async () => {
+    const root = await tempProject();
+    await writeGraph(root, [pref("opencode-jsonc", "Prefer existing OpenCode JSONC config patching", "workflow")]);
+    await writeFile(path.join(root, "opencode.jsonc"), [
+      "{",
+      "  // user comment must survive attach",
+      "  \"plugin\": [\"./custom.ts\",],",
+      "  \"keep\": true,",
+      "}",
+      ""
+    ].join("\n"), "utf8");
+
+    const planned = await attachAgentPlugin(root, { host: "opencode", dryRun: true });
+    expect(planned.status).toBe("planned");
+    expect(planned.files.some((file) => file.destination === path.join(root, "opencode.jsonc") && file.action === "update")).toBe(true);
+    expect(planned.files.some((file) => file.destination === path.join(root, "opencode.json"))).toBe(false);
+    expect(String(planned.files.find((file) => file.destination === path.join(root, "opencode.jsonc"))?.preview)).toContain("// user comment must survive attach");
+
+    const attached = await attachAgentPlugin(root, { host: "opencode", dryRun: false, yes: true });
+    expect(attached.status).toBe("attached");
+    await expect(stat(path.join(root, "opencode.json"))).rejects.toThrow();
+    const text = await readFile(path.join(root, "opencode.jsonc"), "utf8");
+    expect(text).toContain("// user comment must survive attach");
+    expect(text).toContain("\"keep\": true");
+    expect(text).toContain("\".opencode/plugins/openskillkit.ts\"");
+    expect(text).toContain("\"openskill-kit\"");
+    const status = await getAgentPluginAttachStatus(root);
+    expect(status.defaultHostStatus.destination).toBe(path.join(root, "opencode.jsonc"));
+    expect(status.defaultHostStatus.status).toBe("attached");
+    expect(status.defaultHostReady).toBe(true);
+  });
+
   it("reports OpenCode attachment incomplete when the generated plugin is not registered", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("opencode-plugin", "Prefer loaded OpenCode plugin hooks", "workflow")]);

@@ -3,6 +3,7 @@ import { Command, Option } from "commander";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
+import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import {
   appendEvent,
   applyPreferenceReview,
@@ -2456,10 +2457,11 @@ async function runUninstallWizard(projectRoot: string, hostInput: string, option
     }
 
     if (planned.nextConfig !== undefined) {
-      const opencodeJsonPath = path.join(projectRoot, "opencode.json");
+      const opencodeJsonPath = await resolveOpenCodeConfigPath(projectRoot);
       assertInsideProject(projectRoot, opencodeJsonPath);
-      await fs.writeFile(opencodeJsonPath, `${JSON.stringify(planned.nextConfig, null, 2)}\n`, "utf8");
-      messages.push("Updated opencode.json.");
+      const text = typeof planned.nextConfig === "string" ? planned.nextConfig : `${JSON.stringify(planned.nextConfig, null, 2)}\n`;
+      await fs.writeFile(opencodeJsonPath, text, "utf8");
+      messages.push(`Updated ${path.basename(opencodeJsonPath)}.`);
     }
 
     const removed: string[] = [];
@@ -2492,13 +2494,40 @@ function formatList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 }
 
-async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean): Promise<{ configChanged: boolean; nextConfig?: Record<string, unknown>; paths: string[] }> {
+async function resolveOpenCodeConfigPath(projectRoot: string): Promise<string> {
+  const jsonPath = path.join(projectRoot, "opencode.json");
+  const jsoncPath = path.join(projectRoot, "opencode.jsonc");
+  const [hasJson, hasJsonc] = await Promise.all([
+    fs.stat(jsonPath).then(() => true).catch(() => false),
+    fs.stat(jsoncPath).then(() => true).catch(() => false)
+  ]);
+  return hasJsonc && !hasJson ? jsoncPath : jsonPath;
+}
+
+function parseOpenCodeConfig(text: string, filePath: string): Record<string, unknown> {
+  const errors: ParseError[] = [];
+  const parsed = parseJsonc(text, errors, { allowTrailingComma: true, disallowComments: false });
+  if (errors.length) {
+    const format = filePath.endsWith(".jsonc") ? "JSONC" : "JSON";
+    throw new Error(`Existing OpenCode config is not valid ${format}: ${errors.map((error) => `error ${error.error} at offset ${error.offset}`).join(", ")}`);
+  }
+  return isRecord(parsed) ? parsed : {};
+}
+
+function applyOpenCodeJsoncEdits(text: string, edits: Array<{ path: Array<string | number>; value: unknown }>): string {
+  return edits.reduce((current, edit) => applyEdits(current, modify(current, edit.path, edit.value, {
+    formattingOptions: { insertSpaces: true, tabSize: 2 }
+  })), text);
+}
+
+async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean): Promise<{ configChanged: boolean; nextConfig?: Record<string, unknown> | string; paths: string[] }> {
   const paths = new Set<string>([".agents/hooks/openskill-kit.json", ".openskill-kit/compiled"]);
-  const opencodeJsonPath = path.join(projectRoot, "opencode.json");
+  const opencodeJsonPath = await resolveOpenCodeConfigPath(projectRoot);
   let configChanged = false;
-  let nextConfig: Record<string, unknown> | undefined;
+  let nextConfig: Record<string, unknown> | string | undefined;
   try {
-    const config = JSON.parse(await fs.readFile(opencodeJsonPath, "utf8")) as Record<string, unknown>;
+    const existing = await fs.readFile(opencodeJsonPath, "utf8");
+    const config = parseOpenCodeConfig(existing, opencodeJsonPath);
     nextConfig = { ...config };
     const mcp = isRecord(nextConfig.mcp) ? { ...nextConfig.mcp } : undefined;
     if (mcp && "openskill-kit" in mcp) {
@@ -2526,6 +2555,13 @@ async function planOpenCodeUninstall(projectRoot: string, deleteState: boolean):
       else delete nextConfig.command;
     }
     if (!configChanged) nextConfig = undefined;
+    else if (opencodeJsonPath.endsWith(".jsonc")) {
+      nextConfig = applyOpenCodeJsoncEdits(existing, [
+        { path: ["plugin"], value: nextConfig.plugin },
+        { path: ["mcp"], value: nextConfig.mcp },
+        { path: ["command"], value: nextConfig.command }
+      ]);
+    }
   } catch (error) {
     if (!isNodeError(error) || error.code !== "ENOENT") throw new Error(`Cannot plan OpenCode config cleanup: ${error instanceof Error ? error.message : String(error)}`);
   }

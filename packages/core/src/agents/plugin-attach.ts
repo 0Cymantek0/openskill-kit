@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { compileBehaviorLayer } from "../compiler/package-compiler.js";
 import { getCompiledPluginStatus, type AgentPluginInstallProfile, type CompiledPluginStatus } from "../compiler/plugin-compiler.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
@@ -229,6 +230,9 @@ export async function getAgentPluginInstallProfile(projectRoot: string): Promise
 
 function hostConfigTargets(root: string, host: AgentPluginAttachHost, pluginDir?: string): HostConfigTarget[] {
   if (host === "opencode") {
+    const configPath = existsSync(path.join(root, "opencode.jsonc")) && !existsSync(path.join(root, "opencode.json"))
+      ? "opencode.jsonc"
+      : "opencode.json";
     const generated = pluginDir ? [
       ...copyTargets(root, pluginDir, "opencode/commands", ".opencode/commands"),
       ...copyTargets(root, pluginDir, "opencode/agents", ".opencode/agents"),
@@ -236,7 +240,7 @@ function hostConfigTargets(root: string, host: AgentPluginAttachHost, pluginDir?
       ...copyTargets(root, pluginDir, "opencode/plugins", ".opencode/plugins"),
       ...copyTargets(root, pluginDir, "opencode/model-routing.json", ".opencode/model-routing.json")
     ] : [];
-    return [{ destination: path.join(root, "opencode.json"), format: "opencode-json" }, ...generated];
+    return [{ destination: path.join(root, configPath), format: "opencode-json" }, ...generated];
   }
   if (host === "codex") return [{ destination: path.join(root, ".codex", "config.toml"), format: "codex-toml" }];
   if (host === "cursor") return [{ destination: path.join(root, ".cursor", "mcp.json"), format: "json-mcp" }];
@@ -405,16 +409,16 @@ async function planOpenCodeConfig(destination: string, command: string, projectR
   const existing = await fs.readFile(destination, "utf8").catch(() => undefined);
   let parsed: Record<string, unknown> = {};
   if (existing?.trim()) {
-    try {
-      parsed = JSON.parse(existing) as Record<string, unknown>;
-    } catch {
+    const parsedConfig = parseOpenCodeConfig(existing);
+    if (parsedConfig.errors.length) {
       return {
         destination,
         action: "blocked",
-        issue: "Existing OpenCode config is not valid JSON",
+        issue: existingOpenCodeIssue(destination, parsedConfig.errors),
         diff: unifiedDiff(destination, existing, existing)
       };
     }
+    parsed = parsedConfig.value;
   }
   const before = existing ?? "";
   const currentMcp = isRecord(parsed.mcp) ? parsed.mcp : {};
@@ -427,26 +431,29 @@ async function planOpenCodeConfig(destination: string, command: string, projectR
       diff: unifiedDiff(destination, before, before)
     };
   }
-  const next: Record<string, unknown> = {
-    ...parsed,
-    plugin: pluginList.items.includes(OPENCODE_PLUGIN_PATH) ? pluginList.items : [...pluginList.items, OPENCODE_PLUGIN_PATH],
-    mcp: {
-      ...currentMcp,
-      "openskill-kit": {
-        type: "local",
-        command: [command],
-        enabled: true,
-        environment: {
-          [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot
-        }
+  const plugin = pluginList.items.includes(OPENCODE_PLUGIN_PATH) ? pluginList.items : [...pluginList.items, OPENCODE_PLUGIN_PATH];
+  const mcp = {
+    ...currentMcp,
+    "openskill-kit": {
+      type: "local",
+      command: [command],
+      enabled: true,
+      environment: {
+        [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot
       }
     }
   };
-  const after = `${JSON.stringify(next, null, 2)}\n`;
+  const next: Record<string, unknown> = { ...parsed, plugin, mcp };
+  const after = existing === undefined
+    ? `${JSON.stringify(next, null, 2)}\n`
+    : applyOpenCodeJsoncEdits(existing, [
+      { path: ["plugin"], value: plugin },
+      { path: ["mcp"], value: mcp }
+    ]);
   return {
     destination,
     action: existing === undefined ? "create" : before === after ? "unchanged" : "update",
-    preview: next,
+    preview: existing === undefined ? next : after,
     diff: unifiedDiff(destination, before, after)
   };
 }
@@ -463,6 +470,23 @@ async function planCopyFile(target: HostConfigTarget): Promise<AgentPluginAttach
   };
 }
 
+function parseOpenCodeConfig(text: string): { value: Record<string, unknown>; errors: ParseError[] } {
+  const errors: ParseError[] = [];
+  const parsed = parseJsonc(text, errors, { allowTrailingComma: true, disallowComments: false });
+  return { value: isRecord(parsed) ? parsed : {}, errors };
+}
+
+function applyOpenCodeJsoncEdits(text: string, edits: Array<{ path: Array<string | number>; value: unknown }>): string {
+  return edits.reduce((current, edit) => applyEdits(current, modify(current, edit.path, edit.value, {
+    formattingOptions: { insertSpaces: true, tabSize: 2 }
+  })), text);
+}
+
+function existingOpenCodeIssue(destination: string, errors: ParseError[]): string {
+  const format = destination.endsWith(".jsonc") ? "JSONC" : "JSON";
+  return `Existing OpenCode config is not valid ${format}: ${errors.map((error) => `error ${error.error} at offset ${error.offset}`).join(", ")}`;
+}
+
 function inspectOpenCodeConfig(
   root: string,
   host: AgentPluginAttachHost,
@@ -472,11 +496,11 @@ function inspectOpenCodeConfig(
   receipts: Array<{ path: string; receipt: AttachReceipt }>
 ): AgentPluginHostAttachStatus {
   let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(existing) as Record<string, unknown>;
-  } catch {
-    return { host, destination, status: "invalid-json", projectRootBound: false, issue: "OpenCode config is not valid JSON" };
+  const parsedConfig = parseOpenCodeConfig(existing);
+  if (parsedConfig.errors.length) {
+    return { host, destination, status: "invalid-json", projectRootBound: false, issue: existingOpenCodeIssue(destination, parsedConfig.errors) };
   }
+  parsed = parsedConfig.value;
   const mcp = isRecord(parsed.mcp) ? parsed.mcp : {};
   const server = isRecord(mcp["openskill-kit"]) ? mcp["openskill-kit"] : undefined;
   const commandValue = server?.command;

@@ -24,7 +24,7 @@ Dry-run first is required for normal workflow. Apply only after reviewing planne
 
 ## Files Written On Apply
 
-- `opencode.json`: adds local `mcp.openskill-kit` with `OPENSKILLKIT_PROJECT_ROOT` and appends `.opencode/plugins/openskillkit.ts` to `plugin`.
+- `opencode.json` or existing `opencode.jsonc`: adds local `mcp.openskill-kit` with `OPENSKILLKIT_PROJECT_ROOT` and appends `.opencode/plugins/openskillkit.ts` to `plugin`.
 - `.opencode/commands/osk-*.md`: 12 command-family files.
 - `.opencode/agents/osk-*.md`: route-specific subagents.
 - `.opencode/skills/osk-*/SKILL.md`: narrow OSK operating skills.
@@ -34,7 +34,7 @@ Dry-run first is required for normal workflow. Apply only after reviewing planne
 - `AGENTS.md`, `CLAUDE.md`, and `.claude/rules/*`: managed instruction manifests, preserving content outside the OpenSkillKit block.
 - `.openskill-kit/installs/plugin-attach-opencode-*.json`: attach receipt.
 
-OpenSkillKit preserves existing `plugin` entries in `opencode.json` and appends `.opencode/plugins/openskillkit.ts` so OpenCode loads metadata-only hooks after restart.
+OpenSkillKit preserves existing `plugin` entries in `opencode.json` or `opencode.jsonc` and appends `.opencode/plugins/openskillkit.ts` so OpenCode loads metadata-only hooks after restart. If a project already has `opencode.jsonc` and no `opencode.json`, setup updates the JSONC file instead of creating a duplicate JSON config.
 
 ## Daily Workflow
 

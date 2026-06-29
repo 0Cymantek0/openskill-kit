@@ -120,6 +120,35 @@ describe("osk CLI facade", () => {
     await expect(stat(path.join(root, "CLAUDE.md"))).rejects.toThrow();
   });
 
+  it("uses existing opencode.jsonc for setup and uninstall without creating opencode.json", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-jsonc-"));
+    await writeFile(path.join(root, "opencode.jsonc"), [
+      "{",
+      "  // keep this OpenCode comment",
+      "  \"plugin\": [\"./custom.ts\",],",
+      "  \"keep\": true,",
+      "}",
+      ""
+    ].join("\n"), "utf8");
+
+    const setup = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "setup", "--non-interactive", "--yes", "--skip-hooks", "--skip-manifests", "--json"], { cwd: root, windowsHide: true });
+    expect(JSON.parse(setup.stdout).status).toBe("installed");
+    await expect(stat(path.join(root, "opencode.json"))).rejects.toThrow();
+    let jsonc = await readFile(path.join(root, "opencode.jsonc"), "utf8");
+    expect(jsonc).toContain("// keep this OpenCode comment");
+    expect(jsonc).toContain("\".opencode/plugins/openskillkit.ts\"");
+    expect(jsonc).toContain("\"openskill-kit\"");
+
+    const uninstalled = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "uninstall", "--non-interactive", "--yes", "--json"], { cwd: root, windowsHide: true });
+    expect(JSON.parse(uninstalled.stdout).status).toBe("uninstalled");
+    await expect(stat(path.join(root, "opencode.json"))).rejects.toThrow();
+    jsonc = await readFile(path.join(root, "opencode.jsonc"), "utf8");
+    expect(jsonc).toContain("// keep this OpenCode comment");
+    expect(jsonc).toContain("\"./custom.ts\"");
+    expect(jsonc).not.toContain("\"openskill-kit\"");
+    expect(jsonc).not.toContain("\".opencode/plugins/openskillkit.ts\"");
+  });
+
   it("applies setup and safely previews/applies uninstall", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-apply-"));
     await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], keep: true }, null, 2), "utf8");
