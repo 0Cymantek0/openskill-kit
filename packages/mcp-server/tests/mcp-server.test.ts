@@ -156,6 +156,12 @@ describe("openskill-kit MCP server", () => {
       expect(bootReadyParsed.plugin.ready).toBe(true);
       expect(bootReadyParsed.plugin.skills).toEqual(expect.arrayContaining(["skills/project-behavior", "skills/project-testing"]));
       expect(bootReadyParsed.plugin.nextActions).toContain("Attach `.openskill-kit/compiled/plugin/` as the local plugin directory.");
+      const mcpTelemetry = bootReadyParsed.status.operations.commandTelemetry;
+      expect(mcpTelemetry.bySurface.mcp.total).toBeGreaterThanOrEqual(3);
+      expect(mcpTelemetry.byFamily.status.success).toBeGreaterThanOrEqual(1);
+      expect(mcpTelemetry.byFamily.learn.failure).toBe(1);
+      expect(mcpTelemetry.byFamily.compile.success).toBeGreaterThanOrEqual(1);
+      expect(JSON.stringify(mcpTelemetry)).not.toContain("not-a-source");
 
       const attachPlan = await client.callTool({
         name: "osk_compile_deploy",

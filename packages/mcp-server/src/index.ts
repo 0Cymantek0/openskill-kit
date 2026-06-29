@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import os from "node:os";
 import path from "node:path";
+import { promises as fs } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -84,6 +85,7 @@ import {
   runFullDoctor,
   runOpenWorldDoctor,
   runOpenWorldRefinement,
+  recordCommandTelemetry,
   runVirtualTestSuite,
   runLifecycleOnce,
   resetProjectState,
@@ -102,7 +104,8 @@ import {
   DEFAULT_AGENT_PLUGIN_ATTACH_HOST,
   PreferenceCategories,
   SuggestedCompileTargets,
-  type InstallTarget
+  type InstallTarget,
+  type CommandTelemetryFamily
 } from "@openskill-kit/core";
 
 const VERSION = "0.1.0";
@@ -161,22 +164,24 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, projectName, init }) => {
       const root = resolveProjectRoot(projectRoot);
-      const initResult = init ? await initAdaptiveProject({ projectRoot: root, projectName }) : undefined;
-      const status = await getAdaptiveStatus(root);
-      const explanation = await explainAdaptiveStatus(root);
-      const plugin = await getCompiledPluginStatus(root);
-      return toolResult({
-        schemaVersion: "openskill-kit.status-facade.v1",
-        initResult,
-        status,
-        explanation,
-        plugin,
-        nextActions: [
-          ...plugin.nextActions,
-          ...(status.pendingReviewCount > 0 ? ["Review pending behavior before compiling or attaching the plugin."] : []),
-          ...(status.activePreferenceCount > 0 && !status.compiled.contextPack ? ["Run `osk_compile_deploy` with action `compile` to refresh compiled behavior."] : [])
-        ]
-      }, root);
+      return toolResult(await withMcpCommandTelemetry(root, "status", async () => {
+        const initResult = init ? await initAdaptiveProject({ projectRoot: root, projectName }) : undefined;
+        const status = await getAdaptiveStatus(root);
+        const explanation = await explainAdaptiveStatus(root);
+        const plugin = await getCompiledPluginStatus(root);
+        return {
+          schemaVersion: "openskill-kit.status-facade.v1",
+          initResult,
+          status,
+          explanation,
+          plugin,
+          nextActions: [
+            ...plugin.nextActions,
+            ...(status.pendingReviewCount > 0 ? ["Review pending behavior before compiling or attaching the plugin."] : []),
+            ...(status.activePreferenceCount > 0 && !status.compiled.contextPack ? ["Run `osk_compile_deploy` with action `compile` to refresh compiled behavior."] : [])
+          ]
+        };
+      }), root);
     }
   );
 
@@ -231,14 +236,16 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, topic }) => {
       const root = resolveProjectRoot(projectRoot);
-      const commands = topic === "learn" ? undefined : renderOskCommandsMarkdown();
-      const learn = topic === "commands" ? undefined : renderOskLearnMarkdown();
-      return toolResult({
-        schemaVersion: "openskill-kit.docs-help.v1",
-        topic,
-        commands,
-        learn
-      }, root);
+      return toolResult(await withMcpCommandTelemetry(root, "status", async () => {
+        const commands = topic === "learn" ? undefined : renderOskCommandsMarkdown();
+        const learn = topic === "commands" ? undefined : renderOskLearnMarkdown();
+        return {
+          schemaVersion: "openskill-kit.docs-help.v1",
+          topic,
+          commands,
+          learn
+        };
+      }), root);
     }
   );
 
@@ -337,7 +344,7 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, sourceMode, selectedSourceIds }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await planLearningSources(root, { sourceMode, selectedSourceIds }), root);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => planLearningSources(root, { sourceMode, selectedSourceIds })), root);
     }
   );
 
@@ -358,13 +365,13 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, sourceMode, selectedSourceIds, previewOnly, maxEvents, allowDuplicateImports }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await runLearningPlan(root, {
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => runLearningPlan(root, {
         sourceMode,
         selectedSourceIds,
         previewOnly,
         maxEvents,
         allowDuplicateImports
-      }), root);
+      })), root);
     }
   );
 
@@ -495,7 +502,7 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, query, paths, changedFiles, commands, limit }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, limit }), root);
+      return toolResult(await withMcpCommandTelemetry(root, "task", () => getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, limit })), root);
     }
   );
 
@@ -523,7 +530,7 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, sessionId, summary, outcome, outcomeReason, files, commands, commandStatus, proposedPatchHash, finalPatchHash, diffStats, learn, compileSafe }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await finishAgentTask({ projectRoot: root, sessionId, summary, outcome, outcomeReason, files, commands, commandStatus, proposedPatchHash, finalPatchHash, diffStats, learn, compileSafe }), root);
+      return toolResult(await withMcpCommandTelemetry(root, "task", () => finishAgentTask({ projectRoot: root, sessionId, summary, outcome, outcomeReason, files, commands, commandStatus, proposedPatchHash, finalPatchHash, diffStats, learn, compileSafe })), root);
     }
   );
 
@@ -688,23 +695,25 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, action, workflowActivate, workflowReject, workflowLock, workflowDemote, workflowActivateAll, ...options }) => {
       const root = resolveProjectRoot(projectRoot);
-      if (action === "queue") return toolResult(await buildReviewQueue(root), root);
-      const preferences = await applyPreferenceReview(root, options);
-      const hasWorkflowAction = workflowActivate.length > 0
-        || workflowReject.length > 0
-        || workflowLock.length > 0
-        || workflowDemote.length > 0
-        || workflowActivateAll;
-      const workflows = hasWorkflowAction
-        ? await applyWorkflowReview(root, {
-          activate: workflowActivate,
-          reject: workflowReject,
-          lock: workflowLock,
-          demote: workflowDemote,
-          activateAll: workflowActivateAll
-        })
-        : undefined;
-      return toolResult(workflows ? { preferences, workflows } : preferences, root);
+      return toolResult(await withMcpCommandTelemetry(root, "review", async () => {
+        if (action === "queue") return buildReviewQueue(root);
+        const preferences = await applyPreferenceReview(root, options);
+        const hasWorkflowAction = workflowActivate.length > 0
+          || workflowReject.length > 0
+          || workflowLock.length > 0
+          || workflowDemote.length > 0
+          || workflowActivateAll;
+        const workflows = hasWorkflowAction
+          ? await applyWorkflowReview(root, {
+            activate: workflowActivate,
+            reject: workflowReject,
+            lock: workflowLock,
+            demote: workflowDemote,
+            activateAll: workflowActivateAll
+          })
+          : undefined;
+        return workflows ? { preferences, workflows } : preferences;
+      }), root);
     }
   );
 
@@ -921,17 +930,19 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, action, packPath, otherPackPath, dryRun, yes, trustHooks, review, maxChangedFiles }) => {
       const root = resolveProjectRoot(projectRoot);
-      if (action === "export") return toolResult(await exportProjectBehaviorPack(root), root);
-      if (!packPath) throw new Error("packPath required for verify, inspect, diff, or import.");
-      const resolvedPack = resolvePath(packPath, root);
-      if (action === "verify") return toolResult(await verifyProjectBehaviorPack(resolvedPack), root);
-      if (action === "inspect") return toolResult(await inspectProjectBehaviorPack(resolvedPack), root);
-      if (action === "diff") {
-        if (!otherPackPath) throw new Error("otherPackPath required for diff.");
-        return toolResult(await diffProjectBehaviorPacks(resolvedPack, resolvePath(otherPackPath, root)), root);
-      }
-      if (dryRun === false && yes !== true) throw new Error("osk_pack_behavior import requires yes=true when dryRun=false.");
-      return toolResult(await importProjectBehaviorPack(root, resolvedPack, { dryRun, trustHooks, review, maxChangedFiles }), root);
+      return toolResult(await withMcpCommandTelemetry(root, "pack", async () => {
+        if (action === "export") return exportProjectBehaviorPack(root);
+        if (!packPath) throw new Error("packPath required for verify, inspect, diff, or import.");
+        const resolvedPack = resolvePath(packPath, root);
+        if (action === "verify") return verifyProjectBehaviorPack(resolvedPack);
+        if (action === "inspect") return inspectProjectBehaviorPack(resolvedPack);
+        if (action === "diff") {
+          if (!otherPackPath) throw new Error("otherPackPath required for diff.");
+          return diffProjectBehaviorPacks(resolvedPack, resolvePath(otherPackPath, root));
+        }
+        if (dryRun === false && yes !== true) throw new Error("osk_pack_behavior import requires yes=true when dryRun=false.");
+        return importProjectBehaviorPack(root, resolvedPack, { dryRun, trustHooks, review, maxChangedFiles });
+      }), root);
     }
   );
 
@@ -1053,16 +1064,18 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, mode, scenariosPath, agentCommand, agentArgs, dryRun, timeoutMs }) => {
       const root = resolveProjectRoot(projectRoot);
-      const report = mode === "compare"
-        ? await runBehaviorCompareEval({ projectRoot: root, scenariosPath })
-        : mode === "external-agent"
-          ? await runExternalAgentEval({ projectRoot: root, scenariosPath, agentCommand, agentArgs, dryRun, timeoutMs })
-          : await runBehaviorEval({ projectRoot: root, scenariosPath });
-      return toolResult({
-        schemaVersion: "openskill-kit.eval-facade.v1",
-        mode,
-        report
-      }, root);
+      return toolResult(await withMcpCommandTelemetry(root, "eval", async () => {
+        const report = mode === "compare"
+          ? await runBehaviorCompareEval({ projectRoot: root, scenariosPath })
+          : mode === "external-agent"
+            ? await runExternalAgentEval({ projectRoot: root, scenariosPath, agentCommand, agentArgs, dryRun, timeoutMs })
+            : await runBehaviorEval({ projectRoot: root, scenariosPath });
+        return {
+          schemaVersion: "openskill-kit.eval-facade.v1",
+          mode,
+          report
+        };
+      }), root);
     }
   );
 
@@ -1191,33 +1204,35 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, action, targets, includeStagedPreview, host, includeHooks, includeManifests, apply, yes }) => {
       const root = resolveProjectRoot(projectRoot);
-      const compile = await compileBehaviorLayer(root, { targets: targets ?? ["plugin"], includeStagedPreview });
-      const deployApproved = apply && yes;
-      const attachment = action === "deploy"
-        ? await attachAgentPlugin(root, { host, dryRun: !deployApproved, yes: deployApproved })
-        : undefined;
-      const hooks = action === "deploy" && includeHooks
-        ? await installAgentHooks({ projectRoot: root, target: "project", dryRun: !deployApproved, yes: deployApproved })
-        : undefined;
-      const manifests = action === "deploy" && includeManifests
-        ? await installInstructionManifests(root, { target: "project", dryRun: !deployApproved, yes: deployApproved })
-        : undefined;
-      const deploymentMessages = [
-        ...(attachment?.messages.map((message) => `Attachment: ${message}`) ?? []),
-        ...(hooks?.messages.map((message) => `Hooks: ${message}`) ?? []),
-        ...(manifests?.messages.map((message) => `Instruction manifests: ${message}`) ?? [])
-      ];
-      return toolResult({
-        schemaVersion: "openskill-kit.compile-deploy.v1",
-        action,
-        compile,
-        attachment,
-        hooks,
-        manifests,
-        nextActions: deploymentMessages.length
-          ? deploymentMessages
-          : ["Run with action `deploy` to preview harness attachment after reviewing compiled artifacts."]
-      }, root);
+      return toolResult(await withMcpCommandTelemetry(root, action === "deploy" ? "deploy" : "compile", async () => {
+        const compile = await compileBehaviorLayer(root, { targets: targets ?? ["plugin"], includeStagedPreview });
+        const deployApproved = apply && yes;
+        const attachment = action === "deploy"
+          ? await attachAgentPlugin(root, { host, dryRun: !deployApproved, yes: deployApproved })
+          : undefined;
+        const hooks = action === "deploy" && includeHooks
+          ? await installAgentHooks({ projectRoot: root, target: "project", dryRun: !deployApproved, yes: deployApproved })
+          : undefined;
+        const manifests = action === "deploy" && includeManifests
+          ? await installInstructionManifests(root, { target: "project", dryRun: !deployApproved, yes: deployApproved })
+          : undefined;
+        const deploymentMessages = [
+          ...(attachment?.messages.map((message) => `Attachment: ${message}`) ?? []),
+          ...(hooks?.messages.map((message) => `Hooks: ${message}`) ?? []),
+          ...(manifests?.messages.map((message) => `Instruction manifests: ${message}`) ?? [])
+        ];
+        return {
+          schemaVersion: "openskill-kit.compile-deploy.v1",
+          action,
+          compile,
+          attachment,
+          hooks,
+          manifests,
+          nextActions: deploymentMessages.length
+            ? deploymentMessages
+            : ["Run with action `deploy` to preview harness attachment after reviewing compiled artifacts."]
+        };
+      }), root);
     }
   );
 
@@ -1405,22 +1420,24 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, action, taskId, query, paths, suiteId, candidateSkillId, runId, sandboxMode, dockerImage, maxRounds, timeoutMs, write }) => {
       const root = resolveProjectRoot(projectRoot);
-      if (action === "eval-report") {
-        if (!runId) throw new Error("runId required for eval-report.");
-        return toolResult(await buildOpenWorldEvalReport(root, runId), root);
-      }
-      if (action === "task-report" || action === "promote-review" || action === "research") {
-        if (!taskId) throw new Error("taskId required for this OpenWorld action.");
-      }
-      if (action === "task-report") return toolResult(await buildOpenWorldTaskReport(root, taskId!), root);
-      if (action === "promote-review") {
-        if (!runId) throw new Error("runId required for promote-review.");
-        return toolResult(await promoteOpenWorldRunToReview(root, runId, { dryRun: true }), root);
-      }
-      if (action === "research") return toolResult(await planOpenWorldResearch(root, taskId!, { query, paths, write }), root);
-      if (!taskId || !suiteId) throw new Error("taskId and suiteId required for evolve or verifier-quality.");
-      if (action === "verifier-quality") return toolResult(await assessOpenWorldVerifierQuality(root, taskId, suiteId, { write }), root);
-      return toolResult(await runOpenWorldRefinement(root, taskId, suiteId, { candidateSkillId, sandboxMode, dockerImage, maxRounds, timeoutMs }), root);
+      return toolResult(await withMcpCommandTelemetry(root, action === "research" ? "research" : action === "evolve" ? "evolve" : "verify", async () => {
+        if (action === "eval-report") {
+          if (!runId) throw new Error("runId required for eval-report.");
+          return buildOpenWorldEvalReport(root, runId);
+        }
+        if (action === "task-report" || action === "promote-review" || action === "research") {
+          if (!taskId) throw new Error("taskId required for this OpenWorld action.");
+        }
+        if (action === "task-report") return buildOpenWorldTaskReport(root, taskId!);
+        if (action === "promote-review") {
+          if (!runId) throw new Error("runId required for promote-review.");
+          return promoteOpenWorldRunToReview(root, runId, { dryRun: true });
+        }
+        if (action === "research") return planOpenWorldResearch(root, taskId!, { query, paths, write });
+        if (!taskId || !suiteId) throw new Error("taskId and suiteId required for evolve or verifier-quality.");
+        if (action === "verifier-quality") return assessOpenWorldVerifierQuality(root, taskId, suiteId, { write });
+        return runOpenWorldRefinement(root, taskId, suiteId, { candidateSkillId, sandboxMode, dockerImage, maxRounds, timeoutMs });
+      }), root);
     }
   );
 
@@ -1439,23 +1456,25 @@ export function createOpenSkillMcpServer(): McpServer {
     },
     async ({ projectRoot, taskId, suiteId, write }) => {
       const root = resolveProjectRoot(projectRoot);
-      const memory = await validateMemoryIntegrity(root);
-      const plugin = await getCompiledPluginStatus(root);
-      const harness = await verifyHarnessReadiness(root);
-      const doctor = await runFullDoctor(root).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
-      const openWorld = taskId && suiteId
-        ? await assessOpenWorldVerifierQuality(root, taskId, suiteId, { write })
-        : await runOpenWorldDoctor(root).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
-      return toolResult({
-        schemaVersion: "openskill-kit.verify-behavior.v1",
-        memory,
-        plugin,
-        harness,
-        doctor,
-        openWorld,
-        hiddenOracleProof: false,
-        proofLevel: taskId && suiteId ? "artifact-verifier" : "local-integrity"
-      }, root);
+      return toolResult(await withMcpCommandTelemetry(root, "verify", async () => {
+        const memory = await validateMemoryIntegrity(root);
+        const plugin = await getCompiledPluginStatus(root);
+        const harness = await verifyHarnessReadiness(root);
+        const doctor = await runFullDoctor(root).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+        const openWorld = taskId && suiteId
+          ? await assessOpenWorldVerifierQuality(root, taskId, suiteId, { write })
+          : await runOpenWorldDoctor(root).catch((error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+        return {
+          schemaVersion: "openskill-kit.verify-behavior.v1",
+          memory,
+          plugin,
+          harness,
+          doctor,
+          openWorld,
+          hiddenOracleProof: false,
+          proofLevel: taskId && suiteId ? "artifact-verifier" : "local-integrity"
+        };
+      }), root);
     }
   );
 
@@ -1971,6 +1990,38 @@ function normalizeInstallTarget(value: string): InstallTarget {
   const normalized = value === legacyProject ? "local-project" : value === legacyGlobal ? "local-global" : value;
   if (normalized === "local-project" || normalized === "local-global" || normalized === "agents-project" || normalized === "agents-global") return normalized;
   throw new Error(`Invalid target: ${value}`);
+}
+
+async function withMcpCommandTelemetry<T>(
+  projectRoot: string,
+  family: CommandTelemetryFamily,
+  fn: () => Promise<T>
+): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    const result = await fn();
+    await recordMcpCommandTelemetry(projectRoot, family, "success", startedAt);
+    return result;
+  } catch (error) {
+    await recordMcpCommandTelemetry(projectRoot, family, "failure", startedAt);
+    throw error;
+  }
+}
+
+async function recordMcpCommandTelemetry(
+  projectRoot: string,
+  family: CommandTelemetryFamily,
+  status: "success" | "failure",
+  startedAt: number
+): Promise<void> {
+  const configExists = await fs.stat(path.join(projectRoot, ".openskill-kit", "config.json")).then(() => true).catch(() => false);
+  if (!configExists) return;
+  await recordCommandTelemetry(projectRoot, {
+    surface: "mcp",
+    family,
+    status,
+    durationMs: Date.now() - startedAt
+  }).catch(() => undefined);
 }
 
 function toolResult(data: unknown, projectRoot: string): CallToolResult {
