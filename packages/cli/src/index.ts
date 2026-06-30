@@ -1962,6 +1962,7 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     `Concept cards: ${result.digest.conceptCards}`,
     `Events appended: ${result.digest.eventsAppended}`,
     `Raw vault records written: ${result.digest.rawVaultRecordsWritten}`,
+    `Overall quality: ${result.quality.overallScore.toFixed(2)} (relevance ${result.quality.relevanceScore.toFixed(2)}, yield ${result.quality.conceptYieldScore.toFixed(2)}, safety ${result.quality.propagationSafetyScore.toFixed(2)})`,
     `Digest: ${result.artifacts.reviewMarkdownPath}`
   ];
   if (result.concepts.length > 0) {

@@ -111,6 +111,15 @@ export interface RawLocalLearningResult {
     eventsAppended: number;
     reviewCandidates: number;
   };
+  quality: {
+    relevanceScore: number;
+    conceptYieldScore: number;
+    reviewReadinessScore: number;
+    propagationSafetyScore: number;
+    overallScore: number;
+    strengths: string[];
+    risks: string[];
+  };
   privacy: string[];
   nextActions: string[];
 }
@@ -295,6 +304,7 @@ export async function runRawLocalLearning(
       eventsAppended,
       reviewCandidates: lifecycle?.graph.candidateCount ?? review?.candidates.length ?? 0
     },
+    quality: buildQualityReport(sourceDigests, dedupedConcepts, previewOnly),
     privacy: [
       "Raw local learning reads full supplied evidence locally.",
       "Raw vault records store deidentified raw content; API keys, secret assignments, user home paths, and project root paths are replaced with typed placeholders.",
@@ -654,6 +664,20 @@ function renderRawLearningDigest(result: RawLocalLearningResult): string {
     `- Behavior atoms: ${result.digest.behaviorAtoms}`,
     `- Concept cards: ${result.digest.conceptCards}`,
     `- Events appended: ${result.digest.eventsAppended}`,
+    `- Overall quality: ${result.quality.overallScore.toFixed(2)}`,
+    "",
+    "## Quality",
+    "",
+    `- Relevance: ${result.quality.relevanceScore.toFixed(2)}`,
+    `- Concept yield: ${result.quality.conceptYieldScore.toFixed(2)}`,
+    `- Review readiness: ${result.quality.reviewReadinessScore.toFixed(2)}`,
+    `- Propagation safety: ${result.quality.propagationSafetyScore.toFixed(2)}`,
+    "",
+    "Strengths:",
+    ...result.quality.strengths.map((item) => `- ${item}`),
+    "",
+    "Risks:",
+    ...result.quality.risks.map((item) => `- ${item}`),
     "",
     "## Concepts",
     ""
@@ -672,6 +696,41 @@ function renderRawLearningDigest(result: RawLocalLearningResult): string {
   lines.push("");
   for (const item of result.privacy) lines.push(`- ${item}`);
   return `${lines.join("\n")}\n`;
+}
+
+function buildQualityReport(sources: RawLearningSourceDigest[], concepts: ConceptCard[], previewOnly: boolean): RawLocalLearningResult["quality"] {
+  const included = sources.filter((source) => source.projectRelevance.decision === "include");
+  const relevanceScore = sources.length
+    ? included.reduce((sum, source) => sum + source.projectRelevance.score, 0) / sources.length
+    : 0;
+  const totalWindows = sources.reduce((sum, source) => sum + source.windowCount, 0);
+  const totalAtoms = sources.reduce((sum, source) => sum + source.atomCount, 0);
+  const conceptYieldScore = totalWindows ? Math.min(1, (concepts.length + totalAtoms * 0.5) / Math.max(1, totalWindows)) : 0;
+  const evidenceBacked = concepts.filter((concept) => concept.evidenceRefs.length > 0 && concept.confidence >= 0.58).length;
+  const reviewReadinessScore = concepts.length ? evidenceBacked / concepts.length : 0;
+  const unsafeSource = sources.some((source) => source.deidentification.matches.length === 0 && /secret|token|key|path/i.test(source.sourcePath));
+  const propagationSafetyScore = unsafeSource ? 0.65 : 1;
+  const overallScore = (relevanceScore * 0.3) + (conceptYieldScore * 0.25) + (reviewReadinessScore * 0.25) + (propagationSafetyScore * 0.2);
+  const strengths: string[] = [];
+  const risks: string[] = [];
+  if (included.length) strengths.push(`${included.length} source(s) matched this project strongly enough for project-scoped learning.`);
+  if (concepts.length) strengths.push(`${concepts.length} reviewable concept card(s) mined from raw learning windows.`);
+  if (sources.some((source) => source.deidentification.redacted)) strengths.push("Deidentification ran before analysis frames and staged imports.");
+  if (!previewOnly && sources.some((source) => source.rawVaultRecordPath)) strengths.push("Deidentified raw vault records were written for local auditability.");
+  if (sources.some((source) => source.projectRelevance.decision === "ask")) risks.push("Some sources are ambiguous and should be reviewed before apply.");
+  if (sources.some((source) => source.projectRelevance.decision === "exclude")) risks.push("Some sources were excluded as unrelated to this project.");
+  if (!concepts.length) risks.push("No concepts mined; evidence may be too sparse or not correction/preference rich.");
+  if (totalWindows > 0 && totalAtoms === 0) risks.push("Learning windows were found but did not produce behavior atoms.");
+  if (!risks.length) risks.push("No blocking risk detected; human review still required before activation.");
+  return {
+    relevanceScore: Number(relevanceScore.toFixed(2)),
+    conceptYieldScore: Number(conceptYieldScore.toFixed(2)),
+    reviewReadinessScore: Number(reviewReadinessScore.toFixed(2)),
+    propagationSafetyScore: Number(propagationSafetyScore.toFixed(2)),
+    overallScore: Number(overallScore.toFixed(2)),
+    strengths,
+    risks
+  };
 }
 
 function normalizeRole(value: string | undefined): CanonicalTurn["role"] {

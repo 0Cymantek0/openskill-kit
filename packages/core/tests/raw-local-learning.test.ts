@@ -41,6 +41,8 @@ describe("raw local learning", () => {
     expect(preview.digest.sourcesIncluded).toBe(1);
     expect(preview.digest.rawVaultRecordsWritten).toBe(0);
     expect(preview.digest.learningWindows).toBeGreaterThanOrEqual(1);
+    expect(preview.quality.overallScore).toBeGreaterThan(0.6);
+    expect(preview.quality.strengths.join(" ")).toContain("reviewable concept");
     expect(preview.concepts.some((concept) => /regression fixture|broad rewrite/i.test(concept.canonicalBehavior))).toBe(true);
     expect(await readFile(preview.artifacts.reviewMarkdownPath, "utf8")).not.toContain("sk-live-secret");
 
@@ -53,6 +55,7 @@ describe("raw local learning", () => {
     });
     expect(applied.digest.rawVaultRecordsWritten).toBe(1);
     expect(applied.digest.eventsAppended).toBeGreaterThan(0);
+    expect(applied.quality.propagationSafetyScore).toBe(1);
     const rawVault = await readFile(applied.sources[0]!.rawVaultRecordPath!, "utf8");
     expect(rawVault).toContain("[PROJECT_ROOT]");
     expect(rawVault).toContain("API_KEY=[REDACTED:secret-assignment]");
