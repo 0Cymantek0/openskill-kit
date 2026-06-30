@@ -11,6 +11,10 @@ import {
   normalizeLearnV2Evidence,
   analyzeLearnV2StructuralDiff,
   summarizeLearnV2Patches,
+  buildLearnV2EpisodeLearningBundle,
+  renderLearnV2ConceptExtractionPrompt,
+  parseLearnV2LlmConceptExtractionOutput,
+  validateLearnV2LlmConceptExtractionOutput,
   ensureLearnV2ModelRoutingArtifacts,
   readLearnV2ConceptStore,
   readPreferenceGraph,
@@ -164,6 +168,51 @@ describe("learn-v2 substrate", () => {
     });
     expect(result.atoms).toHaveLength(0);
     expect(result.rejected.map((item) => item.reason).sort()).toEqual(["missing-or-invalid-evidence-id", "raw-secret-like-output"]);
+  });
+
+  it("builds prompt-safe episode learning bundles and validates LLM JSON output", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_bundle_secret_ref");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Prefer focused parser regression tests.\nassistant: ok"
+    );
+    const [episode] = reconstructLearnV2Episodes(evidence);
+    const bundle = buildLearnV2EpisodeLearningBundle(episode!);
+    const prompt = renderLearnV2ConceptExtractionPrompt(bundle);
+    expect(JSON.stringify(bundle)).not.toContain("raw_bundle_secret_ref");
+    expect(prompt).toContain("OpenCode-configured model routing");
+    expect(prompt).toContain("Every atom must cite");
+
+    const parsed = parseLearnV2LlmConceptExtractionOutput(JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "For parser changes, prefer focused regression tests before broad suites.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [episode!.evidenceIds[0]],
+        confidence: 0.74,
+        rationale: "The user explicitly requested parser regression tests."
+      }],
+      rejected: []
+    }));
+    const valid = validateLearnV2LlmConceptExtractionOutput(episode!, parsed);
+    expect(valid.atoms).toHaveLength(1);
+    expect(valid.atoms[0]!.confidenceCap).toBeLessThanOrEqual(0.78);
+
+    const invalid = validateLearnV2LlmConceptExtractionOutput(episode!, {
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "Never log sk-12345678901234567890.",
+        kind: "security",
+        polarity: "negative",
+        evidenceIds: ["missing"],
+        confidence: 0.9
+      }],
+      rejected: []
+    });
+    expect(invalid.rejected.map((item) => item.reason)).toContain("missing-or-invalid-evidence-id");
   });
 
   it("compiles active concepts but excludes candidates from compatibility outputs", async () => {

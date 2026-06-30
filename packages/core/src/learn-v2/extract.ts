@@ -1,4 +1,11 @@
-import type { LearnV2BehaviorAtom, LearnV2TaskEpisode } from "./schemas.js";
+import {
+  LearnV2EpisodeLearningBundleSchema,
+  LearnV2LlmConceptExtractionOutputSchema,
+  type LearnV2BehaviorAtom,
+  type LearnV2EpisodeLearningBundle,
+  type LearnV2LlmConceptExtractionOutput,
+  type LearnV2TaskEpisode
+} from "./schemas.js";
 import { learnV2CanonicalKey, learnV2NormalizeStatement, learnV2ShortHash, learnV2Snippet } from "./utils.js";
 
 export interface LearnV2ExtractorResult {
@@ -137,6 +144,78 @@ export interface LearnV2LlmExtractionProposal {
   }>;
 }
 
+export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): LearnV2EpisodeLearningBundle {
+  return LearnV2EpisodeLearningBundleSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.episode-learning-bundle.v1",
+    episodeId: episode.id,
+    evidenceIds: episode.evidenceIds,
+    taskHints: episode.taskHints,
+    outcome: episode.outcome,
+    episodeConfidence: episode.episodeConfidence,
+    scope: {
+      paths: episode.pathCluster,
+      branch: episode.branch
+    },
+    messages: episode.messages.slice(0, 40).map((message) => ({
+      evidenceId: message.id,
+      actor: message.actor,
+      status: message.status,
+      text: learnV2Snippet(message.text, 1200)
+    })),
+    tools: episode.toolSummaries.slice(0, 30).map((tool) => ({
+      id: tool.id,
+      toolName: tool.toolName,
+      status: tool.status,
+      command: tool.command,
+      summary: learnV2Snippet(tool.summary, 800)
+    })),
+    patches: episode.patchComparisons.slice(0, 20).map((patch) => ({
+      id: patch.id,
+      paths: patch.paths,
+      structuralClasses: patch.structuralClasses,
+      structuralSummary: patch.structuralSummary,
+      addedLines: patch.addedLines,
+      removedLines: patch.removedLines,
+      summary: learnV2Snippet(patch.summary, 1000)
+    })),
+    instructions: [
+      "Return strict JSON only with schemaVersion openskill-kit.learn-v2.llm-concept-extraction-output.v1.",
+      "Every atom must cite one or more evidenceIds from this bundle.",
+      "Do not include raw refs, raw local paths, secrets, credentials, or private identifiers.",
+      "Prefer scoped, durable project behavior over one-off task facts.",
+      "Commands must be conditional on task/path scope, never unconditional global rules."
+    ]
+  });
+}
+
+export function renderLearnV2ConceptExtractionPrompt(bundle: LearnV2EpisodeLearningBundle): string {
+  return [
+    "You are an OpenSkillKit Learn v2 concept extractor running through OpenCode-configured model routing.",
+    "Treat this bundle as declassified proposal input. Your output is untrusted and will be validated.",
+    "",
+    "Required output JSON:",
+    JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "Durable scoped behavior statement.",
+        kind: "workflow|security|verification|dependency-policy|review-policy|command-policy|scope-boundary",
+        polarity: "positive|negative|neutral",
+        evidenceIds: ["ev_..."],
+        confidence: 0.7,
+        rationale: "Why this follows from cited evidence."
+      }],
+      rejected: []
+    }, null, 2),
+    "",
+    "EpisodeLearningBundle:",
+    JSON.stringify(bundle, null, 2)
+  ].join("\n");
+}
+
+export function parseLearnV2LlmConceptExtractionOutput(text: string): LearnV2LlmConceptExtractionOutput {
+  return LearnV2LlmConceptExtractionOutputSchema.parse(JSON.parse(text));
+}
+
 export function validateLearnV2LlmExtractionProposal(episode: LearnV2TaskEpisode, proposal: LearnV2LlmExtractionProposal): LearnV2ExtractorResult {
   const validEvidence = new Set(episode.evidenceIds);
   const validRawRefs = new Set(episode.rawRefs);
@@ -166,6 +245,10 @@ export function validateLearnV2LlmExtractionProposal(episode: LearnV2TaskEpisode
     }));
   }
   return { atoms, rejected };
+}
+
+export function validateLearnV2LlmConceptExtractionOutput(episode: LearnV2TaskEpisode, output: LearnV2LlmConceptExtractionOutput): LearnV2ExtractorResult {
+  return validateLearnV2LlmExtractionProposal(episode, output);
 }
 
 function extractPreferenceStatements(text: string): string[] {
@@ -207,4 +290,3 @@ function dedupeAtoms(atoms: LearnV2BehaviorAtom[]): LearnV2BehaviorAtom[] {
 function containsRawSecret(text: string): boolean {
   return /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)\b/.test(text);
 }
-

@@ -179,6 +179,43 @@ export const LearnV2TaskEpisodeSchema = z.object({
 });
 export type LearnV2TaskEpisode = z.infer<typeof LearnV2TaskEpisodeSchema>;
 
+export const LearnV2EpisodeLearningBundleSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.episode-learning-bundle.v1"),
+  episodeId: z.string().min(1),
+  evidenceIds: z.array(z.string().min(1)).min(1),
+  taskHints: z.array(z.string()).default([]),
+  outcome: LearnV2TaskEpisodeSchema.shape.outcome,
+  episodeConfidence: z.number().min(0).max(1),
+  scope: z.object({
+    paths: z.array(z.string()).default([]),
+    branch: z.string().optional()
+  }),
+  messages: z.array(z.object({
+    evidenceId: z.string().min(1),
+    actor: LearnV2NormalizedEvidenceSchema.shape.actor,
+    status: LearnV2NormalizedEvidenceSchema.shape.status,
+    text: z.string().max(1200)
+  })).default([]),
+  tools: z.array(z.object({
+    id: z.string().min(1),
+    toolName: z.string().min(1),
+    status: LearnV2ToolCallSummarySchema.shape.status,
+    command: z.string().optional(),
+    summary: z.string().max(800)
+  })).default([]),
+  patches: z.array(z.object({
+    id: z.string().min(1),
+    paths: z.array(z.string()).default([]),
+    structuralClasses: LearnV2PatchComparisonSchema.shape.structuralClasses,
+    structuralSummary: LearnV2PatchComparisonSchema.shape.structuralSummary,
+    addedLines: z.number().int().min(0),
+    removedLines: z.number().int().min(0),
+    summary: z.string().max(1000)
+  })).default([]),
+  instructions: z.array(z.string()).default([])
+});
+export type LearnV2EpisodeLearningBundle = z.infer<typeof LearnV2EpisodeLearningBundleSchema>;
+
 export const LearnV2BehaviorAtomSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.behavior-atom.v1"),
   id: z.string().min(1),
@@ -199,6 +236,24 @@ export const LearnV2BehaviorAtomSchema = z.object({
   risk: z.enum(["low", "medium", "high"]).default("medium")
 });
 export type LearnV2BehaviorAtom = z.infer<typeof LearnV2BehaviorAtomSchema>;
+
+export const LearnV2LlmConceptExtractionOutputSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.llm-concept-extraction-output.v1"),
+  atoms: z.array(z.object({
+    id: z.string().optional(),
+    statement: z.string().min(8).max(500),
+    kind: LearnV2BehaviorAtomSchema.shape.kind,
+    polarity: LearnV2BehaviorAtomSchema.shape.polarity,
+    evidenceIds: z.array(z.string().min(1)).min(1),
+    confidence: z.number().min(0).max(1).optional(),
+    rationale: z.string().min(1).max(800).optional()
+  })).default([]),
+  rejected: z.array(z.object({
+    reason: z.string().min(1),
+    evidenceIds: z.array(z.string()).default([])
+  })).default([])
+});
+export type LearnV2LlmConceptExtractionOutput = z.infer<typeof LearnV2LlmConceptExtractionOutputSchema>;
 
 export const LearnV2ConceptCardSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.concept-card.v1"),
