@@ -6,6 +6,7 @@ import {
   compileLearnV2ConceptPreview,
   extractLearnV2BehaviorAtoms,
   applyLearnV2ConceptReview,
+  activateLearnV2Concepts,
   initAdaptiveProject,
   mergeLearnV2ConceptCards,
   normalizeLearnV2Evidence,
@@ -17,6 +18,7 @@ import {
   validateLearnV2LlmConceptExtractionOutput,
   ensureLearnV2ModelRoutingArtifacts,
   applyLearnV2ModelProposalOutputs,
+  recordLearnV2ConceptOutcome,
   readLearnV2ConceptStore,
   readPreferenceGraph,
   readLearnV2Surface,
@@ -410,6 +412,49 @@ describe("learn-v2 substrate", () => {
     const activationIndex = await readText(reviewed.activationIndexPath);
     expect(activationIndex).toContain(concept.id);
     expect(activationIndex).not.toContain("raw_");
+  });
+
+  it("activates reviewed concepts deterministically and records hashed outcome telemetry", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, `user: ${root} prefer focused regression tests for parser changes in packages/core/src/parser.ts.`, "utf8");
+    await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:00:00Z")
+    });
+    const store = await readLearnV2ConceptStore(root);
+    const concept = store.cards.find((card) => /parser|regression/i.test(card.canonicalBehavior)) ?? store.cards[0]!;
+    await applyLearnV2ConceptReview(root, {
+      accept: [concept.id],
+      narrowScopes: [{ id: concept.id, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] }],
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+    const activated = await activateLearnV2Concepts(root, {
+      query: "parser change needs focused test",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    }, new Date("2026-06-30T00:03:00Z"));
+    expect(activated.matches[0]?.conceptId).toBe(concept.id);
+    expect(activated.matches[0]?.reasons.join(",")).toContain("path:");
+    expect(activated.matches[0]?.score).toBeGreaterThan(0.4);
+
+    const outcome = await recordLearnV2ConceptOutcome(root, {
+      conceptId: concept.id,
+      outcome: "helpful",
+      activationScore: activated.matches[0]!.score,
+      query: `${root} parser change needs focused test`,
+      paths: [path.join(root, "packages/core/src/parser.ts")],
+      commands: ["npm test -- parser"],
+      reason: "matched future parser task"
+    }, new Date("2026-06-30T00:04:00Z"));
+    const rawOutcome = await readText(outcome.outcomePath);
+    expect(rawOutcome).toContain(concept.id);
+    expect(rawOutcome).toContain("queryHash");
+    expect(rawOutcome).not.toContain(root);
+    expect(rawOutcome).not.toContain("npm test -- parser");
+    expect(rawOutcome).not.toContain("packages/core/src/parser.ts");
   });
 });
 

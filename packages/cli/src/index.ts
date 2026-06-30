@@ -81,6 +81,8 @@ import {
   runRawLocalLearning,
   applyLearnV2ConceptReview,
   applyLearnV2ModelProposalOutputs,
+  activateLearnV2Concepts,
+  recordLearnV2ConceptOutcome,
   writeLearnV2ModelRequests,
   runLearnV2RawVaultMaintenance,
   RawLearningModelModes,
@@ -318,6 +320,15 @@ osk.command("learn")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
   .option("--prepare-model-requests", "Write prompt-safe Learn-v2 model request artifacts from the stored episode store")
   .option("--model-output <path>", "Learn-v2 model JSON output file to validate and merge", collectOption, [])
+  .option("--activation-query <text>", "Score reviewed Learn-v2 concepts for a task query")
+  .option("--activation-path <path>", "Path hint for --activation-query", collectOption, [])
+  .option("--activation-command <command>", "Command hint for --activation-query", collectOption, [])
+  .option("--activation-task-type <type>", "Task-type hint for --activation-query", collectOption, [])
+  .option("--activation-negative <signal>", "Negative trigger/suppression signal for --activation-query", collectOption, [])
+  .option("--include-candidate-concepts", "Include candidate/conflict Learn-v2 concepts in activation scoring")
+  .option("--record-concept-outcome <conceptId>", "Record local Learn-v2 concept outcome telemetry for a concept id")
+  .option("--concept-outcome <outcome>", "Concept outcome: helpful|ignored|wrong|harmful|superseded")
+  .option("--concept-outcome-reason <text>", "Short safe reason for --record-concept-outcome")
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--learn-v2-goldens <path>", "Learn-v2 extraction golden scenario JSON file")
   .option("--model-mode <mode>", `Raw learning model mode: ${RawLearningModelModes.join("|")}`, parseRawLearningModelMode, "heuristic-only")
@@ -343,6 +354,31 @@ osk.command("learn")
     if (options.modelOutput.length > 0) {
       const result = await applyLearnV2ModelProposalOutputs(process.cwd(), options.modelOutput);
       output(options.json, result, renderLearnV2ModelProposalApply(result));
+      return;
+    }
+    if (options.recordConceptOutcome) {
+      const outcome = parseConceptOutcome(options.conceptOutcome);
+      const result = await recordLearnV2ConceptOutcome(process.cwd(), {
+        conceptId: options.recordConceptOutcome,
+        outcome,
+        query: options.activationQuery,
+        paths: options.activationPath,
+        commands: options.activationCommand,
+        reason: options.conceptOutcomeReason
+      });
+      output(options.json, result, `Recorded ${result.record.outcome} outcome for ${result.record.conceptId}: ${result.outcomePath}`);
+      return;
+    }
+    if (options.activationQuery || options.activationPath.length || options.activationCommand.length || options.activationTaskType.length) {
+      const result = await activateLearnV2Concepts(process.cwd(), {
+        query: options.activationQuery,
+        paths: options.activationPath,
+        commands: options.activationCommand,
+        taskTypes: options.activationTaskType,
+        negativeSignals: options.activationNegative,
+        includeCandidates: options.includeCandidateConcepts === true
+      });
+      output(options.json, result, renderLearnV2Activation(result));
       return;
     }
     if (options.raw === true) {
@@ -2052,6 +2088,21 @@ function renderLearnV2ModelProposalApply(result: Awaited<ReturnType<typeof apply
   return lines.join("\n");
 }
 
+function renderLearnV2Activation(result: Awaited<ReturnType<typeof activateLearnV2Concepts>>): string {
+  const lines = [
+    `Learn v2 activation matches: ${result.matches.length}`,
+    `Suppressed: ${result.suppressed.length}`,
+    `Activation index: ${result.activationIndexPath}`
+  ];
+  for (const match of result.matches) {
+    lines.push(`  [${match.score.toFixed(3)}] ${match.conceptId} ${match.title} (${match.status}; ${match.reasons.join(", ")})`);
+  }
+  for (const match of result.suppressed.slice(0, 8)) {
+    lines.push(`  SUPPRESSED ${match.conceptId} (${match.reasons.join(", ")})`);
+  }
+  return lines.join("\n");
+}
+
 function renderRawVaultMaintenance(result: Awaited<ReturnType<typeof runLearnV2RawVaultMaintenance>>): string {
   return [
     `Learn v2 raw vault: ${result.status}`,
@@ -2222,6 +2273,12 @@ function parseCompileTarget(value: string): CompileTarget {
 function parseRawLearningModelMode(value: string): typeof RawLearningModelModes[number] {
   if ((RawLearningModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
   throw new Error(`Invalid raw learning model mode: ${value}. Expected one of: ${RawLearningModelModes.join(", ")}`);
+}
+
+function parseConceptOutcome(value: string | undefined): Parameters<typeof recordLearnV2ConceptOutcome>[1]["outcome"] {
+  const outcome = value ?? "helpful";
+  if (["helpful", "ignored", "wrong", "harmful", "superseded"].includes(outcome)) return outcome as Parameters<typeof recordLearnV2ConceptOutcome>[1]["outcome"];
+  throw new Error(`Invalid concept outcome: ${outcome}. Expected helpful, ignored, wrong, harmful, or superseded.`);
 }
 
 function parseConceptBulkAction(value: string | undefined): "accept-low-risk" | "reject-one-off" | "mark-superseded" | undefined {

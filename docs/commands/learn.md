@@ -29,8 +29,9 @@ activation review-gated.
 4. Append redacted events only after approval.
 5. Run lifecycle learning and stage candidates.
 6. For raw local learning, reconstruct task episodes, compress tool/diff/log evidence, extract deterministic behavior atoms, merge concept cards, write a behavior-delta-first review queue, compile preview, and learn-v2 eval report.
-7. For model-assisted extraction, write prompt-safe episode bundles and concept-extraction prompts under `.openskill-kit/learn-v2/model-requests/`; OpenCode-configured agents may fill JSON responses, and OSK validates schema, evidence ids, and leak rules before merging atoms.
-8. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
+7. For activation, write a deterministic Concept Activation Index and replay originating episodes to check that concepts are retrievable from similar task context.
+8. For model-assisted extraction, write prompt-safe episode bundles and concept-extraction prompts under `.openskill-kit/learn-v2/model-requests/`; OpenCode-configured agents may fill JSON responses, and OSK validates schema, evidence ids, and leak rules before merging atoms.
+9. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
 
 ## CLI Examples
 
@@ -44,6 +45,8 @@ openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --model-mode
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --learn-v2-goldens learn-v2-goldens.json
 openskill-kit osk learn --prepare-model-requests
 openskill-kit osk learn --model-output .openskill-kit/learn-v2/model-requests/episode_.../response.json
+openskill-kit osk learn --activation-query "parser change" --activation-path packages/core/src/parser.ts --activation-task-type parser-change
+openskill-kit osk learn --record-concept-outcome concept_... --concept-outcome helpful --activation-query "parser change"
 openskill-kit osk learn --raw-vault-status
 openskill-kit osk learn --gc-raw-vault --max-raw-vault-bytes 50000000
 openskill-kit osk review --concept-accept concept_...
@@ -64,6 +67,8 @@ openskill-kit osk review --write
 - Learn v2 concept store and activation index under `.openskill-kit/learn-v2/`; these remain project-local and are excluded from packs.
 - Learn v2 raw vault maintenance reports hot/pinned/compacted bytes and can garbage-collect expired unpinned blobs.
 - Learn v2 extraction goldens can assert expected concept text, atom kinds, task hints, paths, and forbidden leak text during raw learning eval.
+- Learn v2 activation replay checks whether replayable concepts can be retrieved from originating episode context. Activation scoring uses deterministic lexical, path, command, task-type, confidence, status, and negative-trigger features.
+- Learn v2 concept outcome telemetry stores concept ids plus hashes of query/path/command/task identifiers. It does not store raw task prompts, raw paths, or raw commands.
 - Learn v2 model request artifacts contain declassified episode bundles and prompts only. Model responses are untrusted local inputs; `--model-output` accepts only strict JSON with valid evidence ids and rejects malformed files or secret-like statements without aborting the whole batch.
 - Review-gated command/path label candidates for repeated safe hashes.
 - Review queue path.
@@ -75,6 +80,7 @@ openskill-kit osk review --write
   are replaced with typed placeholders before analysis frames, staged imports,
   review digests, compile previews, eval reports, compiled behavior, or behavior
   packs.
+  Outcome telemetry remains local and hashed.
 
 Learned behavior remains staged until `/osk review` accepts it.
 Unapproved or rejected labels do not compile into command policy, review checklist, or behavior packs.

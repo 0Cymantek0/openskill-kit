@@ -73,7 +73,7 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
       },
       includes: ["preferences", "skills", "hooks", "mcp"],
       privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
-      privacyStatement: "Pack excludes raw events, raw signals, learn-v2 raw vault records, analysis, episode stores, model request artifacts, model response artifacts, concept store, activation index, review, eval and compile-preview artifacts, raw learning vault records, ambient hook metadata, interaction import runs, private evidence blobs, review drafts, eval run output, reports, raw prompts, raw diffs, and secret-like local state.",
+      privacyStatement: "Pack excludes raw events, raw signals, learn-v2 raw vault records, analysis, episode stores, model request artifacts, model response artifacts, outcome telemetry, concept store, activation index, review, eval and compile-preview artifacts, raw learning vault records, ambient hook metadata, interaction import runs, private evidence blobs, review drafts, eval run output, reports, raw prompts, raw diffs, and secret-like local state.",
       generatedArtifacts: copied.map((file) => ({ file, type: artifactType(file) })),
       files: copied,
       hashes

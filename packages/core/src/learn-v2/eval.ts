@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { LearnV2EvalReportSchema, type LearnV2ConceptCard, type LearnV2EvalReport, type LearnV2TaskEpisode } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
+import { scoreLearnV2ActivationEntries } from "./activation.js";
 
 export const LearnV2ExtractionGoldenScenarioSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.extraction-golden.v1"),
@@ -64,6 +65,7 @@ export async function runLearnV2Eval(
         details: leakIssues.length ? leakIssues.join("; ") : "no raw secret/path patterns found in concept output"
       }]
     },
+    evaluateActivationReplay(episodes, concepts),
     ...goldens.map((golden) => evaluateGolden(golden, episodes, concepts))
   ];
   const report = LearnV2EvalReportSchema.parse({
@@ -145,6 +147,51 @@ function evaluateGolden(golden: LearnV2ExtractionGoldenScenario, episodes: Learn
     id: `golden:${golden.id}`,
     status: checks.every((item) => item.status === "pass") ? "pass" : "fail",
     checks
+  };
+}
+
+function evaluateActivationReplay(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2EvalReport["results"][number] {
+  const replayable = concepts.filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded");
+  const entries = replayable.map((concept) => ({
+    conceptId: concept.id,
+    status: concept.status,
+    title: concept.title,
+    phrases: concept.activation.phrases,
+    pathGlobs: concept.activation.pathGlobs,
+    commands: concept.activation.commands,
+    taskTypes: concept.scope.taskTypes,
+    negativeTriggers: concept.scope.negativeTriggers,
+    confidence: concept.confidence,
+    risk: concept.risk
+  }));
+  const misses: string[] = [];
+  for (const concept of replayable) {
+    const episode = episodes.find((item) => item.evidenceIds.some((id) => concept.evidenceIds.includes(id)));
+    if (!episode) {
+      misses.push(`${concept.id}:no-origin-episode`);
+      continue;
+    }
+    const result = scoreLearnV2ActivationEntries(entries, {
+      includeCandidates: true,
+      query: [
+        ...episode.taskHints,
+        ...episode.messages.slice(0, 6).map((message) => message.text)
+      ].join(" "),
+      paths: episode.pathCluster,
+      commands: episode.toolSummaries.flatMap((tool) => tool.command ? [tool.command] : []),
+      taskTypes: episode.taskHints
+    });
+    if (!result.slice(0, 5).some((match) => match.conceptId === concept.id && match.score > 0)) misses.push(`${concept.id}:not-retrieved`);
+  }
+  const pass = replayable.length === 0 || ((replayable.length - misses.length) / replayable.length) >= 0.8;
+  return {
+    id: "activation-replay",
+    status: pass ? "pass" : "fail",
+    checks: [check(
+      "originating-episode-retrieval",
+      pass,
+      replayable.length ? `${replayable.length - misses.length}/${replayable.length} concept(s) retrieved from originating episode context${misses.length ? `; misses: ${misses.slice(0, 6).join(", ")}` : ""}` : "no replayable concepts"
+    )]
   };
 }
 

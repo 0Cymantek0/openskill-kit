@@ -53,7 +53,9 @@ import {
   readLearnV2ConceptStore,
   applyLearnV2ConceptReview,
   applyLearnV2ModelProposalOutputs,
+  activateLearnV2Concepts,
   compileLearnV2ConceptPreview,
+  recordLearnV2ConceptOutcome,
   writeLearnV2ModelRequests,
   runLearnV2RawVaultMaintenance,
   explainInteractionImport,
@@ -523,6 +525,53 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     async ({ projectRoot, outputPaths }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await withMcpCommandTelemetry(root, "learn", () => applyLearnV2ModelProposalOutputs(root, outputPaths.map((file) => resolvePath(file, root)))), root);
+    }
+  );
+
+  registerTool(
+    "osk_activate_learn_v2_concepts",
+    {
+      title: "OpenSkillKit Learn v2 Concept Activation",
+      description: "Score reviewed Learn v2 concepts for the current task using deterministic lexical, path, command, task-type, and negative-trigger matching.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        query: z.string().optional(),
+        paths: z.array(z.string().min(1)).default([]),
+        commands: z.array(z.string().min(1)).default([]),
+        taskTypes: z.array(z.string().min(1)).default([]),
+        negativeSignals: z.array(z.string().min(1)).default([]),
+        includeCandidates: z.boolean().default(false),
+        limit: z.number().int().min(1).max(50).default(8)
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, ...query }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await activateLearnV2Concepts(root, query), root);
+    }
+  );
+
+  registerTool(
+    "osk_record_learn_v2_concept_outcome",
+    {
+      title: "OpenSkillKit Learn v2 Concept Outcome",
+      description: "Record local outcome telemetry for a Learn v2 concept activation without storing raw prompts, paths, or commands.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        conceptId: z.string().min(1),
+        outcome: z.enum(["helpful", "ignored", "wrong", "harmful", "superseded"]),
+        activationScore: z.number().min(0).max(1).optional(),
+        query: z.string().optional(),
+        taskId: z.string().optional(),
+        paths: z.array(z.string().min(1)).default([]),
+        commands: z.array(z.string().min(1)).default([]),
+        reason: z.string().max(500).optional()
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, ...input }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => recordLearnV2ConceptOutcome(root, input)), root);
     }
   );
 
