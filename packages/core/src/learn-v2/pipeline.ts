@@ -18,6 +18,7 @@ import { compileLearnV2ConceptPreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
 import { writeLearnV2ConceptStore } from "./store.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
+import { learnV2ModelRequestsRoot, writeLearnV2EpisodeStore, writeLearnV2ModelRequests } from "./model-proposals.js";
 import {
   learnV2DeclassifyText,
   learnV2Hash,
@@ -87,6 +88,8 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2EvalReportPath: string;
     learnV2ConceptStorePath: string;
     learnV2ModelRoutingPath: string;
+    learnV2EpisodeStorePath: string;
+    learnV2ModelRequestDir: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -114,6 +117,9 @@ interface LearnV2RawLocalLearningRunCompat {
     reviewQueuePath: string;
     compilePreviewPath: string;
     evalReportPath: string;
+    episodeStorePath: string;
+    modelRequestDir: string;
+    modelRequestCount: number;
   };
 }
 
@@ -254,6 +260,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   }
 
   const episodes = reconstructLearnV2Episodes(allEvidence);
+  const episodeStorePath = await writeLearnV2EpisodeStore(root, episodes, now);
+  const modelRequests = await writeLearnV2ModelRequests(root, episodes, now);
   const extracted = extractLearnV2BehaviorAtoms(episodes);
   const concepts = mergeLearnV2ConceptCards(extracted.atoms, now);
   await writeLearnV2ConceptStore(root, concepts, now);
@@ -292,7 +300,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2CompilePreviewPath: compilePreview.artifacts.markdown,
       learnV2EvalReportPath: evalReport.artifacts.markdown,
       learnV2ConceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
-      learnV2ModelRoutingPath: modelRouting.artifacts.routingJson
+      learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
+      learnV2EpisodeStorePath: episodeStorePath,
+      learnV2ModelRequestDir: learnV2ModelRequestsRoot(root)
     },
     lifecycle,
     digest: {
@@ -314,7 +324,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       "Output-facing analysis frames, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
       "Raw vault refs are local-only and never exportable through compile, pack, or sync artifacts.",
       "Concept cards remain candidates until explicit review activates them.",
-      "Model-assisted extraction is deterministic-only here unless routed through OpenCode-configured agents in a later stage."
+      "Model-assisted extraction uses prompt-safe Learn v2 request artifacts for OpenCode-configured agents; model outputs are untrusted until schema and evidence validation pass."
     ],
     nextActions: previewOnly
       ? [
@@ -323,6 +333,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         ]
       : [
           "Inspect the learn-v2 review queue; accept, edit, narrow, or reject concept cards before compile.",
+          "Optionally run an OpenCode-configured concept extractor on generated learn-v2 model request prompts, then ingest validated JSON outputs.",
           "Run /osk review and /osk compile after activation; candidate concepts do not compile."
         ],
     learnV2: {
@@ -333,7 +344,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       rejectedAtoms: extracted.rejected,
       reviewQueuePath: reviewQueue.artifacts.markdown,
       compilePreviewPath: compilePreview.artifacts.markdown,
-      evalReportPath: evalReport.artifacts.markdown
+      evalReportPath: evalReport.artifacts.markdown,
+      episodeStorePath,
+      modelRequestDir: learnV2ModelRequestsRoot(root),
+      modelRequestCount: modelRequests.requestCount
     }
   };
   await writeJsonAtomic(digestPath, result);
@@ -522,6 +536,8 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Compile preview: ${result.artifacts.learnV2CompilePreviewPath}`,
     `- Eval report: ${result.artifacts.learnV2EvalReportPath}`,
     `- Model routing: ${result.artifacts.learnV2ModelRoutingPath}`,
+    `- Episode store: ${result.artifacts.learnV2EpisodeStorePath}`,
+    `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
     "",
     "## Quality",
     "",

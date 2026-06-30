@@ -16,12 +16,14 @@ import {
   parseLearnV2LlmConceptExtractionOutput,
   validateLearnV2LlmConceptExtractionOutput,
   ensureLearnV2ModelRoutingArtifacts,
+  applyLearnV2ModelProposalOutputs,
   readLearnV2ConceptStore,
   readPreferenceGraph,
   readLearnV2Surface,
   reconstructLearnV2Episodes,
   runRawLocalLearning,
   runLearnV2RawVaultMaintenance,
+  writeLearnV2ModelRequests,
   runLearnV2Eval,
   scoreLearnV2ProjectRelevance,
   validateLearnV2LlmExtractionProposal,
@@ -277,8 +279,67 @@ describe("learn-v2 substrate", () => {
     expect(result.artifacts.learnV2RawVaultDir).toContain(".openskill-kit");
     expect(result.artifacts.learnV2ReviewQueuePath).toBeTruthy();
     expect(result.artifacts.learnV2ModelRoutingPath).toContain("osk-model-routing.json");
+    expect(result.artifacts.learnV2EpisodeStorePath).toContain("episodes");
+    expect(result.artifacts.learnV2ModelRequestDir).toContain("model-requests");
+    expect(result.learnV2.modelRequestCount).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(result.concepts)).not.toContain(root);
     expect(result.learnV2).toBeTruthy();
+  });
+
+  it("prepares prompt-safe model requests and validates model outputs before concept merge", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "codex-transcript.md");
+    await writeFile(transcript, `user: ${root} prefer focused parser regression tests in packages/core/src/parser.ts.\nassistant: ok`, "utf8");
+    const learned = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:00:00Z")
+    });
+    const requests = await writeLearnV2ModelRequests(root, undefined, new Date("2026-06-30T00:01:00Z"));
+    expect(requests.requestCount).toBe(learned.learnV2.episodes.length);
+    const request = requests.requests[0]!;
+    const prompt = await readText(request.promptPath);
+    const bundle = await readText(request.bundlePath);
+    expect(prompt).toContain("EpisodeLearningBundle");
+    expect(prompt).not.toContain(root);
+    expect(bundle).not.toContain("raw_");
+
+    const [evidenceId] = learned.learnV2.episodes[0]!.evidenceIds;
+    const outputPath = path.join(path.dirname(request.promptPath), "response.json");
+    await writeFile(outputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "For parser changes, prefer focused parser regression tests before broad suites.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [evidenceId],
+        confidence: 0.74,
+        rationale: "The episode asks for focused parser regression tests."
+      }],
+      rejected: []
+    }), "utf8");
+    const badOutputPath = path.join(path.dirname(request.promptPath), "bad-response.json");
+    await writeFile(badOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "Never log sk-12345678901234567890.",
+        kind: "security",
+        polarity: "negative",
+        evidenceIds: ["missing"],
+        confidence: 0.99
+      }],
+      rejected: []
+    }), "utf8");
+    const malformedOutputPath = path.join(path.dirname(request.promptPath), "malformed-response.json");
+    await writeFile(malformedOutputPath, "{", "utf8");
+
+    const applied = await applyLearnV2ModelProposalOutputs(root, [outputPath, badOutputPath, malformedOutputPath], new Date("2026-06-30T00:02:00Z"));
+    const store = await readLearnV2ConceptStore(root);
+    expect(applied.atomCount).toBe(1);
+    expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining(["missing-or-invalid-evidence-id", "invalid-json-or-schema"]));
+    expect(store.cards.some((card) => /parser regression tests/i.test(card.canonicalBehavior))).toBe(true);
+    expect(JSON.stringify(store)).not.toContain("sk-12345678901234567890");
   });
 
   it("projects existing routing into learn-v2 OpenCode agent artifacts without owning a provider", async () => {

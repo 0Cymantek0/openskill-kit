@@ -29,7 +29,8 @@ activation review-gated.
 4. Append redacted events only after approval.
 5. Run lifecycle learning and stage candidates.
 6. For raw local learning, reconstruct task episodes, compress tool/diff/log evidence, extract deterministic behavior atoms, merge concept cards, write a behavior-delta-first review queue, compile preview, and learn-v2 eval report.
-7. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
+7. For model-assisted extraction, write prompt-safe episode bundles and concept-extraction prompts under `.openskill-kit/learn-v2/model-requests/`; OpenCode-configured agents may fill JSON responses, and OSK validates schema, evidence ids, and leak rules before merging atoms.
+8. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
 
 ## CLI Examples
 
@@ -41,6 +42,8 @@ openskill-kit osk learn --source current-session --source git-local --apply
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --model-mode remote-redacted --apply
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --learn-v2-goldens learn-v2-goldens.json
+openskill-kit osk learn --prepare-model-requests
+openskill-kit osk learn --model-output .openskill-kit/learn-v2/model-requests/episode_.../response.json
 openskill-kit osk learn --raw-vault-status
 openskill-kit osk learn --gc-raw-vault --max-raw-vault-bytes 50000000
 openskill-kit osk review --concept-accept concept_...
@@ -61,6 +64,7 @@ openskill-kit osk review --write
 - Learn v2 concept store and activation index under `.openskill-kit/learn-v2/`; these remain project-local and are excluded from packs.
 - Learn v2 raw vault maintenance reports hot/pinned/compacted bytes and can garbage-collect expired unpinned blobs.
 - Learn v2 extraction goldens can assert expected concept text, atom kinds, task hints, paths, and forbidden leak text during raw learning eval.
+- Learn v2 model request artifacts contain declassified episode bundles and prompts only. Model responses are untrusted local inputs; `--model-output` accepts only strict JSON with valid evidence ids and rejects malformed files or secret-like statements without aborting the whole batch.
 - Review-gated command/path label candidates for repeated safe hashes.
 - Review queue path.
 - Privacy statement confirming no raw prompts, raw diffs, secrets, or hidden benchmark answers were copied.

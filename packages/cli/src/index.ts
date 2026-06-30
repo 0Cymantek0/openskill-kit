@@ -80,6 +80,8 @@ import {
   readInteractionPool,
   runRawLocalLearning,
   applyLearnV2ConceptReview,
+  applyLearnV2ModelProposalOutputs,
+  writeLearnV2ModelRequests,
   runLearnV2RawVaultMaintenance,
   RawLearningModelModes,
   readEvidenceCards,
@@ -314,6 +316,8 @@ osk.command("learn")
   .option("--raw-vault-status", "Show learn-v2 raw vault retention and budget status")
   .option("--gc-raw-vault", "Expire learn-v2 raw vault blobs whose retention window has elapsed")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
+  .option("--prepare-model-requests", "Write prompt-safe Learn-v2 model request artifacts from the stored episode store")
+  .option("--model-output <path>", "Learn-v2 model JSON output file to validate and merge", collectOption, [])
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--learn-v2-goldens <path>", "Learn-v2 extraction golden scenario JSON file")
   .option("--model-mode <mode>", `Raw learning model mode: ${RawLearningModelModes.join("|")}`, parseRawLearningModelMode, "heuristic-only")
@@ -329,6 +333,16 @@ osk.command("learn")
         maxHotBytes: options.maxRawVaultBytes
       });
       output(options.json, result, renderRawVaultMaintenance(result));
+      return;
+    }
+    if (options.prepareModelRequests === true) {
+      const result = await writeLearnV2ModelRequests(process.cwd());
+      output(options.json, result, renderLearnV2ModelRequests(result));
+      return;
+    }
+    if (options.modelOutput.length > 0) {
+      const result = await applyLearnV2ModelProposalOutputs(process.cwd(), options.modelOutput);
+      output(options.json, result, renderLearnV2ModelProposalApply(result));
       return;
     }
     if (options.raw === true) {
@@ -1998,7 +2012,8 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     `Events appended: ${result.digest.eventsAppended}`,
     `Raw vault records written: ${result.digest.rawVaultRecordsWritten}`,
     `Overall quality: ${result.quality.overallScore.toFixed(2)} (relevance ${result.quality.relevanceScore.toFixed(2)}, yield ${result.quality.conceptYieldScore.toFixed(2)}, safety ${result.quality.propagationSafetyScore.toFixed(2)})`,
-    `Digest: ${result.artifacts.reviewMarkdownPath}`
+    `Digest: ${result.artifacts.reviewMarkdownPath}`,
+    `Model requests: ${result.artifacts.learnV2ModelRequestDir}`
   ];
   if (result.concepts.length > 0) {
     lines.push("");
@@ -2011,6 +2026,29 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     lines.push(`WARNING: ${source.projectRelevance.decision} ${source.sourcePath} (${source.projectRelevance.reasons.join(", ") || "low project relevance"})`);
   }
   lines.push(...result.nextActions);
+  return lines.join("\n");
+}
+
+function renderLearnV2ModelRequests(result: Awaited<ReturnType<typeof writeLearnV2ModelRequests>>): string {
+  const lines = [
+    `Learn v2 model requests: ${result.requestCount}`,
+    ...result.requests.map((request) => `  ${request.episodeId}: ${request.promptPath}`)
+  ];
+  lines.push(...result.instructions);
+  return lines.join("\n");
+}
+
+function renderLearnV2ModelProposalApply(result: Awaited<ReturnType<typeof applyLearnV2ModelProposalOutputs>>): string {
+  const lines = [
+    `Learn v2 model outputs applied: ${result.outputFiles.length}`,
+    `Validated atoms: ${result.atomCount}`,
+    `Rejected proposals: ${result.rejected.length}`,
+    `Concept store cards: ${result.conceptCount}`,
+    `Concept store: ${result.conceptStorePath}`
+  ];
+  for (const item of result.rejected.slice(0, 20)) {
+    lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
+  }
   return lines.join("\n");
 }
 

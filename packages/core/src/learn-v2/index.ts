@@ -14,4 +14,5 @@ export * from "./compile.js";
 export * from "./eval.js";
 export * from "./store.js";
 export * from "./model-routing.js";
+export * from "./model-proposals.js";
 export * from "./pipeline.js";

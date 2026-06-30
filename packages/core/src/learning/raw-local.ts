@@ -99,6 +99,10 @@ export interface RawLocalLearningResult {
     learnV2ReviewQueuePath?: string;
     learnV2CompilePreviewPath?: string;
     learnV2EvalReportPath?: string;
+    learnV2ConceptStorePath?: string;
+    learnV2ModelRoutingPath?: string;
+    learnV2EpisodeStorePath?: string;
+    learnV2ModelRequestDir?: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -125,7 +129,19 @@ export interface RawLocalLearningResult {
   };
   privacy: string[];
   nextActions: string[];
-  learnV2?: unknown;
+  learnV2?: {
+    schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1";
+    episodes: unknown[];
+    concepts: unknown[];
+    rejectedAtoms: unknown[];
+    conceptStorePath: string;
+    reviewQueuePath: string;
+    compilePreviewPath: string;
+    evalReportPath: string;
+    episodeStorePath: string;
+    modelRequestDir: string;
+    modelRequestCount: number;
+  };
 }
 
 export async function runRawLocalLearning(

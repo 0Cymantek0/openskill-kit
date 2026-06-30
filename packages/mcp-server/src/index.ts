@@ -52,7 +52,9 @@ import {
   runRawLocalLearning,
   readLearnV2ConceptStore,
   applyLearnV2ConceptReview,
+  applyLearnV2ModelProposalOutputs,
   compileLearnV2ConceptPreview,
+  writeLearnV2ModelRequests,
   runLearnV2RawVaultMaintenance,
   explainInteractionImport,
   installSkill,
@@ -490,6 +492,37 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
       const config = await readProjectConfig(root);
       const store = await readLearnV2ConceptStore(root);
       return toolResult(await compileLearnV2ConceptPreview(root, config, store.cards, new Date()), root);
+    }
+  );
+
+  registerTool(
+    "osk_prepare_learn_v2_model_requests",
+    {
+      title: "OpenSkillKit Learn v2 Model Request Preparation",
+      description: "Write prompt-safe episode bundles and concept-extraction prompts for OpenCode-configured agents. Does not call a provider.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await writeLearnV2ModelRequests(root), root);
+    }
+  );
+
+  registerTool(
+    "osk_apply_learn_v2_model_outputs",
+    {
+      title: "OpenSkillKit Learn v2 Model Output Apply",
+      description: "Validate OpenCode-routed model JSON outputs against stored Learn v2 episodes and merge accepted atoms into candidate concepts.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        outputPaths: z.array(z.string().min(1)).min(1)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, outputPaths }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => applyLearnV2ModelProposalOutputs(root, outputPaths.map((file) => resolvePath(file, root)))), root);
     }
   );
 
