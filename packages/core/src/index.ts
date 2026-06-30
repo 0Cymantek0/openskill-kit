@@ -47,6 +47,7 @@ export * from "./preferences/graph.js";
 export * from "./preferences/render.js";
 export * from "./preferences/retrieval.js";
 export * from "./preferences/proposals.js";
+export * from "./preferences/labels.js";
 export * from "./preferences/integrity.js";
 export * from "./routing/schema.js";
 export * from "./routing/router.js";

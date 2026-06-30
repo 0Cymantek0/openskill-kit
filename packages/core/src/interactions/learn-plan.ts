@@ -7,6 +7,7 @@ import { appendEvent, readEvents, readProjectConfig } from "../events/store.js";
 import { EventSchema, type OpenSkillEvent } from "../events/schema.js";
 import { runLifecycleOnce, type LifecycleRunnerResult } from "../lifecycle/runner.js";
 import { buildReviewQueue } from "../preferences/proposals.js";
+import { summarizeAmbientLabelCandidates, updateAmbientLabelCandidates } from "../preferences/labels.js";
 import { extractSignalsTransiently } from "../signals/extract.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { inspectGitLocalContext, type GitLocalContextResult } from "./git-local.js";
@@ -94,7 +95,15 @@ export const LearnRunSchema = z.object({
     candidateBehavior: z.array(z.object({
       kind: z.enum(["preference", "workflow", "command-policy", "file-pattern"]),
       statement: z.string()
-    }))
+    })),
+    labelCandidates: z.array(z.object({
+      kind: z.enum(["command", "path"]),
+      hash: z.string(),
+      evidenceCount: z.number().int().min(0),
+      status: z.enum(["candidate", "approved", "rejected"]),
+      labelRequired: z.literal(true),
+      metadata: z.record(z.string(), z.string().optional())
+    })).default([])
   }).optional(),
   receipt: z.object({
     schemaVersion: z.literal("openskill-kit.learn-receipt.v1"),
@@ -247,6 +256,7 @@ export async function runLearningPlan(
   let ambientRecordsSkipped = 0;
   let ambientRawFieldsDetected = false;
   const ambientRawFieldWarnings: string[] = [];
+  const labelCandidateSummaries: NonNullable<z.infer<typeof LearnRunSchema>["preview"]>["labelCandidates"] = [];
   let git: GitLocalContextResult | undefined;
   let opencode: OpenCodeAmbientAppendResult | undefined;
 
@@ -304,9 +314,11 @@ export async function runLearningPlan(
         ambientRawFieldsDetected = ambientRawFieldsDetected || parsed.rawFieldsDetected;
         ambientRawFieldWarnings.push(...parsed.rawFieldWarnings);
         transientEvents.push(...parsed.events);
+        labelCandidateSummaries.push(...summarizeAmbientLabelCandidates(parsed.events));
       } else {
         opencode = await appendOpenCodeAmbientEvents(projectRoot, { maxEvents: options.maxEvents ?? 200, now: options.now });
         safeEventIds.push(...opencode.eventIds);
+        labelCandidateSummaries.push(...opencode.labelCandidates);
       }
     }
   }
@@ -349,7 +361,8 @@ export async function runLearningPlan(
       fileTouchPatterns,
       candidatePreferences,
       candidateWorkflows,
-      candidateBehavior
+      candidateBehavior,
+      labelCandidates: labelCandidateSummaries
     };
   }
 
@@ -445,6 +458,14 @@ interface OpenCodeAmbientAppendResult {
   appendedCount: number;
   skippedCount: number;
   eventIds: string[];
+  labelCandidates: Array<{
+    kind: "command" | "path";
+    hash: string;
+    evidenceCount: number;
+    status: "candidate" | "approved" | "rejected";
+    labelRequired: true;
+    metadata: Record<string, string | undefined>;
+  }>;
 }
 
 async function inspectOpenCodeAmbientMetadata(projectRoot: string): Promise<OpenCodeAmbientInspection> {
@@ -548,7 +569,8 @@ async function appendOpenCodeAmbientEvents(projectRoot: string, options: { maxEv
     });
     eventIds.push(appended.event.id);
   }
-  return { path: file, readCount: parsed.readCount, appendedCount: eventIds.length, skippedCount: parsed.skippedCount, eventIds };
+  const labels = await updateAmbientLabelCandidates(projectRoot, parsed.events, options.now ?? new Date());
+  return { path: file, readCount: parsed.readCount, appendedCount: eventIds.length, skippedCount: parsed.skippedCount, eventIds, labelCandidates: labels.candidates };
 }
 
 function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; traceMode?: string; containsRawFields: boolean; rawKeyPaths: string[]; metadata: Record<string, unknown> } | undefined {

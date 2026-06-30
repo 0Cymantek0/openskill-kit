@@ -11,6 +11,7 @@ import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomi
 import { readWorkflowGraph } from "../workflows/store.js";
 import type { WorkflowNode } from "../workflows/schema.js";
 import { readPreferenceGraph } from "./graph.js";
+import { readAmbientLabelLedger, type AmbientLabel } from "./labels.js";
 import type { PreferenceNode } from "./schema.js";
 
 export const SemanticPreferenceProposalSchema = z.object({
@@ -60,6 +61,7 @@ export interface ReviewQueueResult {
   proposals: SemanticPreferenceProposal[];
   candidates: PreferenceNode[];
   workflowCandidates: WorkflowNode[];
+  labelCandidates: AmbientLabel[];
   evidenceCards: EvidenceCard[];
 }
 
@@ -106,14 +108,17 @@ export async function buildReviewQueue(projectRoot: string): Promise<ReviewQueue
   const candidates = graph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict");
   const workflowGraph = await readWorkflowGraph(root, config.projectId, new Date());
   const workflowCandidates = workflowGraph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict");
+  const commandLabels = await readAmbientLabelLedger(root, "command");
+  const pathLabels = await readAmbientLabelLedger(root, "path");
+  const labelCandidates = [...commandLabels.labels, ...pathLabels.labels].filter((label) => label.status === "candidate");
   const proposals = await readSemanticProposals(root);
   const evidenceCards = await readEvidenceCards(root, candidates.flatMap((node) => node.evidence.flatMap((item) => item.cardIds ?? [])));
   const queuePath = path.join(root, ".openskill-kit", "reviews", "queue.json");
   const markdownPath = path.join(root, ".openskill-kit", "reviews", "queue.md");
-  const queue = { schemaVersion: "openskill-kit.review-queue.v1", generatedAt: new Date().toISOString(), proposals, candidates, workflowCandidates, evidenceCards };
+  const queue = { schemaVersion: "openskill-kit.review-queue.v1", generatedAt: new Date().toISOString(), proposals, candidates, workflowCandidates, labelCandidates, evidenceCards };
   await writeJsonAtomic(queuePath, queue);
-  await writeFileAtomic(markdownPath, renderReviewQueueMarkdown(proposals, candidates, workflowCandidates, evidenceCards));
-  return { schemaVersion: "openskill-kit.review-queue.v1", queuePath, markdownPath, candidateCount: candidates.length + workflowCandidates.length, workflowCandidateCount: workflowCandidates.length, proposals, candidates, workflowCandidates, evidenceCards };
+  await writeFileAtomic(markdownPath, renderReviewQueueMarkdown(proposals, candidates, workflowCandidates, labelCandidates, evidenceCards));
+  return { schemaVersion: "openskill-kit.review-queue.v1", queuePath, markdownPath, candidateCount: candidates.length + workflowCandidates.length + labelCandidates.length, workflowCandidateCount: workflowCandidates.length, proposals, candidates, workflowCandidates, labelCandidates, evidenceCards };
 }
 
 function proposalSignal(proposal: SemanticPreferenceProposal, now: Date): Signal {
@@ -133,7 +138,7 @@ function proposalSignal(proposal: SemanticPreferenceProposal, now: Date): Signal
   });
 }
 
-function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], candidates: PreferenceNode[], workflowCandidates: WorkflowNode[], evidenceCards: EvidenceCard[]): string {
+function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], candidates: PreferenceNode[], workflowCandidates: WorkflowNode[], labelCandidates: AmbientLabel[], evidenceCards: EvidenceCard[]): string {
   const cardsById = new Map(evidenceCards.map((card) => [card.id, card]));
   const lines = ["# Learning Review Queue", ""];
   lines.push("## Semantic Proposals", "");
@@ -168,6 +173,11 @@ function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], cand
     lines.push(`### ${workflow.id}`, "", `- Status: ${workflow.status}`, `- Confidence: ${workflow.confidence}`, `- Occurrences: ${workflow.occurrenceCount}`, `- Paths: ${workflow.trigger.paths.join(", ") || "project"}`, `- Commands: ${workflow.trigger.commands.join(" -> ") || "none"}`, `- Compile targets: ${workflow.compileTargets.join(", ")}`, `- Description: ${workflow.description}`, "");
     for (const step of workflow.steps) lines.push(`- ${step.kind}: ${step.instruction}${step.command ? ` (${step.command})` : ""}`);
     lines.push("");
+  }
+  lines.push("## Label Candidates", "");
+  if (!labelCandidates.length) lines.push("No label candidates.", "");
+  for (const label of labelCandidates.sort((a, b) => a.kind.localeCompare(b.kind) || b.evidenceCount - a.evidenceCount)) {
+    lines.push(`### ${label.kind}:${label.hash}`, "", `- Status: ${label.status}`, `- Evidence count: ${label.evidenceCount}`, `- Metadata: ${Object.entries(label.metadata).filter(([, value]) => value).map(([key, value]) => `${key}=${value}`).join(", ") || "none"}`, "- Label required: approve with an explicit human-readable label before compilation.", "");
   }
   return `${lines.join("\n")}\n`;
 }

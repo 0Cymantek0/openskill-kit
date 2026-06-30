@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { compileBehaviorLayer, initAdaptiveProject, runLearningPlan, type PreferenceGraph, type PreferenceNode } from "../src/index.js";
+import { applyAmbientLabelReview, compileBehaviorLayer, initAdaptiveProject, readAmbientLabelLedger, runLearningPlan, type PreferenceGraph, type PreferenceNode } from "../src/index.js";
 import { readEvents } from "../src/events/store.js";
 
 // These are the fake sensitive values ambient telemetry must never store verbatim.
@@ -127,8 +127,8 @@ describe("OpenCode ambient telemetry privacy", () => {
         worktree: root,
         client: { app: { log: async () => ({}) } }
       });
-      await hooks["tool.execute.after"]({ tool: "bash", command: "npm test" }, { status: "success" });
-      await hooks["tool.execute.after"]({ tool: "bash", command: "npm test" }, { status: "success" });
+      await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", path: "src/parser.ts" }, { status: "success" });
+      await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", path: "src/parser.ts" }, { status: "success" });
     } finally {
       if (previousTrace === undefined) delete process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE;
       else process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE = previousTrace;
@@ -145,6 +145,8 @@ describe("OpenCode ambient telemetry privacy", () => {
     expect(preview.preview!.recordsSkipped).toBeUndefined();
     expect(preview.digest.eventsAppended).toBe(0);
     expect(preview.preview!.candidateBehavior.some((item) => item.statement.includes("package-manager command pattern"))).toBe(true);
+    expect(preview.preview!.labelCandidates.some((item) => item.kind === "command" && item.evidenceCount === 2)).toBe(true);
+    expect(preview.preview!.labelCandidates.some((item) => item.kind === "path" && item.evidenceCount === 2)).toBe(true);
     expect(await readEvents(root)).toHaveLength(0);
 
     const applied = await runLearningPlan(root, {
@@ -154,10 +156,32 @@ describe("OpenCode ambient telemetry privacy", () => {
       now: new Date("2026-06-28T00:11:00.000Z")
     });
     expect(applied.digest.eventsAppended).toBe(2);
+    expect(applied.safeMetadata.opencode!.labelCandidates.some((item) => item.kind === "command")).toBe(true);
     expect(applied.digest.signalsExtracted).toBeGreaterThan(0);
     const stored = JSON.stringify(await readEvents(root));
     expect(stored).toContain("opencode-derived:package-manager:sha256:");
     expect(stored).not.toContain("npm test");
+
+    const commandLedger = await readAmbientLabelLedger(root, "command");
+    const candidate = commandLedger.labels.find((label) => label.status === "candidate")!;
+    expect(candidate.hash).toMatch(/^sha256:/);
+    expect(JSON.stringify(commandLedger)).not.toContain("npm test");
+
+    let compiled = await compileBehaviorLayer(root, { targets: ["project-rules"] });
+    let commandPolicy = await readFile(compiled.policyArtifactPaths.find((item) => item.endsWith("command-policy.md"))!, "utf8");
+    expect(commandPolicy).not.toContain("npm test");
+
+    await applyAmbientLabelReview(root, { approveCommand: [{ hash: candidate.hash, label: "npm test" }] });
+    compiled = await compileBehaviorLayer(root, { targets: ["project-rules"] });
+    commandPolicy = await readFile(compiled.policyArtifactPaths.find((item) => item.endsWith("command-policy.md"))!, "utf8");
+    expect(commandPolicy).toContain("npm test");
+
+    const pathLedger = await readAmbientLabelLedger(root, "path");
+    const pathCandidate = pathLedger.labels.find((label) => label.status === "candidate")!;
+    await applyAmbientLabelReview(root, { rejectPath: [pathCandidate.hash] });
+    compiled = await compileBehaviorLayer(root, { targets: ["project-rules"] });
+    const reviewChecklist = await readFile(compiled.policyArtifactPaths.find((item) => item.endsWith("review-checklist.md"))!, "utf8");
+    expect(reviewChecklist).not.toContain("Parser source");
   });
 
   it("skips stale ambient records with raw-prone keys even when flags claim safe", async () => {

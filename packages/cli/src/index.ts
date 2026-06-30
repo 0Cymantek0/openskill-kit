@@ -6,6 +6,7 @@ import { createInterface } from "node:readline/promises";
 import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import {
   appendEvent,
+  applyAmbientLabelReview,
   applyPreferenceReview,
   applyWorkflowReview,
   attachAgentPlugin,
@@ -327,8 +328,23 @@ osk.command("learn")
 osk.command("review")
   .description("Open or write review queue")
   .option("--write", "Write review queue and print path")
+  .option("--label-command <hash>", "Approve a command hash label")
+  .option("--label-path <hash>", "Approve a path hash label")
+  .option("--as <label>", "Human-readable label for --label-command or --label-path")
+  .option("--reject-label <hash>", "Reject a command/path label candidate by hash")
+  .option("--label-kind <kind>", "Label kind for --reject-label: command or path", "command")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (options.labelCommand || options.labelPath || options.rejectLabel) {
+      const result = await applyAmbientLabelReview(process.cwd(), {
+        approveCommand: options.labelCommand ? [{ hash: options.labelCommand, label: requireLabelOption(options.as, "--label-command") }] : [],
+        approvePath: options.labelPath ? [{ hash: options.labelPath, label: requireLabelOption(options.as, "--label-path") }] : [],
+        rejectCommand: options.rejectLabel && options.labelKind !== "path" ? [options.rejectLabel] : [],
+        rejectPath: options.rejectLabel && options.labelKind === "path" ? [options.rejectLabel] : []
+      });
+      output(options.json, result, `Reviewed labels: ${result.reviewedCount}`);
+      return;
+    }
     if (options.write === true) {
       const queue = await buildReviewQueue(process.cwd());
       output(options.json, queue, queue.markdownPath);
@@ -1865,6 +1881,11 @@ function output(json: boolean | undefined, data: unknown, text: string): void {
   else console.log(sanitizeText(text));
 }
 
+function requireLabelOption(value: string | undefined, flag: string): string {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  throw new Error(`${flag} requires --as <label>`);
+}
+
 function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
   if (!("digest" in result)) {
     return [
@@ -1898,6 +1919,13 @@ function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
       lines.push("Candidate behavior (would be learned):");
       for (const item of result.preview.candidateBehavior) {
         lines.push(`  [${item.kind}] ${item.statement}`);
+      }
+    }
+    if (result.preview.labelCandidates.length > 0) {
+      lines.push("");
+      lines.push("Label candidates (review-gated):");
+      for (const item of result.preview.labelCandidates) {
+        lines.push(`  [${item.kind}] ${item.hash} (${item.evidenceCount} events)`);
       }
     }
   }

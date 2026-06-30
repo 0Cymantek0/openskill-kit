@@ -8,6 +8,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
   appendEvent,
+  applyAmbientLabelReview,
   applyPreferenceReview,
   applyWorkflowReview,
   AGENT_PLUGIN_PROJECT_ROOT_ENV,
@@ -698,11 +699,15 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
         workflowReject: z.array(z.string().min(1)).default([]),
         workflowLock: z.array(z.string().min(1)).default([]),
         workflowDemote: z.array(z.string().min(1)).default([]),
-        workflowActivateAll: z.boolean().default(false)
+        workflowActivateAll: z.boolean().default(false),
+        approveCommandLabels: z.array(z.object({ hash: z.string().min(1), label: z.string().min(1).max(200) })).default([]),
+        approvePathLabels: z.array(z.object({ hash: z.string().min(1), label: z.string().min(1).max(200) })).default([]),
+        rejectCommandLabels: z.array(z.string().min(1)).default([]),
+        rejectPathLabels: z.array(z.string().min(1)).default([])
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, action, workflowActivate, workflowReject, workflowLock, workflowDemote, workflowActivateAll, ...options }) => {
+    async ({ projectRoot, action, workflowActivate, workflowReject, workflowLock, workflowDemote, workflowActivateAll, approveCommandLabels, approvePathLabels, rejectCommandLabels, rejectPathLabels, ...options }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await withMcpCommandTelemetry(root, "review", async () => {
         if (action === "queue") return buildReviewQueue(root);
@@ -721,7 +726,16 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
             activateAll: workflowActivateAll
           })
           : undefined;
-        return workflows ? { preferences, workflows } : preferences;
+        const hasLabelAction = approveCommandLabels.length > 0 || approvePathLabels.length > 0 || rejectCommandLabels.length > 0 || rejectPathLabels.length > 0;
+        const labels = hasLabelAction
+          ? await applyAmbientLabelReview(root, {
+            approveCommand: approveCommandLabels,
+            approvePath: approvePathLabels,
+            rejectCommand: rejectCommandLabels,
+            rejectPath: rejectPathLabels
+          })
+          : undefined;
+        return { preferences, workflows, labels };
       }), root);
     }
   );
