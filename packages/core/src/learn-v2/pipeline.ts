@@ -17,6 +17,7 @@ import { writeLearnV2ReviewQueue } from "./review.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
 import { writeLearnV2ConceptStore } from "./store.js";
+import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import {
   learnV2DeclassifyText,
   learnV2Hash,
@@ -84,6 +85,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2CompilePreviewPath: string;
     learnV2EvalReportPath: string;
     learnV2ConceptStorePath: string;
+    learnV2ModelRoutingPath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -254,6 +256,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const extracted = extractLearnV2BehaviorAtoms(episodes);
   const concepts = mergeLearnV2ConceptCards(extracted.atoms, now);
   await writeLearnV2ConceptStore(root, concepts, now);
+  const modelRouting = await ensureLearnV2ModelRoutingArtifacts(root, now);
   for (const source of sourceDigests) {
     const rawRef = source.learnV2.rawRef;
     source.windowCount = episodes.filter((episode) => episode.rawRefs.includes(rawRef)).length;
@@ -287,7 +290,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ReviewQueuePath: reviewQueue.artifacts.markdown,
       learnV2CompilePreviewPath: compilePreview.artifacts.markdown,
       learnV2EvalReportPath: evalReport.artifacts.markdown,
-      learnV2ConceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json")
+      learnV2ConceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
+      learnV2ModelRoutingPath: modelRouting.artifacts.routingJson
     },
     lifecycle,
     digest: {
@@ -516,6 +520,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Review queue: ${result.artifacts.learnV2ReviewQueuePath}`,
     `- Compile preview: ${result.artifacts.learnV2CompilePreviewPath}`,
     `- Eval report: ${result.artifacts.learnV2EvalReportPath}`,
+    `- Model routing: ${result.artifacts.learnV2ModelRoutingPath}`,
     "",
     "## Quality",
     "",

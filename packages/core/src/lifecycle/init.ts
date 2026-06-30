@@ -90,6 +90,7 @@ async function ensureAdaptiveDirectories(root: string): Promise<void> {
     "compiled/mcp",
     "compiled/plugin",
     "compiled/manifests/claude-rules",
+    "model-routing/opencode-agents",
     "learn-v2/raw-vault/records",
     "learn-v2/raw-vault/blobs",
     "learn-v2/analysis",

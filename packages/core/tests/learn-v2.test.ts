@@ -9,11 +9,13 @@ import {
   initAdaptiveProject,
   mergeLearnV2ConceptCards,
   normalizeLearnV2Evidence,
+  ensureLearnV2ModelRoutingArtifacts,
   readLearnV2ConceptStore,
   readPreferenceGraph,
   readLearnV2Surface,
   reconstructLearnV2Episodes,
   runRawLocalLearning,
+  runLearnV2RawVaultMaintenance,
   scoreLearnV2ProjectRelevance,
   validateLearnV2LlmExtractionProposal,
   type LearnV2RawEvidenceRecord
@@ -115,8 +117,51 @@ describe("learn-v2 substrate", () => {
     });
     expect(result.artifacts.learnV2RawVaultDir).toContain(".openskill-kit");
     expect(result.artifacts.learnV2ReviewQueuePath).toBeTruthy();
+    expect(result.artifacts.learnV2ModelRoutingPath).toContain("osk-model-routing.json");
     expect(JSON.stringify(result.concepts)).not.toContain(root);
     expect(result.learnV2).toBeTruthy();
+  });
+
+  it("projects existing routing into learn-v2 OpenCode agent artifacts without owning a provider", async () => {
+    const root = await tempProject();
+    const artifact = await ensureLearnV2ModelRoutingArtifacts(root, new Date("2026-06-30T00:00:00Z"));
+    expect(artifact.policy.ownedProvider).toBe(false);
+    expect(artifact.policy.executionBoundary).toBe("opencode-configured-agent-or-deterministic");
+    expect(Object.keys(artifact.agents)).toEqual([
+      "evidence-summarizer",
+      "concept-extractor",
+      "contradiction-reviewer",
+      "scope-inferencer",
+      "declassification-reviewer",
+      "eval-planner"
+    ]);
+    const routeJson = await readText(artifact.artifacts.routingJson);
+    expect(routeJson).toContain("deterministicFallback");
+    expect(routeJson).not.toContain("ollama");
+  });
+
+  it("reports raw vault budget and expires unpinned records during GC", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "low-relevance.txt");
+    await writeFile(transcript, "unrelated temporary transcript with no project markers but useful syntax", "utf8");
+    await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:00:00Z")
+    });
+    const status = await runLearnV2RawVaultMaintenance(root, {
+      maxHotBytes: 1,
+      now: new Date("2026-07-01T00:00:00Z")
+    });
+    expect(status.status).toBe("over-budget");
+    const gc = await runLearnV2RawVaultMaintenance(root, {
+      gc: true,
+      maxHotBytes: 1,
+      now: new Date("2026-07-30T00:00:00Z")
+    });
+    expect(gc.expiredRecords).toBeGreaterThanOrEqual(1);
+    expect(gc.removedBlobRefs.length).toBeGreaterThanOrEqual(1);
   });
 
   it("persists reviewed concepts, writes activation index, and syncs active concepts into graphs", async () => {

@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ProjectConfig } from "../config/schema.js";
+import { readProjectConfig } from "../events/store.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { LearnV2RawEvidenceManifestSchema, LearnV2RawEvidenceRecordSchema, type LearnV2RawEvidenceManifest, type LearnV2RawEvidenceRecord } from "./schemas.js";
 import type { LearnV2ProjectRelevance } from "./relevance.js";
@@ -31,6 +32,18 @@ export interface LearnV2StoredRawEvidence {
   blobPath: string;
   manifestPath: string;
   manifest: LearnV2RawEvidenceManifest;
+}
+
+export interface LearnV2RawVaultMaintenanceResult {
+  schemaVersion: "openskill-kit.learn-v2.raw-vault-maintenance.v1";
+  projectRoot: string;
+  status: "ok" | "over-budget";
+  gc: boolean;
+  expiredRecords: number;
+  removedBlobRefs: string[];
+  manifestPath: string;
+  manifest: LearnV2RawEvidenceManifest;
+  nextActions: string[];
 }
 
 export async function storeLearnV2RawEvidence(options: LearnV2RawVaultOptions, input: LearnV2StoreRawInput): Promise<LearnV2StoredRawEvidence> {
@@ -131,9 +144,11 @@ export async function rebuildLearnV2RawManifest(rootInput: string, projectId: st
   return manifest;
 }
 
-export async function garbageCollectLearnV2RawVault(rootInput: string, projectId: string, now: Date): Promise<LearnV2RawEvidenceManifest> {
+export async function garbageCollectLearnV2RawVault(rootInput: string, projectId: string, now: Date, maxHotBytes = 50_000_000): Promise<{ manifest: LearnV2RawEvidenceManifest; expiredRecords: number; removedBlobRefs: string[] }> {
   const root = path.resolve(rootInput);
   const recordsRoot = path.join(learnV2VaultRoot(root), "records");
+  let expiredRecords = 0;
+  const removedBlobRefs: string[] = [];
   for (const entry of await fs.readdir(recordsRoot, { withFileTypes: true }).catch(() => [])) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
     const recordPath = path.join(recordsRoot, entry.name);
@@ -150,8 +165,40 @@ export async function garbageCollectLearnV2RawVault(rootInput: string, projectId
     });
     await writeJsonAtomic(recordPath, tombstone);
     await fs.rm(path.join(learnV2VaultRoot(root), record.content.blobRef), { force: true }).catch(() => undefined);
+    expiredRecords += 1;
+    removedBlobRefs.push(record.content.blobRef);
   }
-  return rebuildLearnV2RawManifest(root, projectId, 50_000_000, now);
+  return {
+    manifest: await rebuildLearnV2RawManifest(root, projectId, maxHotBytes, now),
+    expiredRecords,
+    removedBlobRefs
+  };
+}
+
+export async function runLearnV2RawVaultMaintenance(
+  projectRootInput: string,
+  options: { gc?: boolean; maxHotBytes?: number; now?: Date } = {}
+): Promise<LearnV2RawVaultMaintenanceResult> {
+  const root = path.resolve(projectRootInput);
+  const config = await readProjectConfig(root);
+  const now = options.now ?? new Date();
+  const maxHotBytes = options.maxHotBytes ?? 50_000_000;
+  const gc = options.gc === true
+    ? await garbageCollectLearnV2RawVault(root, config.projectId, now, maxHotBytes)
+    : { manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now), expiredRecords: 0, removedBlobRefs: [] };
+  return {
+    schemaVersion: "openskill-kit.learn-v2.raw-vault-maintenance.v1",
+    projectRoot: root,
+    status: gc.manifest.budget.status,
+    gc: options.gc === true,
+    expiredRecords: gc.expiredRecords,
+    removedBlobRefs: gc.removedBlobRefs,
+    manifestPath: learnV2ManifestPath(root),
+    manifest: gc.manifest,
+    nextActions: gc.manifest.budget.status === "over-budget"
+      ? ["Review pinned evidence, compact low-value raw records, or rerun maintenance with garbage collection after retention expiry."]
+      : ["Raw vault budget is within configured limits."]
+  };
 }
 
 export function learnV2VaultRoot(root: string): string {
@@ -165,4 +212,3 @@ export function learnV2ManifestPath(root: string): string {
 function sumTier(records: LearnV2RawEvidenceRecord[], tier: LearnV2RawEvidenceRecord["retention"]["tier"]): number {
   return records.filter((record) => record.retention.tier === tier).reduce((sum, record) => sum + record.content.byteCount, 0);
 }
-

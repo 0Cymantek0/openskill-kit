@@ -40,6 +40,8 @@ openskill-kit osk learn --source opencode-ambient --apply
 openskill-kit osk learn --source current-session --source git-local --apply
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --model-mode remote-redacted --apply
+openskill-kit osk learn --raw-vault-status
+openskill-kit osk learn --gc-raw-vault --max-raw-vault-bytes 50000000
 openskill-kit osk review --concept-accept concept_...
 openskill-kit osk review --concept-reject concept_...
 openskill-kit osk review --concept-bulk accept-low-risk
@@ -56,6 +58,7 @@ openskill-kit osk review --write
 - Candidate preferences and workflows.
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
 - Learn v2 concept store and activation index under `.openskill-kit/learn-v2/`; these remain project-local and are excluded from packs.
+- Learn v2 raw vault maintenance reports hot/pinned/compacted bytes and can garbage-collect expired unpinned blobs.
 - Review-gated command/path label candidates for repeated safe hashes.
 - Review queue path.
 - Privacy statement confirming no raw prompts, raw diffs, secrets, or hidden benchmark answers were copied.

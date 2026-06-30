@@ -80,6 +80,7 @@ import {
   readInteractionPool,
   runRawLocalLearning,
   applyLearnV2ConceptReview,
+  runLearnV2RawVaultMaintenance,
   RawLearningModelModes,
   readEvidenceCards,
   runBehaviorEval,
@@ -310,6 +311,9 @@ osk.command("learn")
   .description("Plan or run review-gated learning from selected sources")
   .option("--source <id>", "Selected source id from plan", collectOption, [])
   .option("--raw", "Run raw local learning over explicitly supplied surface files")
+  .option("--raw-vault-status", "Show learn-v2 raw vault retention and budget status")
+  .option("--gc-raw-vault", "Expire learn-v2 raw vault blobs whose retention window has elapsed")
+  .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--model-mode <mode>", `Raw learning model mode: ${RawLearningModelModes.join("|")}`, parseRawLearningModelMode, "heuristic-only")
   .option("--all-detected", "Select all safe detected sources")
@@ -318,6 +322,14 @@ osk.command("learn")
   .option("--no-interactive", "Do not prompt; print the source plan")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (options.rawVaultStatus === true || options.gcRawVault === true) {
+      const result = await runLearnV2RawVaultMaintenance(process.cwd(), {
+        gc: options.gcRawVault === true,
+        maxHotBytes: options.maxRawVaultBytes
+      });
+      output(options.json, result, renderRawVaultMaintenance(result));
+      return;
+    }
     if (options.raw === true) {
       const result = await runRawLocalLearning(process.cwd(), {
         sourceFiles: options.surfaceFile,
@@ -1998,6 +2010,21 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
   }
   lines.push(...result.nextActions);
   return lines.join("\n");
+}
+
+function renderRawVaultMaintenance(result: Awaited<ReturnType<typeof runLearnV2RawVaultMaintenance>>): string {
+  return [
+    `Learn v2 raw vault: ${result.status}`,
+    `Records: ${result.manifest.records.length}`,
+    `Hot bytes: ${result.manifest.budget.hotBytes}/${result.manifest.budget.maxHotBytes}`,
+    `Pinned bytes: ${result.manifest.budget.pinnedBytes}`,
+    `Compacted bytes: ${result.manifest.budget.compactedBytes}`,
+    `Expired records: ${result.manifest.budget.expiredCount}`,
+    `GC run: ${result.gc}`,
+    `Blobs removed: ${result.removedBlobRefs.length}`,
+    `Manifest: ${result.manifestPath}`,
+    ...result.nextActions
+  ].join("\n");
 }
 
 function renderDoctorReport(report: { status: "pass" | "warn" | "fail"; checks: Array<{ name: string; status: "pass" | "warn" | "fail"; message: string }> }): string {
