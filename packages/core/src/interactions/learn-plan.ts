@@ -456,7 +456,7 @@ async function inspectOpenCodeAmbientMetadata(projectRoot: string): Promise<Open
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line) as Record<string, unknown>;
-      if (parsed.containsRawFields === true || parsed.traceMode === "eval") rawRecordCount += 1;
+      if (parsed.containsRawFields === true || parsed.traceMode === "eval" || findRawProneAmbientKeyPaths(parsed).length > 0) rawRecordCount += 1;
     } catch { /* skip malformed */ }
   }
   const evalTracePath = path.join(root, ".openskill-kit", "evals", "traces", "opencode-events.raw.jsonl");
@@ -488,10 +488,12 @@ function parseOpenCodeAmbientEvents(projectRoot: string, lines: string[], option
       skippedCount += 1;
       continue;
     }
-    if (record.containsRawFields || record.traceMode === "eval") {
+    if (record.containsRawFields || record.traceMode === "eval" || record.rawKeyPaths.length > 0) {
       rawFieldsDetected = true;
       skippedCount += 1;
-      rawFieldWarnings.push(`Record ${index}: containsRawFields=${record.containsRawFields}, traceMode=${record.traceMode ?? "safe"}; raw/eval-origin values were NOT imported.`);
+      rawFieldWarnings.push(record.rawKeyPaths.length
+        ? `Record ${index}: containsRawFields=${record.containsRawFields}, traceMode=${record.traceMode ?? "safe"}; raw-prone key(s) ${record.rawKeyPaths.join(", ")} detected; values were NOT imported.`
+        : `Record ${index}: containsRawFields=${record.containsRawFields}, traceMode=${record.traceMode ?? "safe"}; raw/eval-origin values were NOT imported.`);
       continue;
     }
     const ts = timestampOrUndefined(record.metadata.timestamp) ?? record.capturedAt ?? options.now?.toISOString() ?? new Date().toISOString();
@@ -549,10 +551,11 @@ async function appendOpenCodeAmbientEvents(projectRoot: string, options: { maxEv
   return { path: file, readCount: parsed.readCount, appendedCount: eventIds.length, skippedCount: parsed.skippedCount, eventIds };
 }
 
-function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; traceMode?: string; containsRawFields: boolean; metadata: Record<string, unknown> } | undefined {
+function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; traceMode?: string; containsRawFields: boolean; rawKeyPaths: string[]; metadata: Record<string, unknown> } | undefined {
   try {
     const parsed = JSON.parse(line) as Record<string, unknown>;
     const eventType = typeof parsed.eventType === "string" ? parsed.eventType : undefined;
+    const rawKeyPaths = findRawProneAmbientKeyPaths(parsed);
     const metadata = parsed.metadata && typeof parsed.metadata === "object" && !Array.isArray(parsed.metadata)
       ? sanitizeOpenCodeMetadata(parsed.metadata as Record<string, unknown>)
       : {};
@@ -562,6 +565,7 @@ function parseOpenCodeAmbientRecord(line: string): { eventType: string; captured
       capturedAt: typeof parsed.capturedAt === "string" ? parsed.capturedAt : undefined,
       traceMode: typeof parsed.traceMode === "string" ? parsed.traceMode : undefined,
       containsRawFields: parsed.containsRawFields === true,
+      rawKeyPaths,
       metadata
     };
   } catch {
@@ -571,7 +575,7 @@ function parseOpenCodeAmbientRecord(line: string): { eventType: string; captured
 
 function sanitizeOpenCodeMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const key of ["id", "type", "tool", "command", "path", "status", "decision", "timestamp"]) {
+  for (const key of ["id", "type", "tool", "status", "decision", "timestamp"]) {
     const value = metadata[key];
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null) out[key] = value;
   }
@@ -599,6 +603,51 @@ function mapOpenCodeAmbientEventType(eventType: string, metadata: Record<string,
 
 function isSafeOpenCodeDerivedMetadataKey(key: string): boolean {
   return /^(input|output)\.(tool|type|status|decision|timestamp|sessionID|messageID|commandKind|commandHash|commandLengthBucket|commandRiskFlags|pathKind|pathHash|pathExtension|pathDepth|pathRiskFlags)$/.test(key);
+}
+
+const RAW_PRONE_AMBIENT_KEYS = new Set([
+  "args",
+  "arguments",
+  "command",
+  "content",
+  "cwd",
+  "diff",
+  "env",
+  "message",
+  "messages",
+  "output",
+  "path",
+  "prompt",
+  "raw",
+  "rawcommand",
+  "rawdiff",
+  "rawinput",
+  "rawoutput",
+  "rawpath",
+  "rawprompt",
+  "text",
+  "url"
+]);
+
+function findRawProneAmbientKeyPaths(value: unknown, prefix: string[] = []): string[] {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => findRawProneAmbientKeyPaths(item, [...prefix, String(index)]));
+  }
+  const out: string[] = [];
+  for (const [key, nested] of Object.entries(value)) {
+    const pathParts = [...prefix, key];
+    if (isRawProneAmbientKey(key)) out.push(pathParts.join("."));
+    out.push(...findRawProneAmbientKeyPaths(nested, pathParts));
+  }
+  return [...new Set(out)].sort();
+}
+
+function isRawProneAmbientKey(key: string): boolean {
+  const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const dottedLeaf = key.split(".").pop() ?? key;
+  const normalizedLeaf = dottedLeaf.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return RAW_PRONE_AMBIENT_KEYS.has(normalized) || RAW_PRONE_AMBIENT_KEYS.has(normalizedLeaf);
 }
 
 function derivedCommandsFromOpenCodeMetadata(metadata: Record<string, unknown>): OpenSkillEvent["commands"] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -158,6 +158,62 @@ describe("OpenCode ambient telemetry privacy", () => {
     const stored = JSON.stringify(await readEvents(root));
     expect(stored).toContain("opencode-derived:package-manager:sha256:");
     expect(stored).not.toContain("npm test");
+  });
+
+  it("skips stale ambient records with raw-prone keys even when flags claim safe", async () => {
+    const root = await tempProject();
+    const ambientDir = path.join(root, ".openskill-kit", "ambient");
+    await mkdir(ambientDir, { recursive: true });
+    await writeFile(path.join(ambientDir, "opencode-events.jsonl"), [
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        eventType: "post-tool-use",
+        traceMode: "safe",
+        containsRawFields: false,
+        metadata: {
+          "input.commandHash": "sha256:already-derived",
+          command: SECRET_COMMAND,
+          path: SECRET_PATH
+        }
+      }),
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        eventType: "post-tool-use",
+        containsRawFields: false,
+        command: SECRET_COMMAND,
+        metadata: {
+          "input.commandKind": "package-manager",
+          "input.pathHash": "sha256:path-only"
+        }
+      })
+    ].join("\n") + "\n", "utf8");
+
+    const preview = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["opencode-ambient"],
+      previewOnly: true,
+      now: new Date("2026-06-28T00:12:00.000Z")
+    });
+    expect(preview.preview!.recordsRead).toBe(2);
+    expect(preview.preview!.recordsSkipped).toBe(2);
+    expect(preview.preview!.eventsRead).toBe(0);
+    expect(preview.preview!.rawFieldsDetected).toBe(true);
+    expect(preview.preview!.rawFieldWarnings.join("\n")).toContain("raw-prone key(s)");
+    expect(preview.preview!.rawFieldWarnings.join("\n")).toContain("metadata.command");
+    expect(preview.preview!.rawFieldWarnings.join("\n")).not.toContain(SECRET_COMMAND);
+    expect(preview.preview!.rawFieldWarnings.join("\n")).not.toContain(SECRET_PATH);
+    expect(preview.digest.eventsAppended).toBe(0);
+    expect(await readEvents(root)).toHaveLength(0);
+
+    const applied = await runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: ["opencode-ambient"],
+      previewOnly: false,
+      now: new Date("2026-06-28T00:13:00.000Z")
+    });
+    expect(applied.safeMetadata.opencode!.skippedCount).toBe(2);
+    expect(applied.digest.eventsAppended).toBe(0);
+    expect(await readEvents(root)).toHaveLength(0);
   });
 });
 

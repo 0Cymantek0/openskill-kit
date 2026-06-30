@@ -40,5 +40,6 @@ openskill-kit osk review --write
 - Candidate preferences and workflows.
 - Review queue path.
 - Privacy statement confirming no raw prompts, raw diffs, secrets, or hidden benchmark answers were copied.
+- OpenCode ambient records with raw-prone keys such as `command`, `path`, `prompt`, `diff`, `content`, `url`, `cwd`, or `env` are skipped even if legacy flags claim the record is safe. Warnings include key names only, never raw values.
 
 Learned behavior remains staged until `/osk review` accepts it.

@@ -90,10 +90,12 @@ describe("OSK command family registry", () => {
         eventType: "file-changed",
         capturedAt: "2026-06-27T00:01:00.000Z",
         metadata: {
-          path: "src/parser.ts",
-          status: "ok",
-          prompt: "raw prompt must not survive",
-          diff: "raw diff must not survive"
+          "input.pathKind": "relative",
+          "input.pathHash": "sha256:parser",
+          "input.pathExtension": ".ts",
+          "input.pathDepth": 1,
+          "input.pathRiskFlags": [],
+          "output.status": "ok"
         }
       }),
       JSON.stringify({
@@ -101,7 +103,14 @@ describe("OSK command family registry", () => {
         source: "opencode-plugin",
         eventType: "permission-decision",
         capturedAt: "2026-06-27T00:02:00.000Z",
-        metadata: { decision: "denied", command: "rm -rf build" }
+        metadata: {
+          decision: "denied",
+          "input.commandKind": "shell",
+          "input.commandHash": "sha256:denied",
+          "input.commandLengthBucket": "short",
+          "input.commandRiskFlags": ["destructive"],
+          "output.status": "blocked"
+        }
       })
     ].join("\n") + "\n");
 
@@ -121,9 +130,10 @@ describe("OSK command family registry", () => {
     expect(applied.digest.eventsAppended).toBe(2);
     const serialized = JSON.stringify(await readEvents(root));
     expect(serialized).toContain("opencode-ambient");
-    expect(serialized).toContain("src/parser.ts");
+    expect(serialized).toContain("opencode-derived:relative:sha256:parser.ts");
     expect(serialized).not.toContain("raw prompt must not survive");
     expect(serialized).not.toContain("raw diff must not survive");
+    expect(serialized).not.toContain("rm -rf build");
   });
 
   it("runs learning plans preview-first and keeps activation review-gated", async () => {
