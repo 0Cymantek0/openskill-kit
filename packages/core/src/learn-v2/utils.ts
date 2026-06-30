@@ -137,7 +137,7 @@ export function learnV2FilePathsFromText(text: string): string[] {
 }
 
 export function learnV2IsGeneratedPath(file: string): boolean {
-  return /(^|\/)(dist|build|coverage|node_modules|\.next|target)\//.test(file)
-    || /(?:package-lock|pnpm-lock|yarn\.lock|Cargo\.lock|go\.sum)$/.test(file)
+  return /(^|\/)(dist|build|coverage|node_modules|\.next|target|generated|__generated__)\//.test(file)
+    || /(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|go\.sum)$/.test(file)
     || /\.min\.[jt]s$/.test(file);
 }

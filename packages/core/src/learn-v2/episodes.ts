@@ -59,7 +59,7 @@ function buildEpisode(key: string, evidence: LearnV2NormalizedEvidence[]): Learn
     cwdHints: [...new Set(evidence.map((item) => item.cwdHint).filter((value): value is string => Boolean(value)))],
     branch: evidence.find((item) => item.branch)?.branch,
     pathCluster,
-    taskHints: inferTaskHints(evidence),
+    taskHints: inferTaskHints(evidence, patchComparisons),
     outcome: inferOutcome(evidence),
     episodeConfidence: confidenceForMethod(method, evidence),
     stitching: {
@@ -73,7 +73,7 @@ function buildEpisode(key: string, evidence: LearnV2NormalizedEvidence[]): Learn
   };
 }
 
-function inferTaskHints(evidence: LearnV2NormalizedEvidence[]): string[] {
+function inferTaskHints(evidence: LearnV2NormalizedEvidence[], patches: ReturnType<typeof summarizeLearnV2Patches>): string[] {
   const text = evidence.map((item) => item.text).join("\n");
   const hints = new Set<string>();
   if (/\bparser|parse|grammar|lexer\b/i.test(text)) hints.add("parser-change");
@@ -81,6 +81,10 @@ function inferTaskHints(evidence: LearnV2NormalizedEvidence[]): string[] {
   if (/\btest|fixture|regression|vitest|pytest\b/i.test(text)) hints.add("testing");
   if (/\brefactor|rewrite|broad\b/i.test(text)) hints.add("refactor-boundary");
   if (/\bdependency|package|library\b/i.test(text)) hints.add("dependency");
+  if (patches.some((patch) => patch.structuralClasses.includes("parser"))) hints.add("parser-change");
+  if (patches.some((patch) => patch.structuralClasses.includes("test"))) hints.add("testing");
+  if (patches.some((patch) => patch.structuralClasses.includes("api"))) hints.add("api-change");
+  if (patches.some((patch) => patch.structuralSummary.formattingOnly)) hints.add("formatting-only");
   for (const command of evidence.flatMap((item) => item.commands)) hints.add(`command:${learnV2CanonicalKey(command).slice(0, 40)}`);
   return [...hints].slice(0, 12);
 }

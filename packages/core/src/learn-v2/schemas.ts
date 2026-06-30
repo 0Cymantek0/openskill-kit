@@ -116,6 +116,32 @@ export const LearnV2PatchComparisonSchema = z.object({
   kind: z.enum(["agent-patch", "manual-edit", "final-patch", "diff-summary"]),
   paths: z.array(z.string()).default([]),
   structuralClasses: z.array(z.enum(["api", "parser", "test", "config", "docs", "generated", "lockfile", "formatting", "unknown"])).default([]),
+  structuralSummary: z.object({
+    languages: z.array(z.enum(["typescript", "javascript", "python", "go", "rust", "json", "markdown", "unknown"])).default([]),
+    semanticChange: z.boolean().default(false),
+    formattingOnly: z.boolean().default(false),
+    ignoredFiles: z.array(z.string()).default([]),
+    changedSymbols: z.array(z.string()).default([]),
+    changedImports: z.array(z.string()).default([]),
+    fileSummaries: z.array(z.object({
+      path: z.string(),
+      language: z.enum(["typescript", "javascript", "python", "go", "rust", "json", "markdown", "unknown"]),
+      classes: z.array(z.enum(["api", "parser", "test", "config", "docs", "generated", "lockfile", "formatting", "unknown"])).default([]),
+      changedSymbols: z.array(z.string()).default([]),
+      changedImports: z.array(z.string()).default([]),
+      addedLines: z.number().int().min(0),
+      removedLines: z.number().int().min(0),
+      semanticChange: z.boolean()
+    })).default([])
+  }).default({
+    languages: [],
+    semanticChange: false,
+    formattingOnly: false,
+    ignoredFiles: [],
+    changedSymbols: [],
+    changedImports: [],
+    fileSummaries: []
+  }),
   addedLines: z.number().int().min(0).default(0),
   removedLines: z.number().int().min(0).default(0),
   summary: z.string().min(1),

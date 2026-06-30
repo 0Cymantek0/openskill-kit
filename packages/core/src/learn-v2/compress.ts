@@ -1,5 +1,6 @@
 import type { LearnV2NormalizedEvidence, LearnV2PatchComparison, LearnV2ToolCallSummary } from "./schemas.js";
-import { learnV2IsGeneratedPath, learnV2ShortHash, learnV2Snippet } from "./utils.js";
+import { analyzeLearnV2StructuralDiff, structuralClassesFromSummary } from "./structural-diff.js";
+import { learnV2ShortHash, learnV2Snippet } from "./utils.js";
 
 export function summarizeLearnV2Tools(evidence: LearnV2NormalizedEvidence[]): LearnV2ToolCallSummary[] {
   return evidence
@@ -19,19 +20,21 @@ export function summarizeLearnV2Patches(evidence: LearnV2NormalizedEvidence[]): 
   const patches: LearnV2PatchComparison[] = [];
   for (const item of evidence) {
     if (item.kind !== "file-change" && !/^diff --git /m.test(item.text) && !/\b(?:patched|manual edit|final patch|diff)\b/i.test(item.text)) continue;
-    const paths = [...new Set([...item.paths, ...pathsFromDiff(item.text)])].filter((file) => !learnV2IsGeneratedPath(file)).slice(0, 30);
-    const generatedIgnored = [...item.paths, ...pathsFromDiff(item.text)].some(learnV2IsGeneratedPath);
+    const structuralSummary = analyzeLearnV2StructuralDiff(item.text, item.paths);
+    const paths = structuralSummary.fileSummaries.map((file) => file.path).slice(0, 30);
+    const ignoredGenerated = structuralSummary.ignoredFiles.length > 0;
     const addedLines = item.text.split(/\r?\n/).filter((line) => line.startsWith("+") && !line.startsWith("+++")).length;
     const removedLines = item.text.split(/\r?\n/).filter((line) => line.startsWith("-") && !line.startsWith("---")).length;
     patches.push({
       id: `patch_${learnV2ShortHash(`${item.id}:${paths.join(",")}:${addedLines}:${removedLines}`)}`,
       kind: /\bmanual edit\b/i.test(item.text) ? "manual-edit" : /\bfinal patch\b/i.test(item.text) ? "final-patch" : "diff-summary",
       paths,
-      structuralClasses: structuralClasses(paths, item.text),
+      structuralClasses: structuralClassesFromSummary(structuralSummary),
+      structuralSummary,
       addedLines,
       removedLines,
-      summary: learnV2Snippet(item.text, 320) || "Patch summary",
-      ignoredGenerated: generatedIgnored
+      summary: renderPatchSummary(structuralSummary, item.text),
+      ignoredGenerated
     });
   }
   return patches;
@@ -47,19 +50,14 @@ export function learnV2TokenBudget(evidence: LearnV2NormalizedEvidence[], compre
   };
 }
 
-function pathsFromDiff(text: string): string[] {
-  return [...text.matchAll(/^diff --git a\/(.+?) b\/(.+)$/gm)].flatMap((match) => [match[1]!, match[2]!]);
-}
-
-function structuralClasses(paths: string[], text: string): LearnV2PatchComparison["structuralClasses"] {
-  const classes = new Set<LearnV2PatchComparison["structuralClasses"][number]>();
-  if (paths.some((file) => /(?:parser|parse|grammar|lexer)/i.test(file)) || /\b(?:parser|parse|grammar|lexer)\b/i.test(text)) classes.add("parser");
-  if (paths.some((file) => /(?:test|spec|fixture)/i.test(file)) || /\b(?:test|fixture|regression)\b/i.test(text)) classes.add("test");
-  if (paths.some((file) => /\.(md|mdx|rst)$/i.test(file))) classes.add("docs");
-  if (paths.some((file) => /(?:package\.json|tsconfig|vite|vitest|eslint|config)/i.test(file))) classes.add("config");
-  if (paths.some(learnV2IsGeneratedPath)) classes.add("generated");
-  if (paths.some((file) => /(?:lock|go\.sum)$/i.test(file))) classes.add("lockfile");
-  if (/\b(?:export|interface|public api|schema)\b/i.test(text)) classes.add("api");
-  if (!classes.size) classes.add("unknown");
-  return [...classes].sort();
+function renderPatchSummary(summary: LearnV2PatchComparison["structuralSummary"], text: string): string {
+  const parts = [
+    summary.languages.length ? `languages=${summary.languages.join(",")}` : undefined,
+    summary.fileSummaries.length ? `files=${summary.fileSummaries.map((file) => file.path).slice(0, 6).join(",")}` : undefined,
+    summary.changedSymbols.length ? `symbols=${summary.changedSymbols.slice(0, 8).join(",")}` : undefined,
+    summary.changedImports.length ? `imports=${summary.changedImports.slice(0, 5).join(",")}` : undefined,
+    summary.ignoredFiles.length ? `ignored=${summary.ignoredFiles.slice(0, 5).join(",")}` : undefined,
+    summary.formattingOnly ? "formatting-only" : summary.semanticChange ? "semantic-change" : undefined
+  ].filter(Boolean);
+  return parts.length ? parts.join("; ") : learnV2Snippet(text, 320) || "Patch summary";
 }

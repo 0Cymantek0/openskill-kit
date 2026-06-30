@@ -9,6 +9,8 @@ import {
   initAdaptiveProject,
   mergeLearnV2ConceptCards,
   normalizeLearnV2Evidence,
+  analyzeLearnV2StructuralDiff,
+  summarizeLearnV2Patches,
   ensureLearnV2ModelRoutingArtifacts,
   readLearnV2ConceptStore,
   readPreferenceGraph,
@@ -71,6 +73,82 @@ describe("learn-v2 substrate", () => {
     expect(episodes).toHaveLength(1);
     expect(episodes[0]!.episodeConfidence).toBeGreaterThanOrEqual(0.6);
     expect(concepts.some((concept) => /parser regression tests/i.test(concept.canonicalBehavior))).toBe(true);
+  });
+
+  it("structurally classifies supported-language diffs and filters generated files", async () => {
+    const diff = [
+      "diff --git a/packages/core/src/parser.ts b/packages/core/src/parser.ts",
+      "--- a/packages/core/src/parser.ts",
+      "+++ b/packages/core/src/parser.ts",
+      "@@",
+      "-export function parseSkill(input: string) { return oldParse(input); }",
+      "+export function parseSkill(input: string) { return parseWithRegression(input); }",
+      "+import { parseWithRegression } from \"./parser-regression.js\";",
+      "diff --git a/packages/core/src/generated/client.ts b/packages/core/src/generated/client.ts",
+      "--- a/packages/core/src/generated/client.ts",
+      "+++ b/packages/core/src/generated/client.ts",
+      "@@",
+      "-export const version = 1;",
+      "+export const version = 2;",
+      "diff --git a/package-lock.json b/package-lock.json",
+      "--- a/package-lock.json",
+      "+++ b/package-lock.json",
+      "@@",
+      "-  \"version\": \"1\"",
+      "+  \"version\": \"2\""
+    ].join("\n");
+    const summary = analyzeLearnV2StructuralDiff(diff);
+    expect(summary.languages).toContain("typescript");
+    expect(summary.changedSymbols).toContain("parseSkill");
+    expect(summary.changedImports).toContain("./parser-regression.js");
+    expect(summary.ignoredFiles).toContain("packages/core/src/generated/client.ts");
+    expect(summary.ignoredFiles).toContain("package-lock.json");
+
+    const patches = summarizeLearnV2Patches([{
+      schemaVersion: "openskill-kit.learn-v2.normalized-evidence.v1",
+      id: "ev_diff",
+      rawRef: "raw_diff",
+      sourceHash: "sha256:diff",
+      kind: "file-change",
+      actor: "assistant",
+      text: diff,
+      status: "unknown",
+      paths: [],
+      commands: [],
+      metadata: {}
+    }]);
+    expect(patches[0]!.structuralClasses).toEqual(expect.arrayContaining(["api", "parser", "generated", "lockfile"]));
+    expect(patches[0]!.paths).toEqual(["packages/core/src/parser.ts"]);
+    expect(patches[0]!.ignoredGenerated).toBe(true);
+  });
+
+  it("detects Python Go and Rust structural symbols without new parser dependencies", async () => {
+    const diff = [
+      "diff --git a/python/openskillkit_evolution/cli.py b/python/openskillkit_evolution/cli.py",
+      "--- a/python/openskillkit_evolution/cli.py",
+      "+++ b/python/openskillkit_evolution/cli.py",
+      "@@",
+      "+from osk.parser import parse_skill",
+      "+def build_report(value):",
+      "+    return parse_skill(value)",
+      "diff --git a/src/server.go b/src/server.go",
+      "--- a/src/server.go",
+      "+++ b/src/server.go",
+      "@@",
+      "+import \"net/http\"",
+      "+func ServeHTTP(w http.ResponseWriter, r *http.Request) {}",
+      "diff --git a/src/lib.rs b/src/lib.rs",
+      "--- a/src/lib.rs",
+      "+++ b/src/lib.rs",
+      "@@",
+      "+use crate::parser::parse_skill;",
+      "+pub fn compile_skill() {}"
+    ].join("\n");
+    const summary = analyzeLearnV2StructuralDiff(diff);
+    expect(summary.languages).toEqual(["go", "python", "rust"]);
+    expect(summary.changedSymbols).toEqual(expect.arrayContaining(["ServeHTTP", "build_report", "compile_skill"]));
+    expect(summary.changedImports).toEqual(expect.arrayContaining(["net/http", "osk.parser", "crate::parser::parse_skill"]));
+    expect(summary.semanticChange).toBe(true);
   });
 
   it("rejects LLM atom proposals without valid evidence or with raw secrets", async () => {

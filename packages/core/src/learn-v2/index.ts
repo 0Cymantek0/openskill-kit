@@ -4,6 +4,7 @@ export * from "./relevance.js";
 export * from "./vault.js";
 export * from "./surfaces.js";
 export * from "./normalize.js";
+export * from "./structural-diff.js";
 export * from "./compress.js";
 export * from "./episodes.js";
 export * from "./extract.js";
