@@ -73,7 +73,7 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
       },
       includes: ["preferences", "skills", "hooks", "mcp"],
       privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
-      privacyStatement: "Pack excludes raw events, raw signals, raw learning vault records, ambient hook metadata, interaction import runs, private evidence blobs, review drafts, eval run output, reports, raw prompts, raw diffs, and secret-like local state.",
+      privacyStatement: "Pack excludes raw events, raw signals, learn-v2 raw vault records and analysis, raw learning vault records, ambient hook metadata, interaction import runs, private evidence blobs, review drafts, eval run output, reports, raw prompts, raw diffs, and secret-like local state.",
       generatedArtifacts: copied.map((file) => ({ file, type: artifactType(file) })),
       files: copied,
       hashes
@@ -186,7 +186,7 @@ export async function verifyProjectBehaviorPack(packPathInput: string): Promise<
   if (manifest.schemaVersion !== "openskill-kit.project-pack.v1") issues.push("Invalid manifest schema version");
   if (manifest.privacy?.rawEventsIncluded !== false) issues.push("Pack must not include raw events");
   if (manifest.privacy?.rawSignalsIncluded !== false) issues.push("Pack must not include raw signals");
-  for (const blocked of [".openskill-kit/events/", ".openskill-kit/signals/", ".openskill-kit/raw-vault/", ".openskill-kit/learning/analysis-frames/", ".openskill-kit/learning/staged-imports/", ".openskill-kit/ambient/", ".openskill-kit/interactions/", ".openskill-kit/evidence/blobs/", ".openskill-kit/reviews/", ".openskill-kit/evals/runs/", ".openskill-kit/reports/"]) {
+  for (const blocked of [".openskill-kit/events/", ".openskill-kit/signals/", ".openskill-kit/learn-v2/raw-vault/", ".openskill-kit/learn-v2/analysis/", ".openskill-kit/learn-v2/review/", ".openskill-kit/learn-v2/evals/", ".openskill-kit/raw-vault/", ".openskill-kit/learning/analysis-frames/", ".openskill-kit/learning/staged-imports/", ".openskill-kit/ambient/", ".openskill-kit/interactions/", ".openskill-kit/evidence/blobs/", ".openskill-kit/reviews/", ".openskill-kit/evals/runs/", ".openskill-kit/reports/"]) {
     if (manifest.files?.some((file: string) => file.startsWith(blocked))) issues.push(`Private path included: ${blocked}`);
   }
   for (const file of manifest.files ?? []) {

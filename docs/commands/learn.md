@@ -3,8 +3,10 @@
 Teach OSK from current session, safe detected sources, or explicit imports.
 
 Raw local learning is available for explicitly supplied files. It reads full
-project evidence locally, writes deidentified raw vault records only on apply,
-mines learning windows and concept cards, then keeps activation review-gated.
+project evidence locally, writes raw evidence only into the project-local
+Learn v2 vault on apply, writes declassified compatibility records and analysis
+artifacts, reconstructs task episodes, mines concept cards, then keeps
+activation review-gated.
 
 ## Source Selection
 
@@ -16,7 +18,7 @@ mines learning windows and concept cards, then keeps activation review-gated.
 | Codex/Claude/Cursor/manual export file | not selected | explicit import | Preview first, apply only after explicit approval. |
 | Review notes file | not selected | explicit import | Converts supplied notes into redacted review-comment events. |
 | Terminal history file | not selected | explicit import | Requires explicit file path; command metadata only. |
-| Raw local surface file | explicit only | raw local | Reads raw local evidence, stores deidentified vault records under `.openskill-kit/raw-vault/`, writes prompt-safe analysis frames, and stages reviewable concepts. |
+| Raw local surface file | explicit only | raw local | Reads raw local evidence, stores content-addressed raw blobs under `.openskill-kit/learn-v2/raw-vault/`, writes declassified analysis/review/eval artifacts, keeps legacy deidentified compatibility records under `.openskill-kit/raw-vault/`, and stages reviewable concepts. |
 | User/global memory stores | never selected | blocked | Metadata-only detection; import requires an explicit export file. |
 
 ## Workflow
@@ -26,7 +28,8 @@ mines learning windows and concept cards, then keeps activation review-gated.
 3. Preview explicit imports.
 4. Append redacted events only after approval.
 5. Run lifecycle learning and stage candidates.
-6. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
+6. For raw local learning, reconstruct task episodes, compress tool/diff/log evidence, extract deterministic behavior atoms, merge concept cards, write a behavior-delta-first review queue, compile preview, and learn-v2 eval report.
+7. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
 
 ## CLI Examples
 
@@ -48,14 +51,17 @@ openskill-kit osk review --write
 - Events appended.
 - Signals extracted.
 - Candidate preferences and workflows.
+- Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
 - Review-gated command/path label candidates for repeated safe hashes.
 - Review queue path.
 - Privacy statement confirming no raw prompts, raw diffs, secrets, or hidden benchmark answers were copied.
 - OpenCode ambient records with raw-prone keys such as `command`, `path`, `prompt`, `diff`, `content`, `url`, `cwd`, or `env` are skipped even if legacy flags claim the record is safe. Warnings include key names only, never raw values.
-- Raw local learning never means raw propagation. Secret assignments, API keys,
-  user home paths, and project root paths are replaced with typed placeholders
-  before analysis frames, staged imports, review digests, compiled behavior, or
-  behavior packs.
+- Raw local learning never means raw propagation. The raw blob vault is
+  project-local, `.gitignore`d, and excluded from compile/pack/sync/plugin
+  outputs. Secret assignments, API keys, user home paths, and project root paths
+  are replaced with typed placeholders before analysis frames, staged imports,
+  review digests, compile previews, eval reports, compiled behavior, or behavior
+  packs.
 
 Learned behavior remains staged until `/osk review` accepts it.
 Unapproved or rejected labels do not compile into command policy, review checklist, or behavior packs.

@@ -36,6 +36,7 @@ export * from "./interactions/importer.js";
 export * from "./interactions/git-local.js";
 export * from "./interactions/learn-plan.js";
 export * from "./learning/raw-local.js";
+export * from "./learn-v2/index.js";
 export * from "./signals/schema.js";
 export * from "./signals/extract.js";
 export * from "./signals/extractors/index.js";
