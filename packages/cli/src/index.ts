@@ -79,6 +79,7 @@ import {
   readInteractionImportRuns,
   readInteractionPool,
   runRawLocalLearning,
+  applyLearnV2ConceptReview,
   RawLearningModelModes,
   readEvidenceCards,
   runBehaviorEval,
@@ -344,6 +345,13 @@ osk.command("learn")
 osk.command("review")
   .description("Open or write review queue")
   .option("--write", "Write review queue and print path")
+  .option("--concept-accept <id>", "Accept a learn-v2 concept card", collectOption, [])
+  .option("--concept-reject <id>", "Reject a learn-v2 concept card", collectOption, [])
+  .option("--concept-lock <id>", "Lock a learn-v2 concept card as active", collectOption, [])
+  .option("--concept-demote <id>", "Demote a learn-v2 concept card back to candidate", collectOption, [])
+  .option("--concept-one-off <id>", "Mark a learn-v2 concept card as one-off", collectOption, [])
+  .option("--concept-bulk <action>", "Safe learn-v2 bulk action: accept-low-risk|reject-one-off|mark-superseded")
+  .option("--no-concept-compile", "Update learn-v2 concept store without syncing active concepts into preference/workflow graphs")
   .option("--label-command <hash>", "Approve a command hash label")
   .option("--label-path <hash>", "Approve a path hash label")
   .option("--as <label>", "Human-readable label for --label-command or --label-path")
@@ -351,6 +359,19 @@ osk.command("review")
   .option("--label-kind <kind>", "Label kind for --reject-label: command or path", "command")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (hasConceptReviewOptions(options)) {
+      const result = await applyLearnV2ConceptReview(process.cwd(), {
+        accept: options.conceptAccept,
+        reject: options.conceptReject,
+        lock: options.conceptLock,
+        demote: options.conceptDemote,
+        markOneOff: options.conceptOneOff,
+        bulkSafe: parseConceptBulkAction(options.conceptBulk),
+        compileActive: options.conceptCompile !== false
+      });
+      output(options.json, result, result.messages.join("\n"));
+      return;
+    }
     if (options.labelCommand || options.labelPath || options.rejectLabel) {
       const result = await applyAmbientLabelReview(process.cwd(), {
         approveCommand: options.labelCommand ? [{ hash: options.labelCommand, label: requireLabelOption(options.as, "--label-command") }] : [],
@@ -2134,6 +2155,30 @@ function parseCompileTarget(value: string): CompileTarget {
 function parseRawLearningModelMode(value: string): typeof RawLearningModelModes[number] {
   if ((RawLearningModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
   throw new Error(`Invalid raw learning model mode: ${value}. Expected one of: ${RawLearningModelModes.join(", ")}`);
+}
+
+function parseConceptBulkAction(value: string | undefined): "accept-low-risk" | "reject-one-off" | "mark-superseded" | undefined {
+  if (!value) return undefined;
+  if (value === "accept-low-risk" || value === "reject-one-off" || value === "mark-superseded") return value;
+  throw new Error(`Invalid learn-v2 concept bulk action: ${value}`);
+}
+
+function hasConceptReviewOptions(options: {
+  conceptAccept?: string[];
+  conceptReject?: string[];
+  conceptLock?: string[];
+  conceptDemote?: string[];
+  conceptOneOff?: string[];
+  conceptBulk?: string;
+}): boolean {
+  return Boolean(
+    options.conceptBulk
+    || options.conceptAccept?.length
+    || options.conceptReject?.length
+    || options.conceptLock?.length
+    || options.conceptDemote?.length
+    || options.conceptOneOff?.length
+  );
 }
 
 function parseTaskOutcome(value: string): "completed" | "accepted" | "rejected" | "edited" {

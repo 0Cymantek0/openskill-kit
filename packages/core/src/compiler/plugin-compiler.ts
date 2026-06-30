@@ -351,6 +351,9 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
         ".openskill-kit/learn-v2/analysis/",
         ".openskill-kit/learn-v2/review/",
         ".openskill-kit/learn-v2/evals/",
+        ".openskill-kit/learn-v2/concepts/",
+        ".openskill-kit/learn-v2/compiled-preview/",
+        ".openskill-kit/learn-v2/activation-index.json",
         ".openskill-kit/raw-vault/",
         ".openskill-kit/learning/analysis-frames/",
         ".openskill-kit/learning/staged-imports/",
@@ -362,7 +365,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
       neverIncludes: [
         "raw prompts",
         "raw diffs",
-        "learn-v2 raw vault records and analysis frames",
+        "learn-v2 raw vault records, concept stores, activation indexes, and analysis frames",
         "raw learning vault records",
         "secrets",
         "user/global memories",

@@ -5,9 +5,12 @@ import path from "node:path";
 import {
   compileLearnV2ConceptPreview,
   extractLearnV2BehaviorAtoms,
+  applyLearnV2ConceptReview,
   initAdaptiveProject,
   mergeLearnV2ConceptCards,
   normalizeLearnV2Evidence,
+  readLearnV2ConceptStore,
+  readPreferenceGraph,
   readLearnV2Surface,
   reconstructLearnV2Episodes,
   runRawLocalLearning,
@@ -115,6 +118,34 @@ describe("learn-v2 substrate", () => {
     expect(JSON.stringify(result.concepts)).not.toContain(root);
     expect(result.learnV2).toBeTruthy();
   });
+
+  it("persists reviewed concepts, writes activation index, and syncs active concepts into graphs", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, `user: ${root} prefer focused regression tests for parser changes in packages/core/src/parser.ts.`, "utf8");
+    const learned = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:00:00Z")
+    });
+    const store = await readLearnV2ConceptStore(root);
+    const concept = store.cards.find((card) => /parser|regression/i.test(card.canonicalBehavior)) ?? store.cards[0]!;
+    const reviewed = await applyLearnV2ConceptReview(root, {
+      accept: [concept.id],
+      narrowScopes: [{ id: concept.id, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] }],
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+    const graph = await readPreferenceGraph(root);
+    const active = graph.nodes.find((node) => node.id === `pref_${concept.id}`);
+    expect(learned.artifacts.learnV2ConceptStorePath).toContain("store.json");
+    expect(reviewed.activeConceptCount).toBeGreaterThanOrEqual(1);
+    expect(active?.status).toBe("active");
+    expect(active?.scope.paths).toContain("packages/core/src/parser.ts");
+    const activationIndex = await readText(reviewed.activationIndexPath);
+    expect(activationIndex).toContain(concept.id);
+    expect(activationIndex).not.toContain("raw_");
+  });
 });
 
 async function tempProject(): Promise<string> {
@@ -172,4 +203,3 @@ function previewRecord(root: string, id: string): LearnV2RawEvidenceRecord {
 async function readText(file: string): Promise<string> {
   return await import("node:fs/promises").then((fs) => fs.readFile(file, "utf8"));
 }
-

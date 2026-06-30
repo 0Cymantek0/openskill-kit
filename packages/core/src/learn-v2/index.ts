@@ -11,5 +11,5 @@ export * from "./concepts.js";
 export * from "./review.js";
 export * from "./compile.js";
 export * from "./eval.js";
+export * from "./store.js";
 export * from "./pipeline.js";
-
