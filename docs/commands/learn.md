@@ -2,6 +2,10 @@
 
 Teach OSK from current session, safe detected sources, or explicit imports.
 
+Raw local learning is available for explicitly supplied files. It reads full
+project evidence locally, writes deidentified raw vault records only on apply,
+mines learning windows and concept cards, then keeps activation review-gated.
+
 ## Source Selection
 
 | Source | Default | Policy | Notes |
@@ -12,6 +16,7 @@ Teach OSK from current session, safe detected sources, or explicit imports.
 | Codex/Claude/Cursor/manual export file | not selected | explicit import | Preview first, apply only after explicit approval. |
 | Review notes file | not selected | explicit import | Converts supplied notes into redacted review-comment events. |
 | Terminal history file | not selected | explicit import | Requires explicit file path; command metadata only. |
+| Raw local surface file | explicit only | raw local | Reads raw local evidence, stores deidentified vault records under `.openskill-kit/raw-vault/`, writes prompt-safe analysis frames, and stages reviewable concepts. |
 | User/global memory stores | never selected | blocked | Metadata-only detection; import requires an explicit export file. |
 
 ## Workflow
@@ -30,6 +35,8 @@ openskill-kit osk learn
 openskill-kit osk learn --all-detected
 openskill-kit osk learn --source opencode-ambient --apply
 openskill-kit osk learn --source current-session --source git-local --apply
+openskill-kit osk learn --raw --surface-file codex-transcript.jsonl
+openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --model-mode remote-redacted --apply
 openskill-kit osk review --label-command sha256:... --as "npm test"
 openskill-kit osk review --reject-label sha256:... --label-kind path
 openskill-kit osk review --write
@@ -45,6 +52,10 @@ openskill-kit osk review --write
 - Review queue path.
 - Privacy statement confirming no raw prompts, raw diffs, secrets, or hidden benchmark answers were copied.
 - OpenCode ambient records with raw-prone keys such as `command`, `path`, `prompt`, `diff`, `content`, `url`, `cwd`, or `env` are skipped even if legacy flags claim the record is safe. Warnings include key names only, never raw values.
+- Raw local learning never means raw propagation. Secret assignments, API keys,
+  user home paths, and project root paths are replaced with typed placeholders
+  before analysis frames, staged imports, review digests, compiled behavior, or
+  behavior packs.
 
 Learned behavior remains staged until `/osk review` accepts it.
 Unapproved or rejected labels do not compile into command policy, review checklist, or behavior packs.

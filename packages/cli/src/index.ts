@@ -78,6 +78,8 @@ import {
   readCalibrationReport,
   readInteractionImportRuns,
   readInteractionPool,
+  runRawLocalLearning,
+  RawLearningModelModes,
   readEvidenceCards,
   runBehaviorEval,
   runBehaviorCompareEval,
@@ -106,6 +108,7 @@ import {
   type AgentPluginAttachHost,
   type InstallTarget,
   type LearnRun,
+  type RawLocalLearningResult,
   type LearnSourcePlan,
   type CommandTelemetryFamily
 } from "@openskill-kit/core";
@@ -305,12 +308,25 @@ oskTask.command("finish")
 osk.command("learn")
   .description("Plan or run review-gated learning from selected sources")
   .option("--source <id>", "Selected source id from plan", collectOption, [])
+  .option("--raw", "Run raw local learning over explicitly supplied surface files")
+  .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
+  .option("--model-mode <mode>", `Raw learning model mode: ${RawLearningModelModes.join("|")}`, parseRawLearningModelMode, "heuristic-only")
   .option("--all-detected", "Select all safe detected sources")
   .option("--apply", "Apply selected sources after preview approval")
   .option("--max-events <number>", "Maximum events", parseIntegerOption, 250)
   .option("--no-interactive", "Do not prompt; print the source plan")
   .option("--json", "Print JSON")
   .action(async (options) => {
+    if (options.raw === true) {
+      const result = await runRawLocalLearning(process.cwd(), {
+        sourceFiles: options.surfaceFile,
+        previewOnly: options.apply !== true,
+        maxTurns: options.maxEvents,
+        modelMode: options.modelMode
+      });
+      output(options.json, result, renderRawLearnResult(result));
+      return;
+    }
     const sourceMode = options.source.length ? "selected" : options.allDetected === true ? "all-detected" : "ask";
     const result = options.source.length || options.allDetected === true || options.apply === true
       ? await runLearningPlan(process.cwd(), {
@@ -1937,6 +1953,31 @@ function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
   return lines.join("\n");
 }
 
+function renderRawLearnResult(result: RawLocalLearningResult): string {
+  const lines = [
+    `Raw sources considered: ${result.digest.sourcesConsidered}`,
+    `Sources included: ${result.digest.sourcesIncluded}`,
+    `Learning windows: ${result.digest.learningWindows}`,
+    `Behavior atoms: ${result.digest.behaviorAtoms}`,
+    `Concept cards: ${result.digest.conceptCards}`,
+    `Events appended: ${result.digest.eventsAppended}`,
+    `Raw vault records written: ${result.digest.rawVaultRecordsWritten}`,
+    `Digest: ${result.artifacts.reviewMarkdownPath}`
+  ];
+  if (result.concepts.length > 0) {
+    lines.push("");
+    lines.push("Candidate concepts:");
+    for (const concept of result.concepts.slice(0, 12)) {
+      lines.push(`  [${concept.confidence.toFixed(2)}] ${concept.canonicalBehavior}`);
+    }
+  }
+  for (const source of result.sources.filter((item) => item.projectRelevance.decision !== "include")) {
+    lines.push(`WARNING: ${source.projectRelevance.decision} ${source.sourcePath} (${source.projectRelevance.reasons.join(", ") || "low project relevance"})`);
+  }
+  lines.push(...result.nextActions);
+  return lines.join("\n");
+}
+
 function renderDoctorReport(report: { status: "pass" | "warn" | "fail"; checks: Array<{ name: string; status: "pass" | "warn" | "fail"; message: string }> }): string {
   const notable = report.checks.filter((check) => check.status !== "pass");
   const lines = [`Doctor ${report.status}: ${report.checks.length} checks`];
@@ -2087,6 +2128,11 @@ function parseAgentPluginAttachHost(value: string): AgentPluginAttachHost {
 function parseCompileTarget(value: string): CompileTarget {
   if ((CompileTargets as readonly string[]).includes(value)) return value as CompileTarget;
   throw new Error(`Invalid compile target: ${value}. Expected one of: ${CompileTargets.join(", ")}`);
+}
+
+function parseRawLearningModelMode(value: string): typeof RawLearningModelModes[number] {
+  if ((RawLearningModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
+  throw new Error(`Invalid raw learning model mode: ${value}. Expected one of: ${RawLearningModelModes.join(", ")}`);
 }
 
 function parseTaskOutcome(value: string): "completed" | "accepted" | "rejected" | "edited" {
