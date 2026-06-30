@@ -4,6 +4,7 @@ import path from "node:path";
 import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { compileBehaviorLayer } from "../compiler/package-compiler.js";
 import { getCompiledPluginStatus, type AgentPluginInstallProfile, type CompiledPluginStatus } from "../compiler/plugin-compiler.js";
+import { OPENSKILLKIT_MCP_PROFILE_ENV } from "../schema/constants.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 import { validateOpenCodeConfigSchema } from "../verification/opencode-config.js";
 
@@ -203,7 +204,7 @@ export async function getAgentPluginInstallProfile(projectRoot: string): Promise
   const nextActions = ready
     ? [
       "Use installProfile.firstCall before reading learned behavior.",
-      "Start installProfile.mcp.command with stdio and bind OPENSKILLKIT_PROJECT_ROOT to the absolute project root.",
+      "Start installProfile.mcp.command with stdio and bind OPENSKILLKIT_PROJECT_ROOT to the absolute project root plus OPENSKILLKIT_MCP_PROFILE=public.",
       "Route /osk commands through installProfile.commandRouting.map and keep approvalRequiredTools behind explicit user approval.",
       attachment.attached ? "Host attachment is ready; existing coding harnesses can call MCP tools through the configured server." : "Preview and apply a hostConfig entry before relying on MCP in this harness."
     ]
@@ -393,7 +394,8 @@ async function planMcpConfig(destination: string, command: string, projectRoot: 
       "openskill-kit": {
         command,
         env: {
-          [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot
+          [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot,
+          [OPENSKILLKIT_MCP_PROFILE_ENV]: "public"
         }
       }
     }
@@ -441,7 +443,8 @@ async function planOpenCodeConfig(destination: string, command: string, projectR
       command: [command],
       enabled: true,
       environment: {
-        [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot
+        [AGENT_PLUGIN_PROJECT_ROOT_ENV]: projectRoot,
+        [OPENSKILLKIT_MCP_PROFILE_ENV]: "public"
       }
     }
   };
@@ -560,7 +563,7 @@ function renderCodexTomlMcpSection(command: string, projectRoot: string): string
   return [
     '[mcp_servers."openskill-kit"]',
     `command = ${tomlString(command)}`,
-    `env = { ${AGENT_PLUGIN_PROJECT_ROOT_ENV} = ${tomlString(projectRoot)} }`
+    `env = { ${AGENT_PLUGIN_PROJECT_ROOT_ENV} = ${tomlString(projectRoot)}, ${OPENSKILLKIT_MCP_PROFILE_ENV} = "public" }`
   ].join("\n");
 }
 

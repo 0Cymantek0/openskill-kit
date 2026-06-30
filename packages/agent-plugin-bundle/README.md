@@ -34,7 +34,7 @@ Attachable local-first behavior layer for existing coding harnesses.
 - CLI fallback: `openskill-kit status --json`
 - MCP server: `openskill-kit` -> `openskill-kit-mcp`
 - MCP default profile: `public`
-- Required env: `OPENSKILLKIT_PROJECT_ROOT`
+- Required env: `OPENSKILLKIT_PROJECT_ROOT, OPENSKILLKIT_MCP_PROFILE`
 - Command routing: `commands/commands.json`
 - Attach preview: `openskill-kit agent attach-plugin --host opencode --dry-run`
 

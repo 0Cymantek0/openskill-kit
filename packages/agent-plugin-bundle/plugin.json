@@ -132,7 +132,8 @@
       "transport": "stdio",
       "workingDirectory": ".",
       "requiredEnv": {
-        "OPENSKILLKIT_PROJECT_ROOT": "<absolute project root>"
+        "OPENSKILLKIT_PROJECT_ROOT": "<absolute project root>",
+        "OPENSKILLKIT_MCP_PROFILE": "public"
       },
       "configFile": ".mcp.json",
       "descriptors": "mcp/descriptors.json",

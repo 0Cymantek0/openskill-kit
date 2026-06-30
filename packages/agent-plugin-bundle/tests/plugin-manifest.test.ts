@@ -27,6 +27,7 @@ describe("agent plugin manifest", () => {
     expect(manifest.installProfile.pluginDirectory).toBe("packages/agent-plugin-bundle");
     expect(manifest.installProfile.firstCall).toEqual({ mcpTool: "osk_get_status", cliFallback: "openskill-kit status --json" });
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     expect(manifest.installProfile.mcp.publicDescriptors).toBe("mcp/descriptors.public.json");
     expect(manifest.installProfile.mcp.profiles).toBe("mcp/profiles.json");
     expect(manifest.installProfile.mcp.defaultProfile).toBe("public");
@@ -65,6 +66,7 @@ describe("agent plugin manifest", () => {
     expect(manifest.privacy.neverIncludes).toContain("hidden benchmark answers");
     const mcp = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8"));
     expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
+    expect(mcp.mcpServers["openskill-kit"].env.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     const mcpProfiles = JSON.parse(readFileSync(path.join(root, "mcp", "profiles.json"), "utf8"));
     const publicDescriptors = JSON.parse(readFileSync(path.join(root, "mcp", "descriptors.public.json"), "utf8"));
     expect(mcpProfiles.defaultProfile).toBe("public");

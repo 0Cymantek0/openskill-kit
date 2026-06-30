@@ -38,7 +38,7 @@ describe("agent plugin attach planner", () => {
     expect(planned.plugin.ready).toBe(true);
     expect(planned.files[0]?.action).toBe("create");
     expect(planned.files[0]?.destination).toBe(path.join(root, ".mcp.json"));
-    expect(planned.files[0]?.preview).toEqual({ mcpServers: { "openskill-kit": { command: "openskill-kit-mcp", env: { OPENSKILLKIT_PROJECT_ROOT: root } } } });
+    expect(planned.files[0]?.preview).toEqual({ mcpServers: { "openskill-kit": { command: "openskill-kit-mcp", env: { OPENSKILLKIT_PROJECT_ROOT: root, OPENSKILLKIT_MCP_PROFILE: "public" } } } });
     await expect(stat(path.join(root, ".mcp.json"))).rejects.toThrow();
   });
 
@@ -58,6 +58,7 @@ describe("agent plugin attach planner", () => {
     expect(mcp.mcpServers.existing.command).toBe("existing-mcp");
     expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     expect(mcp.mcpServers["openskill-kit"].env.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
+    expect(mcp.mcpServers["openskill-kit"].env.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     const status = await getAgentPluginAttachStatus(root);
     expect(status.attached).toBe(true);
     expect(status.receiptCount).toBe(1);
@@ -86,6 +87,7 @@ describe("agent plugin attach planner", () => {
     expect(codexConfig).toContain("[mcp_servers.\"openskill-kit\"]");
     expect(codexConfig).toContain("command = \"openskill-kit-mcp\"");
     expect(codexConfig).toContain(`OPENSKILLKIT_PROJECT_ROOT = ${JSON.stringify(root)}`);
+    expect(codexConfig).toContain('OPENSKILLKIT_MCP_PROFILE = "public"');
     expect(codexConfig).toContain("[profiles.default]");
     expect(codexConfig).not.toContain("OLD_ROOT");
     const status = await getAgentPluginAttachStatus(root);
@@ -174,6 +176,7 @@ describe("agent plugin attach planner", () => {
     expect(config.plugin).toEqual(["./custom.ts", ".opencode/plugins/openskillkit.ts"]);
     expect(config.mcp["openskill-kit"].command).toEqual(["openskill-kit-mcp"]);
     expect(config.mcp["openskill-kit"].environment.OPENSKILLKIT_PROJECT_ROOT).toBe(root);
+    expect(config.mcp["openskill-kit"].environment.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     expect(await readFile(path.join(root, ".opencode", "commands", "osk-learn.md"), "utf8")).toContain("osk_plan_learning_sources");
     expect(await readFile(path.join(root, ".opencode", "agents", "osk-learner.md"), "utf8")).toContain("question: allow");
     expect(await readFile(path.join(root, ".opencode", "skills", "osk-learning", "SKILL.md"), "utf8")).toContain("Preview imports before apply.");
@@ -375,6 +378,7 @@ describe("agent plugin attach planner", () => {
     expect(profile.profile?.firstCall.mcpTool).toBe("osk_get_status");
     expect(profile.profile?.mcp.command).toBe("openskill-kit-mcp");
     expect(profile.profile?.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(profile.profile?.mcp.requiredEnv.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     expect(profile.profile?.commandRouting.map).toBe("commands/commands.json");
     expect(profile.profile?.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_get_plugin_install_profile"]));
     expect(profile.nextActions).toContain("Preview and apply a hostConfig entry before relying on MCP in this harness.");

@@ -8,7 +8,7 @@ import { compilePolicyArtifacts } from "./policy-compiler.js";
 import { compileBehaviorSkills } from "./skill-compiler.js";
 import { compileStagedPreview } from "./staged-preview.js";
 import { readProjectConfig } from "../events/store.js";
-import { CompileTargets, normalizeCompileTargets, type CompileTarget } from "../schema/constants.js";
+import { CompileTargets, PUBLIC_MCP_PROFILE_TOOLS, normalizeCompileTargets, type CompileTarget } from "../schema/constants.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
 import { validateMemoryIntegrity, writeMemoryIntegrityReport } from "../preferences/integrity.js";
 import { renderPreferenceGraphMarkdown } from "../preferences/render.js";
@@ -171,21 +171,6 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_compact_state", "maintenance", "local-write")
 ];
 
-const PUBLIC_MCP_PROFILE_TOOLS = [
-  "osk_get_status",
-  "osk_get_task_context",
-  "osk_finish_task",
-  "osk_plan_learning_sources",
-  "osk_run_learning_plan",
-  "osk_review_behavior",
-  "osk_run_openworld_workflow",
-  "osk_verify_behavior",
-  "osk_compile_deploy",
-  "osk_run_eval",
-  "osk_pack_behavior",
-  "osk_get_docs_help"
-];
-
 async function compileMcpConfig(root: string, contextPackPath?: string): Promise<CompileMcpConfigResult> {
   const mcpDir = path.join(root, ".openskill-kit", "compiled", "mcp");
   const descriptorPath = path.join(mcpDir, "descriptors.json");
@@ -203,7 +188,7 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
     schemaVersion: "openskill-kit.mcp-descriptors.v1",
     server: "openskill-kit-mcp",
     profile: "public",
-    tools: MCP_TOOL_DESCRIPTORS.filter((tool) => PUBLIC_MCP_PROFILE_TOOLS.includes(tool.name))
+    tools: MCP_TOOL_DESCRIPTORS.filter((tool) => PUBLIC_MCP_PROFILE_TOOLS.includes(tool.name as typeof PUBLIC_MCP_PROFILE_TOOLS[number]))
   };
   const profiles = {
     schemaVersion: "openskill-kit.mcp-profiles.v1",

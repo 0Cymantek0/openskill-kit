@@ -97,6 +97,7 @@ describe("deep architecture hardening", () => {
     expect(status.installProfile?.pluginDirectory).toBe(".openskill-kit/compiled/plugin");
     expect(status.installProfile?.firstCall).toEqual({ mcpTool: "osk_get_status", cliFallback: "openskill-kit status --json" });
     expect(status.installProfile?.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(status.installProfile?.mcp.requiredEnv.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     expect(status.installProfile?.commandRouting).toEqual({ map: "commands/commands.json", guide: "commands/osk.md", prefer: "mcp", fallback: "cli" });
     expect(status.installProfile?.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_plan_learning_sources", "osk_review_behavior", "osk_compile_deploy", "osk_pack_behavior"]));
     expect(status.installProfile?.readOnlyFirstTools).toEqual(expect.arrayContaining(["osk_get_status", "osk_detect_environment", "osk_get_plugin_attach_status", "osk_get_plugin_install_profile", "osk_get_docs_help"]));
@@ -129,6 +130,7 @@ describe("deep architecture hardening", () => {
     expect(manifest.installProfile.mcp.command).toBe("openskill-kit-mcp");
     expect(manifest.installProfile.mcp.defaultProfile).toBe("public");
     expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_PROJECT_ROOT).toBe("<absolute project root>");
+    expect(manifest.installProfile.mcp.requiredEnv.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     expect(manifest.installProfile.attach.previewCli).toBe("openskill-kit agent attach-plugin --host opencode --dry-run");
     expect(manifest.installProfile.hostConfig).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -254,6 +256,7 @@ describe("deep architecture hardening", () => {
     expect(codexGuide).toContain("AGENTS.md");
     expect(genericMcpGuide).toContain("osk_get_status");
     expect(mcpAttachment.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
+    expect(mcpAttachment.mcpServers["openskill-kit"].env.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     expect(mcpConfig.descriptorsHash).toBe(mcpHashes.descriptorsHash);
     expect(mcpConfig.defaultProfile).toBe("public");
     expect(mcpConfig.publicDescriptorsHash).toBe(mcpHashes.publicDescriptorsHash);

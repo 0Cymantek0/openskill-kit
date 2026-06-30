@@ -2,25 +2,48 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { initOpenWorldTask } from "@openskill-kit/core";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { initOpenWorldTask, PUBLIC_MCP_PROFILE_TOOLS } from "@openskill-kit/core";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
 describe("openskill-kit MCP server", () => {
+  it("defaults to the public MCP profile at runtime", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-public-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-public-fixture" }), "utf8");
+
+    const client = new Client({ name: "openskill-kit-public-test", version: "0.1.0" }, { capabilities: {} });
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"), path.join(repoRoot, "packages", "mcp-server", "src", "index.ts")],
+      cwd: root,
+      stderr: "pipe"
+    });
+
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      const names = listed.tools.map((tool) => tool.name).sort();
+      expect(names).toEqual([...PUBLIC_MCP_PROFILE_TOOLS].sort());
+      expect(names).not.toContain("openskill_draft");
+      expect(names).not.toContain("osk_record_event");
+    } finally {
+      await client.close();
+    }
+  });
+
   it("uses OPENSKILLKIT_PROJECT_ROOT when host omits projectRoot", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-env-root-"));
     const launcherCwd = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-launcher-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-env-root-fixture" }), "utf8");
 
     const client = new Client({ name: "openskill-kit-env-root-test", version: "0.1.0" }, { capabilities: {} });
-    const inheritedEnv = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"), path.join(repoRoot, "packages", "mcp-server", "src", "index.ts")],
       cwd: launcherCwd,
-      env: { ...inheritedEnv, OPENSKILLKIT_PROJECT_ROOT: root },
+      env: { ...inheritedEnv(), OPENSKILLKIT_PROJECT_ROOT: root },
       stderr: "pipe"
     });
 
@@ -40,7 +63,7 @@ describe("openskill-kit MCP server", () => {
     }
   });
 
-  it("lists tools and drafts a skill through stdio transport", async () => {
+  it("lists advanced tools and drafts a skill through stdio transport", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-fixture" }), "utf8");
 
@@ -49,6 +72,7 @@ describe("openskill-kit MCP server", () => {
       command: process.execPath,
       args: [path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"), path.join(repoRoot, "packages", "mcp-server", "src", "index.ts")],
       cwd: root,
+      env: { ...inheritedEnv(), OPENSKILLKIT_MCP_PROFILE: "advanced" },
       stderr: "pipe"
     });
 
@@ -372,3 +396,7 @@ describe("openskill-kit MCP server", () => {
     }
   }, 45_000);
 });
+
+function inheritedEnv(): Record<string, string> {
+  return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+}

@@ -1,7 +1,10 @@
 {
   "mcpServers": {
     "openskill-kit": {
-      "command": "openskill-kit-mcp"
+      "command": "openskill-kit-mcp",
+      "env": {
+        "OPENSKILLKIT_MCP_PROFILE": "public"
+      }
     }
   }
 }

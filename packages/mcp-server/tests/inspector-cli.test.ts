@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { PUBLIC_MCP_PROFILE_TOOLS } from "@openskill-kit/core";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -17,14 +18,9 @@ describe("MCP Inspector CLI smoke", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-inspector-cli-"));
 
     const listed = await inspector(["--method", "tools/list"], root);
-    const toolNames = listed.tools.map((tool: { name: string }) => tool.name);
-    expect(toolNames).toEqual(expect.arrayContaining([
-      "osk_get_status",
-      "osk_get_task_context",
-      "osk_finish_task",
-      "osk_compile_deploy",
-      "osk_verify_behavior"
-    ]));
+    const toolNames = listed.tools.map((tool: { name: string }) => tool.name).sort();
+    expect(toolNames).toEqual([...PUBLIC_MCP_PROFILE_TOOLS].sort());
+    expect(toolNames).not.toContain("openskill_draft");
 
     const status = await inspector([
       "--method", "tools/call",
@@ -51,6 +47,7 @@ async function inspector(args: string[], cwd: string): Promise<any> {
     ...args
   ], {
     cwd,
+    env: { ...process.env, OPENSKILLKIT_MCP_PROFILE: "public" },
     windowsHide: true,
     timeout: 45_000,
     maxBuffer: 16 * 1024 * 1024
@@ -67,6 +64,7 @@ async function expectInspectorMethodNotFound(args: string[], cwd: string): Promi
     ...args
   ], {
     cwd,
+    env: { ...process.env, OPENSKILLKIT_MCP_PROFILE: "public" },
     windowsHide: true,
     timeout: 45_000
   }).catch((error: Error & { code?: number; stdout?: string; stderr?: string }) => error);

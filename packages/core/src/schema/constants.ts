@@ -69,6 +69,25 @@ export type PolicyArtifactTarget = typeof PolicyArtifactTargets[number];
 export const SuggestedCompileTargets = [...CompileTargets, ...PolicyArtifactTargets] as const;
 export type SuggestedCompileTarget = typeof SuggestedCompileTargets[number];
 
+export const OPENSKILLKIT_MCP_PROFILE_ENV = "OPENSKILLKIT_MCP_PROFILE";
+export const OpenSkillMcpProfiles = ["public", "advanced"] as const;
+export type OpenSkillMcpProfile = typeof OpenSkillMcpProfiles[number];
+
+export const PUBLIC_MCP_PROFILE_TOOLS = [
+  "osk_get_status",
+  "osk_get_task_context",
+  "osk_finish_task",
+  "osk_plan_learning_sources",
+  "osk_run_learning_plan",
+  "osk_review_behavior",
+  "osk_run_openworld_workflow",
+  "osk_verify_behavior",
+  "osk_compile_deploy",
+  "osk_run_eval",
+  "osk_pack_behavior",
+  "osk_get_docs_help"
+] as const;
+
 export function normalizeCompileTargets(input: readonly string[]): CompileTarget[] {
   const allowed = new Set<string>(CompileTargets);
   const out: CompileTarget[] = [];

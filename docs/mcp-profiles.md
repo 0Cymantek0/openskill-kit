@@ -4,7 +4,7 @@ OpenSkillKit ships two MCP profiles so normal harnesses get a small tool surface
 
 ## Public Profile
 
-The public profile is the default for OpenCode and generic MCP installs. It exposes facade tools only:
+The public profile is the runtime default for OpenCode and generic MCP installs. Generated host configs bind `OPENSKILLKIT_MCP_PROFILE=public`, and the server also falls back to public when the variable is absent or invalid. It exposes facade tools only:
 
 | Tool | Purpose |
 |---|---|
@@ -25,7 +25,7 @@ Public profile must stay at 12 tools or fewer.
 
 ## Advanced Profile
 
-The advanced profile keeps detailed tools for scripts, debugging, and low-level workflows. It is opt-in and can expose interaction import internals, OpenWorld subcommands, pack internals, maintenance commands, and legacy skill tooling.
+The advanced profile keeps detailed tools for scripts, debugging, and low-level workflows. It is opt-in with `OPENSKILLKIT_MCP_PROFILE=advanced` and can expose interaction import internals, OpenWorld subcommands, pack internals, maintenance commands, and legacy skill tooling.
 
 ## Files
 

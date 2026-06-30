@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { OSK_PUBLIC_COMMAND_FAMILIES, pluginCommandProjections, type OskCommandFamily } from "../commands/families.js";
 import { OpenCodePermissionProfiles, readOrCreateModelRouting, resolveModelRouting, type ModelRouteName, type OpenCodePermissionMap, type ResolvedModelRouting } from "../config/model-routing.js";
+import { OPENSKILLKIT_MCP_PROFILE_ENV } from "../schema/constants.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 
 export interface CompilePluginResult {
@@ -387,7 +388,8 @@ function buildInstallProfile(hostCompatibility: AgentPluginHostCompatibility[]):
       transport: "stdio",
       workingDirectory: ".",
       requiredEnv: {
-        OPENSKILLKIT_PROJECT_ROOT: "<absolute project root>"
+        OPENSKILLKIT_PROJECT_ROOT: "<absolute project root>",
+        [OPENSKILLKIT_MCP_PROFILE_ENV]: "public"
       },
       configFile: ".mcp.json",
       descriptors: "mcp/descriptors.json",
@@ -1188,7 +1190,10 @@ function buildMcpAttachmentConfig(): unknown {
   return {
     mcpServers: {
       "openskill-kit": {
-        command: "openskill-kit-mcp"
+        command: "openskill-kit-mcp",
+        env: {
+          [OPENSKILLKIT_MCP_PROFILE_ENV]: "public"
+        }
       }
     }
   };

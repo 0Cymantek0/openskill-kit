@@ -84,6 +84,7 @@ await stat(path.join(root, ".openskill-kit", "compiled", "plugin", "install-guid
 if (pluginManifest.schemaVersion !== "openskill-kit.agent-plugin.v1") throw new Error("compiled plugin manifest missing schema");
 if (pluginAgentManifest.name !== pluginManifest.name) throw new Error("compiled .agent-plugin manifest mismatch");
 if (pluginMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("compiled plugin MCP attachment missing");
+if (pluginMcp.mcpServers?.["openskill-kit"]?.env?.OPENSKILLKIT_MCP_PROFILE !== "public") throw new Error("compiled plugin MCP attachment did not bind public profile");
 if (pluginManifest.integrity?.descriptorsHash !== pluginMcpHashes.descriptorsHash) throw new Error("compiled plugin descriptor hash mismatch");
 if (pluginCommandMap.publicFamilyCount !== 12 || pluginCommandMap.commands?.length !== 12) throw new Error("compiled plugin command map must expose 12 public families");
 const expectedFamilies = [
@@ -127,7 +128,7 @@ if (terminalImportPlan.status !== "planned" || terminalImportPlan.parsedEventCou
 const gitContext = await runJson(["interactions", "git-context", "--json"]);
 if (gitContext.schemaVersion !== "openskill-kit.git-local-context.v1" || gitContext.adapter?.rawDiffIncluded !== false) throw new Error("git context command failed");
 const pluginInstallProfile = await runJson(["agent", "plugin-install-profile", "--json"]);
-if (pluginInstallProfile.ready !== true || pluginInstallProfile.profile?.firstCall?.mcpTool !== "osk_get_status" || pluginInstallProfile.profile?.mcp?.requiredEnv?.OPENSKILLKIT_PROJECT_ROOT !== "<absolute project root>") throw new Error("plugin install profile command failed");
+if (pluginInstallProfile.ready !== true || pluginInstallProfile.profile?.firstCall?.mcpTool !== "osk_get_status" || pluginInstallProfile.profile?.mcp?.requiredEnv?.OPENSKILLKIT_PROJECT_ROOT !== "<absolute project root>" || pluginInstallProfile.profile?.mcp?.requiredEnv?.OPENSKILLKIT_MCP_PROFILE !== "public") throw new Error("plugin install profile command failed");
 const statusText = await runText(["status"]);
 if (!statusText.includes("Plugin ready: true") || !statusText.includes("Plugin MCP: openskill-kit-mcp") || !statusText.includes("Plugin commands: 12") || !statusText.includes("Plugin command map:")) {
   throw new Error("status text missing compiled plugin readiness");
@@ -142,6 +143,7 @@ if (pluginAttach.status !== "attached") throw new Error("plugin attach apply fai
 const hostMcp = await readJson(path.join(root, ".mcp.json"));
 if (hostMcp.mcpServers?.["openskill-kit"]?.command !== "openskill-kit-mcp") throw new Error("plugin attach did not write host MCP config");
 if (hostMcp.mcpServers?.["openskill-kit"]?.env?.OPENSKILLKIT_PROJECT_ROOT !== root) throw new Error("plugin attach did not bind MCP project root");
+if (hostMcp.mcpServers?.["openskill-kit"]?.env?.OPENSKILLKIT_MCP_PROFILE !== "public") throw new Error("plugin attach did not bind public MCP profile");
 const detectionAfterAttach = await runJson(["detect", "--json"]);
 const hostMcpSurface = detectionAfterAttach.surfaces?.find((surface: { relativePath?: string }) => surface.relativePath === ".mcp.json");
 if (hostMcpSurface?.metadata?.openskillKitAttached !== true) throw new Error("detection did not recognize OpenSkillKit MCP attachment");
@@ -322,6 +324,7 @@ async function runMcpDraft(): Promise<any> {
     command: process.execPath,
     args: [mcp],
     cwd: root,
+    env: { ...process.env, OPENSKILLKIT_MCP_PROFILE: "advanced" },
     stderr: "pipe"
   });
   try {

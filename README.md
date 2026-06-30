@@ -177,6 +177,8 @@ Public-profile facade tools:
 Advanced-profile tools remain available for scripts and lower-level automation,
 including interaction imports, manifest install/uninstall, hook install,
 OpenWorld source/verifier primitives, encrypted packs, signing, and maintenance.
+Use `OPENSKILLKIT_MCP_PROFILE=advanced` to expose them; default runtime exposure is
+the 12 public facade tools.
 
 Legacy skill drafting, audit, test, evaluation, install, list, and inspect tools
 remain available for compatibility.

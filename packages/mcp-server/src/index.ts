@@ -102,10 +102,13 @@ import {
   AgentPluginAttachHosts,
   CompileTargets,
   DEFAULT_AGENT_PLUGIN_ATTACH_HOST,
+  OPENSKILLKIT_MCP_PROFILE_ENV,
   PreferenceCategories,
+  PUBLIC_MCP_PROFILE_TOOLS,
   SuggestedCompileTargets,
+  type CommandTelemetryFamily,
   type InstallTarget,
-  type CommandTelemetryFamily
+  type OpenSkillMcpProfile
 } from "@openskill-kit/core";
 
 const VERSION = "0.1.0";
@@ -145,16 +148,22 @@ const taskFinishInputSchema = z.object({
   compileSafe: z.boolean().default(false)
 });
 
-export function createOpenSkillMcpServer(): McpServer {
+export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfile } = {}): McpServer {
+  const profile = resolveMcpProfile(options.profile ?? process.env[OPENSKILLKIT_MCP_PROFILE_ENV]);
+  const publicTools = new Set<string>(PUBLIC_MCP_PROFILE_TOOLS);
   const server = new McpServer(
     { name: "openskill-kit-mcp", version: VERSION },
     {
       instructions:
-        "Use OpenSkillKit tools to load project behavior, record safe local events, learn preference candidates, compile behavior artifacts, and install skills. Keep dryRun true unless user explicitly approves writes."
+        `Use OpenSkillKit tools to load project behavior, record safe local events, learn preference candidates, compile behavior artifacts, and install skills. Current MCP profile: ${profile}. Keep dryRun true unless user explicitly approves writes.`
     }
   );
+  const registerTool = ((name: string, ...args: unknown[]) => {
+    if (profile === "public" && !publicTools.has(name)) return undefined;
+    return (server.registerTool as unknown as (toolName: string, ...toolArgs: unknown[]) => unknown)(name, ...args);
+  }) as typeof server.registerTool;
 
-  server.registerTool(
+  registerTool(
     "osk_get_status",
     {
       title: "OpenSkillKit Status",
@@ -185,7 +194,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_bootstrap_session",
     {
       title: "OpenSkillKit Bootstrap Session",
@@ -212,7 +221,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_explain_status",
     {
       title: "OpenSkillKit Explain Status",
@@ -226,7 +235,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_docs_help",
     {
       title: "OpenSkillKit Docs Help",
@@ -249,7 +258,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_detect_environment",
     {
       title: "OpenSkillKit Detect Agent Environment",
@@ -267,7 +276,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_agent_surfaces",
     {
       title: "OpenSkillKit Agent Surfaces",
@@ -288,7 +297,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_import_interaction_source",
     {
       title: "OpenSkillKit Import Interaction Source",
@@ -316,7 +325,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_list_interaction_adapters",
     {
       title: "OpenSkillKit List Interaction Adapters",
@@ -330,7 +339,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_plan_learning_sources",
     {
       title: "OpenSkillKit Plan Learning Sources",
@@ -348,7 +357,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_run_learning_plan",
     {
       title: "OpenSkillKit Run Learning Plan",
@@ -375,7 +384,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_list_interaction_imports",
     {
       title: "OpenSkillKit List Interaction Imports",
@@ -389,7 +398,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_explain_interaction_import",
     {
       title: "OpenSkillKit Explain Interaction Import",
@@ -403,7 +412,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_interaction_pool",
     {
       title: "OpenSkillKit Interaction Pool",
@@ -417,7 +426,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_git_local_context",
     {
       title: "OpenSkillKit Git Local Context",
@@ -435,7 +444,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_context_pack",
     {
       title: "OpenSkillKit Context Pack",
@@ -451,7 +460,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_relevant_preferences",
     {
       title: "OpenSkillKit Relevant Preferences",
@@ -472,7 +481,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_route_behavior",
     {
       title: "OpenSkillKit Route Behavior",
@@ -492,7 +501,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_task_context",
     {
       title: "OpenSkillKit Task Context",
@@ -506,7 +515,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_agent_task_context",
     {
       title: "OpenSkillKit Agent Task Context",
@@ -520,7 +529,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_finish_task",
     {
       title: "OpenSkillKit Finish Task",
@@ -534,7 +543,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_finish_agent_task",
     {
       title: "OpenSkillKit Finish Agent Task",
@@ -548,7 +557,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_record_event",
     {
       title: "OpenSkillKit Record Event",
@@ -570,7 +579,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_learn_from_session",
     {
       title: "OpenSkillKit Learn From Session",
@@ -586,7 +595,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_compile_behavior_layer",
     {
       title: "OpenSkillKit Compile Behavior Layer",
@@ -600,7 +609,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_explain_preference",
     {
       title: "OpenSkillKit Explain Preference",
@@ -614,7 +623,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_preference_evidence",
     {
       title: "OpenSkillKit Preference Evidence",
@@ -628,7 +637,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_propose_preference",
     {
       title: "OpenSkillKit Propose Preference",
@@ -656,7 +665,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_review_queue",
     {
       title: "OpenSkillKit Review Queue",
@@ -670,7 +679,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_review_behavior",
     {
       title: "OpenSkillKit Review Behavior",
@@ -717,7 +726,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_apply_review_actions",
     {
       title: "OpenSkillKit Apply Review Actions",
@@ -781,7 +790,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_behavior_manifest",
     {
       title: "OpenSkillKit Behavior Manifest",
@@ -803,7 +812,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_preview_manifest_install",
     {
       title: "OpenSkillKit Preview Manifest Install",
@@ -817,7 +826,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_apply_manifest_install",
     {
       title: "OpenSkillKit Apply Manifest Install",
@@ -831,7 +840,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_preview_manifest_uninstall",
     {
       title: "OpenSkillKit Preview Manifest Uninstall",
@@ -845,7 +854,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_apply_manifest_uninstall",
     {
       title: "OpenSkillKit Apply Manifest Uninstall",
@@ -859,7 +868,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_validate_memory_candidate",
     {
       title: "OpenSkillKit Validate Memory Candidate",
@@ -873,7 +882,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_calibration_report",
     {
       title: "OpenSkillKit Calibration Report",
@@ -896,7 +905,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_export_behavior_pack",
     {
       title: "OpenSkillKit Export Behavior Pack",
@@ -910,7 +919,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_pack_behavior",
     {
       title: "OpenSkillKit Pack Behavior",
@@ -946,7 +955,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_export_encrypted_behavior_pack",
     {
       title: "OpenSkillKit Export Encrypted Behavior Pack",
@@ -960,7 +969,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_verify_behavior_pack",
     {
       title: "OpenSkillKit Verify Behavior Pack",
@@ -974,7 +983,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_inspect_behavior_pack",
     {
       title: "OpenSkillKit Inspect Behavior Pack",
@@ -988,7 +997,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_diff_behavior_pack",
     {
       title: "OpenSkillKit Diff Behavior Pack",
@@ -1002,7 +1011,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_sign_behavior_pack",
     {
       title: "OpenSkillKit Sign Behavior Pack",
@@ -1016,7 +1025,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_import_behavior_pack",
     {
       title: "OpenSkillKit Import Behavior Pack",
@@ -1031,7 +1040,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_import_encrypted_behavior_pack",
     {
       title: "OpenSkillKit Import Encrypted Behavior Pack",
@@ -1046,7 +1055,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_run_eval",
     {
       title: "OpenSkillKit Eval",
@@ -1079,7 +1088,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_run_behavior_eval",
     {
       title: "OpenSkillKit Behavior Eval",
@@ -1093,7 +1102,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_run_agent_ab_eval",
     {
       title: "OpenSkillKit Agent A/B Eval Preview",
@@ -1107,7 +1116,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_run_external_agent_eval",
     {
       title: "OpenSkillKit External Agent Eval",
@@ -1128,7 +1137,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_agent_doctor",
     {
       title: "OpenSkillKit Agent Doctor",
@@ -1142,7 +1151,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_install_agent_hooks",
     {
       title: "OpenSkillKit Install Agent Hooks",
@@ -1156,7 +1165,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_preview_plugin_attach",
     {
       title: "OpenSkillKit Preview Plugin Attach",
@@ -1170,7 +1179,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_apply_plugin_attach",
     {
       title: "OpenSkillKit Apply Plugin Attach",
@@ -1184,7 +1193,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_compile_deploy",
     {
       title: "OpenSkillKit Compile Deploy",
@@ -1236,7 +1245,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_plugin_attach_status",
     {
       title: "OpenSkillKit Plugin Attach Status",
@@ -1250,7 +1259,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_plugin_install_profile",
     {
       title: "OpenSkillKit Plugin Install Profile",
@@ -1264,7 +1273,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_run_lifecycle_once",
     {
       title: "OpenSkillKit Run Lifecycle Once",
@@ -1278,7 +1287,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_mine_workflows",
     {
       title: "OpenSkillKit Mine Workflows",
@@ -1296,7 +1305,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_get_workflow_graph",
     {
       title: "OpenSkillKit Workflow Graph",
@@ -1312,7 +1321,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_reset_state",
     {
       title: "OpenSkillKit Reset State",
@@ -1326,7 +1335,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_prune_state",
     {
       title: "OpenSkillKit Prune State",
@@ -1340,7 +1349,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_archive_state",
     {
       title: "OpenSkillKit Archive State",
@@ -1354,7 +1363,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_compact_state",
     {
       title: "OpenSkillKit Compact State",
@@ -1368,7 +1377,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_run_full_doctor",
     {
       title: "OpenSkillKit Full Doctor",
@@ -1382,7 +1391,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_doctor",
     {
       title: "OpenSkillKit OpenWorld Doctor",
@@ -1396,7 +1405,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_run_openworld_workflow",
     {
       title: "OpenSkillKit OpenWorld Workflow",
@@ -1441,7 +1450,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_verify_behavior",
     {
       title: "OpenSkillKit Verify Behavior",
@@ -1478,7 +1487,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_source_plan",
     {
       title: "OpenSkillKit OpenWorld Source Plan",
@@ -1501,7 +1510,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_retrieval_adapters",
     {
       title: "OpenSkillKit OpenWorld Retrieval Adapters",
@@ -1519,7 +1528,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_ingest_source",
     {
       title: "OpenSkillKit OpenWorld Ingest Source",
@@ -1543,7 +1552,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_execute_source_plan",
     {
       title: "OpenSkillKit OpenWorld Execute Source Plan",
@@ -1585,7 +1594,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_sources",
     {
       title: "OpenSkillKit OpenWorld Sources",
@@ -1599,7 +1608,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_build_verifier",
     {
       title: "OpenSkillKit OpenWorld Build Verifier",
@@ -1622,7 +1631,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_run_verifier",
     {
       title: "OpenSkillKit OpenWorld Run Verifier",
@@ -1644,7 +1653,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_candidate_skill",
     {
       title: "OpenSkillKit OpenWorld Candidate Skill",
@@ -1665,7 +1674,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_repair_candidate",
     {
       title: "OpenSkillKit OpenWorld Repair Candidate",
@@ -1699,7 +1708,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_verifier_quality",
     {
       title: "OpenSkillKit OpenWorld Verifier Quality",
@@ -1718,7 +1727,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_refine",
     {
       title: "OpenSkillKit OpenWorld Refine",
@@ -1741,7 +1750,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_eval_report",
     {
       title: "OpenSkillKit OpenWorld Eval Report",
@@ -1758,7 +1767,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_hidden_oracle_harness",
     {
       title: "OpenSkillKit OpenWorld Hidden Oracle Harness",
@@ -1779,7 +1788,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_task_report",
     {
       title: "OpenSkillKit OpenWorld Task Report",
@@ -1797,7 +1806,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "osk_openworld_promote_review",
     {
       title: "OpenSkillKit OpenWorld Promote To Review",
@@ -1817,7 +1826,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_doctor",
     {
       title: "OpenSkill Kit Doctor",
@@ -1828,7 +1837,7 @@ export function createOpenSkillMcpServer(): McpServer {
     async ({ projectRoot }) => toolResult(await runDoctor(resolveProjectRoot(projectRoot)), resolveProjectRoot(projectRoot))
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_draft",
     {
       title: "OpenSkill Kit Draft",
@@ -1842,7 +1851,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_evolve",
     {
       title: "OpenSkill Kit Evolve",
@@ -1864,7 +1873,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_audit",
     {
       title: "OpenSkill Kit Audit",
@@ -1878,7 +1887,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_test",
     {
       title: "OpenSkill Kit Test",
@@ -1894,7 +1903,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_evaluate",
     {
       title: "OpenSkill Kit Evaluate",
@@ -1908,7 +1917,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_install",
     {
       title: "OpenSkill Kit Install",
@@ -1939,7 +1948,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_list",
     {
       title: "OpenSkill Kit List",
@@ -1953,7 +1962,7 @@ export function createOpenSkillMcpServer(): McpServer {
     }
   );
 
-  server.registerTool(
+  registerTool(
     "openskill_inspect",
     {
       title: "OpenSkill Kit Inspect",
@@ -1978,6 +1987,10 @@ export async function startStdioServer(): Promise<void> {
 
 function resolveProjectRoot(value: string | undefined): string {
   return path.resolve(value ?? process.env[AGENT_PLUGIN_PROJECT_ROOT_ENV] ?? process.cwd());
+}
+
+function resolveMcpProfile(value: string | undefined): OpenSkillMcpProfile {
+  return value === "advanced" ? "advanced" : "public";
 }
 
 function resolvePath(value: string, projectRoot: string): string {
