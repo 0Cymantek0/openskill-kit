@@ -315,6 +315,7 @@ osk.command("learn")
   .option("--gc-raw-vault", "Expire learn-v2 raw vault blobs whose retention window has elapsed")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
+  .option("--learn-v2-goldens <path>", "Learn-v2 extraction golden scenario JSON file")
   .option("--model-mode <mode>", `Raw learning model mode: ${RawLearningModelModes.join("|")}`, parseRawLearningModelMode, "heuristic-only")
   .option("--all-detected", "Select all safe detected sources")
   .option("--apply", "Apply selected sources after preview approval")
@@ -335,7 +336,8 @@ osk.command("learn")
         sourceFiles: options.surfaceFile,
         previewOnly: options.apply !== true,
         maxTurns: options.maxEvents,
-        modelMode: options.modelMode
+        modelMode: options.modelMode,
+        learnV2GoldensPath: options.learnV2Goldens
       });
       output(options.json, result, renderRawLearnResult(result));
       return;

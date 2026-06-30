@@ -1,19 +1,39 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { z } from "zod";
 import { LearnV2EvalReportSchema, type LearnV2ConceptCard, type LearnV2EvalReport, type LearnV2TaskEpisode } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
+
+export const LearnV2ExtractionGoldenScenarioSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.extraction-golden.v1"),
+  id: z.string().min(1),
+  title: z.string().min(1),
+  episodeIdIncludes: z.string().optional(),
+  expectedConceptText: z.array(z.string().min(1)).default([]),
+  expectedKinds: z.array(z.enum(["preference", "workflow", "security", "verification", "dependency-policy", "review-policy", "command-policy", "scope-boundary"])).default([]),
+  expectedTaskHints: z.array(z.string().min(1)).default([]),
+  expectedPathText: z.array(z.string().min(1)).default([]),
+  forbiddenText: z.array(z.string().min(1)).default([])
+});
+export type LearnV2ExtractionGoldenScenario = z.infer<typeof LearnV2ExtractionGoldenScenarioSchema>;
+
+export interface LearnV2EvalOptions {
+  goldensPath?: string;
+}
 
 export async function runLearnV2Eval(
   rootInput: string,
   episodes: LearnV2TaskEpisode[],
   concepts: LearnV2ConceptCard[],
-  now: Date
+  now: Date,
+  options: LearnV2EvalOptions = {}
 ): Promise<LearnV2EvalReport> {
   const root = path.resolve(rootInput);
   const runDir = path.join(root, ".openskill-kit", "learn-v2", "evals", now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z"));
   const json = path.join(runDir, "learn-v2-eval.json");
   const markdown = path.join(runDir, "learn-v2-eval.md");
   const leakIssues = leakIssuesForConcepts(concepts);
+  const goldens = options.goldensPath ? await loadLearnV2ExtractionGoldens(root, options.goldensPath) : [];
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
   const results = [
@@ -43,12 +63,13 @@ export async function runLearnV2Eval(
         status: leakIssues.length ? "fail" as const : "pass" as const,
         details: leakIssues.length ? leakIssues.join("; ") : "no raw secret/path patterns found in concept output"
       }]
-    }
+    },
+    ...goldens.map((golden) => evaluateGolden(golden, episodes, concepts))
   ];
   const report = LearnV2EvalReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.eval-report.v1",
     status: results.every((result) => result.status === "pass") ? "pass" : "fail",
-    extractionGoldenCount: concepts.length,
+    extractionGoldenCount: goldens.length,
     replayEpisodeCount: episodes.length,
     leakCheck: {
       status: leakIssues.length ? "fail" : "pass",
@@ -65,6 +86,70 @@ export async function runLearnV2Eval(
   await writeJsonAtomic(json, report);
   await fs.writeFile(markdown, renderLearnV2Eval(report), "utf8");
   return report;
+}
+
+export async function loadLearnV2ExtractionGoldens(rootInput: string, goldensPathInput: string): Promise<LearnV2ExtractionGoldenScenario[]> {
+  const root = path.resolve(rootInput);
+  const file = path.resolve(root, goldensPathInput);
+  const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+  const values = Array.isArray(parsed) ? parsed : parsed.scenarios;
+  return (values ?? []).map((item: unknown) => LearnV2ExtractionGoldenScenarioSchema.parse(item));
+}
+
+function evaluateGolden(golden: LearnV2ExtractionGoldenScenario, episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2EvalReport["results"][number] {
+  const matchingEpisodes = golden.episodeIdIncludes
+    ? episodes.filter((episode) => episode.id.includes(golden.episodeIdIncludes!))
+    : episodes;
+  const conceptsText = JSON.stringify(concepts.map((concept) => ({
+    title: concept.title,
+    canonicalBehavior: concept.canonicalBehavior,
+    kind: concept.atoms.map((atom) => atom.kind),
+    paths: concept.scope.paths,
+    taskTypes: concept.scope.taskTypes
+  }))).toLowerCase();
+  const episodeText = JSON.stringify(matchingEpisodes.map((episode) => ({
+    id: episode.id,
+    taskHints: episode.taskHints,
+    paths: episode.pathCluster,
+    outcome: episode.outcome
+  }))).toLowerCase();
+  const expectedKindSet = new Set(concepts.flatMap((concept) => concept.atoms.map((atom) => atom.kind)));
+  const checks = [
+    check(
+      "expected-concept-text",
+      golden.expectedConceptText.every((text) => conceptsText.includes(text.toLowerCase())),
+      `expected text: ${golden.expectedConceptText.join(", ") || "none"}`
+    ),
+    check(
+      "expected-kinds",
+      golden.expectedKinds.every((kind) => expectedKindSet.has(kind)),
+      `expected kinds: ${golden.expectedKinds.join(", ") || "none"}`
+    ),
+    check(
+      "expected-task-hints",
+      golden.expectedTaskHints.every((hint) => episodeText.includes(hint.toLowerCase())),
+      `expected hints: ${golden.expectedTaskHints.join(", ") || "none"}`
+    ),
+    check(
+      "expected-paths",
+      golden.expectedPathText.every((text) => `${conceptsText}\n${episodeText}`.includes(text.toLowerCase())),
+      `expected paths: ${golden.expectedPathText.join(", ") || "none"}`
+    ),
+    check(
+      "forbidden-text",
+      golden.forbiddenText.every((text) => !`${conceptsText}\n${episodeText}`.includes(text.toLowerCase())),
+      `forbidden text: ${golden.forbiddenText.join(", ") || "none"}`
+    )
+  ];
+  return {
+    id: `golden:${golden.id}`,
+    status: checks.every((item) => item.status === "pass") ? "pass" : "fail",
+    checks
+  };
+}
+
+function check(name: string, passed: boolean, details: string): LearnV2EvalReport["results"][number]["checks"][number] {
+  return { name, status: passed ? "pass" : "fail", details };
 }
 
 function leakIssuesForConcepts(concepts: LearnV2ConceptCard[]): string[] {
@@ -104,4 +189,3 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     ])
   ].join("\n");
 }
-

@@ -36,6 +36,7 @@ export interface LearnV2RawLocalLearningOptions {
   maxTurns?: number;
   allowDuplicateImports?: boolean;
   modelMode?: LearnV2RawLearningModelMode;
+  learnV2GoldensPath?: string;
   now?: Date;
 }
 
@@ -265,7 +266,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   }
   const reviewQueue = await writeLearnV2ReviewQueue(root, concepts, now);
   const compilePreview = await compileLearnV2ConceptPreview(root, config, concepts, now);
-  const evalReport = await runLearnV2Eval(root, episodes, concepts, now);
+  const evalReport = await runLearnV2Eval(root, episodes, concepts, now, { goldensPath: options.learnV2GoldensPath });
   const lifecycle: LifecycleRunnerResult | undefined = !previewOnly && importRuns.some((run) => run.appendedEventCount > 0)
     ? await runLifecycleOnce({ projectRoot: root, maxEvents: options.maxTurns ?? 500, compileSafe: false, now: options.now })
     : undefined;

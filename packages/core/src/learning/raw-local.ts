@@ -44,6 +44,7 @@ export interface RawLocalLearningOptions {
   maxTurns?: number;
   allowDuplicateImports?: boolean;
   modelMode?: RawLearningModelMode;
+  learnV2GoldensPath?: string;
   now?: Date;
 }
 
@@ -133,4 +134,3 @@ export async function runRawLocalLearning(
 ): Promise<RawLocalLearningResult> {
   return await runLearnV2RawLocalLearning(projectRootInput, options) as RawLocalLearningResult;
 }
-

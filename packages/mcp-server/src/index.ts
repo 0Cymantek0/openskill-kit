@@ -403,11 +403,12 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
         maxRawBytes: z.number().int().min(1).max(50_000_000).default(5_000_000),
         maxTurns: z.number().int().min(1).max(1000).default(500),
         allowDuplicateImports: z.boolean().default(false),
-        modelMode: z.enum(["local-raw", "remote-redacted", "remote-explicit", "heuristic-only"]).default("heuristic-only")
+        modelMode: z.enum(["local-raw", "remote-redacted", "remote-explicit", "heuristic-only"]).default("heuristic-only"),
+        learnV2GoldensPath: z.string().min(1).optional()
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ projectRoot, sourceFiles, adapter, previewOnly, maxRawBytes, maxTurns, allowDuplicateImports, modelMode }) => {
+    async ({ projectRoot, sourceFiles, adapter, previewOnly, maxRawBytes, maxTurns, allowDuplicateImports, modelMode, learnV2GoldensPath }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await withMcpCommandTelemetry(root, "learn", () => runRawLocalLearning(root, {
         sourceFiles: sourceFiles.map((file) => resolvePath(file, root)),
@@ -416,7 +417,8 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
         maxRawBytes,
         maxTurns,
         allowDuplicateImports,
-        modelMode
+        modelMode,
+        learnV2GoldensPath
       })), root);
     }
   );

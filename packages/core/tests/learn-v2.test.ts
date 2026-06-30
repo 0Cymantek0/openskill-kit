@@ -22,6 +22,7 @@ import {
   reconstructLearnV2Episodes,
   runRawLocalLearning,
   runLearnV2RawVaultMaintenance,
+  runLearnV2Eval,
   scoreLearnV2ProjectRelevance,
   validateLearnV2LlmExtractionProposal,
   type LearnV2RawEvidenceRecord
@@ -213,6 +214,37 @@ describe("learn-v2 substrate", () => {
       rejected: []
     });
     expect(invalid.rejected.map((item) => item.reason)).toContain("missing-or-invalid-evidence-id");
+  });
+
+  it("runs extraction golden scenarios against episodes and concepts", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_golden");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Change packages/core/src/parser.ts and prefer focused parser regression tests.\ntool: npm test -- parser\nPASS"
+    );
+    const episodes = reconstructLearnV2Episodes(evidence);
+    const concepts = mergeLearnV2ConceptCards(extractLearnV2BehaviorAtoms(episodes).atoms, new Date("2026-06-30T00:00:00Z"));
+    const goldensPath = path.join(root, "learn-v2-goldens.json");
+    await writeFile(goldensPath, JSON.stringify({
+      scenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.extraction-golden.v1",
+        id: "parser-regression",
+        title: "Parser regression extraction",
+        expectedConceptText: ["parser regression tests"],
+        expectedKinds: ["verification"],
+        expectedTaskHints: ["parser-change", "testing"],
+        expectedPathText: ["packages/core/src/parser.ts"],
+        forbiddenText: ["sk-live-secret"]
+      }]
+    }), "utf8");
+    const report = await runLearnV2Eval(root, episodes, concepts, new Date("2026-06-30T00:01:00Z"), {
+      goldensPath
+    });
+    expect(report.status).toBe("pass");
+    expect(report.extractionGoldenCount).toBe(1);
+    expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
   });
 
   it("compiles active concepts but excludes candidates from compatibility outputs", async () => {
