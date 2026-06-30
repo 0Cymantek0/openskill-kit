@@ -49,6 +49,11 @@ import {
   inspectGitLocalContext,
   planLearningSources,
   runLearningPlan,
+  runRawLocalLearning,
+  readLearnV2ConceptStore,
+  applyLearnV2ConceptReview,
+  compileLearnV2ConceptPreview,
+  runLearnV2RawVaultMaintenance,
   explainInteractionImport,
   installSkill,
   listInteractionAdapters,
@@ -382,6 +387,125 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
         maxEvents,
         allowDuplicateImports
       })), root);
+    }
+  );
+
+  registerTool(
+    "osk_ingest_raw_evidence",
+    {
+      title: "OpenSkillKit Learn v2 Raw Evidence Ingest",
+      description: "Run Learn v2 raw-local ingestion over explicit surface files. Defaults to preview-only; set previewOnly=false only after user approval.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        sourceFiles: z.array(z.string().min(1)).min(1),
+        adapter: z.string().min(1).optional(),
+        previewOnly: z.boolean().default(true),
+        maxRawBytes: z.number().int().min(1).max(50_000_000).default(5_000_000),
+        maxTurns: z.number().int().min(1).max(1000).default(500),
+        allowDuplicateImports: z.boolean().default(false),
+        modelMode: z.enum(["local-raw", "remote-redacted", "remote-explicit", "heuristic-only"]).default("heuristic-only")
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, sourceFiles, adapter, previewOnly, maxRawBytes, maxTurns, allowDuplicateImports, modelMode }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => runRawLocalLearning(root, {
+        sourceFiles: sourceFiles.map((file) => resolvePath(file, root)),
+        adapter,
+        previewOnly,
+        maxRawBytes,
+        maxTurns,
+        allowDuplicateImports,
+        modelMode
+      })), root);
+    }
+  );
+
+  registerTool(
+    "osk_get_concept_review_queue",
+    {
+      title: "OpenSkillKit Learn v2 Concept Review Queue",
+      description: "Return persisted Learn v2 concept cards and activation metadata without raw evidence content.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await readLearnV2ConceptStore(root), root);
+    }
+  );
+
+  registerTool(
+    "osk_review_concepts",
+    {
+      title: "OpenSkillKit Learn v2 Concept Review",
+      description: "Accept, reject, lock, demote, narrow, edit, or bulk-review Learn v2 concept cards. Active concepts sync into compatibility graphs unless compileActive=false.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        accept: z.array(z.string().min(1)).default([]),
+        reject: z.array(z.string().min(1)).default([]),
+        lock: z.array(z.string().min(1)).default([]),
+        demote: z.array(z.string().min(1)).default([]),
+        markOneOff: z.array(z.string().min(1)).default([]),
+        narrowScopes: z.array(z.object({
+          id: z.string().min(1),
+          paths: z.array(z.string().min(1)).optional(),
+          taskTypes: z.array(z.string().min(1)).optional(),
+          negativeTriggers: z.array(z.string().min(1)).optional()
+        })).default([]),
+        edits: z.array(z.object({
+          id: z.string().min(1),
+          title: z.string().optional(),
+          canonicalBehavior: z.string().optional(),
+          activationPhrases: z.array(z.string().min(1)).optional()
+        })).default([]),
+        addCounterevidence: z.array(z.object({
+          id: z.string().min(1),
+          evidenceId: z.string().min(1),
+          reason: z.string().min(1)
+        })).default([]),
+        bulkSafe: z.enum(["accept-low-risk", "reject-one-off", "mark-superseded"]).optional(),
+        compileActive: z.boolean().default(true)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, ...options }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "review", () => applyLearnV2ConceptReview(root, options)), root);
+    }
+  );
+
+  registerTool(
+    "osk_compile_concepts",
+    {
+      title: "OpenSkillKit Learn v2 Concept Compile Preview",
+      description: "Compile active Learn v2 concepts into compatibility preference/workflow outputs and declassification report preview.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const config = await readProjectConfig(root);
+      const store = await readLearnV2ConceptStore(root);
+      return toolResult(await compileLearnV2ConceptPreview(root, config, store.cards, new Date()), root);
+    }
+  );
+
+  registerTool(
+    "osk_get_learn_v2_vault_status",
+    {
+      title: "OpenSkillKit Learn v2 Vault Maintenance",
+      description: "Return Learn v2 raw vault budget status and optionally garbage-collect expired unpinned raw blobs.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        gc: z.boolean().default(false),
+        maxHotBytes: z.number().int().min(1).default(50_000_000)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, gc, maxHotBytes }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await runLearnV2RawVaultMaintenance(root, { gc, maxHotBytes }), root);
     }
   );
 
