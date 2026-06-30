@@ -242,8 +242,14 @@ describe("OpenWorld local research", () => {
         hiddenOracleProof: false
       }
     });
+    expect(status.productProof).toMatchObject({
+      schemaVersion: "openskill-kit.product-proof-status.v1",
+      openWorld: "artifact-verifier",
+      hiddenOracleBenchmark: false
+    });
     const explainedStatus = await explainAdaptiveStatus(root);
     expect(explainedStatus.nextActions).toContain("OpenWorld proof boundary: artifact-verifier; hiddenOracleProof=false.");
+    expect(explainedStatus.nextActions.some((action) => action.includes("Product proof ladder:"))).toBe(true);
     const harness = await buildOpenWorldHiddenOracleHarness(root, task.task.id, {
       suiteId: suite.suite.id,
       now: new Date("2026-06-26T01:04:46.000Z")

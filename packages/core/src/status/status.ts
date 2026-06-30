@@ -27,6 +27,7 @@ export interface AdaptiveStatus {
   pendingReviewCount: number;
   operations: OperationsStatusSummary;
   openWorld: OpenWorldStatusSummary;
+  productProof: ProductProofStatusSummary;
   compiled: {
     contextPack: boolean;
     projectBehaviorSkill: boolean;
@@ -100,6 +101,16 @@ export interface OpenWorldStatusSummary {
   };
 }
 
+export interface ProductProofStatusSummary {
+  schemaVersion: "openskill-kit.product-proof-status.v1";
+  adaptiveBehavior: "not-proof" | "static-artifact" | "replay-behavior";
+  openCodeHarness: "not-proof" | "static-artifact" | "harness-smoke";
+  externalAgent: "not-proof" | "external-agent-ab";
+  openWorld: "not-proof" | "artifact-verifier";
+  hiddenOracleBenchmark: false;
+  message: string;
+}
+
 export interface AdaptiveStatusExplanation {
   schemaVersion: "openskill-kit.status-explain.v1";
   status: AdaptiveStatus;
@@ -131,6 +142,10 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
   const pluginAttachment = await getAgentPluginAttachStatus(root);
   const openWorld = await summarizeOpenWorldStatus(root);
   const operations = await summarizeOperationsStatus(root);
+  const compiledContextPack = await exists(path.join(root, ".openskill-kit", "compiled", "context-pack.md"));
+  const compiledProjectBehaviorSkill = await exists(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md"));
+  const compiledProjectWorkflowsSkill = await exists(path.join(root, ".openskill-kit", "compiled", "skills", "project-workflows", "SKILL.md"));
+  const productProof = summarizeProductProof({ pluginStatus, pluginAttachment, compiledContextPack, operations, openWorld });
   return {
     schemaVersion: "openskill-kit.status.v1",
     initialized: Boolean(config),
@@ -151,10 +166,11 @@ export async function getAdaptiveStatus(projectRoot: string): Promise<AdaptiveSt
     pendingReviewCount: preferenceCandidates + workflowCandidates,
     operations,
     openWorld,
+    productProof,
     compiled: {
-      contextPack: await exists(path.join(root, ".openskill-kit", "compiled", "context-pack.md")),
-      projectBehaviorSkill: await exists(path.join(root, ".openskill-kit", "compiled", "skills", "project-behavior", "SKILL.md")),
-      projectWorkflowsSkill: await exists(path.join(root, ".openskill-kit", "compiled", "skills", "project-workflows", "SKILL.md")),
+      contextPack: compiledContextPack,
+      projectBehaviorSkill: compiledProjectBehaviorSkill,
+      projectWorkflowsSkill: compiledProjectWorkflowsSkill,
       plugin: pluginStatus.ready,
       pluginStatus,
       pluginAttachment
@@ -183,6 +199,7 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
     const proof = status.openWorld.latest?.proofLevel ?? "not-proof";
     nextActions.push(`OpenWorld proof boundary: ${proof}; hiddenOracleProof=${status.openWorld.proofBoundary.hiddenOracleProof}.`);
   }
+  nextActions.push(`Product proof ladder: OpenCode=${status.productProof.openCodeHarness}, adaptive=${status.productProof.adaptiveBehavior}, OpenWorld=${status.productProof.openWorld}, hidden-oracle-benchmark=false.`);
   if (status.activePreferenceCount > 0 && (!status.compiled.contextPack || stale)) nextActions.push("Run compile to refresh behavior artifacts.");
   if (!status.compiled.plugin) nextActions.push("Run compile --target plugin to create an attachable coding-harness plugin bundle.");
   if (status.compiled.plugin && (!status.compiled.pluginAttachment.attached || !status.compiled.pluginAttachment.defaultHostReady)) nextActions.push(...status.compiled.pluginAttachment.nextActions);
@@ -203,6 +220,35 @@ export async function explainAdaptiveStatus(projectRoot: string): Promise<Adapti
       privacyClasses: calibration.privacyClasses,
       evalOutcomes: calibration.evalOutcomes
     } : undefined
+  };
+}
+
+function summarizeProductProof(input: {
+  pluginStatus: CompiledPluginStatus;
+  pluginAttachment: AgentPluginAttachStatus;
+  compiledContextPack: boolean;
+  operations: OperationsStatusSummary;
+  openWorld: OpenWorldStatusSummary;
+}): ProductProofStatusSummary {
+  const adaptiveBehavior = input.operations.evals.runCount > 0
+    ? "replay-behavior"
+    : input.compiledContextPack
+      ? "static-artifact"
+      : "not-proof";
+  const openCodeHarness = input.pluginAttachment.defaultHostReady
+    ? "harness-smoke"
+    : input.pluginStatus.ready
+      ? "static-artifact"
+      : "not-proof";
+  const openWorld = input.openWorld.latest?.proofLevel === "artifact-verifier" ? "artifact-verifier" : "not-proof";
+  return {
+    schemaVersion: "openskill-kit.product-proof-status.v1",
+    adaptiveBehavior,
+    openCodeHarness,
+    externalAgent: "not-proof",
+    openWorld,
+    hiddenOracleBenchmark: false,
+    message: "Proof ladder reports current evidence only: static artifacts, replay behavior, harness smoke, external-agent A/B, artifact verifier, and hidden-oracle benchmark are separate claims."
   };
 }
 

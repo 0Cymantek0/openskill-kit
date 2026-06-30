@@ -46,6 +46,11 @@ describe("planned launch documentation coverage", () => {
     expect(modelRouting).toContain("doctor --full");
     expect(modelRouting).toContain("Unknown route");
     expect(modelRouting).toContain("maxStep");
+
+    const proofLadder = await readDoc("docs/proof-ladder.md");
+    expect(proofLadder).toContain("harness-smoke");
+    expect(proofLadder).toContain("hidden-oracle-benchmark");
+    expect(proofLadder).toContain("productProof");
   });
 });
 

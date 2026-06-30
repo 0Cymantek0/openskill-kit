@@ -1,5 +1,7 @@
 # OpenWorld Proof Levels
 
+For the full product evidence ladder, see [`../proof-ladder.md`](../proof-ladder.md).
+
 OpenSkillKit separates verifier evidence from benchmark proof. This matters for
 daily harness use because `/osk research`, `/osk evolve`, and `/osk verify`
 produce useful artifacts, but they must not be presented as hidden benchmark
