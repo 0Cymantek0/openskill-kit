@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -296,6 +296,74 @@ describe("osk CLI facade", () => {
     expect(config.mcp).toBeUndefined();
   });
 
+  it("runs the end-to-end OpenCode ambient learning golden flow", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-golden-opencode-"));
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2), "utf8");
+    await writeFile(path.join(root, "custom.ts"), "export default async function CustomPlugin() { return {}; }\n", "utf8");
+
+    const setupPreview = await execCliJson(["osk", "setup", "--non-interactive", "--json"], root);
+    expect(setupPreview.status).toBe("planned");
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
+
+    const setupApply = await execCliJson(["osk", "setup", "--non-interactive", "--yes", "--json"], root);
+    expect(setupApply.status).toBe("installed");
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".opencode", "agents", "osk-learner.md"))).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".opencode", "skills", "osk-learning", "SKILL.md"))).resolves.toBeTruthy();
+
+    const pluginPath = path.join(root, ".opencode", "plugins", "openskillkit.ts");
+    const imported = await import(`${pathToFileURL(pluginPath).href}?case=${Date.now()}-golden`);
+    const hooks = await imported.OpenSkillKitPlugin({
+      worktree: root,
+      client: { app: { log: async () => ({}) } }
+    });
+    await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", path: "src/parser.ts" }, { status: "success", output: "secret output" });
+    await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", path: "src/parser.ts" }, { status: "success", output: "secret output" });
+
+    const ambient = await readFile(path.join(root, ".openskill-kit", "ambient", "opencode-events.jsonl"), "utf8");
+    expect(ambient).not.toContain("npm test");
+    expect(ambient).not.toContain("src/parser.ts");
+    expect(ambient).not.toContain("secret output");
+
+    const learnPreview = await execCliJson(["osk", "learn", "--source", "opencode-ambient", "--json"], root);
+    expect(learnPreview.previewOnly).toBe(true);
+    expect(learnPreview.digest.eventsAppended).toBe(0);
+    expect(learnPreview.preview.labelCandidates.some((item: { kind: string }) => item.kind === "command")).toBe(true);
+    expect(await eventJsonlCount(root)).toBe(0);
+
+    const learnApply = await execCliJson(["osk", "learn", "--source", "opencode-ambient", "--apply", "--json"], root);
+    expect(learnApply.previewOnly).toBe(false);
+    expect(learnApply.digest.eventsAppended).toBe(2);
+    const commandCandidate = learnApply.safeMetadata.opencode.labelCandidates.find((item: { kind: string }) => item.kind === "command");
+    expect(commandCandidate?.hash).toMatch(/^sha256:/);
+
+    const reviewQueue = await execCliJson(["osk", "review", "--write", "--json"], root);
+    expect(reviewQueue.labelCandidates.some((item: { hash: string }) => item.hash === commandCandidate.hash)).toBe(true);
+
+    const reviewed = await execCliJson(["osk", "review", "--label-command", commandCandidate.hash, "--as", "npm test", "--json"], root);
+    expect(reviewed.reviewedCount).toBe(1);
+
+    const compiled = await execCliJson(["osk", "compile", "--json"], root);
+    const commandPolicy = await readFile(path.resolve(root, compiled.policyArtifactPaths.find((file: string) => file.endsWith("command-policy.md"))), "utf8");
+    expect(commandPolicy).toContain("npm test");
+
+    const verify = await execCliJson(["osk", "verify", "--json"], root);
+    expect(verify.status).toBe("pass");
+
+    const context = await execCliJson(["osk", "task", "context", "parser verification", "--command", "npm test", "--json"], root);
+    expect(context.compactMarkdown).toContain("OpenSkillKit Task Context");
+
+    const uninstallPreview = await execCliJson(["osk", "uninstall", "--non-interactive", "--dry-run", "--json"], root);
+    expect(uninstallPreview.status).toBe("planned");
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).resolves.toBeTruthy();
+
+    const uninstallApply = await execCliJson(["osk", "uninstall", "--non-interactive", "--yes", "--json"], root);
+    expect(uninstallApply.status).toBe("uninstalled");
+    await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
+    expect(JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8")).plugin).toEqual(["./custom.ts"]);
+    await expect(stat(path.join(root, ".openskill-kit", "config.json"))).resolves.toBeTruthy();
+  });
+
   it("sets up and uninstalls when opencode.json has a UTF-8 BOM", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-bom-"));
     await writeFile(path.join(root, "opencode.json"), `\uFEFF${JSON.stringify({ plugin: ["./custom.ts"], share: "manual" }, null, 2)}\n`, "utf8");
@@ -434,6 +502,21 @@ describe("osk CLI facade", () => {
     await expect(stat(path.join(root, ".openskill-kit", "openworld", "tasks", task.task.id, "sources", `${applied.execution.sourceIds[0]}.json`))).resolves.toBeTruthy();
   });
 });
+
+async function execCliJson(args: string[], cwd: string): Promise<any> {
+  const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, ...args], {
+    cwd,
+    windowsHide: true,
+    timeout: 60_000,
+    maxBuffer: 16 * 1024 * 1024
+  });
+  return JSON.parse(stdout);
+}
+
+async function eventJsonlCount(root: string): Promise<number> {
+  const entries = await readdir(path.join(root, ".openskill-kit", "events")).catch(() => []);
+  return entries.filter((entry) => entry.endsWith(".jsonl")).length;
+}
 
 async function runCliWithInput(args: string[], input: string, cwd: string, env: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
