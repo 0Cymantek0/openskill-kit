@@ -10,6 +10,7 @@ export interface ProjectBehaviorPackResult {
   packPath: string;
   manifestPath: string;
   files: string[];
+  publishAudit: ProjectBehaviorPackPublishAudit;
 }
 
 export interface EncryptedProjectBehaviorPackResult {
@@ -19,6 +20,26 @@ export interface EncryptedProjectBehaviorPackResult {
   sourcePackPath: string;
   fileCount: number;
   privacyStatement: string;
+}
+
+export interface ProjectBehaviorPackPublishAuditFinding {
+  ruleId: string;
+  level: "warn" | "block";
+  file: string;
+  message: string;
+  sample: string;
+}
+
+export interface ProjectBehaviorPackPublishAudit {
+  schemaVersion: "openskill-kit.project-pack-publish-audit.v1";
+  status: "pass" | "fail";
+  scannedAt: string;
+  filesScanned: number;
+  findings: ProjectBehaviorPackPublishAuditFinding[];
+  summary: {
+    warn: number;
+    block: number;
+  };
 }
 
 export async function exportProjectBehaviorPack(projectRoot: string): Promise<ProjectBehaviorPackResult> {
@@ -48,6 +69,13 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
       await fs.mkdir(path.dirname(dest), { recursive: true });
       await fs.copyFile(source, dest);
     }
+    const initialCopied = await listFiles(packRoot);
+    const publishAudit = await auditProjectBehaviorPackPayload(packRoot, initialCopied);
+    const publishAuditPath = path.join(packRoot, "publish-audit.json");
+    await writeJsonAtomic(publishAuditPath, publishAudit);
+    if (publishAudit.status !== "pass") {
+      throw new Error(`Behavior pack publish audit failed: ${publishAudit.findings.map((finding) => `${finding.file}:${finding.ruleId}`).join("; ")}`);
+    }
     const copied = await listFiles(packRoot);
     const hashes = Object.fromEntries(await Promise.all(copied.map(async (file) => [file, await sha256(path.join(packRoot, file))])));
     const manifestPath = path.join(packRoot, "manifest.json");
@@ -73,6 +101,11 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
         hooksTrustedByDefault: false,
         importRequiresReview: true
       },
+      publishAudit: {
+        status: publishAudit.status,
+        path: "publish-audit.json",
+        findingCount: publishAudit.findings.length
+      },
       includes: ["preferences", "skills", "hooks", "mcp"],
       privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
       privacyStatement: "Pack excludes raw events, raw signals, learn-v2 raw vault records, analysis, episode stores, model request artifacts, model response artifacts, outcome telemetry, concept store, activation index, review, eval and compile-preview artifacts, raw learning vault records, ambient hook metadata, interaction import runs, private evidence blobs, review drafts, eval run output, reports, raw prompts, raw diffs, and secret-like local state.",
@@ -80,7 +113,7 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
       files: copied,
       hashes
     });
-    return { schemaVersion: "openskill-kit.project-pack.v1", packPath: packRoot, manifestPath, files: [...copied, "manifest.json"].sort() };
+    return { schemaVersion: "openskill-kit.project-pack.v1", packPath: packRoot, manifestPath, files: [...copied, "manifest.json"].sort(), publishAudit };
   });
 }
 
@@ -179,6 +212,11 @@ export interface VerifyProjectBehaviorPackResult {
     keyId?: string;
     publicKeyPath?: string;
   };
+  publishAudit: {
+    status: "pass" | "fail";
+    findingCount: number;
+    auditPath?: string;
+  };
 }
 
 export async function verifyProjectBehaviorPack(packPathInput: string): Promise<VerifyProjectBehaviorPackResult> {
@@ -188,7 +226,7 @@ export async function verifyProjectBehaviorPack(packPathInput: string): Promise<
   if (manifest.schemaVersion !== "openskill-kit.project-pack.v1") issues.push("Invalid manifest schema version");
   if (manifest.privacy?.rawEventsIncluded !== false) issues.push("Pack must not include raw events");
   if (manifest.privacy?.rawSignalsIncluded !== false) issues.push("Pack must not include raw signals");
-  for (const blocked of [".openskill-kit/events/", ".openskill-kit/signals/", ".openskill-kit/learn-v2/raw-vault/", ".openskill-kit/learn-v2/analysis/", ".openskill-kit/learn-v2/review/", ".openskill-kit/learn-v2/evals/", ".openskill-kit/learn-v2/concepts/", ".openskill-kit/learn-v2/compiled-preview/", ".openskill-kit/learn-v2/activation-index.json", ".openskill-kit/raw-vault/", ".openskill-kit/learning/analysis-frames/", ".openskill-kit/learning/staged-imports/", ".openskill-kit/ambient/", ".openskill-kit/interactions/", ".openskill-kit/evidence/blobs/", ".openskill-kit/reviews/", ".openskill-kit/evals/runs/", ".openskill-kit/reports/"]) {
+  for (const blocked of privatePackPathPrefixes()) {
     if (manifest.files?.some((file: string) => file.startsWith(blocked))) issues.push(`Private path included: ${blocked}`);
   }
   for (const file of manifest.files ?? []) {
@@ -202,7 +240,30 @@ export async function verifyProjectBehaviorPack(packPathInput: string): Promise<
   }
   const signature = await verifyManifestSignature(packPath, manifest);
   if (signature.status === "invalid") issues.push("Invalid pack signature");
-  return { schemaVersion: "openskill-kit.project-pack-verify.v1", status: issues.length ? "fail" : "pass", packPath, issues, files: manifest.files ?? [], signature };
+  const publishAudit = await auditProjectBehaviorPackPayload(packPath, manifest.files ?? []);
+  if (publishAudit.status !== "pass") {
+    for (const finding of publishAudit.findings) issues.push(`Publish audit ${finding.level}: ${finding.file}: ${finding.ruleId}`);
+  }
+  const manifestAuditPath = typeof manifest.publishAudit?.path === "string" ? manifest.publishAudit.path : undefined;
+  if (manifestAuditPath) {
+    const auditPath = path.join(packPath, normalizePackRel(manifestAuditPath));
+    const manifestAudit = await readPublishAudit(auditPath).catch(() => undefined);
+    if (!manifestAudit) issues.push("Manifest publish audit is missing or invalid");
+    else if (manifestAudit.status !== "pass") issues.push("Manifest publish audit did not pass");
+  }
+  return {
+    schemaVersion: "openskill-kit.project-pack-verify.v1",
+    status: issues.length ? "fail" : "pass",
+    packPath,
+    issues,
+    files: manifest.files ?? [],
+    signature,
+    publishAudit: {
+      status: publishAudit.status,
+      findingCount: publishAudit.findings.length,
+      auditPath: manifestAuditPath
+    }
+  };
 }
 
 export interface SignProjectBehaviorPackResult {
@@ -377,6 +438,136 @@ async function fileImportStatus(source: string, destination: string): Promise<"a
   return await sha256(source) === await sha256(destination) ? "unchanged" : "changed";
 }
 
+async function auditProjectBehaviorPackPayload(packRoot: string, files: string[], now = new Date()): Promise<ProjectBehaviorPackPublishAudit> {
+  const findings: ProjectBehaviorPackPublishAuditFinding[] = [];
+  const uniqueFiles = [...new Set(files)].map(normalizePackRel).sort();
+  for (const file of uniqueFiles) {
+    findings.push(...auditPackPath(file));
+    const full = path.join(packRoot, file);
+    const text = await fs.readFile(full, "utf8").catch(() => undefined);
+    if (typeof text !== "string") continue;
+    findings.push(...auditPackContent(file, text));
+  }
+  const summary = {
+    warn: findings.filter((finding) => finding.level === "warn").length,
+    block: findings.filter((finding) => finding.level === "block").length
+  };
+  return {
+    schemaVersion: "openskill-kit.project-pack-publish-audit.v1",
+    status: summary.block > 0 ? "fail" : "pass",
+    scannedAt: now.toISOString(),
+    filesScanned: uniqueFiles.length,
+    findings,
+    summary
+  };
+}
+
+function auditPackPath(file: string): ProjectBehaviorPackPublishAuditFinding[] {
+  const findings: ProjectBehaviorPackPublishAuditFinding[] = [];
+  for (const prefix of privatePackPathPrefixes()) {
+    if (file.startsWith(prefix)) {
+      findings.push({
+        ruleId: "private-path-in-pack",
+        level: "block",
+        file,
+        message: "Behavior packs must not include raw local learning, review, telemetry, eval-run, or private evidence paths.",
+        sample: prefix
+      });
+    }
+  }
+  return findings;
+}
+
+function auditPackContent(file: string, text: string): ProjectBehaviorPackPublishAuditFinding[] {
+  const rules: Array<{
+    ruleId: string;
+    level: ProjectBehaviorPackPublishAuditFinding["level"];
+    message: string;
+    pattern: RegExp;
+    sample: string;
+  }> = [
+    {
+      ruleId: "secret-like-token",
+      level: "block",
+      message: "Pack payload contains a secret-shaped token.",
+      pattern: /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/i,
+      sample: "<SECRET>"
+    },
+    {
+      ruleId: "secret-assignment",
+      level: "block",
+      message: "Pack payload contains a secret-like config assignment.",
+      pattern: /\b[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)[A-Z0-9_]*\s*=\s*[^\s"'`]+/i,
+      sample: "NAME=<SECRET>"
+    },
+    {
+      ruleId: "absolute-user-path",
+      level: "block",
+      message: "Pack payload contains a machine-local user path.",
+      pattern: /\b[A-Z]:\\Users\\[^\\\s"'`]+|\/(?:Users|home)\/[^\/\s"'`]+/i,
+      sample: "<USER_HOME>"
+    },
+    {
+      ruleId: "raw-vault-ref",
+      level: "block",
+      message: "Pack payload contains a raw vault reference.",
+      pattern: /\braw_[A-Za-z0-9_-]{8,}\b/i,
+      sample: "<RAW_REF>"
+    },
+    {
+      ruleId: "private-artifact-reference",
+      level: "block",
+      message: "Pack payload references private raw-local learning artifacts.",
+      pattern: /\.openskill-kit\/(?:learn-v2\/(?:raw-vault|analysis|review|evals|concepts|compiled-preview|declassified-snippets|conflicts|observability|evidence-quality|model-requests|model-responses|episodes|outcomes|drift)|raw-vault|learning\/(?:analysis-frames|staged-imports)|ambient|interactions|evidence\/blobs|reviews|evals\/runs|reports)\b/i,
+      sample: "<PRIVATE_ARTIFACT_PATH>"
+    }
+  ];
+  const findings: ProjectBehaviorPackPublishAuditFinding[] = [];
+  for (const rule of rules) {
+    if (!rule.pattern.test(text)) continue;
+    findings.push({
+      ruleId: rule.ruleId,
+      level: rule.level,
+      file,
+      message: rule.message,
+      sample: rule.sample
+    });
+  }
+  return findings;
+}
+
+function privatePackPathPrefixes(): string[] {
+  return [
+    ".openskill-kit/events/",
+    ".openskill-kit/signals/",
+    ".openskill-kit/learn-v2/raw-vault/",
+    ".openskill-kit/learn-v2/analysis/",
+    ".openskill-kit/learn-v2/review/",
+    ".openskill-kit/learn-v2/evals/",
+    ".openskill-kit/learn-v2/concepts/",
+    ".openskill-kit/learn-v2/compiled-preview/",
+    ".openskill-kit/learn-v2/declassified-snippets/",
+    ".openskill-kit/learn-v2/conflicts/",
+    ".openskill-kit/learn-v2/observability/",
+    ".openskill-kit/learn-v2/evidence-quality/",
+    ".openskill-kit/learn-v2/model-requests/",
+    ".openskill-kit/learn-v2/model-responses/",
+    ".openskill-kit/learn-v2/episodes/",
+    ".openskill-kit/learn-v2/outcomes/",
+    ".openskill-kit/learn-v2/drift/",
+    ".openskill-kit/learn-v2/activation-index.json",
+    ".openskill-kit/raw-vault/",
+    ".openskill-kit/learning/analysis-frames/",
+    ".openskill-kit/learning/staged-imports/",
+    ".openskill-kit/ambient/",
+    ".openskill-kit/interactions/",
+    ".openskill-kit/evidence/blobs/",
+    ".openskill-kit/reviews/",
+    ".openskill-kit/evals/runs/",
+    ".openskill-kit/reports/"
+  ];
+}
+
 async function listFiles(root: string): Promise<string[]> {
   const out: string[] = [];
   async function walk(dir: string): Promise<void> {
@@ -401,6 +592,13 @@ async function exists(file: string): Promise<boolean> {
 
 async function readManifest(packPath: string): Promise<any> {
   return JSON.parse(await fs.readFile(path.join(packPath, "manifest.json"), "utf8"));
+}
+
+async function readPublishAudit(file: string): Promise<ProjectBehaviorPackPublishAudit> {
+  const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+  if (parsed?.schemaVersion !== "openskill-kit.project-pack-publish-audit.v1") throw new Error("Invalid publish audit schema");
+  if (parsed.status !== "pass" && parsed.status !== "fail") throw new Error("Invalid publish audit status");
+  return parsed as ProjectBehaviorPackPublishAudit;
 }
 
 async function readPackPayload(packPath: string, files: string[]): Promise<Record<string, string>> {

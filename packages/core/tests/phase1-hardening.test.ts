@@ -161,6 +161,32 @@ describe("phase 1 hardening", () => {
     expect(result.issues).toContain("Missing hash for missing-hash.txt");
   });
 
+  it("fails pack verification when allowed files contain publish-boundary leaks", async () => {
+    const pack = await mkdtemp(path.join(os.tmpdir(), "osk-pack-leaky-"));
+    const policy = path.join(pack, "policy.md");
+    await writeFile(policy, [
+      "# Policy",
+      "Do not export raw_deadbeef references.",
+      "Secret fixture API_KEY=sk-live-secret",
+      "Path C:\\Users\\Alice\\project\\.openskill-kit\\learn-v2\\raw-vault\\records\\raw_deadbeef.json"
+    ].join("\n"), "utf8");
+    await writeJson(path.join(pack, "manifest.json"), {
+      schemaVersion: "openskill-kit.project-pack.v1",
+      privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
+      files: ["policy.md"],
+      hashes: {
+        "policy.md": await sha256(policy)
+      }
+    });
+
+    const result = await verifyProjectBehaviorPack(pack);
+    expect(result.status).toBe("fail");
+    expect(result.publishAudit.status).toBe("fail");
+    expect(result.issues.some((issue) => issue.includes("Publish audit block: policy.md: raw-vault-ref"))).toBe(true);
+    expect(result.issues.some((issue) => issue.includes("Publish audit block: policy.md: secret-assignment"))).toBe(true);
+    expect(result.issues.some((issue) => issue.includes("Publish audit block: policy.md: absolute-user-path"))).toBe(true);
+  });
+
   it("plans pack import without writing files or importing hooks by default", async () => {
     const pack = await mkdtemp(path.join(os.tmpdir(), "osk-pack-good-"));
     await writeFile(path.join(pack, "policy.md"), "# Policy\n", "utf8");

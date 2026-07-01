@@ -101,9 +101,13 @@ describe("adaptive behavior layer", () => {
     await expect(stat(pack.manifestPath)).resolves.toBeTruthy();
     expect(pack.files).not.toContain(".openskill-kit/events/2026-06.jsonl");
     expect(pack.files).not.toContain(".openskill-kit/ambient/opencode-events.jsonl");
+    expect(pack.files).toContain("publish-audit.json");
+    expect(pack.publishAudit.status).toBe("pass");
     const manifest = JSON.parse(await readFile(pack.manifestPath, "utf8"));
     expect(manifest.project.name).toBe("adaptive-fixture");
     expect(manifest.compatibility.configSchema).toBe("openskill-kit.config.v1");
+    expect(manifest.publishAudit.status).toBe("pass");
+    expect(manifest.publishAudit.path).toBe("publish-audit.json");
     expect(manifest.generatedArtifacts.some((artifact: { type: string }) => artifact.type === "skill")).toBe(true);
     expect(pack.files).toContain(".openskill-kit/compiled/skills/project-testing/SKILL.md");
     expect(manifest.privacyStatement).toContain("excludes raw events");
@@ -112,6 +116,7 @@ describe("adaptive behavior layer", () => {
     expect(signed.keyId).toHaveLength(16);
     const packVerify = await verifyProjectBehaviorPack(pack.packPath);
     expect(packVerify.status).toBe("pass");
+    expect(packVerify.publishAudit.status).toBe("pass");
     expect(packVerify.signature?.status).toBe("valid");
     expect(packVerify.signature?.keyId).toBe(signed.keyId);
     const inspected = await inspectProjectBehaviorPack(pack.packPath);
