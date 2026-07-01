@@ -104,12 +104,13 @@ function makeAtom(
   input: Pick<LearnV2BehaviorAtom, "kind" | "statement" | "polarity" | "rationale" | "confidenceCap" | "risk">
 ): LearnV2BehaviorAtom {
   const scopedPaths = episode.pathCluster.filter((file) => !file.includes("[")).slice(0, 12);
-  const baseConfidence = 0.5
-    + (episode.episodeConfidence * 0.24)
+  const supportConfidence = 0.72
     + (episode.outcome === "edited" || episode.outcome === "rejected" ? 0.12 : 0)
     + (episode.rawRefs.length > 1 ? 0.04 : 0)
     + (episode.patchComparisons.length ? 0.04 : 0);
-  const sourceReliability = Number(Math.min(0.95, 0.45 + episode.episodeConfidence * 0.35 + (episode.outcome === "edited" || episode.outcome === "rejected" ? 0.12 : 0)).toFixed(2));
+  const episodeCap = 0.34 + (episode.episodeConfidence * 0.58);
+  const confidence = Math.min(input.confidenceCap, episodeCap, supportConfidence * episode.episodeConfidence);
+  const sourceReliability = Number(Math.min(0.95, 0.35 + episode.episodeConfidence * 0.5 + (episode.outcome === "edited" || episode.outcome === "rejected" ? 0.08 : 0)).toFixed(2));
   return {
     schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
     id: `atom_${learnV2ShortHash(`${episode.id}:${input.kind}:${input.polarity}:${input.statement}`)}`,
@@ -121,7 +122,7 @@ function makeAtom(
       paths: scopedPaths,
       taskTypes: episode.taskHints.filter((hint) => !hint.startsWith("command:")).slice(0, 8)
     },
-    confidence: Number(Math.min(input.confidenceCap, baseConfidence).toFixed(2)),
+    confidence: Number(confidence.toFixed(2)),
     confidenceCap: input.confidenceCap,
     sourceReliability,
     evidenceIds: episode.evidenceIds,
@@ -152,6 +153,7 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
     taskHints: episode.taskHints,
     outcome: episode.outcome,
     episodeConfidence: episode.episodeConfidence,
+    episodeConfidenceBreakdown: episode.episodeConfidenceBreakdown,
     scope: {
       paths: episode.pathCluster,
       branch: episode.branch

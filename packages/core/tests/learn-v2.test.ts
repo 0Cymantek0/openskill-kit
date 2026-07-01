@@ -154,7 +154,34 @@ describe("learn-v2 substrate", () => {
 
     expect(episodes).toHaveLength(1);
     expect(episodes[0]!.episodeConfidence).toBeGreaterThanOrEqual(0.6);
+    expect(episodes[0]!.episodeConfidenceBreakdown?.schemaVersion).toBe("openskill-kit.learn-v2.episode-confidence.v1");
+    expect(episodes[0]!.episodeConfidenceBreakdown?.linkage.pathCluster).toBeGreaterThan(0);
+    expect(episodes[0]!.episodeConfidenceBreakdown?.risks).toContain("imported-without-session-id");
     expect(concepts.some((concept) => /parser regression tests/i.test(concept.canonicalBehavior))).toBe(true);
+  });
+
+  it("keeps weak single-record stitching from producing high-confidence durable rules", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_weak_single");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "loose-note.txt", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Always prefer this vague project behavior without session path outcome or trace linkage."
+    );
+    const [episode] = reconstructLearnV2Episodes(evidence);
+    expect(episode!.stitching.method).toBe("single-record");
+    expect(episode!.episodeConfidenceBreakdown?.risks).toEqual(expect.arrayContaining([
+      "imported-without-session-id",
+      "missing-outcome",
+      "single-record-only"
+    ]));
+    expect(episode!.episodeConfidence).toBeLessThan(0.35);
+
+    const atoms = extractLearnV2BehaviorAtoms([episode!]).atoms;
+    expect(atoms[0]?.confidence).toBeLessThan(0.3);
+    const [concept] = mergeLearnV2ConceptCards(atoms, new Date("2026-06-30T00:00:00Z"));
+    expect(concept?.confidence).toBeLessThan(0.3);
+    expect(concept?.sourceReliability).toBeLessThan(0.55);
   });
 
   it("structurally classifies supported-language diffs and filters generated files", async () => {
@@ -655,7 +682,7 @@ describe("learn-v2 substrate", () => {
     const stored = initial.cards[0]!;
     expect(stored.scoring?.schemaVersion).toBe("openskill-kit.learn-v2.concept-scoring.v1");
     expect(stored.scoring?.reasons.join(",")).toContain("max-atom-confidence:");
-    expect(stored.scoring?.penalties).toHaveLength(0);
+    expect(stored.scoring?.penalties.join(",")).not.toContain("counterevidence:");
 
     const reviewed = await applyLearnV2ConceptReview(root, {
       addCounterevidence: [{

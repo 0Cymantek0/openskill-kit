@@ -167,6 +167,29 @@ export const LearnV2TaskEpisodeSchema = z.object({
   taskHints: z.array(z.string()).default([]),
   outcome: z.enum(["accepted", "rejected", "edited", "failed", "passed", "unknown"]).default("unknown"),
   episodeConfidence: z.number().min(0).max(1),
+  episodeConfidenceBreakdown: z.object({
+    schemaVersion: z.literal("openskill-kit.learn-v2.episode-confidence.v1"),
+    score: z.number().min(0).max(1),
+    linkage: z.object({
+      traceId: z.number().min(0).max(1),
+      sessionId: z.number().min(0).max(1),
+      branch: z.number().min(0).max(1),
+      pathCluster: z.number().min(0).max(1),
+      semanticTaskSimilarity: z.number().min(0).max(1),
+      timeWindow: z.number().min(0).max(1),
+      outcomeLink: z.number().min(0).max(1)
+    }),
+    risks: z.array(z.enum([
+      "mixed-intent",
+      "same-branch-context-switch",
+      "weak-path-overlap",
+      "missing-outcome",
+      "imported-without-session-id",
+      "single-record-only",
+      "time-gap-only"
+    ])).default([]),
+    reasons: z.array(z.string()).default([])
+  }).optional(),
   stitching: z.object({
     method: z.enum(["explicit-id", "trace-id", "session", "branch-path-time", "single-record"]),
     reasons: z.array(z.string()).default([])
@@ -189,6 +212,7 @@ export const LearnV2EpisodeLearningBundleSchema = z.object({
   taskHints: z.array(z.string()).default([]),
   outcome: LearnV2TaskEpisodeSchema.shape.outcome,
   episodeConfidence: z.number().min(0).max(1),
+  episodeConfidenceBreakdown: LearnV2TaskEpisodeSchema.shape.episodeConfidenceBreakdown,
   scope: z.object({
     paths: z.array(z.string()).default([]),
     branch: z.string().optional()

@@ -47,6 +47,7 @@ function buildEpisode(key: string, evidence: LearnV2NormalizedEvidence[]): Learn
       : key.startsWith("session:") ? "session"
         : key.startsWith("heuristic:") ? "branch-path-time"
           : "single-record";
+  const confidence = buildEpisodeConfidence(method, evidence, pathCluster);
   return {
     schemaVersion: "openskill-kit.learn-v2.task-episode.v1",
     id: `episode_${learnV2ShortHash(`${key}:${evidenceIds.join(",")}`)}`,
@@ -61,7 +62,8 @@ function buildEpisode(key: string, evidence: LearnV2NormalizedEvidence[]): Learn
     pathCluster,
     taskHints: inferTaskHints(evidence, patchComparisons),
     outcome: inferOutcome(evidence),
-    episodeConfidence: confidenceForMethod(method, evidence),
+    episodeConfidence: confidence.score,
+    episodeConfidenceBreakdown: confidence,
     stitching: {
       method,
       reasons: stitchReasons(method, evidence, pathCluster)
@@ -99,10 +101,49 @@ function inferOutcome(evidence: LearnV2NormalizedEvidence[]): LearnV2TaskEpisode
   return "unknown";
 }
 
-function confidenceForMethod(method: LearnV2TaskEpisode["stitching"]["method"], evidence: LearnV2NormalizedEvidence[]): number {
-  const base = method === "explicit-id" ? 0.96 : method === "trace-id" ? 0.9 : method === "session" ? 0.78 : method === "branch-path-time" ? 0.62 : 0.48;
-  const bonus = Math.min(0.12, evidence.length * 0.01);
-  return Number(Math.min(0.98, base + bonus).toFixed(2));
+function buildEpisodeConfidence(
+  method: LearnV2TaskEpisode["stitching"]["method"],
+  evidence: LearnV2NormalizedEvidence[],
+  paths: string[]
+): NonNullable<LearnV2TaskEpisode["episodeConfidenceBreakdown"]> {
+  const traceId = evidence.some((item) => item.traceId || item.episodeId) ? 1 : 0;
+  const sessionId = evidence.some((item) => item.sessionId) ? 0.78 : 0;
+  const branches = new Set(evidence.map((item) => item.branch).filter(Boolean));
+  const branch = branches.size === 1 ? 0.65 : branches.size > 1 ? 0.2 : 0;
+  const pathCluster = paths.length ? Math.min(1, 0.35 + paths.length * 0.08) : 0;
+  const semanticTaskSimilarity = semanticSimilaritySignal(evidence);
+  const timeWindow = timeWindowSignal(evidence);
+  const outcomeLink = outcomeSignal(evidence);
+  const methodBase = method === "explicit-id" ? 0.76
+    : method === "trace-id" ? 0.7
+      : method === "session" ? 0.58
+        : method === "branch-path-time" ? 0.45
+          : 0.24;
+  const linkageBonus = (traceId * 0.12)
+    + (sessionId * 0.08)
+    + (branch * 0.04)
+    + (pathCluster * 0.08)
+    + (semanticTaskSimilarity * 0.05)
+    + (timeWindow * 0.06)
+    + (outcomeLink * 0.05);
+  const risks = episodeConfidenceRisks(method, evidence, paths, { branch, pathCluster, semanticTaskSimilarity, timeWindow, outcomeLink });
+  const riskPenalty = Math.min(0.2, risks.length * 0.04);
+  const score = round(Math.min(0.98, Math.max(0.08, methodBase + linkageBonus - riskPenalty)));
+  return {
+    schemaVersion: "openskill-kit.learn-v2.episode-confidence.v1",
+    score,
+    linkage: {
+      traceId,
+      sessionId,
+      branch,
+      pathCluster,
+      semanticTaskSimilarity,
+      timeWindow,
+      outcomeLink
+    },
+    risks,
+    reasons: episodeConfidenceReasons(method, evidence, paths, score, risks)
+  };
 }
 
 function stitchReasons(method: LearnV2TaskEpisode["stitching"]["method"], evidence: LearnV2NormalizedEvidence[], paths: string[]): string[] {
@@ -113,6 +154,75 @@ function stitchReasons(method: LearnV2TaskEpisode["stitching"]["method"], eviden
   if (paths.length) reasons.push("path-cluster-present");
   if (evidence.some((item) => item.branch)) reasons.push("branch-present");
   return reasons;
+}
+
+function semanticSimilaritySignal(evidence: LearnV2NormalizedEvidence[]): number {
+  const hints = new Set<string>();
+  for (const item of evidence) {
+    const text = `${item.text} ${item.commands.join(" ")}`.toLowerCase();
+    if (/\bparser|parse|grammar|lexer\b/.test(text)) hints.add("parser");
+    if (/\btest|fixture|regression|vitest|pytest\b/.test(text)) hints.add("testing");
+    if (/\bsecurity|secret|token|credential\b/.test(text)) hints.add("security");
+    if (/\brefactor|rewrite|broad\b/.test(text)) hints.add("refactor");
+    if (/\bdependency|package|library\b/.test(text)) hints.add("dependency");
+  }
+  if (!hints.size) return 0;
+  return Math.min(1, 0.35 + hints.size * 0.15);
+}
+
+function timeWindowSignal(evidence: LearnV2NormalizedEvidence[]): number {
+  const timestamps = evidence.map(timestampMs).filter((value) => value > 0).sort((a, b) => a - b);
+  if (timestamps.length < 2) return timestamps.length === 1 ? 0.35 : 0;
+  const spanMinutes = (timestamps.at(-1)! - timestamps[0]!) / 60_000;
+  if (spanMinutes <= 45) return 1;
+  if (spanMinutes <= 90) return 0.7;
+  if (spanMinutes <= 180) return 0.4;
+  return 0.15;
+}
+
+function outcomeSignal(evidence: LearnV2NormalizedEvidence[]): number {
+  const outcome = inferOutcome(evidence);
+  if (outcome === "accepted" || outcome === "edited" || outcome === "rejected") return 1;
+  if (outcome === "passed" || outcome === "failed") return 0.65;
+  return 0;
+}
+
+function episodeConfidenceRisks(
+  method: LearnV2TaskEpisode["stitching"]["method"],
+  evidence: LearnV2NormalizedEvidence[],
+  paths: string[],
+  signals: { branch: number; pathCluster: number; semanticTaskSimilarity: number; timeWindow: number; outcomeLink: number }
+): NonNullable<LearnV2TaskEpisode["episodeConfidenceBreakdown"]>["risks"] {
+  const risks = new Set<NonNullable<LearnV2TaskEpisode["episodeConfidenceBreakdown"]>["risks"][number]>();
+  if (!evidence.some((item) => item.sessionId)) risks.add("imported-without-session-id");
+  if (!signals.outcomeLink) risks.add("missing-outcome");
+  if (evidence.length === 1 || method === "single-record") risks.add("single-record-only");
+  if (method === "branch-path-time" && signals.timeWindow <= 0.4) risks.add("same-branch-context-switch");
+  if (method === "branch-path-time" && signals.pathCluster < 0.5) risks.add("weak-path-overlap");
+  if (method === "branch-path-time" && signals.semanticTaskSimilarity < 0.35) risks.add("mixed-intent");
+  if (method === "branch-path-time" && paths.length === 0) risks.add("time-gap-only");
+  return [...risks].sort();
+}
+
+function episodeConfidenceReasons(
+  method: LearnV2TaskEpisode["stitching"]["method"],
+  evidence: LearnV2NormalizedEvidence[],
+  paths: string[],
+  score: number,
+  risks: string[]
+): string[] {
+  const reasons = [
+    `method:${method}`,
+    `evidence:${evidence.length}`,
+    `paths:${paths.length}`,
+    `score:${score.toFixed(2)}`
+  ];
+  if (risks.length) reasons.push(`risks:${risks.join(",")}`);
+  return reasons;
+}
+
+function round(value: number): number {
+  return Number(value.toFixed(2));
 }
 
 function pathOverlap(a: string[], b: string[]): boolean {
