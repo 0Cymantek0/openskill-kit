@@ -11,6 +11,7 @@ export interface CompilePolicyArtifactsResult {
   schemaVersion: "openskill-kit.policy-artifacts.v1";
   pathMapPath: string;
   commandPolicyPath: string;
+  commandPolicyJsonPath: string;
   reviewChecklistPath: string;
 }
 
@@ -24,11 +25,13 @@ export async function compilePolicyArtifacts(projectRoot: string): Promise<Compi
   const approvedLabels = await readApprovedAmbientLabels(root);
   const pathMapPath = path.join(root, ".openskill-kit", "compiled", "behavior", "path-map.json");
   const commandPolicyPath = path.join(root, ".openskill-kit", "compiled", "behavior", "command-policy.md");
+  const commandPolicyJsonPath = path.join(root, ".openskill-kit", "compiled", "behavior", "command-policy.json");
   const reviewChecklistPath = path.join(root, ".openskill-kit", "compiled", "behavior", "review-checklist.md");
   await writeJsonAtomic(pathMapPath, renderPathMap(active, activeWorkflows));
   await writeFileAtomic(commandPolicyPath, renderCommandPolicy(active, activeWorkflows, approvedLabels.commands));
+  await writeJsonAtomic(commandPolicyJsonPath, renderCommandPolicyJson(active, activeWorkflows, approvedLabels.commands));
   await writeFileAtomic(reviewChecklistPath, renderReviewChecklist(active, activeWorkflows, approvedLabels));
-  return { schemaVersion: "openskill-kit.policy-artifacts.v1", pathMapPath, commandPolicyPath, reviewChecklistPath };
+  return { schemaVersion: "openskill-kit.policy-artifacts.v1", pathMapPath, commandPolicyPath, commandPolicyJsonPath, reviewChecklistPath };
 }
 
 function renderPathMap(nodes: PreferenceNode[], workflows: WorkflowNode[]) {
@@ -76,10 +79,70 @@ function renderCommandPolicy(nodes: PreferenceNode[], workflows: WorkflowNode[],
   }
   if (workflows.length) {
     lines.push("", "## Active Workflow Commands", "");
-    for (const workflow of workflows.sort(sortWorkflows)) lines.push(`- ${workflow.name}: ${workflow.trigger.commands.join(" -> ")} (confidence ${workflow.confidence})`);
+    for (const workflow of workflows.sort(sortWorkflows)) {
+      const conditions = [
+        workflow.trigger.paths.length ? `paths ${workflow.trigger.paths.join(", ")}` : undefined,
+        workflow.trigger.taskTypes.length ? `tasks ${workflow.trigger.taskTypes.join(", ")}` : undefined,
+        workflow.trigger.naturalLanguagePatterns.length ? `phrases ${workflow.trigger.naturalLanguagePatterns.slice(0, 4).join(", ")}` : undefined
+      ].filter(Boolean).join("; ") || "matching task scope";
+      lines.push(`- ${workflow.name}: ${workflow.trigger.commands.join(" -> ")} when ${conditions} (confidence ${workflow.confidence})`);
+    }
   }
   lines.push("");
   return lines.join("\n");
+}
+
+function renderCommandPolicyJson(nodes: PreferenceNode[], workflows: WorkflowNode[], commandLabels: Awaited<ReturnType<typeof readApprovedAmbientLabels>>["commands"]) {
+  const commandNodes = nodes.filter((node) => node.category === "tooling" || node.category === "testing" || /command|script|npm|test|build|lint|typecheck/i.test(node.statement));
+  const workflowPolicies = workflows
+    .filter((workflow) => workflow.trigger.commands.length || workflow.steps.some((step) => step.command))
+    .sort(sortWorkflows)
+    .map((workflow) => ({
+      id: workflow.id,
+      source: "workflow" as const,
+      title: workflow.name,
+      commands: [...new Set([...workflow.trigger.commands, ...workflow.steps.map((step) => step.command).filter((item): item is string => Boolean(item))])],
+      conditions: {
+        paths: workflow.trigger.paths,
+        taskTypes: workflow.trigger.taskTypes,
+        naturalLanguagePatterns: workflow.trigger.naturalLanguagePatterns
+      },
+      confidence: workflow.confidence,
+      status: workflow.status,
+      evidenceCardIds: workflow.evidenceCardIds,
+      privacyClass: workflow.privacy.class,
+      unconditional: false
+    }));
+  const preferencePolicies = commandNodes.sort(sortNodes).map((node) => ({
+    id: node.id,
+    source: "preference" as const,
+    statement: node.statement,
+    conditions: {
+      paths: node.scope.paths,
+      taskTypes: [],
+      naturalLanguagePatterns: [node.title]
+    },
+    confidence: node.confidence,
+    status: node.status,
+    privacyClass: node.privacy?.class ?? "project-private",
+    unconditional: node.scope.paths.length === 0
+  }));
+  const labelPolicies = commandLabels.sort((a, b) => a.label!.localeCompare(b.label!)).map((label) => ({
+    id: label.hash,
+    source: "ambient-label" as const,
+    label: label.label,
+    commandHash: label.hash,
+    evidenceCount: label.evidenceCount,
+    unconditional: false
+  }));
+  return {
+    schemaVersion: "openskill-kit.command-policy.v2",
+    generatedAt: new Date().toISOString(),
+    invariant: "Commands are conditional on task, path, reviewed workflow, or approved label evidence; do not treat as unconditional global commands.",
+    workflows: workflowPolicies,
+    preferences: preferencePolicies,
+    approvedAmbientCommandLabels: labelPolicies
+  };
 }
 
 function renderReviewChecklist(nodes: PreferenceNode[], workflows: WorkflowNode[], labels: Awaited<ReturnType<typeof readApprovedAmbientLabels>>): string {

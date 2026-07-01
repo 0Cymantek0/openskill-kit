@@ -64,9 +64,11 @@ describe("preference retrieval and policy artifacts", () => {
     await writeWorkflowGraph(root, [workflow("parser-flow", "Parser verification workflow", ["src/parser"], ["npm test", "npm run typecheck"])]);
     const compiled = await compileBehaviorLayer(root);
     const [pathMapPath, commandPolicyPath, reviewChecklistPath] = compiled.policyArtifactPaths;
+    const commandPolicyJsonPath = compiled.policyArtifactPaths.find((item) => item.endsWith("command-policy.json"))!;
     await expect(stat(pathMapPath!)).resolves.toBeTruthy();
     await expect(stat(commandPolicyPath!)).resolves.toBeTruthy();
     await expect(stat(reviewChecklistPath!)).resolves.toBeTruthy();
+    await expect(stat(commandPolicyJsonPath)).resolves.toBeTruthy();
     expect(await readFile(commandPolicyPath!, "utf8")).toContain("run npm test");
     expect(await readFile(reviewChecklistPath!, "utf8")).toContain("Do not expose secrets");
     expect(compiled.skillPaths.some((skillPath) => skillPath.endsWith(`${path.sep}project-testing`))).toBe(true);
@@ -82,6 +84,15 @@ describe("preference retrieval and policy artifacts", () => {
     expect(pathMap.paths["src/parser"][0].id).toBe("pref_path-style");
     expect(pathMap.workflows["src/parser"][0].id).toBe("wf_parser-flow");
     expect(await readFile(commandPolicyPath!, "utf8")).toContain("npm test -> npm run typecheck");
+    const commandPolicyJson = JSON.parse(await readFile(commandPolicyJsonPath, "utf8"));
+    expect(commandPolicyJson.schemaVersion).toBe("openskill-kit.command-policy.v2");
+    expect(commandPolicyJson.invariant).toContain("conditional");
+    expect(commandPolicyJson.workflows[0]).toMatchObject({
+      id: "wf_parser-flow",
+      commands: ["npm test", "npm run typecheck"],
+      conditions: { paths: ["src/parser"] },
+      unconditional: false
+    });
     expect(await readFile(reviewChecklistPath!, "utf8")).toContain("Follow active workflow Parser verification workflow");
 
     const evalReport = await runBehaviorEval({ projectRoot: root, now: new Date("2026-06-25T00:00:00.000Z") });

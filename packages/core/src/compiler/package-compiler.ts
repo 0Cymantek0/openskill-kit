@@ -71,7 +71,7 @@ export async function compileBehaviorLayer(projectRoot: string, options: Compile
       mcpDescriptorHashPath: mcp?.hashPath,
       mcpResourcePath: mcp?.resourcePath,
       pluginManifestPath: plugin?.manifestPath,
-      policyArtifactPaths: policy ? [policy.pathMapPath, policy.commandPolicyPath, policy.reviewChecklistPath] : [],
+      policyArtifactPaths: policy ? [policy.pathMapPath, policy.commandPolicyPath, policy.reviewChecklistPath, policy.commandPolicyJsonPath] : [],
       graphMarkdownPath,
       integrityReportPath,
       stagedPreviewPath: stagedPreview?.previewPath
