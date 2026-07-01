@@ -820,7 +820,7 @@ describe("learn-v2 substrate", () => {
       "declassification-reviewer",
       "eval-planner"
     ]);
-    const routeJson = await readText(artifact.artifacts.routingJson);
+    const routeJson = await readText(path.join(root, artifact.artifacts.routingJson));
     expect(routeJson).toContain("deterministicFallback");
     expect(routeJson).not.toContain("ollama");
   });
