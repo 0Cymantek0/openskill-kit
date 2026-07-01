@@ -122,7 +122,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       if (demote.has(card.id)) next = markModified(withStatus(next, "candidate", now), modifiedIds);
       if (accept.has(card.id)) next = markModified(withStatus(next, "active", now), modifiedIds);
       if (lock.has(card.id)) next = markModified(withStatus(next, "locked", now), modifiedIds);
-      if (options.bulkSafe === "accept-low-risk" && card.risk === "low" && card.confidence >= 0.7 && card.status === "candidate") next = markModified(withStatus(next, "active", now), modifiedIds);
+      if (options.bulkSafe === "accept-low-risk" && card.status === "candidate" && isSafeAutoApplyCandidate(card, config)) next = markModified(withStatus(next, "active", now), modifiedIds);
       if (options.bulkSafe === "reject-one-off" && card.status === "candidate" && card.durability < 0.5) next = markModified(withStatus(next, "one-off", now), modifiedIds);
       if (options.bulkSafe === "mark-superseded" && card.status === "candidate" && card.counterevidence.length > 0) next = markModified(withStatus(next, "superseded", now), modifiedIds);
       const edit = editById.get(card.id);

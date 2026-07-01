@@ -767,6 +767,42 @@ describe("learn-v2 substrate", () => {
     const stagedStore = await writeLearnV2ConceptStore(root, [{ ...safe, id: `${safe.id}_stage`, status: "candidate" as const, lifecycle: { ...safe.lifecycle, supersededBy: undefined } }], new Date("2026-06-30T00:02:00Z"));
     expect(stagedStore.cards.find((card) => card.id === `${safe.id}_stage`)?.status).toBe("staged");
   });
+
+  it("bulk accept-low-risk only activates narrow safe concepts", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_bulk_policy");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Prefer focused parser tests for packages/core/src/parser.ts."
+    ).map((item) => ({ ...item, paths: ["packages/core/src/parser.ts"] }));
+    const [base] = mergeLearnV2ConceptCards(extractLearnV2BehaviorAtoms(reconstructLearnV2Episodes(evidence)).atoms, new Date("2026-06-30T00:00:00Z"));
+    const narrowSafe = {
+      ...base!,
+      id: `${base!.id}_bulk_narrow`,
+      status: "candidate" as const,
+      risk: "low" as const,
+      confidence: 0.91,
+      sourceReliability: 0.91,
+      scope: { ...base!.scope, level: "path" as const, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] },
+      atoms: base!.atoms.map((atom) => ({ ...atom, risk: "low" as const, confidence: 0.91, sourceReliability: 0.91, scope: { ...atom.scope, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] } }))
+    };
+    const broadUnsafe = {
+      ...narrowSafe,
+      id: `${base!.id}_bulk_broad`,
+      scope: { ...narrowSafe.scope, level: "project" as const, paths: [], taskTypes: [] },
+      activation: { ...narrowSafe.activation, pathGlobs: [] },
+      atoms: narrowSafe.atoms.map((atom) => ({ ...atom, id: `${atom.id}_broad`, scope: { ...atom.scope, level: "project" as const, paths: [], taskTypes: [] } }))
+    };
+    await writeLearnV2ConceptStore(root, [narrowSafe, broadUnsafe], new Date("2026-06-30T00:01:00Z"));
+    const reviewed = await applyLearnV2ConceptReview(root, {
+      bulkSafe: "accept-low-risk",
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+
+    expect(reviewed.store.cards.find((card) => card.id === narrowSafe.id)?.status).toBe("active");
+    expect(reviewed.store.cards.find((card) => card.id === broadUnsafe.id)?.status).toBe("candidate");
+  });
 });
 
 async function tempProject(): Promise<string> {
