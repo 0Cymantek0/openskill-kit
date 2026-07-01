@@ -1,15 +1,26 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { LearnV2ConceptCard, LearnV2ConflictLedger, LearnV2ReviewQueue } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2ReviewQueue } from "./schemas.js";
 import { LearnV2ReviewQueueSchema } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
+import { learnV2SafeLocalPath } from "./utils.js";
 
-export async function writeLearnV2ReviewQueue(rootInput: string, cards: LearnV2ConceptCard[], now: Date, conflictLedger?: { ledger: LearnV2ConflictLedger; markdownPath: string }): Promise<LearnV2ReviewQueue> {
+export async function writeLearnV2ReviewQueue(
+  rootInput: string,
+  cards: LearnV2ConceptCard[],
+  now: Date,
+  context?: {
+    ledger?: LearnV2ConflictLedger;
+    markdownPath?: string;
+    declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
+  }
+): Promise<LearnV2ReviewQueue> {
   const root = path.resolve(rootInput);
   const reviewDir = path.join(root, ".openskill-kit", "learn-v2", "review");
   const markdown = path.join(reviewDir, "concept-review-queue.md");
   const json = path.join(reviewDir, "concept-review-queue.json");
-  const conflictTypeCounts = conflictLedger ? countBy(conflictLedger.ledger.conflicts.map((conflict) => conflict.conflictType)) : {};
+  const conflictTypeCounts = context?.ledger ? countBy(context.ledger.conflicts.map((conflict) => conflict.conflictType)) : {};
+  const evidenceSnippets = selectReviewEvidenceSnippets(cards, context?.declassifiedSnippets);
   const queue = LearnV2ReviewQueueSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.review-queue.v1",
     generatedAt: now.toISOString(),
@@ -17,11 +28,22 @@ export async function writeLearnV2ReviewQueue(rootInput: string, cards: LearnV2C
     behaviorDeltaFirst: true,
     safeBulkActions: ["accept-low-risk", "reject-one-off", "mark-superseded"],
     conflictSummary: {
-      unresolvedCount: conflictLedger?.ledger.unresolvedCount ?? 0,
+      unresolvedCount: context?.ledger?.unresolvedCount ?? 0,
       conflictTypeCounts,
-      ledgerPath: conflictLedger?.markdownPath
+      ledgerPath: context?.markdownPath ? learnV2SafeLocalPath(context.markdownPath, root) : undefined
     },
-    artifacts: { markdown, conflictLedger: conflictLedger?.markdownPath }
+    evidenceSnippetSummary: {
+      snippetCount: context?.declassifiedSnippets?.counts.total ?? 0,
+      blockedFromCompileCount: context?.declassifiedSnippets?.counts.blockedFromCompile ?? 0,
+      residualRiskCounts: context?.declassifiedSnippets?.counts.residualRiskCounts ?? {},
+      artifactPath: context?.declassifiedSnippets?.artifacts.markdown ? learnV2SafeLocalPath(context.declassifiedSnippets.artifacts.markdown, root) : undefined
+    },
+    evidenceSnippets,
+    artifacts: {
+      markdown,
+      conflictLedger: context?.markdownPath,
+      declassifiedSnippets: context?.declassifiedSnippets?.artifacts.markdown
+    }
   });
   await fs.mkdir(reviewDir, { recursive: true });
   await writeJsonAtomic(json, queue);
@@ -49,6 +71,13 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
       : "No unresolved concept conflicts detected.",
     ...Object.entries(queue.conflictSummary.conflictTypeCounts).map(([type, count]) => `- ${type}: ${count}`),
     "",
+    "## Evidence Snippet Summary",
+    "",
+    `Snippets: ${queue.evidenceSnippetSummary.snippetCount}`,
+    `Blocked from compile: ${queue.evidenceSnippetSummary.blockedFromCompileCount}`,
+    `Residual risk: ${renderCounts(queue.evidenceSnippetSummary.residualRiskCounts)}`,
+    queue.evidenceSnippetSummary.artifactPath ? `Artifact: ${queue.evidenceSnippetSummary.artifactPath}` : "Artifact: not written",
+    "",
     "## Cards",
     ""
   ];
@@ -65,6 +94,13 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     if (card.activation.commands.length) lines.push(`Commands: ${card.activation.commands.join(", ")}`);
     lines.push(`Evidence: ${card.evidenceIds.join(", ")}`);
     lines.push("Raw refs: local-only, not exportable");
+    const snippets = queue.evidenceSnippets.filter((snippet) => card.evidenceIds.includes(snippet.evidenceId)).slice(0, 3);
+    if (snippets.length) {
+      lines.push("Evidence snippets:");
+      for (const snippet of snippets) {
+        lines.push(`- ${snippet.evidenceId} (${snippet.residualRisk}${snippet.blockedFromCompile ? ", compile-blocked" : ""}): ${snippet.text}`);
+      }
+    }
     if (card.counterevidence.length) {
       lines.push("Counterevidence:");
       for (const item of card.counterevidence) lines.push(`- ${item.evidenceId}: ${item.reason}`);
@@ -74,8 +110,28 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
   return `${lines.join("\n")}\n`;
 }
 
+function selectReviewEvidenceSnippets(cards: LearnV2ConceptCard[], artifact?: LearnV2DeclassifiedEvidenceSnippetArtifact): LearnV2ReviewQueue["evidenceSnippets"] {
+  if (!artifact) return [];
+  const evidenceIds = new Set(cards.flatMap((card) => card.evidenceIds));
+  return artifact.snippets
+    .filter((snippet) => evidenceIds.has(snippet.evidenceId))
+    .slice(0, 80)
+    .map((snippet) => ({
+      snippetId: snippet.id,
+      evidenceId: snippet.evidenceId,
+      text: snippet.text,
+      residualRisk: snippet.risk.residualRisk,
+      blockedFromCompile: snippet.risk.blockedFromCompile
+    }));
+}
+
 function countBy(values: string[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const value of values) out[value] = (out[value] ?? 0) + 1;
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function renderCounts(counts: Record<string, number>): string {
+  const entries = Object.entries(counts);
+  return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join(", ") : "none";
 }

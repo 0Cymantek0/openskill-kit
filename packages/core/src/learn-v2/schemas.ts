@@ -400,9 +400,27 @@ export const LearnV2ReviewQueueSchema = z.object({
     unresolvedCount: 0,
     conflictTypeCounts: {}
   }),
+  evidenceSnippetSummary: z.object({
+    snippetCount: z.number().int().min(0),
+    blockedFromCompileCount: z.number().int().min(0),
+    residualRiskCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    artifactPath: z.string().optional()
+  }).default({
+    snippetCount: 0,
+    blockedFromCompileCount: 0,
+    residualRiskCounts: {}
+  }),
+  evidenceSnippets: z.array(z.object({
+    snippetId: z.string().min(1),
+    evidenceId: z.string().min(1),
+    text: z.string().min(1).max(1200),
+    residualRisk: z.enum(["low", "medium", "high"]),
+    blockedFromCompile: z.boolean().default(false)
+  })).default([]),
   artifacts: z.object({
     markdown: z.string(),
-    conflictLedger: z.string().optional()
+    conflictLedger: z.string().optional(),
+    declassifiedSnippets: z.string().optional()
   })
 });
 export type LearnV2ReviewQueue = z.infer<typeof LearnV2ReviewQueueSchema>;
@@ -543,6 +561,23 @@ export const LearnV2DeclassifiedEvidenceSnippetSchema = z.object({
   createdAt: z.string().datetime()
 });
 export type LearnV2DeclassifiedEvidenceSnippet = z.infer<typeof LearnV2DeclassifiedEvidenceSnippetSchema>;
+
+export const LearnV2DeclassifiedEvidenceSnippetArtifactSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.declassified-snippet-artifact.v1"),
+  generatedAt: z.string().datetime(),
+  snippets: z.array(LearnV2DeclassifiedEvidenceSnippetSchema).default([]),
+  counts: z.object({
+    total: z.number().int().min(0),
+    redacted: z.number().int().min(0),
+    blockedFromCompile: z.number().int().min(0),
+    residualRiskCounts: z.record(z.string(), z.number().int().min(0)).default({})
+  }),
+  artifacts: z.object({
+    json: z.string(),
+    markdown: z.string()
+  })
+});
+export type LearnV2DeclassifiedEvidenceSnippetArtifact = z.infer<typeof LearnV2DeclassifiedEvidenceSnippetArtifactSchema>;
 
 // ---------------------------------------------------------------------------
 // Plan §10.1.1: OskTraceContext — deterministic trace ID propagation

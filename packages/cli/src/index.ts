@@ -2091,6 +2091,7 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     `Digest: ${result.artifacts.reviewMarkdownPath}`,
     result.artifacts.learnV2EvidenceQualityPath ? `Evidence quality: ${result.artifacts.learnV2EvidenceQualityPath}` : undefined,
     result.artifacts.learnV2ConflictLedgerPath ? `Conflict ledger: ${result.artifacts.learnV2ConflictLedgerPath}` : undefined,
+    result.artifacts.learnV2DeclassifiedSnippetsPath ? `Declassified snippets: ${result.artifacts.learnV2DeclassifiedSnippetsPath}` : undefined,
     result.artifacts.learnV2ObservabilityReportPath ? `Observability: ${result.artifacts.learnV2ObservabilityReportPath}` : undefined,
     `Model requests: ${result.artifacts.learnV2ModelRequestDir}`
   ].filter((line): line is string => Boolean(line));
@@ -2116,6 +2117,7 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
     `Evidence: ${report.evidence.normalizedEvidence} records, ${report.evidence.episodes} episodes, confidence high/medium/low ${report.evidence.confidenceBuckets.high}/${report.evidence.confidenceBuckets.medium}/${report.evidence.confidenceBuckets.low}`,
     `Evidence quality: ${renderLearnV2CountLine(report.evidence.qualityTierCounts)}, actions ${renderLearnV2CountLine(report.evidence.qualityActionCounts)}`,
+    `Snippets: ${report.evidence.declassifiedSnippets} declassified, ${report.evidence.blockedDeclassifiedSnippets} compile-blocked, risk ${renderLearnV2CountLine(report.evidence.snippetResidualRiskCounts)}`,
     `Stitching: ${renderLearnV2CountLine(report.evidence.stitchingMethodCounts)}`,
     `Tools: ${report.compression.tools} summaries, ${report.compression.totalToolOmittedBytes} omitted bytes, strategies ${renderLearnV2CountLine(report.compression.toolCompressionStrategyCounts)}`,
     `Patches: ${report.compression.behaviorEligiblePatches} behavior-eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches}; filters ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`,
@@ -2140,6 +2142,7 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
     `Confidence: high ${report.evidence.confidenceBuckets.high}, medium ${report.evidence.confidenceBuckets.medium}, low ${report.evidence.confidenceBuckets.low}`,
     `Evidence quality: ${renderLearnV2CountLine(report.evidence.qualityTierCounts)}`,
     `Quality actions: ${renderLearnV2CountLine(report.evidence.qualityActionCounts)}`,
+    `Snippets: ${report.evidence.declassifiedSnippets} declassified (${renderLearnV2CountLine(report.evidence.snippetResidualRiskCounts)})`,
     `Stitching: ${renderLearnV2CountLine(report.evidence.stitchingMethodCounts)}`,
     `Risks: ${renderLearnV2CountLine(report.evidence.stitchingRiskCounts)}`
   ].join("\n"), "Episodes");

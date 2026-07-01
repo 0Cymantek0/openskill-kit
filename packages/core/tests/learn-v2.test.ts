@@ -38,6 +38,7 @@ import {
   runLearnV2RawVaultMaintenance,
   writeLearnV2ModelRequests,
   writeLearnV2ConflictLedger,
+  writeLearnV2DeclassifiedSnippetArtifact,
   runLearnV2Eval,
   scoreLearnV2ProjectRelevance,
   scoreLearnV2ActivationEntries,
@@ -443,6 +444,44 @@ describe("learn-v2 substrate", () => {
     const ledgerText = await readText(ledger.artifactPaths.markdown);
     expect(ledgerText).toContain("Learn v2 Concept Conflict Ledger");
     expect(ledgerText).not.toContain("raw_");
+  });
+
+  it("writes declassified evidence snippets and attaches them to review cards", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:25:00.000Z");
+    const localPath = path.join(root, "packages", "core", "src", "parser.ts");
+    const episodes = reconstructLearnV2Episodes([
+      normalizedMessage("ev_secret_correction", `Wrong approach in ${localPath}. Prefer a focused regression fixture. API_KEY=sk-live-secret`, "user")
+    ]);
+    const snippets = await writeLearnV2DeclassifiedSnippetArtifact(root, episodes, now, {
+      blockOnMediumRisk: true,
+      maxChars: 400
+    });
+    expect(snippets.generatedAt).toBe(now.toISOString());
+    expect(snippets.counts.total).toBeGreaterThanOrEqual(1);
+    expect(snippets.snippets[0]!.createdAt).toBe(now.toISOString());
+    expect(snippets.snippets[0]!.text).toContain("[PROJECT_ROOT]");
+    expect(snippets.snippets[0]!.text).not.toContain(root);
+    expect(snippets.snippets[0]!.text).not.toContain("sk-live-secret");
+
+    const cards = mergeLearnV2ConceptCards([
+      behaviorAtom("secret_correction", "Prefer focused regression fixtures for parser corrections.", "positive")
+    ], now);
+    const queue = await writeLearnV2ReviewQueue(root, cards, now, { declassifiedSnippets: snippets });
+    expect(queue.evidenceSnippetSummary.snippetCount).toBe(snippets.counts.total);
+    expect(queue.artifacts.declassifiedSnippets).toBe(snippets.artifacts.markdown);
+    expect(queue.evidenceSnippets.some((snippet) => snippet.evidenceId === "ev_secret_correction")).toBe(true);
+
+    const snippetMarkdown = await readText(snippets.artifacts.markdown);
+    expect(snippetMarkdown).toContain("Learn v2 Declassified Evidence Snippets");
+    expect(snippetMarkdown).not.toContain(root);
+    expect(snippetMarkdown).not.toContain("sk-live-secret");
+    expect(snippetMarkdown).not.toContain("raw_");
+    const reviewMarkdown = await readText(queue.artifacts.markdown);
+    expect(reviewMarkdown).toContain("Evidence Snippet Summary");
+    expect(reviewMarkdown).toContain("Evidence snippets:");
+    expect(reviewMarkdown).not.toContain(root);
+    expect(reviewMarkdown).not.toContain("sk-live-secret");
   });
 
   it("detects Python Go and Rust structural symbols without new parser dependencies", async () => {
@@ -1171,6 +1210,22 @@ function normalizedFileChange(id: string, text: string) {
     sourceHash: `sha256:${id}`,
     kind: "file-change" as const,
     actor: "assistant" as const,
+    text,
+    status: "unknown" as const,
+    paths: [],
+    commands: [],
+    metadata: {}
+  };
+}
+
+function normalizedMessage(id: string, text: string, actor: "user" | "assistant" | "reviewer" = "user") {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.normalized-evidence.v1" as const,
+    id,
+    rawRef: `raw_${id}`,
+    sourceHash: `sha256:${id}`,
+    kind: "message" as const,
+    actor,
     text,
     status: "unknown" as const,
     paths: [],

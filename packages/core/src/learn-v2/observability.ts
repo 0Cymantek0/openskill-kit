@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2ConflictLedger, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
 import { learnV2SafeLocalPath } from "./utils.js";
 
 export const LearnV2PipelineObservabilityReportSchema = z.object({
@@ -36,7 +36,10 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     }),
     qualityTierCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     qualityActionCounts: z.record(z.string(), z.number().int().min(0)).default({}),
-    qualitySignalCounts: z.record(z.string(), z.number().int().min(0)).default({})
+    qualitySignalCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    declassifiedSnippets: z.number().int().min(0),
+    blockedDeclassifiedSnippets: z.number().int().min(0),
+    snippetResidualRiskCounts: z.record(z.string(), z.number().int().min(0)).default({})
   }),
   compression: z.object({
     tools: z.number().int().min(0),
@@ -92,6 +95,7 @@ export interface LearnV2PipelineObservabilityInput {
   episodes: LearnV2TaskEpisode[];
   concepts: LearnV2ConceptCard[];
   conflictLedger?: LearnV2ConflictLedger;
+  declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
   evidenceQualityScores?: LearnV2EvidenceQualityScore[];
@@ -134,6 +138,7 @@ export async function writeLearnV2PipelineObservabilityReport(
   const auditOnlyPatches = patches.filter((patch) => patch.behaviorEligible === false);
   const evidenceQualityScores = input.evidenceQualityScores ?? [];
   const conflictLedger = input.conflictLedger;
+  const declassifiedSnippets = input.declassifiedSnippets;
   const report = LearnV2PipelineObservabilityReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.pipeline-observability.v1",
     generatedAt: input.generatedAt,
@@ -165,7 +170,10 @@ export async function writeLearnV2PipelineObservabilityReport(
       },
       qualityTierCounts: countBy(evidenceQualityScores.map((score) => score.tier)),
       qualityActionCounts: countBy(evidenceQualityScores.map((score) => score.recommendedAction)),
-      qualitySignalCounts: countBy(evidenceQualityScores.flatMap((score) => score.signals))
+      qualitySignalCounts: countBy(evidenceQualityScores.flatMap((score) => score.signals)),
+      declassifiedSnippets: declassifiedSnippets?.counts.total ?? input.reviewQueue.evidenceSnippetSummary.snippetCount,
+      blockedDeclassifiedSnippets: declassifiedSnippets?.counts.blockedFromCompile ?? input.reviewQueue.evidenceSnippetSummary.blockedFromCompileCount,
+      snippetResidualRiskCounts: declassifiedSnippets?.counts.residualRiskCounts ?? input.reviewQueue.evidenceSnippetSummary.residualRiskCounts
     },
     compression: {
       tools: tools.length,
@@ -240,6 +248,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Confidence buckets: high=${report.evidence.confidenceBuckets.high}, medium=${report.evidence.confidenceBuckets.medium}, low=${report.evidence.confidenceBuckets.low}`,
     `- Evidence quality: ${renderCounts(report.evidence.qualityTierCounts)}`,
     `- Quality actions: ${renderCounts(report.evidence.qualityActionCounts)}`,
+    `- Declassified snippets: ${report.evidence.declassifiedSnippets} (${renderCounts(report.evidence.snippetResidualRiskCounts)} residual risk, ${report.evidence.blockedDeclassifiedSnippets} compile-blocked)`,
     "",
     "## Compression And Filtering",
     "",

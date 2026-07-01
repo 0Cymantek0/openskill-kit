@@ -1,6 +1,9 @@
+import { promises as fs } from "node:fs";
 import os from "node:os";
+import path from "node:path";
+import { writeJsonAtomic } from "../storage/atomic.js";
 import type { LearnV2TaskEpisode } from "./schemas.js";
-import { LearnV2DeclassifiedEvidenceSnippetSchema, type LearnV2DeclassifiedEvidenceSnippet } from "./schemas.js";
+import { LearnV2DeclassifiedEvidenceSnippetArtifactSchema, LearnV2DeclassifiedEvidenceSnippetSchema, type LearnV2DeclassifiedEvidenceSnippet, type LearnV2DeclassifiedEvidenceSnippetArtifact } from "./schemas.js";
 import { learnV2ShortHash, learnV2Snippet } from "./utils.js";
 
 /**
@@ -19,8 +22,12 @@ import { learnV2ShortHash, learnV2Snippet } from "./utils.js";
 export interface LearnV2DeclassifyOptions {
   /** Cap snippet length to keep it review/compile-safe. */
   maxChars?: number;
+  /** Cap artifact size for review ergonomics. */
+  maxSnippets?: number;
   /** Mark snippet as blocked if residual risk is medium or high. */
   blockOnMediumRisk?: boolean;
+  /** Stable timestamp for deterministic pipeline artifacts/tests. */
+  now?: Date;
 }
 
 export function buildLearnV2DeclassifiedSnippet(
@@ -37,6 +44,7 @@ export function buildLearnV2DeclassifiedSnippet(
   const id = `decl_${learnV2ShortHash(`${evidenceId}:${rawRef}:${snippetText}`)}`;
   const placeholderMap = buildPlaceholderMap(snippetText, result.matches);
   const blockedFromCompile = options.blockOnMediumRisk === true && residualRisk !== "low";
+  const createdAt = (options.now ?? new Date()).toISOString();
   return LearnV2DeclassifiedEvidenceSnippetSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.declassified-snippet.v1",
     id,
@@ -49,7 +57,7 @@ export function buildLearnV2DeclassifiedSnippet(
       residualRisk,
       blockedFromCompile
     },
-    createdAt: new Date().toISOString()
+    createdAt
   });
 }
 
@@ -72,6 +80,74 @@ export function buildLearnV2HighValueSnippets(
     if (snippets.length >= 8) break;
   }
   return snippets;
+}
+
+export async function writeLearnV2DeclassifiedSnippetArtifact(
+  rootInput: string,
+  episodes: LearnV2TaskEpisode[],
+  now: Date,
+  options: LearnV2DeclassifyOptions = {}
+): Promise<LearnV2DeclassifiedEvidenceSnippetArtifact> {
+  const root = path.resolve(rootInput);
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "declassified-snippets");
+  const json = path.join(dir, "snippets.json");
+  const markdown = path.join(dir, "snippets.md");
+  const maxSnippets = options.maxSnippets ?? 200;
+  const seen = new Set<string>();
+  const snippets: LearnV2DeclassifiedEvidenceSnippet[] = [];
+  for (const episode of episodes) {
+    for (const snippet of buildLearnV2HighValueSnippets(episode, root, { ...options, now })) {
+      const key = `${snippet.evidenceId}:${snippet.text}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      snippets.push(snippet);
+      if (snippets.length >= maxSnippets) break;
+    }
+    if (snippets.length >= maxSnippets) break;
+  }
+  const artifact = LearnV2DeclassifiedEvidenceSnippetArtifactSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.declassified-snippet-artifact.v1",
+    generatedAt: now.toISOString(),
+    snippets,
+    counts: {
+      total: snippets.length,
+      redacted: snippets.filter((snippet) => snippet.risk.redacted).length,
+      blockedFromCompile: snippets.filter((snippet) => snippet.risk.blockedFromCompile).length,
+      residualRiskCounts: countBy(snippets.map((snippet) => snippet.risk.residualRisk))
+    },
+    artifacts: { json, markdown }
+  });
+  await fs.mkdir(dir, { recursive: true });
+  await writeJsonAtomic(json, artifact);
+  await fs.writeFile(markdown, renderDeclassifiedSnippetArtifactMarkdown(artifact), "utf8");
+  return artifact;
+}
+
+function renderDeclassifiedSnippetArtifactMarkdown(artifact: LearnV2DeclassifiedEvidenceSnippetArtifact): string {
+  const lines = [
+    "# Learn v2 Declassified Evidence Snippets",
+    "",
+    `Generated: ${artifact.generatedAt}`,
+    `Snippets: ${artifact.counts.total}`,
+    `Redacted: ${artifact.counts.redacted}`,
+    `Blocked from compile: ${artifact.counts.blockedFromCompile}`,
+    `Residual risk: ${renderCounts(artifact.counts.residualRiskCounts)}`,
+    "",
+    "## Snippets",
+    ""
+  ];
+  if (!artifact.snippets.length) lines.push("No high-value declassified snippets found.");
+  for (const snippet of artifact.snippets) {
+    lines.push(`### ${snippet.id}`);
+    lines.push("");
+    lines.push(`Evidence: ${snippet.evidenceId}`);
+    lines.push(`Residual risk: ${snippet.risk.residualRisk}`);
+    lines.push(`Blocked from compile: ${snippet.risk.blockedFromCompile}`);
+    lines.push("");
+    lines.push(snippet.text);
+    lines.push("");
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 function computeResidualRisk(text: string, matches: string[]): "low" | "medium" | "high" {
@@ -101,6 +177,17 @@ function inferPlaceholder(match: string): string {
   if (/path|home|root|dir/i.test(match)) return "<LOCAL_PATH>";
   if (/email|user|name/i.test(match)) return "<IDENTIFIER>";
   return "<REDACTED>";
+}
+
+function countBy(values: string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const value of values) out[value] = (out[value] ?? 0) + 1;
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function renderCounts(counts: Record<string, number>): string {
+  const entries = Object.entries(counts);
+  return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join(", ") : "none";
 }
 
 /**
@@ -150,6 +237,12 @@ function localDeclassify(text: string, projectRoot: string): { text: string; mat
   current = current.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/g, () => {
     matches.add("secret-like-token");
     return "<SECRET>";
+  });
+  // Common environment/config assignments, including short test fixtures that
+  // are intentionally secret-shaped but not long enough for provider regexes.
+  current = current.replace(/\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)[A-Z0-9_]*\s*=\s*)([^\s"'`]+)/gi, (_match, prefix: string) => {
+    matches.add("secret-assignment");
+    return `${prefix}<SECRET>`;
   });
   // Bare Bearer-style tokens in headers.
   current = current.replace(/Bearer\s+[A-Za-z0-9._-]{16,}/gi, () => {

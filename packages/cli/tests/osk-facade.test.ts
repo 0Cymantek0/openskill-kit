@@ -549,7 +549,10 @@ function sampleLearnV2ObservabilityReport() {
       confidenceBuckets: { high: 0, medium: 1, low: 0 },
       qualityTierCounts: { critical: 1, low: 1 },
       qualityActionCounts: { "process-immediately": 1, defer: 1 },
-      qualitySignalCounts: { "user-actor": 1, "correction-or-security-language": 1 }
+      qualitySignalCounts: { "user-actor": 1, "correction-or-security-language": 1 },
+      declassifiedSnippets: 2,
+      blockedDeclassifiedSnippets: 0,
+      snippetResidualRiskCounts: { low: 2 }
     },
     compression: {
       tools: 1,
