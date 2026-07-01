@@ -546,7 +546,10 @@ function sampleLearnV2ObservabilityReport() {
       outcomeCounts: { unknown: 1 },
       stitchingMethodCounts: { "single-record": 1 },
       stitchingRiskCounts: { "single-record-only": 1 },
-      confidenceBuckets: { high: 0, medium: 1, low: 0 }
+      confidenceBuckets: { high: 0, medium: 1, low: 0 },
+      qualityTierCounts: { critical: 1, low: 1 },
+      qualityActionCounts: { "process-immediately": 1, defer: 1 },
+      qualitySignalCounts: { "user-actor": 1, "correction-or-security-language": 1 }
     },
     compression: {
       tools: 1,

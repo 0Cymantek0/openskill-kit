@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2EvalReport, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
 import { learnV2SafeLocalPath } from "./utils.js";
 
 export const LearnV2PipelineObservabilityReportSchema = z.object({
@@ -33,7 +33,10 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
       high: z.number().int().min(0),
       medium: z.number().int().min(0),
       low: z.number().int().min(0)
-    })
+    }),
+    qualityTierCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    qualityActionCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    qualitySignalCounts: z.record(z.string(), z.number().int().min(0)).default({})
   }),
   compression: z.object({
     tools: z.number().int().min(0),
@@ -88,6 +91,7 @@ export interface LearnV2PipelineObservabilityInput {
   concepts: LearnV2ConceptCard[];
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
+  evidenceQualityScores?: LearnV2EvidenceQualityScore[];
   eventsAppended: number;
   modelRequestCount: number;
   artifacts: Record<string, string | undefined>;
@@ -125,6 +129,7 @@ export async function writeLearnV2PipelineObservabilityReport(
   const tools = input.episodes.flatMap((episode) => episode.toolSummaries);
   const patches = input.episodes.flatMap((episode) => episode.patchComparisons);
   const auditOnlyPatches = patches.filter((patch) => patch.behaviorEligible === false);
+  const evidenceQualityScores = input.evidenceQualityScores ?? [];
   const report = LearnV2PipelineObservabilityReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.pipeline-observability.v1",
     generatedAt: input.generatedAt,
@@ -153,7 +158,10 @@ export async function writeLearnV2PipelineObservabilityReport(
         high: input.episodes.filter((episode) => episode.episodeConfidence >= 0.75).length,
         medium: input.episodes.filter((episode) => episode.episodeConfidence >= 0.5 && episode.episodeConfidence < 0.75).length,
         low: input.episodes.filter((episode) => episode.episodeConfidence < 0.5).length
-      }
+      },
+      qualityTierCounts: countBy(evidenceQualityScores.map((score) => score.tier)),
+      qualityActionCounts: countBy(evidenceQualityScores.map((score) => score.recommendedAction)),
+      qualitySignalCounts: countBy(evidenceQualityScores.flatMap((score) => score.signals))
     },
     compression: {
       tools: tools.length,
@@ -224,6 +232,8 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Outcomes: ${renderCounts(report.evidence.outcomeCounts)}`,
     `- Stitching: ${renderCounts(report.evidence.stitchingMethodCounts)}`,
     `- Confidence buckets: high=${report.evidence.confidenceBuckets.high}, medium=${report.evidence.confidenceBuckets.medium}, low=${report.evidence.confidenceBuckets.low}`,
+    `- Evidence quality: ${renderCounts(report.evidence.qualityTierCounts)}`,
+    `- Quality actions: ${renderCounts(report.evidence.qualityActionCounts)}`,
     "",
     "## Compression And Filtering",
     "",

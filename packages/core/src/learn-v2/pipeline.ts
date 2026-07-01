@@ -17,6 +17,7 @@ import { writeLearnV2ReviewQueue } from "./review.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
 import { writeLearnV2PipelineObservabilityReport } from "./observability.js";
+import { learnV2EvidenceQualityArtifactPath, writeLearnV2EvidenceQualityArtifact } from "./quality.js";
 import { writeLearnV2ConceptStore } from "./store.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { learnV2ModelRequestsRoot, writeLearnV2EpisodeStore, writeLearnV2ModelRequests } from "./model-proposals.js";
@@ -93,6 +94,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2EpisodeStorePath: string;
     learnV2ModelRequestDir: string;
     learnV2ObservabilityReportPath: string;
+    learnV2EvidenceQualityPath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -268,6 +270,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   }
 
   const episodes = reconstructLearnV2Episodes(allEvidence);
+  const evidenceQuality = await writeLearnV2EvidenceQualityArtifact(root, allEvidence, now);
+  const evidenceQualityPath = learnV2EvidenceQualityArtifactPath(root, now);
   const episodeStorePath = await writeLearnV2EpisodeStore(root, episodes, now);
   const modelRequests = await writeLearnV2ModelRequests(root, episodes, now);
   const extracted = extractLearnV2BehaviorAtoms(episodes);
@@ -321,8 +325,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2RelevanceCalibrationPath: relevanceCalibration.path,
       learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
       learnV2EpisodeStorePath: episodeStorePath,
-      learnV2ModelRequestDir: learnV2ModelRequestsRoot(root)
+      learnV2ModelRequestDir: learnV2ModelRequestsRoot(root),
+      learnV2EvidenceQualityPath: evidenceQualityPath
     },
+    evidenceQualityScores: evidenceQuality.scores,
     nextActions
   });
   const result: LearnV2RawLocalLearningRunCompat = {
@@ -347,7 +353,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
       learnV2EpisodeStorePath: episodeStorePath,
       learnV2ModelRequestDir: learnV2ModelRequestsRoot(root),
-      learnV2ObservabilityReportPath: path.resolve(root, observability.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, ""))
+      learnV2ObservabilityReportPath: path.resolve(root, observability.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, "")),
+      learnV2EvidenceQualityPath: evidenceQualityPath
     },
     lifecycle,
     digest: {
@@ -574,6 +581,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Relevance calibration: ${result.artifacts.learnV2RelevanceCalibrationPath}`,
     `- Model routing: ${result.artifacts.learnV2ModelRoutingPath}`,
     `- Episode store: ${result.artifacts.learnV2EpisodeStorePath}`,
+    `- Evidence quality: ${result.artifacts.learnV2EvidenceQualityPath}`,
     `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
     "",
     "## Quality",

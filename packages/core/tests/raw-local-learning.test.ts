@@ -45,9 +45,15 @@ describe("raw local learning", () => {
     expect(preview.quality.strengths.join(" ")).toContain("reviewable concept");
     expect(preview.concepts.some((concept) => /regression fixture|broad rewrite/i.test(concept.canonicalBehavior))).toBe(true);
     expect(await readFile(preview.artifacts.reviewMarkdownPath, "utf8")).not.toContain("sk-live-secret");
+    const evidenceQuality = await readFile(preview.artifacts.learnV2EvidenceQualityPath!, "utf8");
+    expect(evidenceQuality).toContain("openskill-kit.learn-v2.evidence-quality-artifact.v1");
+    expect(evidenceQuality).toContain("\"dropsEvidence\": false");
+    expect(evidenceQuality).not.toContain(root);
+    expect(evidenceQuality).not.toContain("sk-live-secret");
     const previewObservability = await readFile(preview.artifacts.learnV2ObservabilityReportPath, "utf8");
     expect(previewObservability).toContain("openskill-kit.learn-v2.pipeline-observability.v1");
     expect(previewObservability).toContain("\"episodes\"");
+    expect(previewObservability).toContain("\"qualityTierCounts\"");
     expect(previewObservability).toContain("\"rawRefsExported\": false");
     expect(previewObservability).not.toContain(root);
     expect(previewObservability).not.toContain("sk-live-secret");
