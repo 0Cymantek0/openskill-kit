@@ -5,6 +5,8 @@ import { OSK_PUBLIC_COMMAND_FAMILIES, pluginCommandProjections, type OskCommandF
 import { OpenCodePermissionProfiles, readOrCreateModelRouting, resolveModelRouting, type ModelRouteName, type OpenCodePermissionMap, type ResolvedModelRouting } from "../config/model-routing.js";
 import { OPENSKILLKIT_MCP_PROFILE_ENV } from "../schema/constants.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
+import { LEARN_V2_GENERATED_DIRS, LEARN_V2_GENERATED_FILES } from "../learn-v2/paths.js";
+
 
 export interface CompilePluginResult {
   schemaVersion: "openskill-kit.plugin.v1";
@@ -343,29 +345,7 @@ async function buildManifest(pluginDir: string): Promise<AgentPluginManifest> {
     },
     privacy: {
       localFirst: true,
-      excludes: [
-        ".openskill-kit/events/",
-        ".openskill-kit/interactions/",
-        ".openskill-kit/signals/",
-        ".openskill-kit/learn-v2/raw-vault/",
-        ".openskill-kit/learn-v2/analysis/",
-        ".openskill-kit/learn-v2/review/",
-        ".openskill-kit/learn-v2/evals/",
-        ".openskill-kit/learn-v2/concepts/",
-        ".openskill-kit/learn-v2/compiled-preview/",
-        ".openskill-kit/learn-v2/episodes/",
-        ".openskill-kit/learn-v2/model-requests/",
-        ".openskill-kit/learn-v2/model-responses/",
-        ".openskill-kit/learn-v2/outcomes/",
-        ".openskill-kit/learn-v2/activation-index.json",
-        ".openskill-kit/raw-vault/",
-        ".openskill-kit/learning/analysis-frames/",
-        ".openskill-kit/learning/staged-imports/",
-        ".openskill-kit/evidence/blobs/",
-        ".openskill-kit/reviews/",
-        ".openskill-kit/evals/runs/",
-        ".openskill-kit/private-vault/"
-      ],
+      excludes: [...LEARN_V2_GENERATED_DIRS, ...LEARN_V2_GENERATED_FILES].sort(),
       neverIncludes: [
         "raw prompts",
         "raw diffs",

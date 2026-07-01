@@ -3,6 +3,8 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { createDefaultProjectConfig, ProjectConfigSchema, type ProjectConfig } from "../config/schema.js";
 import { ensureModelRouting } from "../config/model-routing.js";
+import { getCleanedLearnV2Paths } from "../learn-v2/paths.js";
+
 
 export interface InitProjectOptions {
   projectRoot: string;
@@ -74,77 +76,53 @@ function createProjectId(root: string, projectName: string): string {
 }
 
 async function ensureAdaptiveDirectories(root: string): Promise<void> {
-  for (const dir of [
-    "events",
-    "signals",
-    "evidence/cards",
-    "evidence/blobs",
-    "preferences/active",
-    "preferences/candidates",
-    "preferences/conflicts",
-    "workflows/active",
-    "workflows/candidates",
-    "workflows/mining",
-    "compiled/skills",
-    "compiled/hooks/scripts",
-    "compiled/mcp",
-    "compiled/plugin",
-    "compiled/manifests/claude-rules",
-    "model-routing/opencode-agents",
-    "learn-v2/raw-vault/records",
-    "learn-v2/raw-vault/blobs",
-    "learn-v2/analysis",
-    "learn-v2/review",
-    "learn-v2/evals",
-    "learn-v2/concepts",
-    "learn-v2/compiled-preview",
-    "learn-v2/episodes",
-    "learn-v2/model-requests",
-    "learn-v2/model-responses",
-    "learn-v2/outcomes",
-    "raw-vault/records",
-    "learning/analysis-frames",
-    "learning/staged-imports",
-    "learning/digests",
-    "reviews/patches",
-    "installs",
-    "sessions/summaries",
-    "runtime",
-    "evals/scenarios",
-    "evals/runs",
-    "reports"
-  ]) {
+  const { dirs } = getCleanedLearnV2Paths();
+  const additionalDirs = [
+    ".openskill-kit/evidence/cards",
+    ".openskill-kit/preferences/active",
+    ".openskill-kit/preferences/candidates",
+    ".openskill-kit/preferences/conflicts",
+    ".openskill-kit/workflows/active",
+    ".openskill-kit/workflows/candidates",
+    ".openskill-kit/workflows/mining",
+    ".openskill-kit/compiled/skills",
+    ".openskill-kit/compiled/hooks/scripts",
+    ".openskill-kit/compiled/mcp",
+    ".openskill-kit/compiled/plugin",
+    ".openskill-kit/compiled/manifests/claude-rules",
+    ".openskill-kit/model-routing/opencode-agents",
+    ".openskill-kit/learn-v2/raw-vault/records",
+    ".openskill-kit/learn-v2/raw-vault/blobs",
+    ".openskill-kit/raw-vault/records",
+    ".openskill-kit/reviews/patches",
+    ".openskill-kit/installs",
+    ".openskill-kit/sessions/summaries",
+    ".openskill-kit/runtime",
+    ".openskill-kit/evals/scenarios"
+  ];
+
+  const allDirs = [...new Set([...dirs, ...additionalDirs])].map((d) => d.replace(/^\.openskill-kit\//, ""));
+
+  for (const dir of allDirs.sort()) {
     await fs.mkdir(path.join(root, ".openskill-kit", dir), { recursive: true });
   }
 }
 
 async function ensureGitignore(gitignorePath: string): Promise<void> {
-  const body = [
-    "events/",
-    "evidence/blobs/",
-    "signals/",
+  const { dirs, files } = getCleanedLearnV2Paths();
+  const cleanDirs = dirs.map((d) => {
+    const relative = d.replace(/^\.openskill-kit\//, "");
+    return relative.endsWith("/") ? relative : `${relative}/`;
+  });
+  const cleanFiles = files.map((f) => f.replace(/^\.openskill-kit\//, ""));
+
+  const otherIgnores = [
     "preferences/candidates/",
-    "reviews/",
-    "learn-v2/raw-vault/",
-    "learn-v2/analysis/",
-    "learn-v2/review/",
-    "learn-v2/evals/",
-    "learn-v2/concepts/",
-    "learn-v2/activation-index.json",
-    "learn-v2/compiled-preview/",
-    "learn-v2/episodes/",
-    "learn-v2/model-requests/",
-    "learn-v2/model-responses/",
-    "learn-v2/outcomes/",
-    "raw-vault/",
-    "learning/analysis-frames/",
-    "learning/staged-imports/",
-    "evals/runs/",
-    "reports/",
     "lock.json",
     "*.local.json",
-    "**/*.local.json",
-    ""
-  ].join("\n");
-  await fs.writeFile(gitignorePath, body, "utf8");
+    "**/*.local.json"
+  ];
+
+  const allIgnores = [...new Set([...cleanDirs, ...cleanFiles, ...otherIgnores])].sort();
+  await fs.writeFile(gitignorePath, allIgnores.join("\n") + "\n", "utf8");
 }

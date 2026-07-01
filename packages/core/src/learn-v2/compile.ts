@@ -1,11 +1,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import type { ProjectConfig } from "../config/schema.js";
 import type { PreferenceNode } from "../preferences/schema.js";
 import type { WorkflowNode } from "../workflows/schema.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import type { LearnV2ConceptCard } from "./schemas.js";
 import { learnV2ShortHash } from "./utils.js";
+import { LEARN_V2_GENERATED_DIRS, LEARN_V2_GENERATED_FILES } from "./paths.js";
+
 
 export interface LearnV2CompilePreview {
   schemaVersion: "openskill-kit.learn-v2.compile-preview.v1";
@@ -151,17 +154,28 @@ function declassificationReport(cards: LearnV2ConceptCard[]): LearnV2CompilePrev
     evidenceIds: card.evidenceIds
   })));
   const issues: string[] = [];
-  if (/raw_[a-f0-9]{8,}/i.test(text)) issues.push("raw-ref-like-token-in-output");
-  if (/\b[A-Z]:\\Users\\/i.test(text)) issues.push("absolute-user-path-in-output");
-  if (/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/.test(text)) issues.push("secret-like-token-in-output");
+  if (/raw_[A-Za-z0-9_-]{8,}/i.test(text)) issues.push("raw-ref-like-token-in-output");
+
+  const home = os.homedir();
+  const homePattern = home ? new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") : null;
+  if ((homePattern && homePattern.test(text)) || /\b[A-Z]:\\+Users\\+/i.test(text) || /\/(?:Users|home)\/[^\/\s"'`]+/i.test(text)) {
+    issues.push("absolute-user-path-in-output");
+  }
+
+  if (/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/.test(text)) {
+    issues.push("secret-like-token-in-output");
+  }
+
+  const allPrivate = [...LEARN_V2_GENERATED_DIRS, ...LEARN_V2_GENERATED_FILES];
+  for (const p of allPrivate) {
+    if (text.includes(p)) {
+      issues.push("private-path-reference-in-output");
+    }
+  }
+
   return {
     rawRefsExported: false,
-    blockedPrivatePaths: [
-      ".openskill-kit/learn-v2/raw-vault/",
-      ".openskill-kit/learn-v2/analysis/",
-      ".openskill-kit/raw-vault/",
-      ".openskill-kit/learning/analysis-frames/"
-    ],
+    blockedPrivatePaths: [...LEARN_V2_GENERATED_DIRS, ...LEARN_V2_GENERATED_FILES].sort(),
     placeholders: [...new Set(cards.flatMap((card) => card.privacy.placeholders))],
     status: issues.length ? "fail" : "pass",
     issues

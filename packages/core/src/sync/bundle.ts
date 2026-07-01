@@ -4,6 +4,8 @@ import path from "node:path";
 import { createCipheriv, createDecipheriv, createHash, generateKeyPairSync, randomBytes, scryptSync, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
 import { readProjectConfig } from "../events/store.js";
 import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
+import { LEARN_V2_GENERATED_DIRS, LEARN_V2_GENERATED_FILES } from "../learn-v2/paths.js";
+
 
 export interface ProjectBehaviorPackResult {
   schemaVersion: "openskill-kit.project-pack.v1";
@@ -478,47 +480,62 @@ function auditPackPath(file: string): ProjectBehaviorPackPublishAuditFinding[] {
   return findings;
 }
 
+function getPrivateArtifactRegex(): RegExp {
+  const parts = privatePackPathPrefixes().map((p) => {
+    const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (p.endsWith("/")) {
+      return escaped.replace(/\\\/$/, "(?:\\/|$)");
+    }
+    return escaped;
+  });
+  return new RegExp(`(?:${parts.join("|")})`, "i");
+}
+
 function auditPackContent(file: string, text: string): ProjectBehaviorPackPublishAuditFinding[] {
-  const rules: Array<{
-    ruleId: string;
-    level: ProjectBehaviorPackPublishAuditFinding["level"];
-    message: string;
-    pattern: RegExp;
-    sample: string;
-  }> = [
+  const home = os.homedir();
+  const homePattern = home ? new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") : null;
+
+  const rules = [
     {
       ruleId: "secret-like-token",
-      level: "block",
+      level: "block" as const,
       message: "Pack payload contains a secret-shaped token.",
       pattern: /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/i,
       sample: "<SECRET>"
     },
     {
       ruleId: "secret-assignment",
-      level: "block",
+      level: "block" as const,
       message: "Pack payload contains a secret-like config assignment.",
       pattern: /\b[A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)[A-Z0-9_]*\s*=\s*[^\s"'`]+/i,
       sample: "NAME=<SECRET>"
     },
     {
       ruleId: "absolute-user-path",
-      level: "block",
+      level: "block" as const,
       message: "Pack payload contains a machine-local user path.",
       pattern: /\b[A-Z]:\\Users\\[^\\\s"'`]+|\/(?:Users|home)\/[^\/\s"'`]+/i,
       sample: "<USER_HOME>"
     },
+    ...(homePattern ? [{
+      ruleId: "user-home-path",
+      level: "block" as const,
+      message: "Pack payload contains the local user home path.",
+      pattern: homePattern,
+      sample: "<USER_HOME_PATH>"
+    }] : []),
     {
       ruleId: "raw-vault-ref",
-      level: "block",
+      level: "block" as const,
       message: "Pack payload contains a raw vault reference.",
       pattern: /\braw_[A-Za-z0-9_-]{8,}\b/i,
       sample: "<RAW_REF>"
     },
     {
       ruleId: "private-artifact-reference",
-      level: "block",
+      level: "block" as const,
       message: "Pack payload references private raw-local learning artifacts.",
-      pattern: /\.openskill-kit\/(?:learn-v2\/(?:raw-vault|analysis|review|evals|concepts|compiled-preview|declassified-snippets|conflicts|observability|evidence-quality|model-requests|model-responses|episodes|outcomes|drift)|raw-vault|learning\/(?:analysis-frames|staged-imports)|ambient|interactions|evidence\/blobs|reviews|evals\/runs|reports)\b/i,
+      pattern: getPrivateArtifactRegex(),
       sample: "<PRIVATE_ARTIFACT_PATH>"
     }
   ];
@@ -537,35 +554,11 @@ function auditPackContent(file: string, text: string): ProjectBehaviorPackPublis
 }
 
 function privatePackPathPrefixes(): string[] {
-  return [
-    ".openskill-kit/events/",
-    ".openskill-kit/signals/",
-    ".openskill-kit/learn-v2/raw-vault/",
-    ".openskill-kit/learn-v2/analysis/",
-    ".openskill-kit/learn-v2/review/",
-    ".openskill-kit/learn-v2/evals/",
-    ".openskill-kit/learn-v2/concepts/",
-    ".openskill-kit/learn-v2/compiled-preview/",
-    ".openskill-kit/learn-v2/declassified-snippets/",
-    ".openskill-kit/learn-v2/conflicts/",
-    ".openskill-kit/learn-v2/observability/",
-    ".openskill-kit/learn-v2/evidence-quality/",
-    ".openskill-kit/learn-v2/model-requests/",
-    ".openskill-kit/learn-v2/model-responses/",
-    ".openskill-kit/learn-v2/episodes/",
-    ".openskill-kit/learn-v2/outcomes/",
-    ".openskill-kit/learn-v2/drift/",
-    ".openskill-kit/learn-v2/activation-index.json",
-    ".openskill-kit/raw-vault/",
-    ".openskill-kit/learning/analysis-frames/",
-    ".openskill-kit/learning/staged-imports/",
-    ".openskill-kit/ambient/",
-    ".openskill-kit/interactions/",
-    ".openskill-kit/evidence/blobs/",
-    ".openskill-kit/reviews/",
-    ".openskill-kit/evals/runs/",
-    ".openskill-kit/reports/"
+  const extraExcludes = [
+    ".openskill-kit/ambient/"
   ];
+  const all = [...LEARN_V2_GENERATED_DIRS, ...LEARN_V2_GENERATED_FILES, ...extraExcludes];
+  return [...new Set(all)].sort();
 }
 
 async function listFiles(root: string): Promise<string[]> {

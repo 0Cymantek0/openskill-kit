@@ -26,3 +26,5 @@ export * from "./declassify.js";
 export * from "./trace.js";
 export * from "./quality.js";
 export * from "./drift.js";
+export * from "./paths.js";
+
