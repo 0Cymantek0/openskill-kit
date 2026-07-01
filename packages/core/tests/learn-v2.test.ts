@@ -68,6 +68,42 @@ describe("learn-v2 substrate", () => {
     expect(plainEvidence[0]!.commands).toContain("npm test -- parser before final summary");
   });
 
+  it("normalizes terminal review ci docs and agent-summary adapters with domain-specific actors and kinds", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_adapters");
+    const terminal = normalizeLearnV2Evidence(
+      { adapterId: "terminal", sourcePath: "terminal.log", contentKind: "log", rawText: "", detectedFormat: "log" },
+      record,
+      "$ npm test -- parser\nPASS packages/core/tests/parser.test.ts\n$ git status --short\n M packages/core/src/parser.ts"
+    );
+    const review = normalizeLearnV2Evidence(
+      { adapterId: "review-local", sourcePath: "review.md", contentKind: "document", rawText: "", detectedFormat: "markdown" },
+      record,
+      "packages/core/src/parser.ts: Avoid broad rewrite here.\n\nNeed a focused regression fixture."
+    );
+    const ci = normalizeLearnV2Evidence(
+      { adapterId: "ci-log", sourcePath: "ci.log", contentKind: "log", rawText: "", detectedFormat: "log" },
+      record,
+      "FAIL parser suite\npackages/core/src/parser.ts expected token\nPASS formatter suite"
+    );
+    const docs = normalizeLearnV2Evidence(
+      { adapterId: "project-docs", sourcePath: "README.md", contentKind: "document", rawText: "", detectedFormat: "markdown" },
+      record,
+      "# Parser\nPrefer focused parser regression tests.\n\n# Release\nRun npm test -- parser."
+    );
+    const summary = normalizeLearnV2Evidence(
+      { adapterId: "agent-summaries", sourcePath: "handoff.md", contentKind: "summary", rawText: "", detectedFormat: "markdown" },
+      record,
+      "Summary: Changed packages/core/src/parser.ts.\nTests: npm test -- parser PASS\nNext: review parser fixture."
+    );
+
+    expect(terminal.filter((item) => item.kind === "command").map((item) => item.commands[0])).toEqual(["npm test -- parser", "git status --short"]);
+    expect(review.every((item) => item.kind === "review" && item.actor === "reviewer")).toBe(true);
+    expect(ci.some((item) => item.kind === "test-result" && item.status === "fail")).toBe(true);
+    expect(docs.every((item) => item.kind === "document-section")).toBe(true);
+    expect(summary.some((item) => item.actor === "assistant" && item.commands.includes("npm test -- parser PASS"))).toBe(true);
+  });
+
   it("stitches multi-tool evidence by branch path time and infers parser test concept", async () => {
     const root = await tempProject();
     const recordA = previewRecord(root, "raw_a");

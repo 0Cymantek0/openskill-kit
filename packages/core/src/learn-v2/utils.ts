@@ -112,9 +112,9 @@ export function learnV2EscapeRegExp(value: string): string {
 export function learnV2StatusFromText(value: unknown): "pass" | "fail" | "blocked" | "timeout" | "unknown" {
   const status = String(value ?? "").toLowerCase();
   if (/timeout|timed out/.test(status)) return "timeout";
-  if (/pass|success|ok|succeeded|accepted|approved/.test(status)) return "pass";
-  if (/fail|error|exception|stack trace/.test(status)) return "fail";
-  if (/block|deny|reject/.test(status)) return "blocked";
+  if (/\b(?:fail|failed|failure|error|exception|stack trace)\b/.test(status)) return "fail";
+  if (/\b(?:pass|passed|success|ok|succeeded|accepted|approved)\b/.test(status)) return "pass";
+  if (/\b(?:block|blocked|deny|denied|reject|rejected)\b/.test(status)) return "blocked";
   return "unknown";
 }
 

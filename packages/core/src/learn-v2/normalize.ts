@@ -66,6 +66,11 @@ function normalizedFromText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEv
       metadata: { detectedFormat: "diff" }
     })];
   }
+  if (surface.adapterId === "terminal") return normalizeTerminalText(surface, rawRecord, text);
+  if (surface.adapterId === "ci-log") return normalizeCiLogText(surface, rawRecord, text);
+  if (surface.adapterId === "review-local") return normalizeReviewText(surface, rawRecord, text);
+  if (surface.adapterId === "project-docs") return normalizeProjectDocText(surface, rawRecord, text);
+  if (surface.adapterId === "agent-summaries") return normalizeAgentSummaryText(surface, rawRecord, text);
   const roleBlocks = text.split(/\n(?=(?:user|assistant|system|developer|tool|reviewer|ci)\s*:)/i);
   if (roleBlocks.length > 1) {
     return roleBlocks.flatMap((block, index) => {
@@ -95,6 +100,117 @@ function normalizedFromText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEv
       paths: learnV2FilePathsFromText(line),
       commands: learnV2CommandLinesFromText(line),
       metadata: { detectedFormat: surface.detectedFormat }
+    }));
+}
+
+function normalizeTerminalText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
+  const lines = text.split(/\r?\n/);
+  const out: LearnV2NormalizedEvidence[] = [];
+  let currentCommand: { command: string; output: string[]; index: number } | undefined;
+  const flush = (): void => {
+    if (!currentCommand) return;
+    const body = currentCommand.output.join("\n").trim();
+    out.push(makeEvidence(rawRecord, currentCommand.index, {
+      kind: "command",
+      actor: "tool",
+      text: body ? `${currentCommand.command}\n${learnV2Snippet(body, 1800)}` : currentCommand.command,
+      status: learnV2StatusFromText(body || currentCommand.command),
+      paths: learnV2FilePathsFromText(`${currentCommand.command}\n${body}`),
+      commands: [currentCommand.command],
+      metadata: { detectedFormat: surface.detectedFormat, adapter: "terminal" }
+    }));
+    currentCommand = undefined;
+  };
+  for (const line of lines) {
+    const command = terminalCommand(line);
+    if (command) {
+      flush();
+      currentCommand = { command, output: [], index: out.length };
+    } else if (currentCommand) {
+      currentCommand.output.push(line);
+    }
+  }
+  flush();
+  if (out.length) return out;
+  return fallbackLineEvidence(surface, rawRecord, text, "log-line", "tool", "terminal");
+}
+
+function normalizeCiLogText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
+  const chunks = splitLogChunks(text);
+  return chunks.map((chunk, index) => makeEvidence(rawRecord, index, {
+    kind: "test-result",
+    actor: "ci",
+    text: learnV2Snippet(chunk, 1800),
+    status: learnV2StatusFromText(chunk),
+    paths: learnV2FilePathsFromText(chunk),
+    commands: learnV2CommandLinesFromText(chunk),
+    metadata: { detectedFormat: surface.detectedFormat, adapter: "ci-log" }
+  }));
+}
+
+function normalizeReviewText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
+  const blocks = text.split(/\n\s*\n+/).map((block) => block.trim()).filter(Boolean);
+  return (blocks.length ? blocks : text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length >= 8))
+    .slice(0, 200)
+    .map((block, index) => makeEvidence(rawRecord, index, {
+      kind: "review",
+      actor: "reviewer",
+      text: block,
+      status: learnV2StatusFromText(block),
+      paths: learnV2FilePathsFromText(block),
+      commands: learnV2CommandLinesFromText(block),
+      metadata: { detectedFormat: surface.detectedFormat, adapter: "review-local" }
+    }));
+}
+
+function normalizeProjectDocText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
+  const sections = markdownSections(text);
+  return sections.slice(0, 120).map((section, index) => makeEvidence(rawRecord, index, {
+    kind: "document-section",
+    actor: "unknown",
+    text: learnV2Snippet(section, 1800),
+    status: "unknown",
+    paths: learnV2FilePathsFromText(section),
+    commands: learnV2CommandLinesFromText(section),
+    metadata: { detectedFormat: surface.detectedFormat, adapter: "project-docs" }
+  }));
+}
+
+function normalizeAgentSummaryText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
+  const blocks = text.split(/\n(?=(?:summary|outcome|files|commands|tests|next|risk|handoff)\s*:)/i)
+    .map((block) => block.trim())
+    .filter((block) => block.length >= 8);
+  return (blocks.length ? blocks : [text]).slice(0, 80).map((block, index) => makeEvidence(rawRecord, index, {
+    kind: /test|pass|fail|command/i.test(block) ? "test-result" : "message",
+    actor: "assistant",
+    text: learnV2Snippet(block, 1800),
+    status: learnV2StatusFromText(block),
+    paths: learnV2FilePathsFromText(block),
+    commands: learnV2CommandLinesFromText(block),
+    metadata: { detectedFormat: surface.detectedFormat, adapter: "agent-summaries" }
+  }));
+}
+
+function fallbackLineEvidence(
+  surface: LearnV2SurfaceRead,
+  rawRecord: LearnV2RawEvidenceRecord,
+  text: string,
+  kind: LearnV2NormalizedEvidence["kind"],
+  actor: LearnV2NormalizedEvidence["actor"],
+  adapter: string
+): LearnV2NormalizedEvidence[] {
+  return text.split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length >= 8)
+    .slice(0, 800)
+    .map((line, index) => makeEvidence(rawRecord, index, {
+      kind,
+      actor,
+      text: line,
+      status: learnV2StatusFromText(line),
+      paths: learnV2FilePathsFromText(line),
+      commands: learnV2CommandLinesFromText(line),
+      metadata: { detectedFormat: surface.detectedFormat, adapter }
     }));
 }
 
@@ -212,4 +328,46 @@ function stringValue(value: unknown): string | undefined {
 
 function arrayStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function terminalCommand(line: string): string | undefined {
+  const trimmed = line.trim();
+  const match = /^(?:\$|>|PS [^>]+>|PS>)\s*(.+)$/.exec(trimmed);
+  if (match?.[1]) return match[1].trim();
+  if (/^(?:npm|pnpm|yarn|node|tsx|tsc|vitest|pytest|python|git|cargo|go|dotnet|ruff|mypy|eslint)\b/.test(trimmed)) return trimmed;
+  return undefined;
+}
+
+function splitLogChunks(text: string): string[] {
+  const lines = text.split(/\r?\n/);
+  const chunks: string[] = [];
+  let current: string[] = [];
+  const flush = (): void => {
+    const body = current.join("\n").trim();
+    if (body.length >= 8) chunks.push(body);
+    current = [];
+  };
+  for (const line of lines) {
+    if (/^(?:FAIL|PASS|ERROR|WARN|\[.*?\]|\[ok\]|\[x\])\b/i.test(line.trim()) && current.length > 0) flush();
+    current.push(line);
+  }
+  flush();
+  return chunks.length ? chunks.slice(0, 200) : [text];
+}
+
+function markdownSections(text: string): string[] {
+  const sections: string[] = [];
+  let current: string[] = [];
+  const flush = (): void => {
+    const body = current.join("\n").trim();
+    if (body.length >= 8) sections.push(body);
+    current = [];
+  };
+  for (const line of text.split(/\r?\n/)) {
+    if (/^#{1,6}\s+/.test(line) && current.length > 0) flush();
+    current.push(line);
+  }
+  flush();
+  if (sections.length) return sections;
+  return text.split(/\n\s*\n+/).map((section) => section.trim()).filter((section) => section.length >= 8);
 }
