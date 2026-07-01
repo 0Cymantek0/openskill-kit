@@ -14,6 +14,7 @@ import { validateMemoryIntegrity, writeMemoryIntegrityReport } from "../preferen
 import { renderPreferenceGraphMarkdown } from "../preferences/render.js";
 import { withFileLock, writeJsonAtomic } from "../storage/atomic.js";
 import { readLearnV2ConceptStore } from "../learn-v2/store.js";
+import { declassificationReport } from "../learn-v2/index.js";
 import type { LearnV2ConceptCard } from "../learn-v2/schemas.js";
 
 export interface CompileBehaviorLayerResult {
@@ -291,6 +292,12 @@ async function compileLearnV2ConceptResources(root: string): Promise<{
   const now = new Date().toISOString();
   const store = await readLearnV2ConceptStore(root).catch(() => undefined);
   const active = (store?.cards ?? []).filter((card) => card.status === "active" || card.status === "locked");
+
+  const report = declassificationReport(active);
+  if (report.status === "fail") {
+    throw new Error(`Compile-time declassification checks failed for active concepts. Issues detected: ${report.issues.join(", ")}`);
+  }
+
   return {
     schemaVersion: "openskill-kit.mcp.learn-v2-concept-resources.v1",
     generatedAt: now,

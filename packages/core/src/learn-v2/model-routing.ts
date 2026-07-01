@@ -63,9 +63,10 @@ export async function ensureLearnV2ModelRoutingArtifacts(projectRoot: string, no
     const route = resolved.routes[roleToRoute[role]];
     const agentFile = path.join(agentsDir, `${role}.md`);
     await fs.writeFile(agentFile, renderAgentDefinition(role, route), "utf8");
+    const relativeAgentFile = path.relative(root, agentFile).replace(/\\/g, "/");
     return [role, {
       ...route,
-      agentFile,
+      agentFile: relativeAgentFile,
       purpose: rolePurpose[role],
       deterministicFallback: deterministicFallback(role)
     }];
@@ -73,7 +74,7 @@ export async function ensureLearnV2ModelRoutingArtifacts(projectRoot: string, no
   const artifact: LearnV2ModelRoutingArtifact = {
     schemaVersion: "openskill-kit.learn-v2.model-routing.v1",
     generatedAt: now.toISOString(),
-    sourceRoutingPath: base.path,
+    sourceRoutingPath: path.relative(root, base.path).replace(/\\/g, "/"),
     policy: {
       ownedProvider: false,
       executionBoundary: "opencode-configured-agent-or-deterministic",
@@ -81,8 +82,8 @@ export async function ensureLearnV2ModelRoutingArtifacts(projectRoot: string, no
     },
     agents,
     artifacts: {
-      routingJson,
-      opencodeAgentsDir: agentsDir
+      routingJson: path.relative(root, routingJson).replace(/\\/g, "/"),
+      opencodeAgentsDir: path.relative(root, agentsDir).replace(/\\/g, "/")
     }
   };
   await writeJsonAtomic(routingJson, artifact);

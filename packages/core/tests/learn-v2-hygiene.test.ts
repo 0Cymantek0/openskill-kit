@@ -8,6 +8,8 @@ import {
   exportProjectBehaviorPack,
   verifyProjectBehaviorPack,
   compileLearnV2ConceptPreview,
+  ensureLearnV2ModelRoutingArtifacts,
+  compileBehaviorLayer,
   LEARN_V2_GENERATED_DIRS,
   LEARN_V2_GENERATED_FILES,
   getCleanedLearnV2Paths
@@ -67,20 +69,65 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
     expect(verified.status).toBe("pass");
   });
 
+  it("proves pack verification fails if manifest includes a private Learn v2 path", async () => {
+    const root = await tempProject();
+    const pack = await exportProjectBehaviorPack(root);
+    
+    // Mutate manifest.json to include a private Learn v2 path
+    const manifestPath = path.join(pack.packPath, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const badPath = ".openskill-kit/learn-v2/declassified-snippets/snippet.json";
+    manifest.files.push(badPath);
+    manifest.hashes[badPath] = "dummyhash";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    // Also write a dummy file into the extracted pack directory to pass hash check or exist check
+    const extractedFilePath = path.join(pack.packPath, badPath);
+    await fs.mkdir(path.dirname(extractedFilePath), { recursive: true });
+    await writeFile(extractedFilePath, "dummy", "utf8");
+
+    const verified = await verifyProjectBehaviorPack(pack.packPath);
+    expect(verified.status).toBe("fail");
+    expect(verified.issues.some((issue) => issue.includes("Private path included"))).toBe(true);
+  });
+
   it("proves adding a new generated Learn v2 path without updating paths.ts fails the test", async () => {
-    // Scan learn-v2 source files for hardcoded paths matching learn-v2 subdirectories
-    const learnV2SrcDir = path.resolve("packages/core/src/learn-v2");
-    const files = await fs.readdir(learnV2SrcDir);
+    const scanDirs = [
+      "packages/core/src/learn-v2",
+      "packages/core/src/config",
+      "packages/core/src/compiler",
+      "packages/core/src/sync",
+      "packages/core/src/lifecycle",
+      "packages/mcp-server/src",
+      "packages/cli/src"
+    ];
+
+    async function getTsFiles(dir: string): Promise<string[]> {
+      const results: string[] = [];
+      const list = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+      for (const entry of list) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          results.push(...(await getTsFiles(full)));
+        } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+          results.push(full);
+        }
+      }
+      return results;
+    }
+
     const discoveredPaths = new Set<string>();
+    const pathRegex = /(?:\.openskill-kit\/learn-v2\/|["']\.openskill-kit["'],\s*["']learn-v2["'],\s*["']|(?:\.openskill-kit\/model-routing\/))([A-Za-z0-9._-]+)/g;
 
-    const pathRegex = /(?:\.openskill-kit\/learn-v2\/|["']\.openskill-kit["'],\s*["']learn-v2["'],\s*["'])([A-Za-z0-9._-]+)/g;
-
-    for (const file of files) {
-      if (!file.endsWith(".ts")) continue;
-      const content = await readFile(path.join(learnV2SrcDir, file), "utf8");
-      let match;
-      while ((match = pathRegex.exec(content)) !== null) {
-        discoveredPaths.add(match[1]);
+    for (const scanDir of scanDirs) {
+      const dirPath = path.resolve(scanDir);
+      const tsFiles = await getTsFiles(dirPath);
+      for (const file of tsFiles) {
+        const content = await readFile(file, "utf8");
+        let match;
+        while ((match = pathRegex.exec(content)) !== null) {
+          discoveredPaths.add(match[1]);
+        }
       }
     }
 
@@ -93,6 +140,10 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
       if (rel && !rel.startsWith(".openskill-kit")) {
         centralSubPaths.add(rel.split("/")[0]);
       }
+      const topRel = dir.replace(/^\.openskill-kit\//, "");
+      if (topRel) {
+        centralSubPaths.add(topRel.split("/")[0]);
+      }
     }
     for (const file of centralFiles) {
       const rel = file.replace(/^\.openskill-kit\/learn-v2\//, "");
@@ -103,49 +154,17 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
 
     // Every discovered subdirectory/file must be accounted for in central paths
     for (const pathName of discoveredPaths) {
-      // Skip generic files/locks that aren't specific to learn-v2 subdirectories
-      if (pathName === ".concepts.lock" || pathName === "store.json") continue;
+      // Skip generic files/locks/agents that aren't specific to learn-v2 subdirectories
+      if (pathName === ".concepts.lock" || pathName === "store.json" || pathName === "opencode-agents") continue;
       expect(centralSubPaths.has(pathName)).toBe(true);
     }
+
+    expect(centralSubPaths.has("model-routing")).toBe(true);
   });
 
   it("proves compile preview fails declassification if leak checks trigger", async () => {
     const root = await tempProject();
     const config = (await initAdaptiveProject({ projectRoot: root })).config;
-
-    const createBadCard = (id: string, statement: string) => ({
-      schemaVersion: "openskill-kit.learn-v2.concept-card.v1" as const,
-      id,
-      title: "Bad Concept",
-      canonicalBehavior: statement,
-      behaviorDelta: "Change code.",
-      status: "active" as const,
-      scope: { level: "project" as const, paths: [], taskTypes: [], negativeTriggers: [] },
-      activation: { phrases: [], pathGlobs: [], commands: [] },
-      confidence: 1,
-      durability: 1,
-      sourceReliability: 1,
-      evidenceIds: ["ev_123"],
-      rawRefs: ["raw_123"],
-      atoms: [{
-        schemaVersion: "openskill-kit.behavior-atom.v1" as const,
-        id: "atom_123",
-        projectId: "proj_123",
-        kind: "preference" as const,
-        statement,
-        polarity: "positive" as const,
-        modality: "must" as const,
-        conditions: [],
-        scope: { level: "project" as const, paths: [], subsystems: [], taskTypes: [] },
-        evidenceRefs: [{ evidenceId: "ev_123", role: "inferred-pattern" as const, weight: 1 }],
-        counterEvidenceRefs: [],
-        extraction: { method: "deterministic" as const, extractorId: "test" },
-        scores: { confidence: 1, agreement: 1, counterevidencePenalty: 0, correctionWeight: 0, outcomeStrength: 1, agreementWeight: 1, contradictionWeight: 0, recencyWeight: 1 }
-      }],
-      counterevidence: [],
-      privacy: { outputClass: "shareable" as const, declassificationRequired: true as const, rawRefsExportable: false as const, placeholders: [] },
-      lifecycle: { createdAt: "2026-06-30T00:00:00.000Z", updatedAt: "2026-06-30T00:00:00.000Z", supersedes: [] }
-    });
 
     const leakCases = [
       { stmt: "Use raw_abcdef12 ref", issue: "raw-ref-like-token-in-output" },
@@ -198,6 +217,42 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
     expect(verified.status).toBe("fail");
     expect(verified.issues.some((issue) => issue.includes("Lock file included"))).toBe(true);
   });
+
+  it("proves model-routing generated artifacts do not leak absolute local paths and are ignored", async () => {
+    const root = await tempProject();
+    
+    const artifact = await ensureLearnV2ModelRoutingArtifacts(root);
+
+    const oskRoutingFile = path.join(root, ".openskill-kit", "model-routing", "osk-model-routing.json");
+    const oskRoutingContent = await readFile(oskRoutingFile, "utf8");
+    
+    expect(oskRoutingContent).not.toContain(root.replace(/\\/g, "/"));
+    expect(oskRoutingContent).not.toContain(root);
+
+    const gitignorePath = path.join(root, ".openskill-kit", ".gitignore");
+    const gitignoreContent = await readFile(gitignorePath, "utf8");
+    const lines = gitignoreContent.split("\n").map((line) => line.trim()).filter(Boolean);
+    expect(lines).toContain("model-routing/");
+  });
+
+  it("proves compileBehaviorLayer fails compilation if active concepts contain declassification leaks", async () => {
+    const root = await tempProject();
+    
+    // Create a card with a leak (e.g. absolute user path)
+    const badCard = createBadCard("leak_card", "Read from C:\\Users\\john\\dev");
+
+    // Write to store.json
+    const storePath = path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
+    await fs.mkdir(path.dirname(storePath), { recursive: true });
+    await writeFile(storePath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
+      cards: [badCard]
+    }, null, 2), "utf8");
+
+    // Expect compileBehaviorLayer to fail
+    await expect(compileBehaviorLayer(root, { targets: ["mcp-resources"] }))
+      .rejects.toThrow(/Compile-time declassification checks failed/);
+  });
 });
 
 async function tempProject(): Promise<string> {
@@ -205,4 +260,41 @@ async function tempProject(): Promise<string> {
   await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "hygiene-project" }), "utf8");
   await initAdaptiveProject({ projectRoot: root, now: new Date("2026-06-30T00:00:00.000Z") });
   return root;
+}
+
+function createBadCard(id: string, statement: string) {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.concept-card.v1" as const,
+    id,
+    title: "Bad Concept",
+    canonicalBehavior: statement,
+    behaviorDelta: "Change code.",
+    status: "active" as const,
+    scope: { level: "project" as const, paths: [], taskTypes: [], negativeTriggers: [] },
+    activation: { phrases: [], pathGlobs: [], commands: [] },
+    confidence: 1,
+    durability: 1,
+    sourceReliability: 1,
+    risk: "medium" as const,
+    evidenceIds: ["ev_123"],
+    rawRefs: ["raw_123"],
+    atoms: [{
+      schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1" as const,
+      id: "atom_123",
+      kind: "preference" as const,
+      statement,
+      polarity: "positive" as const,
+      scope: { level: "project" as const, paths: [], taskTypes: [] },
+      confidence: 1,
+      confidenceCap: 1,
+      sourceReliability: 1,
+      evidenceIds: ["ev_123"],
+      rawRefs: ["raw_123"],
+      rationale: "some rationale",
+      risk: "medium" as const
+    }],
+    counterevidence: [],
+    privacy: { outputClass: "shareable" as const, declassificationRequired: true as const, rawRefsExportable: false as const, placeholders: [] },
+    lifecycle: { createdAt: "2026-06-30T00:00:00.000Z", updatedAt: "2026-06-30T00:00:00.000Z", supersedes: [] }
+  };
 }

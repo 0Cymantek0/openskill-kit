@@ -144,7 +144,7 @@ function categoryFor(card: LearnV2ConceptCard): PreferenceNode["category"] {
   return "workflow";
 }
 
-function declassificationReport(cards: LearnV2ConceptCard[]): LearnV2CompilePreview["declassificationReport"] {
+export function declassificationReport(cards: LearnV2ConceptCard[]): LearnV2CompilePreview["declassificationReport"] {
   const text = JSON.stringify(cards.map((card) => ({
     id: card.id,
     title: card.title,

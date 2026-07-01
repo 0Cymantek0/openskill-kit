@@ -36,7 +36,10 @@ export const LEARN_V2_GENERATED_DIRS = [
   ".openskill-kit/learn-v2/evidence-quality/",
 
   // Compiled/preview local output
-  ".openskill-kit/learn-v2/compiled-preview/"
+  ".openskill-kit/learn-v2/compiled-preview/",
+
+  // Generated model routing artifacts
+  ".openskill-kit/model-routing/"
 ];
 
 export const LEARN_V2_GENERATED_FILES = [
