@@ -113,7 +113,7 @@ function normalizeTerminalText(surface: LearnV2SurfaceRead, rawRecord: LearnV2Ra
     out.push(makeEvidence(rawRecord, currentCommand.index, {
       kind: "command",
       actor: "tool",
-      text: body ? `${currentCommand.command}\n${learnV2Snippet(body, 1800)}` : currentCommand.command,
+      text: body ? `${currentCommand.command}\n${boundedMultiline(body, 1800)}` : currentCommand.command,
       status: learnV2StatusFromText(body || currentCommand.command),
       paths: learnV2FilePathsFromText(`${currentCommand.command}\n${body}`),
       commands: [currentCommand.command],
@@ -133,6 +133,11 @@ function normalizeTerminalText(surface: LearnV2SurfaceRead, rawRecord: LearnV2Ra
   flush();
   if (out.length) return out;
   return fallbackLineEvidence(surface, rawRecord, text, "log-line", "tool", "terminal");
+}
+
+function boundedMultiline(text: string, max: number): string {
+  const trimmed = text.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max - 3)}...` : trimmed;
 }
 
 function normalizeCiLogText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {

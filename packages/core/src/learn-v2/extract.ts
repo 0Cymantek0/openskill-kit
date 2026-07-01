@@ -180,7 +180,9 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
       toolName: tool.toolName,
       status: tool.status,
       command: tool.command,
-      summary: learnV2Snippet(tool.summary, 800)
+      commandShape: tool.commandShape,
+      summary: learnV2Snippet(tool.summary, 800),
+      outputCompression: tool.outputCompression
     })),
     patches: episode.patchComparisons.slice(0, 20).map((patch) => ({
       id: patch.id,

@@ -109,9 +109,26 @@ export const LearnV2ToolCallSummarySchema = z.object({
   toolName: z.string().min(1),
   status: z.enum(["pass", "fail", "blocked", "timeout", "unknown"]),
   command: z.string().optional(),
+  commandShape: z.object({
+    rendered: z.string().min(1),
+    base: z.string().min(1),
+    argsShape: z.array(z.string()).default([]),
+    riskFlags: z.array(z.string()).default([])
+  }).optional(),
   paths: z.array(z.string()).default([]),
   summary: z.string().min(1),
-  omittedBytes: z.number().int().min(0).default(0)
+  omittedBytes: z.number().int().min(0).default(0),
+  outputCompression: z.object({
+    strategy: z.enum(["status-only", "first-last-lines", "diagnostic-extract", "stacktrace-signature", "test-failure-summary", "deduplicated-log"]),
+    summary: z.string().min(1),
+    omittedBytes: z.number().int().min(0),
+    signatures: z.array(z.string()).default([])
+  }).default({
+    strategy: "status-only",
+    summary: "No output captured.",
+    omittedBytes: 0,
+    signatures: []
+  })
 });
 export type LearnV2ToolCallSummary = z.infer<typeof LearnV2ToolCallSummarySchema>;
 
@@ -238,7 +255,10 @@ export const LearnV2EpisodeLearningBundleSchema = z.object({
     toolName: z.string().min(1),
     status: LearnV2ToolCallSummarySchema.shape.status,
     command: z.string().optional(),
+    commandShape: LearnV2ToolCallSummarySchema.shape.commandShape,
     summary: z.string().max(800)
+      .min(1),
+    outputCompression: LearnV2ToolCallSummarySchema.shape.outputCompression
   })).default([]),
   patches: z.array(z.object({
     id: z.string().min(1),

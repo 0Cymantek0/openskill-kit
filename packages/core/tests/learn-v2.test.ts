@@ -15,6 +15,7 @@ import {
   normalizeLearnV2Evidence,
   analyzeLearnV2StructuralDiff,
   summarizeLearnV2Patches,
+  summarizeLearnV2Tools,
   buildLearnV2EpisodeLearningBundle,
   renderLearnV2ConceptExtractionPrompt,
   parseLearnV2LlmConceptExtractionOutput,
@@ -132,6 +133,37 @@ describe("learn-v2 substrate", () => {
     expect(ci.some((item) => item.kind === "test-result" && item.status === "fail")).toBe(true);
     expect(docs.every((item) => item.kind === "document-section")).toBe(true);
     expect(summary.some((item) => item.actor === "assistant" && item.commands.includes("npm test -- parser PASS"))).toBe(true);
+  });
+
+  it("compresses tool output into diagnostics signatures and drops repeated noise", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_tool_compress");
+    const terminal = normalizeLearnV2Evidence(
+      { adapterId: "terminal", sourcePath: "terminal.log", contentKind: "log", rawText: "", detectedFormat: "log" },
+      record,
+      [
+        "$ npm test -- parser -- --runInBand",
+        "webpack progress 10%",
+        "webpack progress 10%",
+        "FAIL packages/core/tests/parser.test.ts",
+        "AssertionError: expected token to equal node",
+        "packages/core/src/parser.ts:42:13",
+        "    at parseToken (C:/Users/name/project/packages/core/src/parser.ts:42:13)",
+        "    at parseRoot (C:/Users/name/project/packages/core/src/parser.ts:50:3)",
+        "webpack progress 10%"
+      ].join("\n")
+    );
+    const [summary] = summarizeLearnV2Tools(terminal);
+    expect(summary!.commandShape?.base).toBe("npm");
+    expect(summary!.commandShape?.argsShape).toEqual(expect.arrayContaining(["word", "flag"]));
+    expect(summary!.outputCompression.strategy).toBe("test-failure-summary");
+    expect(summary!.outputCompression.summary).toContain("AssertionError");
+    expect(summary!.outputCompression.summary).not.toContain("webpack progress");
+    expect(summary!.outputCompression.signatures.some((item) => item.includes("AssertionError"))).toBe(true);
+    expect(summary!.omittedBytes).toBeGreaterThan(0);
+
+    const bundle = buildLearnV2EpisodeLearningBundle(reconstructLearnV2Episodes(terminal)[0]!);
+    expect(bundle.tools[0]?.outputCompression.strategy).toBe("test-failure-summary");
   });
 
   it("stitches multi-tool evidence by branch path time and infers parser test concept", async () => {
