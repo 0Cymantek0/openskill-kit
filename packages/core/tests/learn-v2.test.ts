@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -411,13 +411,38 @@ describe("learn-v2 substrate", () => {
       }],
       rejected: []
     }), "utf8");
-    const malformedOutputPath = path.join(path.dirname(request.promptPath), "malformed-response.json");
+    const staleDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_stale");
+    const staleOutputPath = path.join(staleDir, "response.json");
+    await mkdir(staleDir, { recursive: true });
+    await writeFile(path.join(staleDir, "request-manifest.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
+      generatedAt: "2026-06-30T00:01:00.000Z",
+      episodeId: "episode_missing",
+      promptPath: path.join(staleDir, "concept-extraction-prompt.md"),
+      bundlePath: path.join(staleDir, "episode-learning-bundle.json"),
+      expectedOutputPath: staleOutputPath,
+      outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      evidenceIds: [evidenceId],
+      rawRefsIncluded: false
+    }), "utf8");
+    await writeFile(staleOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "For parser changes, prefer focused parser regression tests before broad suites.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [evidenceId],
+        confidence: 0.72
+      }],
+      rejected: []
+    }), "utf8");
+    const malformedOutputPath = path.join(root, "malformed-response.json");
     await writeFile(malformedOutputPath, "{", "utf8");
 
-    const applied = await applyLearnV2ModelProposalOutputs(root, [outputPath, badOutputPath, malformedOutputPath], new Date("2026-06-30T00:02:00Z"));
+    const applied = await applyLearnV2ModelProposalOutputs(root, [outputPath, badOutputPath, staleOutputPath, malformedOutputPath], new Date("2026-06-30T00:02:00Z"));
     const store = await readLearnV2ConceptStore(root);
     expect(applied.atomCount).toBe(1);
-    expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining(["missing-or-invalid-evidence-id", "invalid-json-or-schema"]));
+    expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining(["unexpected-output-path", "stale-request-manifest", "invalid-json-or-schema"]));
     expect(store.cards.some((card) => /parser regression tests/i.test(card.canonicalBehavior))).toBe(true);
     expect(JSON.stringify(store)).not.toContain("sk-12345678901234567890");
   });

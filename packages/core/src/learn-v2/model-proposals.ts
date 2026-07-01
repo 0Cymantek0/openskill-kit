@@ -44,6 +44,18 @@ export interface LearnV2ModelProposalApplyResult {
   conceptStorePath: string;
 }
 
+interface LearnV2ModelRequestManifest {
+  schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1";
+  generatedAt: string;
+  episodeId: string;
+  promptPath: string;
+  bundlePath: string;
+  expectedOutputPath: string;
+  outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1";
+  evidenceIds: string[];
+  rawRefsIncluded: false;
+}
+
 export async function writeLearnV2EpisodeStore(rootInput: string, episodes: LearnV2TaskEpisode[], now = new Date()): Promise<string> {
   const root = path.resolve(rootInput);
   const store: LearnV2EpisodeStore = {
@@ -135,10 +147,12 @@ export async function applyLearnV2ModelProposalOutputs(
     if (text === undefined) continue;
     const parsed = safeParseModelOutput(text, outputPath, rejected);
     if (!parsed) continue;
-    const episodeId = inferEpisodeIdForOutput(outputPath, episodesById);
-    const episode = episodesById.get(episodeId);
+    const rejectedBeforeResolve = rejected.length;
+    const episode = await resolveEpisodeForModelOutput(root, outputPath, episodesById, rejected);
     if (!episode) {
-      for (const [index] of parsed.atoms.entries()) rejected.push({ outputPath, id: `llm_atom_${index}`, reason: "no-matching-episode" });
+      if (rejected.length === rejectedBeforeResolve) {
+        for (const [index] of parsed.atoms.entries()) rejected.push({ outputPath, id: `llm_atom_${index}`, reason: "no-matching-episode" });
+      }
       continue;
     }
     const result = validateLearnV2LlmConceptExtractionOutput(episode, parsed);
@@ -186,6 +200,74 @@ async function pruneStaleModelRequestDirs(root: string, currentEpisodeIds: Set<s
   await Promise.all(entries
     .filter((entry) => entry.isDirectory() && !currentEpisodeIds.has(entry.name))
     .map((entry) => fs.rm(path.join(requestRoot, entry.name), { recursive: true, force: true })));
+}
+
+async function resolveEpisodeForModelOutput(
+  root: string,
+  outputPath: string,
+  episodesById: Map<string, LearnV2TaskEpisode>,
+  rejected: LearnV2ModelProposalApplyResult["rejected"]
+): Promise<LearnV2TaskEpisode | undefined> {
+  const manifest = await readSiblingModelRequestManifest(outputPath).catch((error: unknown) => {
+    rejected.push({ outputPath, id: "file", reason: "invalid-request-manifest", detail: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  });
+  if (rejected.some((item) => item.outputPath === outputPath && item.reason === "invalid-request-manifest")) return undefined;
+  if (!manifest) return episodesById.get(inferEpisodeIdForOutput(outputPath, episodesById));
+
+  const expectedOutput = path.resolve(root, manifest.expectedOutputPath);
+  const actualOutput = path.resolve(outputPath);
+  if (expectedOutput !== actualOutput) {
+    rejected.push({
+      outputPath,
+      id: "file",
+      reason: "unexpected-output-path",
+      detail: `Expected ${expectedOutput}`
+    });
+    return undefined;
+  }
+  const episode = episodesById.get(manifest.episodeId);
+  if (!episode) {
+    rejected.push({ outputPath, id: "file", reason: "stale-request-manifest", detail: `Unknown episode ${manifest.episodeId}` });
+    return undefined;
+  }
+  if (manifest.outputSchema !== "openskill-kit.learn-v2.llm-concept-extraction-output.v1") {
+    rejected.push({ outputPath, id: "file", reason: "stale-request-manifest", detail: `Unexpected output schema ${manifest.outputSchema}` });
+    return undefined;
+  }
+  if (manifest.rawRefsIncluded !== false) {
+    rejected.push({ outputPath, id: "file", reason: "unsafe-request-manifest", detail: "Manifest claims raw refs may be included." });
+    return undefined;
+  }
+  const episodeEvidenceIds = new Set(episode.evidenceIds);
+  const staleEvidence = manifest.evidenceIds.filter((id) => !episodeEvidenceIds.has(id));
+  if (staleEvidence.length) {
+    rejected.push({ outputPath, id: "file", reason: "stale-request-manifest", detail: `Evidence no longer belongs to episode: ${staleEvidence.slice(0, 5).join(", ")}` });
+    return undefined;
+  }
+  return episode;
+}
+
+async function readSiblingModelRequestManifest(outputPath: string): Promise<LearnV2ModelRequestManifest | undefined> {
+  const manifestPath = path.join(path.dirname(outputPath), "request-manifest.json");
+  const text = await fs.readFile(manifestPath, "utf8").catch(() => undefined);
+  if (!text) return undefined;
+  const value = JSON.parse(text) as Partial<LearnV2ModelRequestManifest>;
+  if (
+    value.schemaVersion !== "openskill-kit.learn-v2.model-request-manifest.v1" ||
+    typeof value.generatedAt !== "string" ||
+    typeof value.episodeId !== "string" ||
+    typeof value.promptPath !== "string" ||
+    typeof value.bundlePath !== "string" ||
+    typeof value.expectedOutputPath !== "string" ||
+    value.outputSchema !== "openskill-kit.learn-v2.llm-concept-extraction-output.v1" ||
+    !Array.isArray(value.evidenceIds) ||
+    value.evidenceIds.some((item) => typeof item !== "string") ||
+    value.rawRefsIncluded !== false
+  ) {
+    throw new Error(`Invalid Learn v2 model request manifest: ${manifestPath}`);
+  }
+  return value as LearnV2ModelRequestManifest;
 }
 
 function inferEpisodeIdForOutput(outputPath: string, episodesById: Map<string, LearnV2TaskEpisode>): string {
