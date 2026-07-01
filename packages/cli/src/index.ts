@@ -417,6 +417,7 @@ osk.command("review")
   .option("--concept-merge <json>", "Merge learn-v2 concepts. JSON: {\"targetId\":\"concept_a\",\"sourceIds\":[\"concept_b\"]}", collectOption, [])
   .option("--concept-split <json>", "Split a learn-v2 concept. JSON: {\"sourceId\":\"concept_a\",\"atomIds\":[\"atom_b\"]}", collectOption, [])
   .option("--concept-supersede <json>", "Mark supersession. JSON: {\"supersededId\":\"concept_old\",\"supersededById\":\"concept_new\"}", collectOption, [])
+  .option("--concept-auto-policy", "Run configured Learn-v2 auto-stage, auto-apply-safe, and auto-supersession policies")
   .option("--concept-bulk <action>", "Safe learn-v2 bulk action: accept-low-risk|reject-one-off|mark-superseded")
   .option("--no-concept-compile", "Update learn-v2 concept store without syncing active concepts into preference/workflow graphs")
   .option("--label-command <hash>", "Approve a command hash label")
@@ -436,6 +437,7 @@ osk.command("review")
         mergeConcepts: parseConceptMergeOptions(options.conceptMerge),
         splitConcepts: parseConceptSplitOptions(options.conceptSplit),
         supersedeConcepts: parseConceptSupersedeOptions(options.conceptSupersede),
+        autoPolicy: options.conceptAutoPolicy === true,
         bulkSafe: parseConceptBulkAction(options.conceptBulk),
         compileActive: options.conceptCompile !== false
       });
@@ -2356,6 +2358,7 @@ function hasConceptReviewOptions(options: {
   conceptMerge?: string[];
   conceptSplit?: string[];
   conceptSupersede?: string[];
+  conceptAutoPolicy?: boolean;
   conceptBulk?: string;
 }): boolean {
   return Boolean(
@@ -2368,6 +2371,7 @@ function hasConceptReviewOptions(options: {
     || options.conceptMerge?.length
     || options.conceptSplit?.length
     || options.conceptSupersede?.length
+    || options.conceptAutoPolicy
   );
 }
 

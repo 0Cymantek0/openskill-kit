@@ -64,7 +64,7 @@ export async function runLearnV2Eval(
     },
     {
       id: "candidate-compile-boundary",
-      status: concepts.every((concept) => concept.status === "candidate" || concept.status === "conflict" || concept.status === "active" || concept.status === "locked") ? "pass" as const : "fail" as const,
+      status: concepts.every((concept) => concept.status === "candidate" || concept.status === "staged" || concept.status === "conflict" || concept.status === "active" || concept.status === "locked") ? "pass" as const : "fail" as const,
       checks: [{
         name: "review-status",
         status: "pass" as const,

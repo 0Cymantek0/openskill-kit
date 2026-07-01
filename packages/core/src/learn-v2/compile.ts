@@ -30,7 +30,7 @@ export interface LearnV2CompilePreview {
 export async function compileLearnV2ConceptPreview(rootInput: string, config: ProjectConfig, cards: LearnV2ConceptCard[], now: Date): Promise<LearnV2CompilePreview> {
   const root = path.resolve(rootInput);
   const active = cards.filter((card) => card.status === "active" || card.status === "locked");
-  const candidate = cards.filter((card) => card.status === "candidate" || card.status === "conflict");
+  const candidate = cards.filter((card) => card.status === "candidate" || card.status === "staged" || card.status === "conflict");
   const preferenceNodes = active.map((card) => conceptToPreference(config.projectId, card, now));
   const workflowNodes = active.filter((card) => card.atoms.some((atom) => atom.kind === "workflow" || atom.kind === "command-policy" || atom.kind === "verification"))
     .map((card) => conceptToWorkflow(card, now));

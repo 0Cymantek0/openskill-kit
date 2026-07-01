@@ -54,6 +54,7 @@ openskill-kit osk review --concept-reject concept_...
 openskill-kit osk review --concept-merge '{"targetId":"concept_a","sourceIds":["concept_b"]}'
 openskill-kit osk review --concept-split '{"sourceId":"concept_a","atomIds":["atom_b"],"taskTypes":["parser-change"]}'
 openskill-kit osk review --concept-supersede '{"supersededId":"concept_old","supersededById":"concept_new"}'
+openskill-kit osk review --concept-auto-policy
 openskill-kit osk review --concept-bulk accept-low-risk
 openskill-kit osk review --label-command sha256:... --as "npm test"
 openskill-kit osk review --reject-label sha256:... --label-kind path
@@ -69,6 +70,7 @@ openskill-kit osk review --write
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
 - Learn v2 concept store and activation index under `.openskill-kit/learn-v2/`; these remain project-local and are excluded from packs.
 - Learn v2 review supports card merge, split, supersession, narrowing, edits, counterevidence, and status changes under one locked store transaction so activation indexes and graph sync stay consistent.
+- Learn v2 auto policy is guarded by `.openskill-kit/config.json` learning mode: `auto-stage` stages only safe low-risk narrow concepts, `auto-apply-safe` activates only safe low-risk narrow non-security concepts, and weak assistant-only-like candidates can be superseded by stronger contradictory evidence.
 - Active Learn v2 concepts compile into `.openskill-kit/compiled/mcp/resources/learn-v2-concepts.json` as declassified MCP-style resources with behavior, scope, activation, confidence, risk, and evidence counts only.
 - Learn v2 raw vault maintenance reports hot/pinned/compacted bytes and can garbage-collect expired unpinned blobs.
 - Learn v2 extraction goldens can assert expected concept text, atom kinds, task hints, paths, and forbidden leak text during raw learning eval.

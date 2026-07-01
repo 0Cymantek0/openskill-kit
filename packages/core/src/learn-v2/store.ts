@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { ProjectConfig } from "../config/schema.js";
 import { readProjectConfig } from "../events/store.js";
 import { PreferenceGraphSchema, type PreferenceGraph, type PreferenceNode } from "../preferences/schema.js";
 import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowNode } from "../workflows/schema.js";
@@ -46,6 +47,7 @@ export interface LearnV2ConceptReviewOptions {
   mergeConcepts?: Array<{ targetId: string; sourceIds: string[]; title?: string; canonicalBehavior?: string; activationPhrases?: string[] }>;
   splitConcepts?: Array<{ sourceId: string; atomIds: string[]; title?: string; canonicalBehavior?: string; paths?: string[]; taskTypes?: string[]; activationPhrases?: string[] }>;
   supersedeConcepts?: Array<{ supersededId: string; supersededById: string; reason?: string }>;
+  autoPolicy?: boolean;
   bulkSafe?: "accept-low-risk" | "reject-one-off" | "mark-superseded";
   compileActive?: boolean;
   now?: Date;
@@ -83,11 +85,12 @@ export async function writeLearnV2ConceptStore(projectRoot: string, cards: Learn
   const config = await readProjectConfig(root);
   const existing = await readLearnV2ConceptStore(root, now);
   const merged = mergeConceptCards(existing.cards, cards, now);
+  const policyApplied = applyLearnV2AutoPolicies(merged, config, now);
   const store: LearnV2ConceptStore = {
     schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
     projectId: config.projectId,
     updatedAt: now.toISOString(),
-    cards: merged
+    cards: policyApplied
   };
   await writeJsonAtomic(learnV2ConceptStorePath(root), store);
   await writeLearnV2ActivationIndex(root, store, now);
@@ -99,6 +102,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
   const now = options.now ?? new Date();
   return withFileLock(path.join(root, ".openskill-kit", "learn-v2", ".concepts.lock"), async () => {
     const store = await readLearnV2ConceptStore(root, now);
+    const config = await readProjectConfig(root);
     const before = new Map(store.cards.map((card) => [card.id, card.status]));
     const accept = new Set(options.accept ?? []);
     const reject = new Set(options.reject ?? []);
@@ -166,11 +170,14 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       return LearnV2ConceptCardSchema.parse(next);
     });
     const restructured = applyConceptRestructure(reviewed, options, now, modifiedIds, restructureMessages);
+    const policyApplied = options.autoPolicy === true
+      ? applyLearnV2AutoPolicies(restructured, config, now, modifiedIds, restructureMessages)
+      : restructured;
     const nextStore: LearnV2ConceptStore = {
       schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
       projectId: store.projectId,
       updatedAt: now.toISOString(),
-      cards: sortConceptCards(restructured)
+      cards: sortConceptCards(policyApplied)
     };
     await writeJsonAtomic(learnV2ConceptStorePath(root), nextStore);
     const activationIndex = await writeLearnV2ActivationIndex(root, nextStore, now);
@@ -188,7 +195,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       activationIndexPath: learnV2ActivationIndexPath(root),
       reviewedCount,
       activeConceptCount: nextStore.cards.filter((card) => card.status === "active" || card.status === "locked").length,
-      candidateConceptCount: nextStore.cards.filter((card) => card.status === "candidate" || card.status === "conflict").length,
+      candidateConceptCount: nextStore.cards.filter((card) => card.status === "candidate" || card.status === "staged" || card.status === "conflict").length,
       preferenceGraphPath,
       workflowGraphPath,
       messages: [
@@ -271,6 +278,50 @@ function withStatus(card: LearnV2ConceptCard, status: LearnV2ConceptCard["status
     status,
     lifecycle: { ...card.lifecycle, updatedAt: now.toISOString() }
   };
+}
+
+export function applyLearnV2AutoPolicies(
+  cards: LearnV2ConceptCard[],
+  config: ProjectConfig,
+  now: Date,
+  modifiedIds: Set<string> = new Set(),
+  messages: string[] = []
+): LearnV2ConceptCard[] {
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  const values = () => [...byId.values()];
+  for (const card of values()) {
+    if (!isReviewableStatus(card.status)) continue;
+    if (!isAssistantOnlyLike(card)) continue;
+    const successor = values().find((candidate) => candidate.id !== card.id && isStrongManualLikeSuccessor(card, candidate, config));
+    if (!successor) continue;
+    byId.set(card.id, LearnV2ConceptCardSchema.parse({
+      ...card,
+      status: "superseded",
+      counterevidence: [...card.counterevidence, {
+        evidenceId: successor.evidenceIds[0] ?? successor.id,
+        reason: `Auto-superseded weak assistant-only-like candidate by stronger reviewed evidence candidate ${successor.id}.`
+      }],
+      lifecycle: { ...card.lifecycle, updatedAt: now.toISOString(), supersededBy: successor.id }
+    }));
+    byId.set(successor.id, LearnV2ConceptCardSchema.parse({
+      ...successor,
+      lifecycle: { ...successor.lifecycle, updatedAt: now.toISOString(), supersedes: [...new Set([...successor.lifecycle.supersedes, card.id])] }
+    }));
+    modifiedIds.add(card.id);
+    modifiedIds.add(successor.id);
+    messages.push(`Auto-superseded ${card.id} with stronger successor ${successor.id}.`);
+  }
+
+  if (config.learning.mode !== "auto-stage" && config.learning.mode !== "auto-apply-safe") return sortConceptCards(values());
+  for (const card of values()) {
+    if (!isReviewableStatus(card.status)) continue;
+    if (!isSafeAutoApplyCandidate(card, config)) continue;
+    const status: LearnV2ConceptCard["status"] = config.learning.mode === "auto-apply-safe" ? "active" : "staged";
+    byId.set(card.id, LearnV2ConceptCardSchema.parse(withStatus(card, status, now)));
+    modifiedIds.add(card.id);
+    messages.push(`${status === "active" ? "Auto-activated" : "Auto-staged"} safe low-risk concept ${card.id}.`);
+  }
+  return sortConceptCards(values());
 }
 
 function markModified(card: LearnV2ConceptCard, modifiedIds: Set<string>): LearnV2ConceptCard {
@@ -447,6 +498,51 @@ function uniqueAtoms(atoms: LearnV2ConceptCard["atoms"]): LearnV2ConceptCard["at
 
 function sortConceptCards(cards: LearnV2ConceptCard[]): LearnV2ConceptCard[] {
   return cards.sort((a, b) => b.confidence - a.confidence || a.title.localeCompare(b.title));
+}
+
+function isReviewableStatus(status: LearnV2ConceptCard["status"]): boolean {
+  return status === "candidate" || status === "staged" || status === "conflict";
+}
+
+function isAssistantOnlyLike(card: LearnV2ConceptCard): boolean {
+  return card.sourceReliability <= 0.35 || card.atoms.every((atom) => atom.sourceReliability <= 0.35);
+}
+
+function isStrongManualLikeSuccessor(oldCard: LearnV2ConceptCard, candidate: LearnV2ConceptCard, config: ProjectConfig): boolean {
+  if (candidate.status === "rejected" || candidate.status === "one-off" || candidate.status === "superseded") return false;
+  if (candidate.sourceReliability < Math.max(0.82, config.learning.minConfidenceToApply)) return false;
+  if (candidate.confidence < config.learning.minConfidenceToApply) return false;
+  if (!conceptsContradictOrSupersede(oldCard, candidate)) return false;
+  return true;
+}
+
+function isSafeAutoApplyCandidate(card: LearnV2ConceptCard, config: ProjectConfig): boolean {
+  if (card.confidence < config.learning.minConfidenceToApply) return false;
+  if (card.risk !== "low") return false;
+  if (card.sourceReliability < config.learning.minConfidenceToApply) return false;
+  if (card.privacy.rawRefsExportable !== false) return false;
+  if (card.privacy.outputClass !== "project-private" && card.privacy.outputClass !== "shareable") return false;
+  if (card.atoms.some((atom) => atom.kind === "security" || atom.risk === "high")) return false;
+  if (card.scope.level === "project" || card.scope.paths.length === 0 || card.scope.paths.length > 5) return false;
+  if (card.counterevidence.length > 0 || card.status === "conflict") return false;
+  return true;
+}
+
+function conceptsContradictOrSupersede(left: LearnV2ConceptCard, right: LearnV2ConceptCard): boolean {
+  const leftKind = left.atoms[0]?.kind;
+  const rightKind = right.atoms[0]?.kind;
+  if (leftKind && rightKind && leftKind !== rightKind) return false;
+  const leftWords = wordSet(left.canonicalBehavior);
+  const rightWords = wordSet(right.canonicalBehavior);
+  const overlap = [...leftWords].filter((word) => rightWords.has(word)).length;
+  const oppositePolarity = left.atoms.some((leftAtom) => right.atoms.some((rightAtom) => leftAtom.polarity !== rightAtom.polarity));
+  const scopeOverlap = !left.scope.paths.length || !right.scope.paths.length || left.scope.paths.some((item) => right.scope.paths.includes(item));
+  const strongerSameTopic = overlap >= 4 && right.confidence > left.confidence + 0.12;
+  return scopeOverlap && (oppositePolarity && overlap >= 3 || strongerSameTopic);
+}
+
+function wordSet(text: string): Set<string> {
+  return new Set(text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((word) => word.length > 3));
 }
 
 async function mergePreferenceNodes(root: string, projectId: string, nodes: PreferenceNode[], now: Date): Promise<string> {

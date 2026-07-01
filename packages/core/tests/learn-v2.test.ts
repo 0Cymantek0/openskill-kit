@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -22,6 +23,7 @@ import {
   applyLearnV2ModelProposalOutputs,
   recordLearnV2ConceptOutcome,
   readLearnV2ConceptStore,
+  writeLearnV2ConceptStore,
   readPreferenceGraph,
   readLearnV2Surface,
   reconstructLearnV2Episodes,
@@ -544,6 +546,60 @@ describe("learn-v2 substrate", () => {
     expect(rawOutcome).not.toContain(root);
     expect(rawOutcome).not.toContain("npm test -- parser");
     expect(rawOutcome).not.toContain("packages/core/src/parser.ts");
+  });
+
+  it("applies guarded auto-stage auto-apply-safe and assistant-only supersession policies", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.learning.mode = "auto-apply-safe";
+    config.learning.minConfidenceToApply = 0.72;
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const record = previewRecord(root, "raw_auto_policy");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Prefer focused parser tests for packages/core/src/parser.ts."
+    ).map((item) => ({ ...item, paths: ["packages/core/src/parser.ts"] }));
+    const [base] = mergeLearnV2ConceptCards(extractLearnV2BehaviorAtoms(reconstructLearnV2Episodes(evidence)).atoms, new Date("2026-06-30T00:00:00Z"));
+    const safe = {
+      ...base!,
+      id: `${base!.id}_safe`,
+      risk: "low" as const,
+      confidence: 0.86,
+      sourceReliability: 0.86,
+      scope: { ...base!.scope, level: "path" as const, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] },
+      atoms: base!.atoms.map((atom) => ({ ...atom, risk: "low" as const, confidence: 0.86, sourceReliability: 0.86, scope: { ...atom.scope, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] } }))
+    };
+    const protectedSecurity = {
+      ...safe,
+      id: `${base!.id}_security`,
+      risk: "high" as const,
+      confidence: 0.95,
+      atoms: safe.atoms.map((atom) => ({ ...atom, id: `${atom.id}_security`, kind: "security" as const, risk: "high" as const }))
+    };
+    const weakOld = {
+      ...safe,
+      id: `${base!.id}_weak_old`,
+      canonicalBehavior: "Avoid focused parser tests for parser changes.",
+      confidence: 0.34,
+      sourceReliability: 0.3,
+      atoms: safe.atoms.map((atom) => ({ ...atom, id: `${atom.id}_weak`, polarity: "negative" as const, statement: "Avoid focused parser tests for parser changes.", confidence: 0.34, sourceReliability: 0.3 }))
+    };
+    const store = await writeLearnV2ConceptStore(root, [safe, protectedSecurity, weakOld], new Date("2026-06-30T00:01:00Z"));
+    const storedSafe = store.cards.find((card) => card.id === safe.id)!;
+    const storedProtected = store.cards.find((card) => card.id === protectedSecurity.id)!;
+    const storedWeak = store.cards.find((card) => card.id === weakOld.id)!;
+    expect(storedSafe.status).toBe("active");
+    expect(storedProtected.status).toBe("candidate");
+    expect(storedWeak.status).toBe("superseded");
+    expect(storedWeak.lifecycle.supersededBy).toBe(safe.id);
+
+    config.learning.mode = "auto-stage";
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const stagedStore = await writeLearnV2ConceptStore(root, [{ ...safe, id: `${safe.id}_stage`, status: "candidate" as const, lifecycle: { ...safe.lifecycle, supersededBy: undefined } }], new Date("2026-06-30T00:02:00Z"));
+    expect(stagedStore.cards.find((card) => card.id === `${safe.id}_stage`)?.status).toBe("staged");
   });
 });
 

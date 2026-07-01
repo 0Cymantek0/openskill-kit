@@ -261,7 +261,7 @@ export const LearnV2ConceptCardSchema = z.object({
   title: z.string().min(1),
   canonicalBehavior: z.string().min(1),
   behaviorDelta: z.string().min(1),
-  status: z.enum(["candidate", "active", "locked", "rejected", "conflict", "superseded", "one-off"]).default("candidate"),
+  status: z.enum(["candidate", "staged", "active", "locked", "rejected", "conflict", "superseded", "one-off"]).default("candidate"),
   scope: z.object({
     level: z.enum(["project", "path", "directory", "task"]),
     paths: z.array(z.string()).default([]),

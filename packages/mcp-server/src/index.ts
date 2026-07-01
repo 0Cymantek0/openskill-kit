@@ -491,6 +491,7 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
           supersededById: z.string().min(1),
           reason: z.string().min(1).optional()
         })).default([]),
+        autoPolicy: z.boolean().default(false),
         bulkSafe: z.enum(["accept-low-risk", "reject-one-off", "mark-superseded"]).optional(),
         compileActive: z.boolean().default(true)
       }),
