@@ -80,6 +80,40 @@ describe("OSK command family registry", () => {
     expect(plan.options.some((option) => option.policy === "blocked" && option.path?.includes(`${path.sep}.codex${path.sep}memories`))).toBe(true);
   });
 
+  it("surfaces raw local learn-v2 candidates without opening them through normal source plans", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-learn-raw-candidates-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "learn-raw-candidates", now: new Date("2026-06-27T00:00:00.000Z") });
+    await writeText(root, "logs/terminal-build.log", "$ npm test\nPASS packages/core/tests/learn-v2.test.ts\n");
+    await writeText(root, "plans/frontier-plan.md", "# Frontier plan\nUse high precision learning traces.\n");
+    await writeText(root, "dist/logs/session-build.log", "generated log should not be considered\n");
+    await writeText(root, "node_modules/session-cached.jsonl", "{\"role\":\"user\",\"content\":\"ignored vendor cache\"}\n");
+    await writeText(root, "package.json", "{\"name\":\"not-evidence\"}\n");
+
+    const plan = await planLearningSources(root, { sourceMode: "all-detected", now: new Date("2026-06-27T00:01:00.000Z") });
+    const rawOptions = plan.options.filter((option) => option.id.startsWith("raw-local:"));
+    const rawPaths = rawOptions.map((option) => option.path ?? "");
+
+    expect(rawOptions.length).toBeGreaterThanOrEqual(2);
+    expect(rawOptions.every((option) => option.policy === "blocked")).toBe(true);
+    expect(rawOptions.every((option) => option.defaultSelected === false)).toBe(true);
+    expect(plan.question.choices.some((choice) => choice.id.startsWith("raw-local:"))).toBe(false);
+    expect(plan.defaults.selectedSourceIds.some((id) => id.startsWith("raw-local:"))).toBe(false);
+    expect(rawPaths.some((item) => item.endsWith(`${path.sep}logs${path.sep}terminal-build.log`))).toBe(true);
+    expect(rawPaths.some((item) => item.endsWith(`${path.sep}plans${path.sep}frontier-plan.md`))).toBe(true);
+    expect(rawPaths.some((item) => item.includes(`${path.sep}dist${path.sep}`))).toBe(false);
+    expect(rawPaths.some((item) => item.includes(`${path.sep}node_modules${path.sep}`))).toBe(false);
+    expect(plan.privacyPreview.join(" ")).toContain("path metadata only");
+    expect(plan.nextActions.join(" ")).toContain("--raw --surface-file");
+    expect(rawOptions[0]!.privacy.notes.join(" ")).toContain("did not read or copy");
+
+    await expect(runLearningPlan(root, {
+      sourceMode: "selected",
+      selectedSourceIds: [rawOptions[0]!.id],
+      previewOnly: true,
+      now: new Date("2026-06-27T00:02:00.000Z")
+    })).rejects.toThrow(/Blocked learning source/);
+  });
+
   it("detects and learns from OpenCode ambient metadata without raw prompts or diffs", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-learn-opencode-"));
     await initAdaptiveProject({ projectRoot: root, projectName: "learn-opencode", now: new Date("2026-06-27T00:00:00.000Z") });

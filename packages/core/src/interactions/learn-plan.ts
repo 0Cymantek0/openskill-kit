@@ -14,6 +14,26 @@ import { inspectGitLocalContext, type GitLocalContextResult } from "./git-local.
 import { importInteractionSource, readInteractionImportRuns, type InteractionImportRun } from "./importer.js";
 
 export const OPENCODE_AMBIENT_LOG_RELATIVE_PATH = ".openskill-kit/ambient/opencode-events.jsonl";
+const RAW_LOCAL_SOURCE_SCAN_MAX_FILES = 2500;
+const RAW_LOCAL_SOURCE_SCAN_MAX_DEPTH = 5;
+const RAW_LOCAL_SOURCE_CANDIDATE_LIMIT = 12;
+const RAW_LOCAL_SOURCE_EXTENSIONS = new Set([".jsonl", ".json", ".md", ".txt", ".log", ".patch", ".diff"]);
+const RAW_LOCAL_SOURCE_SKIP_DIRS = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".openskill-kit",
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+  "tmp",
+  "temp",
+  ".next",
+  ".turbo",
+  ".cache",
+  ".vite"
+]);
 
 export const LearnSourcePolicySchema = z.enum(["safe-metadata", "explicit-import", "blocked"]);
 export type LearnSourcePolicy = z.infer<typeof LearnSourcePolicySchema>;
@@ -132,6 +152,14 @@ export const LearnRunSchema = z.object({
 });
 export type LearnRun = z.infer<typeof LearnRunSchema>;
 
+interface RawLocalSourceCandidate {
+  id: string;
+  path: string;
+  relativePath: string;
+  kind: string;
+  score: number;
+}
+
 export async function planLearningSources(
   projectRoot: string,
   options: { sourceMode?: "ask" | "all-detected" | "selected"; selectedSourceIds?: string[]; homeDir?: string; now?: Date } = {}
@@ -169,6 +197,23 @@ export async function planLearningSources(
     if (surface.surfaceType === "memory-store") {
       sources.push(source(`blocked:${surface.id}`, `Blocked memory store: ${surface.relativePath ?? surface.path}`, surface.adapter, "blocked", false, "Raw memory stores are metadata-only and must not be imported silently.", surface.path));
     }
+  }
+  const knownSurfacePaths = new Set(report.surfaces.map((surface) => path.resolve(surface.path).toLowerCase()));
+  for (const candidate of await discoverRawLocalSourceCandidates(projectRoot, knownSurfacePaths)) {
+    sources.push(source(
+      `raw-local:${candidate.id}`,
+      `Raw local candidate: ${candidate.relativePath}`,
+      "learn-v2-raw-local",
+      "blocked",
+      false,
+      `Potential Learn v2 raw evidence (${candidate.kind}); review the file, then run openskill-kit osk learn --raw --surface-file "${candidate.relativePath}".`,
+      candidate.path,
+      [
+        "Path-only discovery; source planning did not read or copy this file.",
+        "Raw local evidence is only processed through `openskill-kit osk learn --raw --surface-file <path>`.",
+        "Review output remains concept-gated before activation."
+      ]
+    ));
   }
 
   const parsed = sources.map((item) => LearnSourceOptionSchema.parse(item));
@@ -212,16 +257,20 @@ export async function planLearningSources(
     privacyPreview: [
       "No raw prompts are read by default.",
       "No raw diffs are read by default.",
+      "Raw local candidate discovery uses path metadata only; candidate files are not opened by the source planner.",
       "Session/export files require preview before apply.",
       "User/global memories and shell history paths are blocked unless the user supplies an explicit export/file.",
       "Learned behavior remains staged for review."
     ],
     nextActions: [
+      parsed.some((item) => item.id.startsWith("raw-local:"))
+        ? "For raw local candidates, review the file first, then run `openskill-kit osk learn --raw --surface-file <path>`; they are blocked from normal source-plan execution."
+        : undefined,
       parsed.some((item) => item.policy === "explicit-import")
         ? "Preview explicit imports before applying any learning source plan."
         : "Run learning from selected safe metadata sources, then review candidates.",
       "After learning, run `/osk review`; activation stays review-gated."
-    ]
+    ].filter((item): item is string => Boolean(item))
   });
 }
 
@@ -425,6 +474,101 @@ export async function runLearningPlan(
           "Run `/osk compile` only after review accepts desired behavior."
         ]
   });
+}
+
+async function discoverRawLocalSourceCandidates(projectRootInput: string, knownSurfacePaths: Set<string>): Promise<RawLocalSourceCandidate[]> {
+  const projectRoot = path.resolve(projectRootInput);
+  const candidates: RawLocalSourceCandidate[] = [];
+  let visitedFiles = 0;
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (visitedFiles >= RAW_LOCAL_SOURCE_SCAN_MAX_FILES || depth > RAW_LOCAL_SOURCE_SCAN_MAX_DEPTH) return;
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (shouldSkipRawLocalSourceDir(entry.name)) continue;
+        await walk(fullPath, depth + 1);
+        if (visitedFiles >= RAW_LOCAL_SOURCE_SCAN_MAX_FILES) return;
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      visitedFiles += 1;
+      if (visitedFiles > RAW_LOCAL_SOURCE_SCAN_MAX_FILES) return;
+      if (knownSurfacePaths.has(path.resolve(fullPath).toLowerCase())) continue;
+      const relativePath = path.relative(projectRoot, fullPath).replace(/\\/g, "/");
+      const classification = classifyRawLocalSourceCandidate(relativePath);
+      if (!classification) continue;
+      candidates.push({
+        id: shortPlanHash(relativePath),
+        path: fullPath,
+        relativePath,
+        kind: classification.kind,
+        score: classification.score
+      });
+    }
+  }
+
+  await walk(projectRoot, 0);
+  return candidates
+    .sort((left, right) => right.score - left.score || left.relativePath.localeCompare(right.relativePath))
+    .slice(0, RAW_LOCAL_SOURCE_CANDIDATE_LIMIT);
+}
+
+function shouldSkipRawLocalSourceDir(name: string): boolean {
+  if (RAW_LOCAL_SOURCE_SKIP_DIRS.has(name)) return true;
+  if (name.startsWith(".") && name !== ".codex-log") return true;
+  return false;
+}
+
+function classifyRawLocalSourceCandidate(relativePath: string): { kind: string; score: number } | undefined {
+  const normalized = relativePath.replace(/\\/g, "/");
+  const lower = normalized.toLowerCase();
+  const basename = path.posix.basename(lower);
+  const extension = path.posix.extname(lower);
+  if (!RAW_LOCAL_SOURCE_EXTENSIONS.has(extension)) return undefined;
+  if (isCommonNonEvidenceFile(basename)) return undefined;
+
+  const segments = lower.split("/");
+  let score = 0;
+  const kinds = new Set<string>();
+  const add = (points: number, kind: string) => {
+    score += points;
+    kinds.add(kind);
+  };
+
+  if (segments.includes(".codex-log")) add(80, "codex transcript");
+  if (segments.some((segment) => /^(sessions?|transcripts?|conversations?|chats?)$/.test(segment))) add(60, "agent transcript");
+  if (segments.some((segment) => /^(logs?|terminal|shell|console)$/.test(segment))) add(52, "terminal or execution log");
+  if (segments.some((segment) => /^(ci|test-results?|junit|vitest|pytest|build-logs?)$/.test(segment))) add(48, "CI/test log");
+  if (segments.some((segment) => /^(reviews?|pr-notes?|pull-requests?)$/.test(segment))) add(48, "review notes");
+  if (segments.some((segment) => /^(handoffs?|summaries?)$/.test(segment))) add(46, "agent summary");
+  if (segments.some((segment) => /^(plans?|notes?)$/.test(segment))) add(38, "project plan or notes");
+
+  if (/(?:^|[-_.])(session|conversation|transcript|chat|codex-session)(?:[-_.]|$)/.test(basename)) add(60, "agent transcript");
+  if (/(?:^|[-_.])(terminal|shell|console|history|commands?)(?:[-_.]|$)/.test(basename)) add(50, "terminal or execution log");
+  if (/(?:^|[-_.])(ci|junit|vitest|pytest|test-results?|build-log|build)(?:[-_.]|$)/.test(basename)) add(46, "CI/test log");
+  if (/(?:^|[-_.])(review|comments?|pr|pull-request)(?:[-_.]|$)/.test(basename)) add(46, "review notes");
+  if (/(?:^|[-_.])(handoff|summary|finish)(?:[-_.]|$)/.test(basename)) add(44, "agent summary");
+  if (/(?:^|[-_.])(plan|notes?|decision-log|retro|postmortem)(?:[-_.]|$)/.test(basename)) add(36, "project plan or notes");
+  if (extension === ".log") add(14, "log");
+  if (extension === ".jsonl") add(12, "jsonl transcript");
+  if (extension === ".patch" || extension === ".diff") add(18, "patch/diff evidence");
+
+  if (score < 45) return undefined;
+  return { kind: [...kinds][0] ?? "raw local evidence", score };
+}
+
+function isCommonNonEvidenceFile(basename: string): boolean {
+  if (/^(package-lock|pnpm-lock|yarn.lock|bun.lockb|composer.lock|cargo.lock)$/.test(basename)) return true;
+  if (/^(package|tsconfig|jsconfig|components|manifest|plugin|families|commands|server-config)\.json$/.test(basename)) return true;
+  if (/^(readme|license|changelog|contributing|code_of_conduct|security)(?:\.[a-z-]+)?\.md$/.test(basename)) return true;
+  return false;
+}
+
+function shortPlanHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 16);
 }
 
 function explainSelectionIssue(requested: string[], options: LearnSourceOption[]): string | undefined {
