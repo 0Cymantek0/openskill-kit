@@ -27,7 +27,7 @@ export const ProjectConfigSchema = z.object({
       maxEpisodeBundleChars: z.number().int().min(1_000).default(60_000),
       autoCompactOnBudget: z.boolean().default(true),
       pinAcceptableRelevance: z.boolean().default(true)
-    }).default({})
+    })
   }),
   privacy: z.object({
     localOnly: z.boolean().default(true),
@@ -63,7 +63,7 @@ export function createDefaultProjectConfig(input: {
     projectId: input.projectId,
     projectName: input.projectName,
     createdAt: input.createdAt,
-    learning: {},
+    learning: { rawEvidence: {} },
     privacy: {},
     scopes: {},
     adapters: {},

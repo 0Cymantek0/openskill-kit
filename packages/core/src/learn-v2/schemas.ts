@@ -429,3 +429,162 @@ export const LearnV2EvalReportSchema = z.object({
   })
 });
 export type LearnV2EvalReport = z.infer<typeof LearnV2EvalReportSchema>;
+
+// ---------------------------------------------------------------------------
+// Plan §27.7: Conditional command policy
+// Distinct from simple command labels; encodes conditional intent with evidence.
+// ---------------------------------------------------------------------------
+
+export const LearnV2CommandPolicyRuleSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.command-policy-rule.v1"),
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  command: z.string().min(1),
+  status: z.enum(["available", "suggested", "required", "avoid"]),
+  appliesWhen: z.array(z.string()).default([]),
+  doesNotApplyWhen: z.array(z.string()).default([]),
+  scopePaths: z.array(z.string()).default([]),
+  taskTypes: z.array(z.string()).default([]),
+  confidence: z.number().min(0).max(1),
+  evidenceConceptIds: z.array(z.string()).default([]),
+  failureModes: z.array(z.string()).default([]),
+  costClass: z.enum(["cheap", "normal", "expensive", "destructive"]).default("normal"),
+  rationale: z.string().default(""),
+  generatedAt: z.string().datetime(),
+  sourceEpisodeIds: z.array(z.string()).default([])
+});
+export type LearnV2CommandPolicyRule = z.infer<typeof LearnV2CommandPolicyRuleSchema>;
+
+export const LearnV2CommandPolicyArtifactSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.command-policy-artifact.v1"),
+  projectId: z.string().min(1),
+  generatedAt: z.string().datetime(),
+  rules: z.array(LearnV2CommandPolicyRuleSchema).default([]),
+  artifactPaths: z.object({
+    json: z.string(),
+    markdown: z.string()
+  })
+});
+export type LearnV2CommandPolicyArtifact = z.infer<typeof LearnV2CommandPolicyArtifactSchema>;
+
+// ---------------------------------------------------------------------------
+// Plan §14.4: Concept conflict ledger
+// Tracks contradictions, supersession, scope overlap, security-vs-convenience.
+// ---------------------------------------------------------------------------
+
+export const LearnV2ConceptConflictSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.concept-conflict.v1"),
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  conceptIds: z.array(z.string().min(1)).min(1),
+  conflictType: z.enum([
+    "direct-opposite",
+    "scope-overlap",
+    "newer-supersedes-older",
+    "command-policy-conflict",
+    "security-vs-convenience",
+    "style-disagreement"
+  ]),
+  explanation: z.string().min(1),
+  evidenceRefs: z.array(z.string()).default([]),
+  suggestedResolution: z.enum([
+    "narrow-scope",
+    "prefer-newer-explicit-user-correction",
+    "keep-both-with-conditions",
+    "reject-lower-confidence",
+    "human-review"
+  ]),
+  detectedAt: z.string().datetime(),
+  resolved: z.boolean().default(false),
+  resolutionNote: z.string().optional(),
+  resolutionAction: z.enum(["auto-supersede", "auto-narrow", "manual", "none"]).default("none")
+});
+export type LearnV2ConceptConflict = z.infer<typeof LearnV2ConceptConflictSchema>;
+
+export const LearnV2ConflictLedgerSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.conflict-ledger.v1"),
+  projectId: z.string().min(1),
+  updatedAt: z.string().datetime(),
+  conflicts: z.array(LearnV2ConceptConflictSchema).default([]),
+  unresolvedCount: z.number().int().min(0)
+});
+export type LearnV2ConflictLedger = z.infer<typeof LearnV2ConflictLedgerSchema>;
+
+// ---------------------------------------------------------------------------
+// Plan §16.2: Standalone declassified evidence snippet
+// Reusable declassification artifact with placeholder maps + residual risk.
+// ---------------------------------------------------------------------------
+
+export const LearnV2DeclassifiedEvidenceSnippetSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.declassified-snippet.v1"),
+  id: z.string().min(1),
+  evidenceId: z.string().min(1),
+  rawRef: z.string().min(1),
+  text: z.string().min(1),
+  placeholderMap: z.record(z.string(), z.object({
+    placeholder: z.string().min(1),
+    detector: z.string().min(1),
+    explanation: z.string().min(1)
+  })).default({}),
+  risk: z.object({
+    redacted: z.boolean().default(true),
+    residualRisk: z.enum(["low", "medium", "high"]).default("low"),
+    blockedFromCompile: z.boolean().default(false)
+  }),
+  createdAt: z.string().datetime()
+});
+export type LearnV2DeclassifiedEvidenceSnippet = z.infer<typeof LearnV2DeclassifiedEvidenceSnippetSchema>;
+
+// ---------------------------------------------------------------------------
+// Plan §10.1.1: OskTraceContext — deterministic trace ID propagation
+// ---------------------------------------------------------------------------
+
+export const LearnV2OskTraceContextSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.trace-context.v1"),
+  projectId: z.string().min(1),
+  worktree: z.string().min(1),
+  oskSessionId: z.string().min(1),
+  oskEpisodeId: z.string().min(1),
+  oskTraceId: z.string().min(1),
+  opencodeSessionId: z.string().optional(),
+  gitBranch: z.string().optional(),
+  gitHead: z.string().optional(),
+  createdAt: z.string().datetime()
+});
+export type LearnV2OskTraceContext = z.infer<typeof LearnV2OskTraceContextSchema>;
+
+// ---------------------------------------------------------------------------
+// Evidence quality scoring at intake (efficiency improvement)
+// ---------------------------------------------------------------------------
+
+export const LearnV2EvidenceQualityScoreSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.evidence-quality.v1"),
+  evidenceId: z.string().min(1),
+  score: z.number().min(0).max(1),
+  tier: z.enum(["critical", "high", "medium", "low", "noise"]),
+  signals: z.array(z.string()).default([]),
+  estimatedAtomYield: z.number().int().min(0),
+  recommendedAction: z.enum(["process-immediately", "process-batch", "defer", "skip"]).default("process-batch")
+});
+export type LearnV2EvidenceQualityScore = z.infer<typeof LearnV2EvidenceQualityScoreSchema>;
+
+// ---------------------------------------------------------------------------
+// Concept drift detection
+// ---------------------------------------------------------------------------
+
+export const LearnV2ConceptDriftReportSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.concept-drift.v1"),
+  generatedAt: z.string().datetime(),
+  totalActiveConcepts: z.number().int().min(0),
+  staleCandidates: z.array(z.object({
+    conceptId: z.string().min(1),
+    reason: z.enum(["stale-no-outcomes", "low-activation", "recent-negative-outcomes", "supersession-candidate", "evidence-expired"]),
+    ageDays: z.number().int().min(0),
+    lastOutcomeDays: z.number().int().min(0).optional(),
+    activationCount: z.number().int().min(0),
+    negativeOutcomeCount: z.number().int().min(0),
+    suggestion: z.string().min(1)
+  })).default([]),
+  healthScore: z.number().min(0).max(1)
+});
+export type LearnV2ConceptDriftReport = z.infer<typeof LearnV2ConceptDriftReportSchema>;
