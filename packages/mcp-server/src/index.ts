@@ -56,6 +56,9 @@ import {
   activateLearnV2Concepts,
   compileLearnV2ConceptPreview,
   recordLearnV2ConceptOutcome,
+  reconstructPersistedLearnV2Episodes,
+  extractPersistedLearnV2Concepts,
+  runPersistedLearnV2Eval,
   writeLearnV2ModelRequests,
   runLearnV2RawVaultMaintenance,
   explainInteractionImport,
@@ -612,6 +615,51 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     async ({ projectRoot, gc, maxHotBytes }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runLearnV2RawVaultMaintenance(root, { gc, maxHotBytes }), root);
+    }
+  );
+
+  registerTool(
+    "osk_reconstruct_episodes",
+    {
+      title: "OpenSkillKit Learn v2 Episode Reconstruction",
+      description: "Rebuild Learn v2 task episodes from persisted declassified analysis frames and refresh model request artifacts.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => reconstructPersistedLearnV2Episodes(root)), root);
+    }
+  );
+
+  registerTool(
+    "osk_extract_concepts",
+    {
+      title: "OpenSkillKit Learn v2 Concept Extraction",
+      description: "Extract deterministic behavior atoms and concept cards from the persisted Learn v2 episode store.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => extractPersistedLearnV2Concepts(root)), root);
+    }
+  );
+
+  registerTool(
+    "osk_run_learn_v2_eval",
+    {
+      title: "OpenSkillKit Learn v2 Eval",
+      description: "Run Learn v2 eval from persisted episode and concept stores, optionally with extraction golden scenarios.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        goldensPath: z.string().min(1).optional()
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, goldensPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => runPersistedLearnV2Eval(root, { goldensPath })), root);
     }
   );
 

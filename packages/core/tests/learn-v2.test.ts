@@ -24,6 +24,9 @@ import {
   recordLearnV2ConceptOutcome,
   readLearnV2ConceptStore,
   writeLearnV2ConceptStore,
+  reconstructPersistedLearnV2Episodes,
+  extractPersistedLearnV2Concepts,
+  runPersistedLearnV2Eval,
   readPreferenceGraph,
   readLearnV2Surface,
   reconstructLearnV2Episodes,
@@ -296,6 +299,29 @@ describe("learn-v2 substrate", () => {
     expect(result.learnV2.modelRequestCount).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(result.concepts)).not.toContain(root);
     expect(result.learnV2).toBeTruthy();
+  });
+
+  it("reconstructs extracts and evaluates from persisted learn-v2 artifacts without raw source reread", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, `user: ${root} prefer focused parser regression tests in packages/core/src/parser.ts.`, "utf8");
+    await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:00:00Z")
+    });
+    await writeFile(transcript, "this file was changed after ingest and must not be reread", "utf8");
+    const reconstructed = await reconstructPersistedLearnV2Episodes(root, new Date("2026-06-30T00:01:00Z"));
+    expect(reconstructed.analysisFrameCount).toBeGreaterThanOrEqual(1);
+    expect(reconstructed.episodeCount).toBeGreaterThanOrEqual(1);
+    expect(reconstructed.modelRequestCount).toBe(reconstructed.episodeCount);
+    const extracted = await extractPersistedLearnV2Concepts(root, new Date("2026-06-30T00:02:00Z"));
+    expect(extracted.atomCount).toBeGreaterThanOrEqual(1);
+    expect(extracted.conceptCount).toBeGreaterThanOrEqual(1);
+    const evaluated = await runPersistedLearnV2Eval(root, {}, new Date("2026-06-30T00:03:00Z"));
+    expect(evaluated.evalStatus).toBe("pass");
+    expect(await readText(evaluated.evalReportPath)).toContain("Counterfactual trace cases");
   });
 
   it("prepares prompt-safe model requests and validates model outputs before concept merge", async () => {

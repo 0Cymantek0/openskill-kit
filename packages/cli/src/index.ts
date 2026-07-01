@@ -83,6 +83,9 @@ import {
   applyLearnV2ModelProposalOutputs,
   activateLearnV2Concepts,
   recordLearnV2ConceptOutcome,
+  reconstructPersistedLearnV2Episodes,
+  extractPersistedLearnV2Concepts,
+  runPersistedLearnV2Eval,
   writeLearnV2ModelRequests,
   runLearnV2RawVaultMaintenance,
   RawLearningModelModes,
@@ -318,6 +321,9 @@ osk.command("learn")
   .option("--raw-vault-status", "Show learn-v2 raw vault retention and budget status")
   .option("--gc-raw-vault", "Expire learn-v2 raw vault blobs whose retention window has elapsed")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
+  .option("--reconstruct-episodes", "Rebuild Learn-v2 episodes from persisted analysis frames")
+  .option("--extract-concepts", "Extract deterministic Learn-v2 concepts from the persisted episode store")
+  .option("--run-learn-v2-eval", "Run Learn-v2 eval from persisted episode and concept stores")
   .option("--prepare-model-requests", "Write prompt-safe Learn-v2 model request artifacts from the stored episode store")
   .option("--model-output <path>", "Learn-v2 model JSON output file to validate and merge", collectOption, [])
   .option("--activation-query <text>", "Score reviewed Learn-v2 concepts for a task query")
@@ -344,6 +350,21 @@ osk.command("learn")
         maxHotBytes: options.maxRawVaultBytes
       });
       output(options.json, result, renderRawVaultMaintenance(result));
+      return;
+    }
+    if (options.reconstructEpisodes === true) {
+      const result = await reconstructPersistedLearnV2Episodes(process.cwd());
+      output(options.json, result, renderLearnV2Reconstruct(result));
+      return;
+    }
+    if (options.extractConcepts === true) {
+      const result = await extractPersistedLearnV2Concepts(process.cwd());
+      output(options.json, result, renderLearnV2Extract(result));
+      return;
+    }
+    if (options.runLearnV2Eval === true) {
+      const result = await runPersistedLearnV2Eval(process.cwd(), { goldensPath: options.learnV2Goldens });
+      output(options.json, result, renderLearnV2PersistedEval(result));
       return;
     }
     if (options.prepareModelRequests === true) {
@@ -2080,6 +2101,35 @@ function renderLearnV2ModelRequests(result: Awaited<ReturnType<typeof writeLearn
   ];
   lines.push(...result.instructions);
   return lines.join("\n");
+}
+
+function renderLearnV2Reconstruct(result: Awaited<ReturnType<typeof reconstructPersistedLearnV2Episodes>>): string {
+  return [
+    `Learn v2 analysis frames: ${result.analysisFrameCount}`,
+    `Normalized evidence: ${result.normalizedEvidenceCount}`,
+    `Episodes: ${result.episodeCount}`,
+    `Episode store: ${result.episodeStorePath}`,
+    `Model requests: ${result.modelRequestCount} (${result.modelRequestDir})`
+  ].join("\n");
+}
+
+function renderLearnV2Extract(result: Awaited<ReturnType<typeof extractPersistedLearnV2Concepts>>): string {
+  return [
+    `Learn v2 episodes: ${result.episodeCount}`,
+    `Behavior atoms: ${result.atomCount}`,
+    `Rejected atoms: ${result.rejectedAtomCount}`,
+    `Concept store cards: ${result.conceptCount}`,
+    `Concept store: ${result.conceptStorePath}`
+  ].join("\n");
+}
+
+function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersistedLearnV2Eval>>): string {
+  return [
+    `Learn v2 eval: ${result.evalStatus}`,
+    `Episodes: ${result.episodeCount}`,
+    `Concepts: ${result.conceptCount}`,
+    `Eval report: ${result.evalReportPath}`
+  ].join("\n");
 }
 
 function renderLearnV2ModelProposalApply(result: Awaited<ReturnType<typeof applyLearnV2ModelProposalOutputs>>): string {

@@ -43,6 +43,9 @@ openskill-kit osk learn --source current-session --source git-local --apply
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --model-mode remote-redacted --apply
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --learn-v2-goldens learn-v2-goldens.json
+openskill-kit osk learn --reconstruct-episodes
+openskill-kit osk learn --extract-concepts
+openskill-kit osk learn --run-learn-v2-eval --learn-v2-goldens learn-v2-goldens.json
 openskill-kit osk learn --prepare-model-requests
 openskill-kit osk learn --model-output .openskill-kit/learn-v2/model-requests/episode_.../response.json
 openskill-kit osk learn --activation-query "parser change" --activation-path packages/core/src/parser.ts --activation-task-type parser-change
@@ -68,6 +71,7 @@ openskill-kit osk review --write
 - Signals extracted.
 - Candidate preferences and workflows.
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
+- Learn v2 persisted operations can reconstruct episodes from analysis frames, re-extract concepts from the episode store, and rerun eval without re-reading raw source files.
 - Learn v2 concept store and activation index under `.openskill-kit/learn-v2/`; these remain project-local and are excluded from packs.
 - Learn v2 review supports card merge, split, supersession, narrowing, edits, counterevidence, and status changes under one locked store transaction so activation indexes and graph sync stay consistent.
 - Learn v2 auto policy is guarded by `.openskill-kit/config.json` learning mode: `auto-stage` stages only safe low-risk narrow concepts, `auto-apply-safe` activates only safe low-risk narrow non-security concepts, and weak assistant-only-like candidates can be superseded by stronger contradictory evidence.
