@@ -2170,6 +2170,7 @@ function renderRawVaultMaintenance(result: Awaited<ReturnType<typeof runLearnV2R
     `Compacted bytes: ${result.manifest.budget.compactedBytes}`,
     `Expired records: ${result.manifest.budget.expiredCount}`,
     `GC run: ${result.gc}`,
+    `Records compacted: ${result.compactedRecords}`,
     `Blobs removed: ${result.removedBlobRefs.length}`,
     `Manifest: ${result.manifestPath}`,
     ...result.nextActions

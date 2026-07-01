@@ -434,10 +434,10 @@ describe("learn-v2 substrate", () => {
     expect(routeJson).not.toContain("ollama");
   });
 
-  it("reports raw vault budget and expires unpinned records during GC", async () => {
+  it("reports raw vault budget and compacts unpinned records during GC", async () => {
     const root = await tempProject();
     const transcript = path.join(root, "low-relevance.txt");
-    await writeFile(transcript, "unrelated temporary transcript with no project markers but useful syntax", "utf8");
+    await writeFile(transcript, "unrelated temporary transcript with ghp_123456789012345678901234567890123456 and no project markers", "utf8");
     await runRawLocalLearning(root, {
       sourceFiles: [transcript],
       previewOnly: false,
@@ -454,8 +454,17 @@ describe("learn-v2 substrate", () => {
       maxHotBytes: 1,
       now: new Date("2026-07-30T00:00:00Z")
     });
-    expect(gc.expiredRecords).toBeGreaterThanOrEqual(1);
+    expect(gc.compactedRecords).toBeGreaterThanOrEqual(1);
     expect(gc.removedBlobRefs.length).toBeGreaterThanOrEqual(1);
+    expect(gc.manifest.budget.hotBytes).toBe(0);
+    expect(gc.manifest.budget.compactedBytes).toBeGreaterThan(0);
+    const compacted = gc.manifest.records.find((record) => record.retentionTier === "compacted")!;
+    const record = JSON.parse(await readText(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", "records", `${compacted.id}.json`)));
+    expect(record.retention.compactedRef).toBeTruthy();
+    const compactedArtifact = await readText(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", record.retention.compactedRef));
+    expect(compactedArtifact).toContain("openskill-kit.learn-v2.compacted-raw-evidence.v1");
+    expect(compactedArtifact).not.toContain("ghp_123456789012345678901234567890123456");
+    await expect(import("node:fs/promises").then((fs) => fs.stat(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", gc.removedBlobRefs[0]!)))).rejects.toThrow();
   });
 
   it("persists reviewed concepts, writes activation index, and syncs active concepts into graphs", async () => {

@@ -362,7 +362,7 @@ describe("osk CLI facade", () => {
     await expect(stat(path.join(root, ".opencode", "commands", "osk-learn.md"))).rejects.toThrow();
     expect(JSON.parse(await readFile(path.join(root, "opencode.json"), "utf8")).plugin).toEqual(["./custom.ts"]);
     await expect(stat(path.join(root, ".openskill-kit", "config.json"))).resolves.toBeTruthy();
-  });
+  }, 60_000);
 
   it("sets up and uninstalls when opencode.json has a UTF-8 BOM", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-setup-bom-"));

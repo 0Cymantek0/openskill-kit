@@ -5,7 +5,7 @@ import { readProjectConfig } from "../events/store.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { LearnV2RawEvidenceManifestSchema, LearnV2RawEvidenceRecordSchema, type LearnV2RawEvidenceManifest, type LearnV2RawEvidenceRecord } from "./schemas.js";
 import type { LearnV2ProjectRelevance } from "./relevance.js";
-import { learnV2DeclassifyText, learnV2Hash, learnV2SafeLocalPath, learnV2ShortHash } from "./utils.js";
+import { learnV2DeclassifyText, learnV2Hash, learnV2SafeLocalPath, learnV2ShortHash, learnV2Snippet } from "./utils.js";
 
 export interface LearnV2RawVaultOptions {
   root: string;
@@ -40,6 +40,7 @@ export interface LearnV2RawVaultMaintenanceResult {
   status: "ok" | "over-budget";
   gc: boolean;
   expiredRecords: number;
+  compactedRecords: number;
   removedBlobRefs: string[];
   manifestPath: string;
   manifest: LearnV2RawEvidenceManifest;
@@ -115,14 +116,15 @@ export async function rebuildLearnV2RawManifest(rootInput: string, projectId: st
     const parsed = JSON.parse(await fs.readFile(path.join(recordsRoot, entry.name), "utf8"));
     records.push(LearnV2RawEvidenceRecordSchema.parse(parsed));
   }
+  const storage = await summarizeVaultStorage(root, records);
   const budget = {
-    hotBytes: sumTier(records, "hot-spool"),
-    pinnedBytes: sumTier(records, "pinned"),
-    compactedBytes: sumTier(records, "compacted"),
+    hotBytes: storage.hotBytes,
+    pinnedBytes: storage.pinnedBytes,
+    compactedBytes: storage.compactedBytes,
     expiredCount: records.filter((record) => record.retention.tier === "expired").length,
-    totalBytes: records.reduce((sum, record) => sum + record.content.byteCount, 0),
+    totalBytes: storage.hotBytes + storage.pinnedBytes + storage.compactedBytes,
     maxHotBytes,
-    status: sumTier(records, "hot-spool") > maxHotBytes ? "over-budget" as const : "ok" as const
+    status: storage.hotBytes > maxHotBytes ? "over-budget" as const : "ok" as const
   };
   const manifest = LearnV2RawEvidenceManifestSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.raw-evidence-manifest.v1",
@@ -144,33 +146,46 @@ export async function rebuildLearnV2RawManifest(rootInput: string, projectId: st
   return manifest;
 }
 
-export async function garbageCollectLearnV2RawVault(rootInput: string, projectId: string, now: Date, maxHotBytes = 50_000_000): Promise<{ manifest: LearnV2RawEvidenceManifest; expiredRecords: number; removedBlobRefs: string[] }> {
+export async function garbageCollectLearnV2RawVault(rootInput: string, config: ProjectConfig, now: Date, maxHotBytes = 50_000_000): Promise<{ manifest: LearnV2RawEvidenceManifest; expiredRecords: number; compactedRecords: number; removedBlobRefs: string[] }> {
   const root = path.resolve(rootInput);
   const recordsRoot = path.join(learnV2VaultRoot(root), "records");
   let expiredRecords = 0;
+  let compactedRecords = 0;
   const removedBlobRefs: string[] = [];
   for (const entry of await fs.readdir(recordsRoot, { withFileTypes: true }).catch(() => [])) {
     if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
     const recordPath = path.join(recordsRoot, entry.name);
     const record = LearnV2RawEvidenceRecordSchema.parse(JSON.parse(await fs.readFile(recordPath, "utf8")));
     if (record.retention.tier === "pinned") continue;
+    if (record.retention.tier === "compacted" || record.retention.tier === "expired") continue;
     if (!record.retention.expiresAt || new Date(record.retention.expiresAt).getTime() > now.getTime()) continue;
-    const tombstone = LearnV2RawEvidenceRecordSchema.parse({
+    const compactedRef = await compactLearnV2RawRecord(root, config, record, now);
+    const retained = LearnV2RawEvidenceRecordSchema.parse({
       ...record,
-      retention: {
-        ...record.retention,
-        tier: "expired",
-        tombstoneReason: "retention-expired"
-      }
+      retention: compactedRef
+        ? {
+            ...record.retention,
+            tier: "compacted",
+            compactedRef,
+            tombstoneReason: "retention-compacted"
+          }
+        : {
+            ...record.retention,
+            tier: "expired",
+            tombstoneReason: "retention-expired-missing-blob"
+          }
     });
-    await writeJsonAtomic(recordPath, tombstone);
-    await fs.rm(path.join(learnV2VaultRoot(root), record.content.blobRef), { force: true }).catch(() => undefined);
-    expiredRecords += 1;
-    removedBlobRefs.push(record.content.blobRef);
+    await writeJsonAtomic(recordPath, retained);
+    if (compactedRef) compactedRecords += 1;
+    else expiredRecords += 1;
+    const blobPath = path.join(learnV2VaultRoot(root), record.content.blobRef);
+    const removed = await fs.rm(blobPath).then(() => true, () => false);
+    if (removed) removedBlobRefs.push(record.content.blobRef);
   }
   return {
-    manifest: await rebuildLearnV2RawManifest(root, projectId, maxHotBytes, now),
+    manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now),
     expiredRecords,
+    compactedRecords,
     removedBlobRefs
   };
 }
@@ -184,14 +199,15 @@ export async function runLearnV2RawVaultMaintenance(
   const now = options.now ?? new Date();
   const maxHotBytes = options.maxHotBytes ?? 50_000_000;
   const gc = options.gc === true
-    ? await garbageCollectLearnV2RawVault(root, config.projectId, now, maxHotBytes)
-    : { manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now), expiredRecords: 0, removedBlobRefs: [] };
+    ? await garbageCollectLearnV2RawVault(root, config, now, maxHotBytes)
+    : { manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now), expiredRecords: 0, compactedRecords: 0, removedBlobRefs: [] };
   return {
     schemaVersion: "openskill-kit.learn-v2.raw-vault-maintenance.v1",
     projectRoot: root,
     status: gc.manifest.budget.status,
     gc: options.gc === true,
     expiredRecords: gc.expiredRecords,
+    compactedRecords: gc.compactedRecords,
     removedBlobRefs: gc.removedBlobRefs,
     manifestPath: learnV2ManifestPath(root),
     manifest: gc.manifest,
@@ -209,6 +225,53 @@ export function learnV2ManifestPath(root: string): string {
   return path.join(learnV2VaultRoot(root), "manifest.json");
 }
 
-function sumTier(records: LearnV2RawEvidenceRecord[], tier: LearnV2RawEvidenceRecord["retention"]["tier"]): number {
-  return records.filter((record) => record.retention.tier === tier).reduce((sum, record) => sum + record.content.byteCount, 0);
+async function compactLearnV2RawRecord(root: string, config: ProjectConfig, record: LearnV2RawEvidenceRecord, now: Date): Promise<string | undefined> {
+  const rawText = await fs.readFile(path.join(learnV2VaultRoot(root), record.content.blobRef), "utf8").catch(() => undefined);
+  if (rawText === undefined) return undefined;
+  const declassified = learnV2DeclassifyText(rawText, root, config);
+  const compactedRel = `compacted/${record.id}.json`;
+  await writeJsonAtomic(path.join(learnV2VaultRoot(root), compactedRel), {
+    schemaVersion: "openskill-kit.learn-v2.compacted-raw-evidence.v1",
+    rawRef: record.id,
+    projectId: record.projectId,
+    compactedAt: now.toISOString(),
+    originalCapturedAt: record.capturedAt,
+    source: {
+      adapterId: record.source.adapterId,
+      path: record.source.path,
+      pathHash: record.source.pathHash,
+      contentHash: record.source.contentHash
+    },
+    originalContent: {
+      kind: record.content.kind,
+      byteCount: record.content.byteCount,
+      lineCount: record.content.lineCount,
+      blobHash: record.content.blobHash
+    },
+    retention: {
+      previousTier: record.retention.tier,
+      expiresAt: record.retention.expiresAt
+    },
+    declassifiedSummary: learnV2Snippet(declassified.text, 2000),
+    redactionMatches: declassified.matches,
+    placeholders: declassified.placeholders,
+    relevance: record.relevance,
+    trace: record.trace
+  });
+  return compactedRel;
+}
+
+async function summarizeVaultStorage(root: string, records: LearnV2RawEvidenceRecord[]): Promise<{ hotBytes: number; pinnedBytes: number; compactedBytes: number }> {
+  let hotBytes = 0;
+  let pinnedBytes = 0;
+  let compactedBytes = 0;
+  for (const record of records) {
+    if (record.retention.tier === "hot-spool") hotBytes += record.content.byteCount;
+    if (record.retention.tier === "pinned") pinnedBytes += record.content.byteCount;
+    if (record.retention.tier === "compacted" && record.retention.compactedRef) {
+      const stat = await fs.stat(path.join(learnV2VaultRoot(root), record.retention.compactedRef)).catch(() => undefined);
+      compactedBytes += stat?.size ?? 0;
+    }
+  }
+  return { hotBytes, pinnedBytes, compactedBytes };
 }
