@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConflictLedger, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
 import { learnV2SafeLocalPath } from "./utils.js";
 
 export const LearnV2PipelineObservabilityReportSchema = z.object({
@@ -54,7 +54,9 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     statusCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     riskCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     counterevidenceItems: z.number().int().min(0),
-    reviewReadyCards: z.number().int().min(0)
+    reviewReadyCards: z.number().int().min(0),
+    unresolvedConflicts: z.number().int().min(0),
+    conflictTypeCounts: z.record(z.string(), z.number().int().min(0)).default({})
   }),
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
@@ -89,6 +91,7 @@ export interface LearnV2PipelineObservabilityInput {
   }>;
   episodes: LearnV2TaskEpisode[];
   concepts: LearnV2ConceptCard[];
+  conflictLedger?: LearnV2ConflictLedger;
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
   evidenceQualityScores?: LearnV2EvidenceQualityScore[];
@@ -130,6 +133,7 @@ export async function writeLearnV2PipelineObservabilityReport(
   const patches = input.episodes.flatMap((episode) => episode.patchComparisons);
   const auditOnlyPatches = patches.filter((patch) => patch.behaviorEligible === false);
   const evidenceQualityScores = input.evidenceQualityScores ?? [];
+  const conflictLedger = input.conflictLedger;
   const report = LearnV2PipelineObservabilityReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.pipeline-observability.v1",
     generatedAt: input.generatedAt,
@@ -179,7 +183,9 @@ export async function writeLearnV2PipelineObservabilityReport(
       statusCounts: countBy(input.concepts.map((concept) => concept.status)),
       riskCounts: countBy(input.concepts.map((concept) => concept.risk)),
       counterevidenceItems: input.concepts.reduce((sum, concept) => sum + concept.counterevidence.length, 0),
-      reviewReadyCards: input.concepts.filter((concept) => concept.evidenceIds.length && concept.confidence >= 0.55).length
+      reviewReadyCards: input.concepts.filter((concept) => concept.evidenceIds.length && concept.confidence >= 0.55).length,
+      unresolvedConflicts: conflictLedger?.unresolvedCount ?? input.reviewQueue.conflictSummary.unresolvedCount,
+      conflictTypeCounts: countBy((conflictLedger?.conflicts ?? []).map((conflict) => conflict.conflictType))
     },
     qualityGates: {
       evalStatus: input.evalReport.status,
@@ -250,6 +256,8 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Status: ${renderCounts(report.concepts.statusCounts)}`,
     `- Risk: ${renderCounts(report.concepts.riskCounts)}`,
     `- Review-ready cards: ${report.concepts.reviewReadyCards}`,
+    `- Unresolved conflicts: ${report.concepts.unresolvedConflicts}`,
+    `- Conflict types: ${renderCounts(report.concepts.conflictTypeCounts)}`,
     `- Eval: ${report.qualityGates.evalStatus}`,
     `- Leak check: ${report.qualityGates.leakStatus}`,
     "",

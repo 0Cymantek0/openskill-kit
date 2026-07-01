@@ -37,10 +37,12 @@ import {
   runRawLocalLearning,
   runLearnV2RawVaultMaintenance,
   writeLearnV2ModelRequests,
+  writeLearnV2ConflictLedger,
   runLearnV2Eval,
   scoreLearnV2ProjectRelevance,
   scoreLearnV2ActivationEntries,
   validateLearnV2LlmExtractionProposal,
+  type LearnV2BehaviorAtom,
   type LearnV2RawEvidenceRecord
 } from "../src/index.js";
 
@@ -416,6 +418,31 @@ describe("learn-v2 substrate", () => {
     const latest = await readLearnV2PipelineObservabilityReport(root);
     expect(latest.generatedAt).toBe(report.generatedAt);
     expect(latest.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
+  });
+
+  it("writes a review-linked conflict ledger for contradictory concepts", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:20:00.000Z");
+    const cards = mergeLearnV2ConceptCards([
+      behaviorAtom("atom_prefer_parser_tests", "Prefer focused parser tests for parser changes.", "positive"),
+      behaviorAtom("atom_avoid_parser_tests", "Avoid focused parser tests for parser changes.", "negative")
+    ], now);
+    const ledger = await writeLearnV2ConflictLedger(root, cards, "project", now);
+    expect(ledger.ledger.unresolvedCount).toBeGreaterThanOrEqual(1);
+    expect(ledger.ledger.conflicts.map((conflict) => conflict.conflictType)).toContain("direct-opposite");
+
+    const queue = await writeLearnV2ReviewQueue(root, cards, now, {
+      ledger: ledger.ledger,
+      markdownPath: ledger.artifactPaths.markdown
+    });
+    expect(queue.conflictSummary.unresolvedCount).toBe(ledger.ledger.unresolvedCount);
+    expect(queue.artifacts.conflictLedger).toBe(ledger.artifactPaths.markdown);
+    const reviewMarkdown = await readText(queue.artifacts.markdown);
+    expect(reviewMarkdown).toContain("Unresolved conflicts:");
+    expect(reviewMarkdown).toContain("direct-opposite");
+    const ledgerText = await readText(ledger.artifactPaths.markdown);
+    expect(ledgerText).toContain("Learn v2 Concept Conflict Ledger");
+    expect(ledgerText).not.toContain("raw_");
   });
 
   it("detects Python Go and Rust structural symbols without new parser dependencies", async () => {
@@ -1149,6 +1176,28 @@ function normalizedFileChange(id: string, text: string) {
     paths: [],
     commands: [],
     metadata: {}
+  };
+}
+
+function behaviorAtom(id: string, statement: string, polarity: LearnV2BehaviorAtom["polarity"]): LearnV2BehaviorAtom {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
+    id,
+    kind: "verification",
+    statement,
+    polarity,
+    scope: {
+      level: "path",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    },
+    confidence: 0.82,
+    confidenceCap: 0.9,
+    sourceReliability: 0.8,
+    evidenceIds: [`ev_${id}`],
+    rawRefs: [`raw_${id}`],
+    rationale: "test fixture atom",
+    risk: "medium"
   };
 }
 

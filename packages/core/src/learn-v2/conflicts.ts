@@ -1,4 +1,8 @@
-import type { LearnV2ConceptCard } from "./schemas.js";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { writeJsonAtomic } from "../storage/atomic.js";
+import type { LearnV2ConceptCard, LearnV2ConflictLedger } from "./schemas.js";
+import { LearnV2ConflictLedgerSchema } from "./schemas.js";
 import { learnV2CanonicalKey } from "./utils.js";
 
 /**
@@ -19,6 +23,7 @@ import { learnV2CanonicalKey } from "./utils.js";
  */
 
 export interface DetectedConflict {
+  schemaVersion: "openskill-kit.learn-v2.concept-conflict.v1";
   id: string;
   projectId: string;
   conceptIds: string[];
@@ -42,17 +47,9 @@ export interface DetectedConflict {
   resolutionAction: "auto-supersede" | "auto-narrow" | "manual" | "none";
 }
 
-export interface ConflictLedger {
-  schemaVersion: "openskill-kit.learn-v2.conflict-ledger.v1";
-  projectId: string;
-  updatedAt: string;
-  conflicts: DetectedConflict[];
-  unresolvedCount: number;
-}
-
 const CONFLICT_OVERLAP_THRESHOLD = 3;
 
-export function detectLearnV2ConceptConflicts(cards: LearnV2ConceptCard[], projectId: string, now: Date): ConflictLedger {
+export function detectLearnV2ConceptConflicts(cards: LearnV2ConceptCard[], projectId: string, now: Date): LearnV2ConflictLedger {
   const conflicts: DetectedConflict[] = [];
   for (let i = 0; i < cards.length; i++) {
     for (let j = i + 1; j < cards.length; j++) {
@@ -64,13 +61,25 @@ export function detectLearnV2ConceptConflicts(cards: LearnV2ConceptCard[], proje
     }
   }
   const sorted = conflicts.sort((a, b) => a.conflictType.localeCompare(b.conflictType) || a.conceptIds.join(",").localeCompare(b.conceptIds.join(",")));
-  return {
+  return LearnV2ConflictLedgerSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.conflict-ledger.v1",
     projectId,
     updatedAt: now.toISOString(),
     conflicts: sorted,
     unresolvedCount: sorted.filter((item) => !item.resolved).length
-  };
+  });
+}
+
+export async function writeLearnV2ConflictLedger(rootInput: string, cards: LearnV2ConceptCard[], projectId: string, now: Date): Promise<{ ledger: LearnV2ConflictLedger; artifactPaths: { json: string; markdown: string } }> {
+  const root = path.resolve(rootInput);
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "conflicts");
+  const json = path.join(dir, "conflict-ledger.json");
+  const markdown = path.join(dir, "conflict-ledger.md");
+  const ledger = detectLearnV2ConceptConflicts(cards, projectId, now);
+  await fs.mkdir(dir, { recursive: true });
+  await writeJsonAtomic(json, ledger);
+  await fs.writeFile(markdown, renderConflictLedgerMarkdown(ledger), "utf8");
+  return { ledger, artifactPaths: { json, markdown } };
 }
 
 function detectPairConflict(a: LearnV2ConceptCard, b: LearnV2ConceptCard, projectId: string, now: Date): DetectedConflict | undefined {
@@ -155,6 +164,7 @@ function makeConflict(
   resolutionAction: DetectedConflict["resolutionAction"]
 ): DetectedConflict {
   return {
+    schemaVersion: "openskill-kit.learn-v2.concept-conflict.v1",
     id: `conflict_${conceptIds.sort().join("_").replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 60)}`,
     projectId,
     conceptIds: conceptIds.sort(),
@@ -181,7 +191,7 @@ function tokenOverlapCount(a: string, b: string): number {
   return count;
 }
 
-export function renderConflictLedgerMarkdown(ledger: ConflictLedger): string {
+export function renderConflictLedgerMarkdown(ledger: LearnV2ConflictLedger): string {
   if (!ledger.conflicts.length) {
     return `# Learn v2 Conflict Ledger\n\nNo unresolved conflicts detected.\n\nUpdated: ${ledger.updatedAt}\n`;
   }

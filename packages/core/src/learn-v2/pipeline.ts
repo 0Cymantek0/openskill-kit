@@ -13,6 +13,7 @@ import { normalizeLearnV2Evidence } from "./normalize.js";
 import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
+import { writeLearnV2ConflictLedger } from "./conflicts.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
@@ -95,6 +96,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2ModelRequestDir: string;
     learnV2ObservabilityReportPath: string;
     learnV2EvidenceQualityPath: string;
+    learnV2ConflictLedgerPath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -277,6 +279,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const extracted = extractLearnV2BehaviorAtoms(episodes);
   const concepts = mergeLearnV2ConceptCards(extracted.atoms, now);
   await writeLearnV2ConceptStore(root, concepts, now);
+  const conflictLedger = await writeLearnV2ConflictLedger(root, concepts, config.projectId, now);
   const modelRouting = await ensureLearnV2ModelRoutingArtifacts(root, now);
   for (const source of sourceDigests) {
     const rawRef = source.learnV2.rawRef;
@@ -284,7 +287,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     source.atomCount = extracted.atoms.filter((atom) => atom.rawRefs.includes(rawRef)).length;
     source.conceptCount = concepts.filter((concept) => concept.rawRefs.includes(rawRef)).length;
   }
-  const reviewQueue = await writeLearnV2ReviewQueue(root, concepts, now);
+  const reviewQueue = await writeLearnV2ReviewQueue(root, concepts, now, {
+    ledger: conflictLedger.ledger,
+    markdownPath: conflictLedger.artifactPaths.markdown
+  });
   const compilePreview = await compileLearnV2ConceptPreview(root, config, concepts, now);
   const evalReport = await runLearnV2Eval(root, episodes, concepts, now, { goldensPath: options.learnV2GoldensPath });
   const lifecycle: LifecycleRunnerResult | undefined = !previewOnly && importRuns.some((run) => run.appendedEventCount > 0)
@@ -326,8 +332,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
       learnV2EpisodeStorePath: episodeStorePath,
       learnV2ModelRequestDir: learnV2ModelRequestsRoot(root),
-      learnV2EvidenceQualityPath: evidenceQualityPath
+      learnV2EvidenceQualityPath: evidenceQualityPath,
+      learnV2ConflictLedgerPath: conflictLedger.artifactPaths.markdown
     },
+    conflictLedger: conflictLedger.ledger,
     evidenceQualityScores: evidenceQuality.scores,
     nextActions
   });
@@ -354,7 +362,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2EpisodeStorePath: episodeStorePath,
       learnV2ModelRequestDir: learnV2ModelRequestsRoot(root),
       learnV2ObservabilityReportPath: path.resolve(root, observability.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, "")),
-      learnV2EvidenceQualityPath: evidenceQualityPath
+      learnV2EvidenceQualityPath: evidenceQualityPath,
+      learnV2ConflictLedgerPath: conflictLedger.artifactPaths.markdown
     },
     lifecycle,
     digest: {
@@ -582,6 +591,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Model routing: ${result.artifacts.learnV2ModelRoutingPath}`,
     `- Episode store: ${result.artifacts.learnV2EpisodeStorePath}`,
     `- Evidence quality: ${result.artifacts.learnV2EvidenceQualityPath}`,
+    `- Conflict ledger: ${result.artifacts.learnV2ConflictLedgerPath}`,
     `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
     "",
     "## Quality",

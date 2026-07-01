@@ -2090,6 +2090,7 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     `Overall quality: ${result.quality.overallScore.toFixed(2)} (relevance ${result.quality.relevanceScore.toFixed(2)}, yield ${result.quality.conceptYieldScore.toFixed(2)}, safety ${result.quality.propagationSafetyScore.toFixed(2)})`,
     `Digest: ${result.artifacts.reviewMarkdownPath}`,
     result.artifacts.learnV2EvidenceQualityPath ? `Evidence quality: ${result.artifacts.learnV2EvidenceQualityPath}` : undefined,
+    result.artifacts.learnV2ConflictLedgerPath ? `Conflict ledger: ${result.artifacts.learnV2ConflictLedgerPath}` : undefined,
     result.artifacts.learnV2ObservabilityReportPath ? `Observability: ${result.artifacts.learnV2ObservabilityReportPath}` : undefined,
     `Model requests: ${result.artifacts.learnV2ModelRequestDir}`
   ].filter((line): line is string => Boolean(line));
@@ -2119,6 +2120,7 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     `Tools: ${report.compression.tools} summaries, ${report.compression.totalToolOmittedBytes} omitted bytes, strategies ${renderLearnV2CountLine(report.compression.toolCompressionStrategyCounts)}`,
     `Patches: ${report.compression.behaviorEligiblePatches} behavior-eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches}; filters ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`,
     `Concepts: ${report.concepts.cards} cards, ${report.concepts.reviewReadyCards} review-ready, status ${renderLearnV2CountLine(report.concepts.statusCounts)}, risk ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
+    `Conflicts: ${report.concepts.unresolvedConflicts} unresolved, types ${renderLearnV2CountLine(report.concepts.conflictTypeCounts)}`,
     `Gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}, review cards ${report.qualityGates.reviewCards}`,
     `Artifacts: ${Object.keys(report.artifacts).length ? Object.entries(report.artifacts).map(([key, value]) => `${key}=${value}`).join("; ") : "none"}`,
     `Next: ${report.nextActions.join(" | ") || "none"}`
@@ -2153,6 +2155,7 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
     `Review-ready: ${report.concepts.reviewReadyCards}`,
     `Status: ${renderLearnV2CountLine(report.concepts.statusCounts)}`,
     `Risk: ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
+    `Conflicts: ${report.concepts.unresolvedConflicts} unresolved (${renderLearnV2CountLine(report.concepts.conflictTypeCounts)})`,
     `Safe bulk: ${report.qualityGates.safeBulkActions.join(", ") || "none"}`
   ].join("\n"), "Concepts");
   if (Object.keys(report.artifacts).length) {

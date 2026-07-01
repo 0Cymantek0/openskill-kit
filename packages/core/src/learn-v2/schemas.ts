@@ -392,8 +392,17 @@ export const LearnV2ReviewQueueSchema = z.object({
   cards: z.array(LearnV2ConceptCardSchema),
   behaviorDeltaFirst: z.literal(true),
   safeBulkActions: z.array(z.enum(["accept-low-risk", "reject-one-off", "mark-superseded"])).default([]),
+  conflictSummary: z.object({
+    unresolvedCount: z.number().int().min(0),
+    conflictTypeCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    ledgerPath: z.string().optional()
+  }).default({
+    unresolvedCount: 0,
+    conflictTypeCounts: {}
+  }),
   artifacts: z.object({
-    markdown: z.string()
+    markdown: z.string(),
+    conflictLedger: z.string().optional()
   })
 });
 export type LearnV2ReviewQueue = z.infer<typeof LearnV2ReviewQueueSchema>;

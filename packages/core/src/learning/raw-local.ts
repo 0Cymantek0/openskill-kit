@@ -105,6 +105,7 @@ export interface RawLocalLearningResult {
     learnV2ModelRequestDir?: string;
     learnV2ObservabilityReportPath?: string;
     learnV2EvidenceQualityPath?: string;
+    learnV2ConflictLedgerPath?: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {

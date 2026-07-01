@@ -50,6 +50,9 @@ describe("raw local learning", () => {
     expect(evidenceQuality).toContain("\"dropsEvidence\": false");
     expect(evidenceQuality).not.toContain(root);
     expect(evidenceQuality).not.toContain("sk-live-secret");
+    const conflictLedger = await readFile(preview.artifacts.learnV2ConflictLedgerPath!, "utf8");
+    expect(conflictLedger).toContain("Learn v2 Conflict Ledger");
+    expect(conflictLedger).not.toContain("sk-live-secret");
     const previewObservability = await readFile(preview.artifacts.learnV2ObservabilityReportPath, "utf8");
     expect(previewObservability).toContain("openskill-kit.learn-v2.pipeline-observability.v1");
     expect(previewObservability).toContain("\"episodes\"");

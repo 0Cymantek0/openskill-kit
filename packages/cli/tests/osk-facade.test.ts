@@ -567,7 +567,9 @@ function sampleLearnV2ObservabilityReport() {
       statusCounts: { candidate: 1 },
       riskCounts: { medium: 1 },
       counterevidenceItems: 0,
-      reviewReadyCards: 1
+      reviewReadyCards: 1,
+      unresolvedConflicts: 1,
+      conflictTypeCounts: { "direct-opposite": 1 }
     },
     qualityGates: {
       evalStatus: "pass",
