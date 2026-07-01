@@ -103,6 +103,7 @@ export interface RawLocalLearningResult {
     learnV2ModelRoutingPath?: string;
     learnV2EpisodeStorePath?: string;
     learnV2ModelRequestDir?: string;
+    learnV2ObservabilityReportPath?: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {

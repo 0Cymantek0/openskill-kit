@@ -2078,8 +2078,9 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     `Raw vault records written: ${result.digest.rawVaultRecordsWritten}`,
     `Overall quality: ${result.quality.overallScore.toFixed(2)} (relevance ${result.quality.relevanceScore.toFixed(2)}, yield ${result.quality.conceptYieldScore.toFixed(2)}, safety ${result.quality.propagationSafetyScore.toFixed(2)})`,
     `Digest: ${result.artifacts.reviewMarkdownPath}`,
+    result.artifacts.learnV2ObservabilityReportPath ? `Observability: ${result.artifacts.learnV2ObservabilityReportPath}` : undefined,
     `Model requests: ${result.artifacts.learnV2ModelRequestDir}`
-  ];
+  ].filter((line): line is string => Boolean(line));
   if (result.concepts.length > 0) {
     lines.push("");
     lines.push("Candidate concepts:");
