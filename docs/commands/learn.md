@@ -51,6 +51,9 @@ openskill-kit osk learn --raw-vault-status
 openskill-kit osk learn --gc-raw-vault --max-raw-vault-bytes 50000000
 openskill-kit osk review --concept-accept concept_...
 openskill-kit osk review --concept-reject concept_...
+openskill-kit osk review --concept-merge '{"targetId":"concept_a","sourceIds":["concept_b"]}'
+openskill-kit osk review --concept-split '{"sourceId":"concept_a","atomIds":["atom_b"],"taskTypes":["parser-change"]}'
+openskill-kit osk review --concept-supersede '{"supersededId":"concept_old","supersededById":"concept_new"}'
 openskill-kit osk review --concept-bulk accept-low-risk
 openskill-kit osk review --label-command sha256:... --as "npm test"
 openskill-kit osk review --reject-label sha256:... --label-kind path
@@ -65,6 +68,7 @@ openskill-kit osk review --write
 - Candidate preferences and workflows.
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
 - Learn v2 concept store and activation index under `.openskill-kit/learn-v2/`; these remain project-local and are excluded from packs.
+- Learn v2 review supports card merge, split, supersession, narrowing, edits, counterevidence, and status changes under one locked store transaction so activation indexes and graph sync stay consistent.
 - Learn v2 raw vault maintenance reports hot/pinned/compacted bytes and can garbage-collect expired unpinned blobs.
 - Learn v2 extraction goldens can assert expected concept text, atom kinds, task hints, paths, and forbidden leak text during raw learning eval.
 - Learn v2 activation replay checks whether replayable concepts can be retrieved from originating episode context. Activation scoring uses deterministic lexical, path, command, task-type, confidence, status, and negative-trigger features.

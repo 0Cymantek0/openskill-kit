@@ -445,7 +445,7 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     "osk_review_concepts",
     {
       title: "OpenSkillKit Learn v2 Concept Review",
-      description: "Accept, reject, lock, demote, narrow, edit, or bulk-review Learn v2 concept cards. Active concepts sync into compatibility graphs unless compileActive=false.",
+      description: "Accept, reject, lock, demote, narrow, edit, merge, split, supersede, or bulk-review Learn v2 concept cards. Active concepts sync into compatibility graphs unless compileActive=false.",
       inputSchema: z.object({
         projectRoot: projectRootSchema,
         accept: z.array(z.string().min(1)).default([]),
@@ -469,6 +469,27 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
           id: z.string().min(1),
           evidenceId: z.string().min(1),
           reason: z.string().min(1)
+        })).default([]),
+        mergeConcepts: z.array(z.object({
+          targetId: z.string().min(1),
+          sourceIds: z.array(z.string().min(1)).min(1),
+          title: z.string().min(1).optional(),
+          canonicalBehavior: z.string().min(1).optional(),
+          activationPhrases: z.array(z.string().min(1)).optional()
+        })).default([]),
+        splitConcepts: z.array(z.object({
+          sourceId: z.string().min(1),
+          atomIds: z.array(z.string().min(1)).min(1),
+          title: z.string().min(1).optional(),
+          canonicalBehavior: z.string().min(1).optional(),
+          paths: z.array(z.string().min(1)).optional(),
+          taskTypes: z.array(z.string().min(1)).optional(),
+          activationPhrases: z.array(z.string().min(1)).optional()
+        })).default([]),
+        supersedeConcepts: z.array(z.object({
+          supersededId: z.string().min(1),
+          supersededById: z.string().min(1),
+          reason: z.string().min(1).optional()
         })).default([]),
         bulkSafe: z.enum(["accept-low-risk", "reject-one-off", "mark-superseded"]).optional(),
         compileActive: z.boolean().default(true)

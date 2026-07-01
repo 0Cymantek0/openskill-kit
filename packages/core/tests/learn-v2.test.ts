@@ -414,6 +414,78 @@ describe("learn-v2 substrate", () => {
     expect(activationIndex).not.toContain("raw_");
   });
 
+  it("merges splits and supersedes concept cards with lifecycle-safe review operations", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, [
+      `user: ${root} prefer focused parser regression tests in packages/core/src/parser.ts.`,
+      "user: Avoid broad rewrite in packages/core/src/parser.ts when a small parser fix is enough.",
+      "tool: npm test -- parser",
+      "PASS"
+    ].join("\n"), "utf8");
+    await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:00:00Z")
+    });
+    const initial = await readLearnV2ConceptStore(root);
+    const [target, source] = initial.cards.filter((card) => card.status === "candidate").slice(0, 2);
+    expect(target).toBeTruthy();
+    expect(source).toBeTruthy();
+
+    const mergedReview = await applyLearnV2ConceptReview(root, {
+      mergeConcepts: [{
+        targetId: target!.id,
+        sourceIds: [source!.id],
+        canonicalBehavior: "Prefer focused parser regression tests and avoid broad rewrites for parser changes.",
+        activationPhrases: ["parser review", "focused regression"]
+      }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+    const mergedStore = mergedReview.store;
+    const mergedTarget = mergedStore.cards.find((card) => card.id === target!.id)!;
+    const supersededSource = mergedStore.cards.find((card) => card.id === source!.id)!;
+    expect(mergedTarget.lifecycle.supersedes).toContain(source!.id);
+    expect(mergedTarget.atoms.length).toBeGreaterThanOrEqual(2);
+    expect(supersededSource.status).toBe("superseded");
+    expect(supersededSource.lifecycle.supersededBy).toBe(target!.id);
+    expect(await readText(mergedReview.activationIndexPath)).not.toContain(source!.id);
+
+    const atomToSplit = mergedTarget.atoms[0]!;
+    const splitReview = await applyLearnV2ConceptReview(root, {
+      splitConcepts: [{
+        sourceId: mergedTarget.id,
+        atomIds: [atomToSplit.id],
+        canonicalBehavior: atomToSplit.statement,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"],
+        activationPhrases: ["split parser behavior"]
+      }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:03:00Z")
+    });
+    const splitChild = splitReview.store.cards.find((card) => !initial.cards.some((existing) => existing.id === card.id))!;
+    const splitParent = splitReview.store.cards.find((card) => card.id === mergedTarget.id)!;
+    expect(splitChild.status).toBe("candidate");
+    expect(splitChild.atoms.map((atom) => atom.id)).toEqual([atomToSplit.id]);
+    expect(splitChild.scope.paths).toContain("packages/core/src/parser.ts");
+    expect(splitParent.atoms.some((atom) => atom.id === atomToSplit.id)).toBe(false);
+
+    const supersedeReview = await applyLearnV2ConceptReview(root, {
+      supersedeConcepts: [{ supersededId: splitChild.id, supersededById: splitParent.id, reason: "Folded back after reviewer decision." }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:04:00Z")
+    });
+    const finalChild = supersedeReview.store.cards.find((card) => card.id === splitChild.id)!;
+    const finalParent = supersedeReview.store.cards.find((card) => card.id === splitParent.id)!;
+    expect(finalChild.status).toBe("superseded");
+    expect(finalChild.lifecycle.supersededBy).toBe(finalParent.id);
+    expect(finalParent.lifecycle.supersedes).toContain(finalChild.id);
+    expect(supersedeReview.messages.join("\n")).toContain("superseded by");
+  });
+
   it("activates reviewed concepts deterministically and records hashed outcome telemetry", async () => {
     const root = await tempProject();
     const transcript = path.join(root, "session.md");

@@ -414,6 +414,9 @@ osk.command("review")
   .option("--concept-lock <id>", "Lock a learn-v2 concept card as active", collectOption, [])
   .option("--concept-demote <id>", "Demote a learn-v2 concept card back to candidate", collectOption, [])
   .option("--concept-one-off <id>", "Mark a learn-v2 concept card as one-off", collectOption, [])
+  .option("--concept-merge <json>", "Merge learn-v2 concepts. JSON: {\"targetId\":\"concept_a\",\"sourceIds\":[\"concept_b\"]}", collectOption, [])
+  .option("--concept-split <json>", "Split a learn-v2 concept. JSON: {\"sourceId\":\"concept_a\",\"atomIds\":[\"atom_b\"]}", collectOption, [])
+  .option("--concept-supersede <json>", "Mark supersession. JSON: {\"supersededId\":\"concept_old\",\"supersededById\":\"concept_new\"}", collectOption, [])
   .option("--concept-bulk <action>", "Safe learn-v2 bulk action: accept-low-risk|reject-one-off|mark-superseded")
   .option("--no-concept-compile", "Update learn-v2 concept store without syncing active concepts into preference/workflow graphs")
   .option("--label-command <hash>", "Approve a command hash label")
@@ -430,6 +433,9 @@ osk.command("review")
         lock: options.conceptLock,
         demote: options.conceptDemote,
         markOneOff: options.conceptOneOff,
+        mergeConcepts: parseConceptMergeOptions(options.conceptMerge),
+        splitConcepts: parseConceptSplitOptions(options.conceptSplit),
+        supersedeConcepts: parseConceptSupersedeOptions(options.conceptSupersede),
         bulkSafe: parseConceptBulkAction(options.conceptBulk),
         compileActive: options.conceptCompile !== false
       });
@@ -2287,12 +2293,69 @@ function parseConceptBulkAction(value: string | undefined): "accept-low-risk" | 
   throw new Error(`Invalid learn-v2 concept bulk action: ${value}`);
 }
 
+type ConceptReviewOptionsInput = Parameters<typeof applyLearnV2ConceptReview>[1];
+
+function parseConceptMergeOptions(values: string[] | undefined): NonNullable<ConceptReviewOptionsInput["mergeConcepts"]> {
+  return (values ?? []).map((value) => {
+    const parsed = parseJsonOption(value, "--concept-merge") as Partial<NonNullable<ConceptReviewOptionsInput["mergeConcepts"]>[number]>;
+    if (!parsed.targetId || !Array.isArray(parsed.sourceIds) || !parsed.sourceIds.length) throw new Error("--concept-merge requires targetId and non-empty sourceIds.");
+    return {
+      targetId: parsed.targetId,
+      sourceIds: parsed.sourceIds,
+      title: parsed.title,
+      canonicalBehavior: parsed.canonicalBehavior,
+      activationPhrases: parsed.activationPhrases
+    };
+  });
+}
+
+function parseConceptSplitOptions(values: string[] | undefined): NonNullable<ConceptReviewOptionsInput["splitConcepts"]> {
+  return (values ?? []).map((value) => {
+    const parsed = parseJsonOption(value, "--concept-split") as Partial<NonNullable<ConceptReviewOptionsInput["splitConcepts"]>[number]>;
+    if (!parsed.sourceId || !Array.isArray(parsed.atomIds) || !parsed.atomIds.length) throw new Error("--concept-split requires sourceId and non-empty atomIds.");
+    return {
+      sourceId: parsed.sourceId,
+      atomIds: parsed.atomIds,
+      title: parsed.title,
+      canonicalBehavior: parsed.canonicalBehavior,
+      paths: parsed.paths,
+      taskTypes: parsed.taskTypes,
+      activationPhrases: parsed.activationPhrases
+    };
+  });
+}
+
+function parseConceptSupersedeOptions(values: string[] | undefined): NonNullable<ConceptReviewOptionsInput["supersedeConcepts"]> {
+  return (values ?? []).map((value) => {
+    const parsed = parseJsonOption(value, "--concept-supersede") as Partial<NonNullable<ConceptReviewOptionsInput["supersedeConcepts"]>[number]>;
+    if (!parsed.supersededId || !parsed.supersededById) throw new Error("--concept-supersede requires supersededId and supersededById.");
+    return {
+      supersededId: parsed.supersededId,
+      supersededById: parsed.supersededById,
+      reason: parsed.reason
+    };
+  });
+}
+
+function parseJsonOption(value: string, optionName: string): unknown {
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("expected JSON object");
+    return parsed;
+  } catch (error) {
+    throw new Error(`Invalid ${optionName} JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function hasConceptReviewOptions(options: {
   conceptAccept?: string[];
   conceptReject?: string[];
   conceptLock?: string[];
   conceptDemote?: string[];
   conceptOneOff?: string[];
+  conceptMerge?: string[];
+  conceptSplit?: string[];
+  conceptSupersede?: string[];
   conceptBulk?: string;
 }): boolean {
   return Boolean(
@@ -2302,6 +2365,9 @@ function hasConceptReviewOptions(options: {
     || options.conceptLock?.length
     || options.conceptDemote?.length
     || options.conceptOneOff?.length
+    || options.conceptMerge?.length
+    || options.conceptSplit?.length
+    || options.conceptSupersede?.length
   );
 }
 

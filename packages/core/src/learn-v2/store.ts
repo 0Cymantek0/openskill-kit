@@ -7,6 +7,7 @@ import { readWorkflowGraph, writeWorkflowGraph } from "../workflows/store.js";
 import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
 import { LearnV2ConceptCardSchema, type LearnV2ConceptCard } from "./schemas.js";
+import { learnV2NormalizeStatement, learnV2ShortHash, learnV2Title } from "./utils.js";
 
 export interface LearnV2ConceptStore {
   schemaVersion: "openskill-kit.learn-v2.concept-store.v1";
@@ -42,6 +43,9 @@ export interface LearnV2ConceptReviewOptions {
   narrowScopes?: Array<{ id: string; paths?: string[]; taskTypes?: string[]; negativeTriggers?: string[] }>;
   edits?: Array<{ id: string; title?: string; canonicalBehavior?: string; activationPhrases?: string[] }>;
   addCounterevidence?: Array<{ id: string; evidenceId: string; reason: string }>;
+  mergeConcepts?: Array<{ targetId: string; sourceIds: string[]; title?: string; canonicalBehavior?: string; activationPhrases?: string[] }>;
+  splitConcepts?: Array<{ sourceId: string; atomIds: string[]; title?: string; canonicalBehavior?: string; paths?: string[]; taskTypes?: string[]; activationPhrases?: string[] }>;
+  supersedeConcepts?: Array<{ supersededId: string; supersededById: string; reason?: string }>;
   bulkSafe?: "accept-low-risk" | "reject-one-off" | "mark-superseded";
   compileActive?: boolean;
   now?: Date;
@@ -105,19 +109,21 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
     const editById = new Map((options.edits ?? []).map((item) => [item.id, item]));
     const counterById = new Map<string, NonNullable<LearnV2ConceptReviewOptions["addCounterevidence"]>>();
     for (const item of options.addCounterevidence ?? []) counterById.set(item.id, [...(counterById.get(item.id) ?? []), item]);
+    const modifiedIds = new Set<string>();
+    const restructureMessages: string[] = [];
     const reviewed = store.cards.map((card) => {
       let next = card;
-      if (reject.has(card.id)) next = withStatus(next, "rejected", now);
-      if (markOneOff.has(card.id)) next = withStatus(next, "one-off", now);
-      if (demote.has(card.id)) next = withStatus(next, "candidate", now);
-      if (accept.has(card.id)) next = withStatus(next, "active", now);
-      if (lock.has(card.id)) next = withStatus(next, "locked", now);
-      if (options.bulkSafe === "accept-low-risk" && card.risk === "low" && card.confidence >= 0.7 && card.status === "candidate") next = withStatus(next, "active", now);
-      if (options.bulkSafe === "reject-one-off" && card.status === "candidate" && card.durability < 0.5) next = withStatus(next, "one-off", now);
-      if (options.bulkSafe === "mark-superseded" && card.status === "candidate" && card.counterevidence.length > 0) next = withStatus(next, "superseded", now);
+      if (reject.has(card.id)) next = markModified(withStatus(next, "rejected", now), modifiedIds);
+      if (markOneOff.has(card.id)) next = markModified(withStatus(next, "one-off", now), modifiedIds);
+      if (demote.has(card.id)) next = markModified(withStatus(next, "candidate", now), modifiedIds);
+      if (accept.has(card.id)) next = markModified(withStatus(next, "active", now), modifiedIds);
+      if (lock.has(card.id)) next = markModified(withStatus(next, "locked", now), modifiedIds);
+      if (options.bulkSafe === "accept-low-risk" && card.risk === "low" && card.confidence >= 0.7 && card.status === "candidate") next = markModified(withStatus(next, "active", now), modifiedIds);
+      if (options.bulkSafe === "reject-one-off" && card.status === "candidate" && card.durability < 0.5) next = markModified(withStatus(next, "one-off", now), modifiedIds);
+      if (options.bulkSafe === "mark-superseded" && card.status === "candidate" && card.counterevidence.length > 0) next = markModified(withStatus(next, "superseded", now), modifiedIds);
       const edit = editById.get(card.id);
       if (edit) {
-        next = {
+        next = markModified({
           ...next,
           title: edit.title ?? next.title,
           canonicalBehavior: edit.canonicalBehavior ?? next.canonicalBehavior,
@@ -126,11 +132,11 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
             phrases: edit.activationPhrases ?? next.activation.phrases
           },
           lifecycle: { ...next.lifecycle, updatedAt: now.toISOString() }
-        };
+        }, modifiedIds);
       }
       const narrow = narrowById.get(card.id);
       if (narrow) {
-        next = {
+        next = markModified({
           ...next,
           scope: {
             ...next.scope,
@@ -143,11 +149,11 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
             pathGlobs: narrow.paths ? narrow.paths.map(pathToGlob) : next.activation.pathGlobs
           },
           lifecycle: { ...next.lifecycle, updatedAt: now.toISOString() }
-        };
+        }, modifiedIds);
       }
       const counter = counterById.get(card.id);
       if (counter?.length) {
-        next = {
+        next = markModified({
           ...next,
           status: next.status === "active" || next.status === "locked" ? next.status : "conflict",
           counterevidence: [
@@ -155,15 +161,16 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
             ...counter.map((item) => ({ evidenceId: item.evidenceId, reason: item.reason }))
           ],
           lifecycle: { ...next.lifecycle, updatedAt: now.toISOString() }
-        };
+        }, modifiedIds);
       }
       return LearnV2ConceptCardSchema.parse(next);
     });
+    const restructured = applyConceptRestructure(reviewed, options, now, modifiedIds, restructureMessages);
     const nextStore: LearnV2ConceptStore = {
       schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
       projectId: store.projectId,
       updatedAt: now.toISOString(),
-      cards: reviewed
+      cards: sortConceptCards(restructured)
     };
     await writeJsonAtomic(learnV2ConceptStorePath(root), nextStore);
     const activationIndex = await writeLearnV2ActivationIndex(root, nextStore, now);
@@ -174,7 +181,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       preferenceGraphPath = synced.preferenceGraphPath;
       workflowGraphPath = synced.workflowGraphPath;
     }
-    const reviewedCount = nextStore.cards.filter((card) => before.get(card.id) !== card.status || editById.has(card.id) || narrowById.has(card.id) || counterById.has(card.id)).length;
+    const reviewedCount = nextStore.cards.filter((card) => before.get(card.id) !== card.status || modifiedIds.has(card.id) || !before.has(card.id)).length;
     return {
       schemaVersion: "openskill-kit.learn-v2.review-result.v1",
       storePath: learnV2ConceptStorePath(root),
@@ -186,6 +193,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       workflowGraphPath,
       messages: [
         `Reviewed ${reviewedCount} learn-v2 concept(s).`,
+        ...restructureMessages,
         `Activation index entries: ${activationIndex.entries.length}.`,
         options.compileActive === false ? "Active concept graph sync skipped by option." : "Active concepts synced into preference/workflow graph compatibility outputs."
       ],
@@ -254,7 +262,7 @@ function mergeConceptCards(existing: LearnV2ConceptCard[], incoming: LearnV2Conc
       }
     } : card);
   }
-  return [...byId.values()].sort((a, b) => b.confidence - a.confidence || a.title.localeCompare(b.title));
+  return sortConceptCards([...byId.values()]);
 }
 
 function withStatus(card: LearnV2ConceptCard, status: LearnV2ConceptCard["status"], now: Date): LearnV2ConceptCard {
@@ -263,6 +271,182 @@ function withStatus(card: LearnV2ConceptCard, status: LearnV2ConceptCard["status
     status,
     lifecycle: { ...card.lifecycle, updatedAt: now.toISOString() }
   };
+}
+
+function markModified(card: LearnV2ConceptCard, modifiedIds: Set<string>): LearnV2ConceptCard {
+  modifiedIds.add(card.id);
+  return card;
+}
+
+function applyConceptRestructure(
+  cards: LearnV2ConceptCard[],
+  options: LearnV2ConceptReviewOptions,
+  now: Date,
+  modifiedIds: Set<string>,
+  messages: string[]
+): LearnV2ConceptCard[] {
+  const byId = new Map(cards.map((card) => [card.id, card]));
+  for (const item of options.mergeConcepts ?? []) {
+    const target = requireConcept(byId, item.targetId, "merge target");
+    const sources = item.sourceIds.map((id) => requireConcept(byId, id, "merge source")).filter((card) => card.id !== target.id);
+    if (!sources.length) continue;
+    const merged = rebuildConceptFromAtoms({
+      base: target,
+      atoms: uniqueAtoms([target, ...sources].flatMap((card) => card.atoms)),
+      now,
+      title: item.title ?? target.title,
+      canonicalBehavior: item.canonicalBehavior ?? target.canonicalBehavior,
+      activationPhrases: item.activationPhrases ?? target.activation.phrases,
+      status: target.status,
+      lifecycle: {
+        ...target.lifecycle,
+        updatedAt: now.toISOString(),
+        supersedes: [...new Set([...target.lifecycle.supersedes, ...sources.map((card) => card.id), ...sources.flatMap((card) => card.lifecycle.supersedes)])]
+      },
+      counterevidence: [...target.counterevidence, ...sources.flatMap((card) => card.counterevidence)]
+    });
+    byId.set(target.id, LearnV2ConceptCardSchema.parse(merged));
+    modifiedIds.add(target.id);
+    for (const source of sources) {
+      byId.set(source.id, LearnV2ConceptCardSchema.parse({
+        ...source,
+        status: "superseded",
+        lifecycle: { ...source.lifecycle, updatedAt: now.toISOString(), supersededBy: target.id }
+      }));
+      modifiedIds.add(source.id);
+    }
+    messages.push(`Merged ${sources.length} concept(s) into ${target.id}.`);
+  }
+
+  for (const item of options.splitConcepts ?? []) {
+    const source = requireConcept(byId, item.sourceId, "split source");
+    const atomIds = new Set(item.atomIds);
+    const selected = source.atoms.filter((atom) => atomIds.has(atom.id));
+    if (!selected.length) throw new Error(`Learn-v2 concept split selected no atoms for ${source.id}.`);
+    const remaining = source.atoms.filter((atom) => !atomIds.has(atom.id));
+    const childId = `concept_${learnV2ShortHash(`split:${source.id}:${selected.map((atom) => atom.id).sort().join(",")}:${item.canonicalBehavior ?? ""}`)}`;
+    const childBase = { ...source, id: childId, status: "candidate" as const };
+    const child = rebuildConceptFromAtoms({
+      base: childBase,
+      atoms: selected,
+      now,
+      title: item.title,
+      canonicalBehavior: item.canonicalBehavior,
+      activationPhrases: item.activationPhrases,
+      paths: item.paths,
+      taskTypes: item.taskTypes,
+      status: "candidate",
+      lifecycle: {
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+        supersedes: []
+      },
+      counterevidence: []
+    });
+    byId.set(child.id, LearnV2ConceptCardSchema.parse(child));
+    modifiedIds.add(child.id);
+    if (remaining.length) {
+      byId.set(source.id, LearnV2ConceptCardSchema.parse(rebuildConceptFromAtoms({
+        base: source,
+        atoms: remaining,
+        now,
+        status: source.status,
+        lifecycle: { ...source.lifecycle, updatedAt: now.toISOString() },
+        counterevidence: source.counterevidence
+      })));
+    } else {
+      byId.set(source.id, LearnV2ConceptCardSchema.parse({
+        ...source,
+        status: "superseded",
+        lifecycle: { ...source.lifecycle, updatedAt: now.toISOString(), supersededBy: child.id }
+      }));
+    }
+    modifiedIds.add(source.id);
+    messages.push(`Split ${selected.length} atom(s) from ${source.id} into ${child.id}.`);
+  }
+
+  for (const item of options.supersedeConcepts ?? []) {
+    const superseded = requireConcept(byId, item.supersededId, "superseded concept");
+    const successor = requireConcept(byId, item.supersededById, "successor concept");
+    byId.set(superseded.id, LearnV2ConceptCardSchema.parse({
+      ...superseded,
+      status: "superseded",
+      counterevidence: item.reason ? [...superseded.counterevidence, { evidenceId: successor.evidenceIds[0] ?? successor.id, reason: item.reason }] : superseded.counterevidence,
+      lifecycle: { ...superseded.lifecycle, updatedAt: now.toISOString(), supersededBy: successor.id }
+    }));
+    byId.set(successor.id, LearnV2ConceptCardSchema.parse({
+      ...successor,
+      lifecycle: { ...successor.lifecycle, updatedAt: now.toISOString(), supersedes: [...new Set([...successor.lifecycle.supersedes, superseded.id])] }
+    }));
+    modifiedIds.add(superseded.id);
+    modifiedIds.add(successor.id);
+    messages.push(`Marked ${superseded.id} superseded by ${successor.id}.`);
+  }
+  return [...byId.values()];
+}
+
+function rebuildConceptFromAtoms(input: {
+  base: LearnV2ConceptCard;
+  atoms: LearnV2ConceptCard["atoms"];
+  now: Date;
+  title?: string;
+  canonicalBehavior?: string;
+  activationPhrases?: string[];
+  paths?: string[];
+  taskTypes?: string[];
+  status: LearnV2ConceptCard["status"];
+  lifecycle: LearnV2ConceptCard["lifecycle"];
+  counterevidence: LearnV2ConceptCard["counterevidence"];
+}): LearnV2ConceptCard {
+  const first = input.atoms[0]!;
+  const paths = input.paths ?? [...new Set(input.atoms.flatMap((atom) => atom.scope.paths))].slice(0, 20);
+  const taskTypes = input.taskTypes ?? [...new Set(input.atoms.flatMap((atom) => atom.scope.taskTypes))].slice(0, 12);
+  const evidenceIds = [...new Set(input.atoms.flatMap((atom) => atom.evidenceIds))];
+  const rawRefs = [...new Set(input.atoms.flatMap((atom) => atom.rawRefs))];
+  const canonicalBehavior = learnV2NormalizeStatement(input.canonicalBehavior ?? input.base.canonicalBehavior ?? first.statement);
+  const confidence = Math.min(0.95, Math.max(...input.atoms.map((atom) => atom.confidence)) + Math.min(0.12, (input.atoms.length - 1) * 0.03));
+  const durability = Math.min(0.95, 0.45 + Math.min(0.25, evidenceIds.length * 0.03) + Math.min(0.15, rawRefs.length * 0.05) + (input.atoms.every((atom) => atom.risk === "low") ? 0.08 : 0));
+  return {
+    ...input.base,
+    title: input.title ?? learnV2Title(canonicalBehavior),
+    canonicalBehavior,
+    behaviorDelta: input.base.behaviorDelta,
+    status: input.status,
+    scope: {
+      ...input.base.scope,
+      level: paths.length ? "path" : input.base.scope.level,
+      paths,
+      taskTypes
+    },
+    activation: {
+      phrases: input.activationPhrases ?? input.base.activation.phrases,
+      pathGlobs: paths.map(pathToGlob),
+      commands: input.atoms.some((atom) => atom.kind === "command-policy") ? [...new Set(input.atoms.flatMap((atom) => commandSnippets(atom.statement)))] : input.base.activation.commands
+    },
+    confidence: Number(confidence.toFixed(2)),
+    durability: Number(durability.toFixed(2)),
+    sourceReliability: Number((input.atoms.reduce((sum, atom) => sum + atom.sourceReliability, 0) / input.atoms.length).toFixed(2)),
+    risk: input.atoms.some((atom) => atom.risk === "high") ? "high" : input.atoms.some((atom) => atom.risk === "medium") ? "medium" : "low",
+    evidenceIds,
+    rawRefs,
+    atoms: input.atoms,
+    counterevidence: input.counterevidence,
+    lifecycle: input.lifecycle
+  };
+}
+
+function requireConcept(byId: Map<string, LearnV2ConceptCard>, id: string, label: string): LearnV2ConceptCard {
+  const card = byId.get(id);
+  if (!card) throw new Error(`Missing learn-v2 ${label}: ${id}`);
+  return card;
+}
+
+function uniqueAtoms(atoms: LearnV2ConceptCard["atoms"]): LearnV2ConceptCard["atoms"] {
+  return [...new Map(atoms.map((atom) => [atom.id, atom])).values()];
+}
+
+function sortConceptCards(cards: LearnV2ConceptCard[]): LearnV2ConceptCard[] {
+  return cards.sort((a, b) => b.confidence - a.confidence || a.title.localeCompare(b.title));
 }
 
 async function mergePreferenceNodes(root: string, projectId: string, nodes: PreferenceNode[], now: Date): Promise<string> {
@@ -307,3 +491,6 @@ function pathToGlob(file: string): string {
   return parts.length > 1 ? `${parts.slice(0, -1).join("/")}/**` : file;
 }
 
+function commandSnippets(statement: string): string[] {
+  return [...statement.matchAll(/`([^`]+)`/g)].map((match) => match[1]!).slice(0, 6);
+}
