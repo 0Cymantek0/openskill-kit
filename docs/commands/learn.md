@@ -71,6 +71,7 @@ openskill-kit osk review --write
 - Signals extracted.
 - Candidate preferences and workflows.
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
+- Learn v2 writes a declassified pipeline observability report with source intake counts, episode confidence/stitching counts, tool compression strategies, patch filter reasons, concept status/risk counts, quality gates, artifact pointers, and next actions.
 - Learn v2 persisted operations can reconstruct episodes from analysis frames, re-extract concepts from the episode store, and rerun eval without re-reading raw source files.
 - Learn v2 project relevance uses a two-layer gate: hard accept/review/reject rules first, then the persisted `.openskill-kit/learn-v2/relevance-calibration.json` score for ambiguous sources. Unanchored terminal histories become review-needed instead of accepted through weak numeric accumulation; unrelated global memory is hard rejected.
 - Learn v2 task episodes include an episode confidence breakdown with trace/session/branch/path/semantic/time/outcome linkage factors and explicit stitching risks. Behavior atom confidence is capped by and multiplied through episode confidence so weak single-record or time-gap stitching cannot become high-confidence durable behavior.

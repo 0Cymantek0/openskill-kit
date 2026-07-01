@@ -17,5 +17,6 @@ export * from "./store.js";
 export * from "./activation.js";
 export * from "./model-routing.js";
 export * from "./model-proposals.js";
+export * from "./observability.js";
 export * from "./operations.js";
 export * from "./pipeline.js";

@@ -17,6 +17,7 @@ import {
   summarizeLearnV2Patches,
   summarizeLearnV2Tools,
   buildLearnV2EpisodeLearningBundle,
+  writeLearnV2PipelineObservabilityReport,
   renderLearnV2ConceptExtractionPrompt,
   parseLearnV2LlmConceptExtractionOutput,
   validateLearnV2LlmConceptExtractionOutput,
@@ -25,6 +26,7 @@ import {
   recordLearnV2ConceptOutcome,
   readLearnV2ConceptStore,
   writeLearnV2ConceptStore,
+  writeLearnV2ReviewQueue,
   reconstructPersistedLearnV2Episodes,
   extractPersistedLearnV2Concepts,
   runPersistedLearnV2Eval,
@@ -351,6 +353,64 @@ describe("learn-v2 substrate", () => {
     expect(bundle.patches[0]!.behaviorEligible).toBe(false);
     expect(bundle.patches[0]!.filterReasons).toEqual(["formatting-only"]);
     expect(bundle.instructions.join("\n")).toContain("behaviorEligible is false");
+  });
+
+  it("writes declassified pipeline observability metrics for patch filters", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:10:00.000Z");
+    const generatedOnly = [
+      "diff --git a/packages/core/src/generated/client.ts b/packages/core/src/generated/client.ts",
+      "--- a/packages/core/src/generated/client.ts",
+      "+++ b/packages/core/src/generated/client.ts",
+      "@@",
+      "-export const version = 1;",
+      "+export const version = 2;"
+    ].join("\n");
+    const semantic = [
+      "diff --git a/packages/core/src/client.ts b/packages/core/src/client.ts",
+      "--- a/packages/core/src/client.ts",
+      "+++ b/packages/core/src/client.ts",
+      "@@",
+      "-export function createClient() { return oldClient(); }",
+      "+export function createClient() { return newClient(); }"
+    ].join("\n");
+    const episodes = reconstructLearnV2Episodes([
+      normalizedFileChange("ev_observable_generated", generatedOnly),
+      normalizedFileChange("ev_observable_semantic", semantic)
+    ]);
+    const reviewQueue = await writeLearnV2ReviewQueue(root, [], now);
+    const evalReport = await runLearnV2Eval(root, episodes, [], now);
+    const report = await writeLearnV2PipelineObservabilityReport(root, {
+      generatedAt: now.toISOString(),
+      previewOnly: true,
+      modelMode: "heuristic-only",
+      sources: [{
+        byteCount: generatedOnly.length + semantic.length,
+        projectRelevance: { decision: "include" },
+        deidentification: { redacted: false },
+        turnCount: 2
+      }],
+      episodes,
+      concepts: [],
+      reviewQueue,
+      evalReport,
+      eventsAppended: 0,
+      modelRequestCount: 0,
+      artifacts: {
+        evalReport: evalReport.artifacts.markdown
+      },
+      nextActions: ["Inspect review queue."]
+    });
+
+    expect(report.compression.patches).toBe(2);
+    expect(report.compression.behaviorEligiblePatches).toBe(1);
+    expect(report.compression.auditOnlyPatches).toBe(1);
+    expect(report.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
+    expect(report.privacy.rawRefsExported).toBe(false);
+    const reportPath = path.join(root, report.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, ""));
+    const reportText = await readText(reportPath);
+    expect(reportText).not.toContain(root);
+    expect(reportText).not.toContain("raw_ev_observable");
   });
 
   it("detects Python Go and Rust structural symbols without new parser dependencies", async () => {

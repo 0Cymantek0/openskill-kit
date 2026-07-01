@@ -16,6 +16,7 @@ import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
+import { writeLearnV2PipelineObservabilityReport } from "./observability.js";
 import { writeLearnV2ConceptStore } from "./store.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { learnV2ModelRequestsRoot, writeLearnV2EpisodeStore, writeLearnV2ModelRequests } from "./model-proposals.js";
@@ -91,6 +92,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2ModelRoutingPath: string;
     learnV2EpisodeStorePath: string;
     learnV2ModelRequestDir: string;
+    learnV2ObservabilityReportPath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -288,6 +290,41 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const legacyConcepts = concepts.map(toLegacyConceptCard);
   const digestPath = path.join(digestsDir, `raw-learning-${timestampSlug(generatedAt)}.json`);
   const reviewMarkdownPath = path.join(digestsDir, `raw-learning-${timestampSlug(generatedAt)}.md`);
+  const nextActions = previewOnly
+    ? [
+        "Inspect the raw learning digest and learn-v2 concept review queue, then rerun with --apply to persist raw vault records and staged review evidence.",
+        "Review source relevance decisions marked ask/reject before applying."
+      ]
+    : [
+        "Inspect the learn-v2 review queue; accept, edit, narrow, or reject concept cards before compile.",
+        "Optionally run an OpenCode-configured concept extractor on generated learn-v2 model request prompts, then ingest validated JSON outputs.",
+        "Run /osk review and /osk compile after activation; candidate concepts do not compile."
+      ];
+  const observability = await writeLearnV2PipelineObservabilityReport(root, {
+    generatedAt,
+    previewOnly,
+    modelMode,
+    sources: sourceDigests,
+    episodes,
+    concepts,
+    reviewQueue,
+    evalReport,
+    eventsAppended,
+    modelRequestCount: modelRequests.requestCount,
+    artifacts: {
+      digestPath,
+      reviewMarkdownPath,
+      learnV2ReviewQueuePath: reviewQueue.artifacts.markdown,
+      learnV2CompilePreviewPath: compilePreview.artifacts.markdown,
+      learnV2EvalReportPath: evalReport.artifacts.markdown,
+      learnV2ConceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
+      learnV2RelevanceCalibrationPath: relevanceCalibration.path,
+      learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
+      learnV2EpisodeStorePath: episodeStorePath,
+      learnV2ModelRequestDir: learnV2ModelRequestsRoot(root)
+    },
+    nextActions
+  });
   const result: LearnV2RawLocalLearningRunCompat = {
     schemaVersion: "openskill-kit.raw-local-learning-run.v1",
     projectRoot: root,
@@ -309,7 +346,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2RelevanceCalibrationPath: relevanceCalibration.path,
       learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
       learnV2EpisodeStorePath: episodeStorePath,
-      learnV2ModelRequestDir: learnV2ModelRequestsRoot(root)
+      learnV2ModelRequestDir: learnV2ModelRequestsRoot(root),
+      learnV2ObservabilityReportPath: path.resolve(root, observability.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, ""))
     },
     lifecycle,
     digest: {
@@ -333,16 +371,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       "Concept cards remain candidates until explicit review activates them.",
       "Model-assisted extraction uses prompt-safe Learn v2 request artifacts for OpenCode-configured agents; model outputs are untrusted until schema and evidence validation pass."
     ],
-    nextActions: previewOnly
-      ? [
-          "Inspect the raw learning digest and learn-v2 concept review queue, then rerun with --apply to persist raw vault records and staged review evidence.",
-          "Review source relevance decisions marked ask/reject before applying."
-        ]
-      : [
-          "Inspect the learn-v2 review queue; accept, edit, narrow, or reject concept cards before compile.",
-          "Optionally run an OpenCode-configured concept extractor on generated learn-v2 model request prompts, then ingest validated JSON outputs.",
-          "Run /osk review and /osk compile after activation; candidate concepts do not compile."
-        ],
+    nextActions,
     learnV2: {
       schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1",
       episodes,
