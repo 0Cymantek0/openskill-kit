@@ -47,7 +47,36 @@ describe("learn-v2 substrate", () => {
     await writeFile(source, "global memory across repos: always use a personal deployment token", "utf8");
     const relevance = await scoreLearnV2ProjectRelevance(root, source, await import("node:fs/promises").then((fs) => fs.readFile(source, "utf8")));
     expect(relevance.decision).toBe("reject");
+    expect(relevance.gate).toBe("hard-reject");
     expect(relevance.reasons).toContain("global-memory-risk");
+    expect(relevance.reasons).toContain("hard-reject:global-memory-without-project-anchor");
+    expect(relevance.featureValues.globalMemoryRisk).toBe(1);
+  });
+
+  it("routes unanchored terminal history to review instead of numeric auto-accept", async () => {
+    const root = await tempProject();
+    const source = path.join(os.tmpdir(), "terminal-history.log");
+    await writeFile(source, "$ npm test\nPASS parser suite\n", "utf8");
+    const relevance = await scoreLearnV2ProjectRelevance(root, source, await readText(source));
+    expect(relevance.decision).toBe("review");
+    expect(relevance.gate).toBe("hard-review");
+    expect(relevance.reasons).toContain("hard-review:unanchored-test-or-command-log");
+    expect(relevance.score).toBeGreaterThanOrEqual(0.4);
+    expect(relevance.score).toBeLessThan(0.6);
+  });
+
+  it("hard accepts explicitly selected project-local raw sources and records calibration metadata", async () => {
+    const root = await tempProject();
+    const source = path.join(root, "session.md");
+    await writeFile(source, `user: ${root} selected learning note for packages/core/src/parser.ts`, "utf8");
+    const relevance = await scoreLearnV2ProjectRelevance(root, source, await readText(source), undefined, {
+      explicitlySelected: true,
+      now: new Date("2026-06-30T00:00:00Z")
+    });
+    expect(relevance.decision).toBe("accept");
+    expect(relevance.gate).toBe("hard-accept");
+    expect(relevance.calibrationVersion).toBe("default-hard-gate-calibration-v1");
+    expect(relevance.reasons).toContain("hard-accept:explicit-project-local-source-with-anchor");
   });
 
   it("normalizes JSONL, markdown, and plain transcript surfaces", async () => {
@@ -331,8 +360,10 @@ describe("learn-v2 substrate", () => {
     expect(result.artifacts.learnV2RawVaultDir).toContain(".openskill-kit");
     expect(result.artifacts.learnV2ReviewQueuePath).toBeTruthy();
     expect(result.artifacts.learnV2ModelRoutingPath).toContain("osk-model-routing.json");
+    expect(result.artifacts.learnV2RelevanceCalibrationPath).toContain("relevance-calibration.json");
     expect(result.artifacts.learnV2EpisodeStorePath).toContain("episodes");
     expect(result.artifacts.learnV2ModelRequestDir).toContain("model-requests");
+    expect(await readText(result.artifacts.learnV2RelevanceCalibrationPath)).toContain("openskill-kit.project-relevance-calibration.v1");
     expect(result.learnV2.modelRequestCount).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(result.concepts)).not.toContain(root);
     expect(result.learnV2).toBeTruthy();

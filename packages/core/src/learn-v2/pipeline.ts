@@ -5,7 +5,7 @@ import { importInteractionSource, type InteractionImportRun } from "../interacti
 import { runLifecycleOnce, type LifecycleRunnerResult } from "../lifecycle/runner.js";
 import { buildReviewQueue } from "../preferences/proposals.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import { scoreLearnV2ProjectRelevance } from "./relevance.js";
+import { ensureLearnV2ProjectRelevanceCalibration, scoreLearnV2ProjectRelevance } from "./relevance.js";
 import { readLearnV2Surface } from "./surfaces.js";
 import { storeLearnV2RawEvidence, learnV2VaultRoot } from "./vault.js";
 import { LearnV2RawEvidenceRecordSchema, type LearnV2ConceptCard, type LearnV2NormalizedEvidence, type LearnV2RawEvidenceRecord } from "./schemas.js";
@@ -87,6 +87,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2CompilePreviewPath: string;
     learnV2EvalReportPath: string;
     learnV2ConceptStorePath: string;
+    learnV2RelevanceCalibrationPath: string;
     learnV2ModelRoutingPath: string;
     learnV2EpisodeStorePath: string;
     learnV2ModelRequestDir: string;
@@ -143,6 +144,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     await fs.mkdir(path.join(legacyRawVaultDir, "records"), { recursive: true });
     await fs.mkdir(stagedImportsDir, { recursive: true });
   }
+  const relevanceCalibration = await ensureLearnV2ProjectRelevanceCalibration(root, now);
 
   const sourceDigests: LearnV2SourceDigestCompat[] = [];
   const allEvidence: LearnV2NormalizedEvidence[] = [];
@@ -156,7 +158,11 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     const maxBytes = options.maxRawBytes ?? 5_000_000;
     if (stat.size > maxBytes) throw new Error(`Raw learning source exceeds maxRawBytes=${maxBytes}: ${sourcePath}`);
     const surface = await readLearnV2Surface(sourcePath, options.adapter);
-    const relevance = await scoreLearnV2ProjectRelevance(root, sourcePath, surface.rawText);
+    const relevance = await scoreLearnV2ProjectRelevance(root, sourcePath, surface.rawText, undefined, {
+      calibration: relevanceCalibration.calibration,
+      explicitlySelected: true,
+      now
+    });
     const declassified = learnV2DeclassifyText(surface.rawText, root, config);
     const rawRecord = previewOnly
       ? makePreviewRawRecord(config.projectId, sourcePath, surface.adapterId, surface.rawText, surface.contentKind, relevance, generatedAt, root, declassified)
@@ -300,6 +306,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2CompilePreviewPath: compilePreview.artifacts.markdown,
       learnV2EvalReportPath: evalReport.artifacts.markdown,
       learnV2ConceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
+      learnV2RelevanceCalibrationPath: relevanceCalibration.path,
       learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
       learnV2EpisodeStorePath: episodeStorePath,
       learnV2ModelRequestDir: learnV2ModelRequestsRoot(root)
@@ -535,6 +542,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Review queue: ${result.artifacts.learnV2ReviewQueuePath}`,
     `- Compile preview: ${result.artifacts.learnV2CompilePreviewPath}`,
     `- Eval report: ${result.artifacts.learnV2EvalReportPath}`,
+    `- Relevance calibration: ${result.artifacts.learnV2RelevanceCalibrationPath}`,
     `- Model routing: ${result.artifacts.learnV2ModelRoutingPath}`,
     `- Episode store: ${result.artifacts.learnV2EpisodeStorePath}`,
     `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,

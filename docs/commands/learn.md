@@ -28,7 +28,7 @@ activation review-gated.
 3. Preview explicit imports.
 4. Append redacted events only after approval.
 5. Run lifecycle learning and stage candidates.
-6. For raw local learning, reconstruct task episodes, compress tool/diff/log evidence, extract deterministic behavior atoms, merge concept cards, write a behavior-delta-first review queue, compile preview, and learn-v2 eval report.
+6. For raw local learning, run the Learn v2 project relevance hard gate, persist the relevance calibration artifact, reconstruct task episodes, compress tool/diff/log evidence, extract deterministic behavior atoms, merge concept cards, write a behavior-delta-first review queue, compile preview, and learn-v2 eval report.
 7. For activation, write a deterministic Concept Activation Index and replay originating episodes to check that concepts are retrievable from similar task context.
 8. For model-assisted extraction, write prompt-safe episode bundles, request manifests, expected `response.json` paths, and concept-extraction prompts under `.openskill-kit/learn-v2/model-requests/`; OpenCode-configured agents may fill JSON responses, and OSK validates schema, evidence ids, and leak rules before merging atoms.
 9. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
@@ -72,6 +72,7 @@ openskill-kit osk review --write
 - Candidate preferences and workflows.
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
 - Learn v2 persisted operations can reconstruct episodes from analysis frames, re-extract concepts from the episode store, and rerun eval without re-reading raw source files.
+- Learn v2 project relevance uses a two-layer gate: hard accept/review/reject rules first, then the persisted `.openskill-kit/learn-v2/relevance-calibration.json` score for ambiguous sources. Unanchored terminal histories become review-needed instead of accepted through weak numeric accumulation; unrelated global memory is hard rejected.
 - Learn v2 concept store and activation index under `.openskill-kit/learn-v2/`; these remain project-local and are excluded from packs.
 - Learn v2 concept cards include a deterministic scoring breakdown with support counts, source reliability, confidence/durability, and any penalties. Counterevidence lowers confidence and durability before activation or bulk review decisions.
 - Learn v2 review supports card merge, split, supersession, narrowing, edits, counterevidence, and status changes under one locked store transaction so activation indexes and graph sync stay consistent. Safe bulk accept only activates low-risk, high-confidence, narrow path-scoped concepts.

@@ -39,6 +39,9 @@ export const LearnV2RawEvidenceRecordSchema = z.object({
   relevance: z.object({
     score: z.number().min(0).max(1),
     decision: z.enum(["accept", "review", "reject"]),
+    gate: z.enum(["hard-accept", "hard-review", "hard-reject", "calibrated-score"]).default("calibrated-score"),
+    calibrationVersion: z.string().optional(),
+    featureValues: z.record(z.string(), z.number()).default({}),
     reasons: z.array(z.string()).default([]),
     matchedPaths: z.array(z.string()).default([]),
     matchedRemotes: z.array(z.string()).default([])
