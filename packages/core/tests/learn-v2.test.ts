@@ -35,6 +35,7 @@ import {
   writeLearnV2ModelRequests,
   runLearnV2Eval,
   scoreLearnV2ProjectRelevance,
+  scoreLearnV2ActivationEntries,
   validateLearnV2LlmExtractionProposal,
   type LearnV2RawEvidenceRecord
 } from "../src/index.js";
@@ -650,6 +651,43 @@ describe("learn-v2 substrate", () => {
     expect(rawOutcome).not.toContain(root);
     expect(rawOutcome).not.toContain("npm test -- parser");
     expect(rawOutcome).not.toContain("packages/core/src/parser.ts");
+  });
+
+  it("ranks activation entries with deterministic BM25-style lexical evidence", async () => {
+    const matches = scoreLearnV2ActivationEntries([
+      {
+        conceptId: "concept_parser",
+        status: "active",
+        title: "Focused parser regression verification",
+        phrases: ["syntax regression", "parser fixture"],
+        pathGlobs: ["packages/core/src/parser/**"],
+        commands: ["npm test parser"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: [],
+        confidence: 0.72,
+        risk: "low"
+      },
+      {
+        conceptId: "concept_docs",
+        status: "active",
+        title: "Documentation review",
+        phrases: ["readme cleanup"],
+        pathGlobs: ["docs/**"],
+        commands: [],
+        taskTypes: ["docs-change"],
+        negativeTriggers: [],
+        confidence: 0.95,
+        risk: "low"
+      }
+    ], {
+      query: "parser syntax regression needs focused fixture",
+      paths: ["packages/core/src/parser/tokenizer.ts"],
+      taskTypes: ["parser-change"]
+    });
+
+    expect(matches[0]!.conceptId).toBe("concept_parser");
+    expect(matches[0]!.reasons.join(",")).toContain("bm25:");
+    expect(matches[0]!.score).toBeGreaterThan(matches[1]!.score);
   });
 
   it("applies guarded auto-stage auto-apply-safe and assistant-only supersession policies", async () => {

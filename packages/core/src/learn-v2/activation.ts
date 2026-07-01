@@ -150,9 +150,10 @@ function scoreActivationEntries(entries: LearnV2ActivationIndex["entries"], quer
   const commands = (query.commands ?? []).map(normalizeText);
   const taskTypes = new Set((query.taskTypes ?? []).map(normalizeText));
   const negativeSignals = new Set((query.negativeSignals ?? []).map(normalizeText));
-  return entries
-    .filter((entry) => query.includeCandidates === true || entry.status === "active" || entry.status === "locked")
-    .map((entry) => scoreEntry(entry, { queryText, queryTokens, paths, commands, taskTypes, negativeSignals }))
+  const visibleEntries = entries.filter((entry) => query.includeCandidates === true || entry.status === "active" || entry.status === "locked");
+  const bm25 = buildActivationBm25Index(visibleEntries);
+  return visibleEntries
+    .map((entry) => scoreEntry(entry, { queryText, queryTokens, paths, commands, taskTypes, negativeSignals, bm25 }))
     .sort((a, b) => Number(a.suppressed) - Number(b.suppressed) || b.score - a.score || a.title.localeCompare(b.title));
 }
 
@@ -165,6 +166,7 @@ function scoreEntry(
     commands: string[];
     taskTypes: Set<string>;
     negativeSignals: Set<string>;
+    bm25: ActivationBm25Index;
   }
 ): LearnV2ConceptActivationMatch {
   const reasons: string[] = [];
@@ -209,6 +211,12 @@ function scoreEntry(
     reasons.push(`lexical:${lexicalOverlap}`);
   }
 
+  const bm25Score = scoreActivationBm25(entry, query.queryTokens, query.bm25);
+  if (bm25Score > 0) {
+    score += Math.min(0.24, bm25Score * 0.08);
+    reasons.push(`bm25:${bm25Score.toFixed(2)}`);
+  }
+
   if (!reasons.length) score = 0;
   return baseMatch(entry, Number(Math.min(1, score).toFixed(3)), reasons, false);
 }
@@ -251,6 +259,66 @@ function tokenOverlap(left: Set<string>, right: Set<string>): number {
   let count = 0;
   for (const item of left) if (right.has(item)) count += 1;
   return count;
+}
+
+interface ActivationBm25Index {
+  avgLength: number;
+  idf: Map<string, number>;
+  docTokens: Map<string, string[]>;
+}
+
+function buildActivationBm25Index(entries: LearnV2ActivationIndex["entries"]): ActivationBm25Index {
+  const docTokens = new Map<string, string[]>();
+  const documentFrequency = new Map<string, number>();
+  for (const entry of entries) {
+    const tokens = activationDocumentTokens(entry);
+    docTokens.set(entry.conceptId, tokens);
+    for (const token of new Set(tokens)) documentFrequency.set(token, (documentFrequency.get(token) ?? 0) + 1);
+  }
+  const documentCount = Math.max(1, entries.length);
+  const avgLength = Math.max(1, [...docTokens.values()].reduce((sum, tokens) => sum + tokens.length, 0) / Math.max(1, docTokens.size));
+  const idf = new Map([...documentFrequency.entries()].map(([token, frequency]) => [
+    token,
+    Math.log(1 + (documentCount - frequency + 0.5) / (frequency + 0.5))
+  ]));
+  return { avgLength, idf, docTokens };
+}
+
+function scoreActivationBm25(entry: LearnV2ActivationIndex["entries"][number], queryTokens: Set<string>, index: ActivationBm25Index): number {
+  if (!queryTokens.size) return 0;
+  const tokens = index.docTokens.get(entry.conceptId) ?? [];
+  if (!tokens.length) return 0;
+  const termFrequency = new Map<string, number>();
+  for (const token of tokens) termFrequency.set(token, (termFrequency.get(token) ?? 0) + 1);
+  const k1 = 1.2;
+  const b = 0.72;
+  let score = 0;
+  for (const token of queryTokens) {
+    const frequency = termFrequency.get(token) ?? 0;
+    if (!frequency) continue;
+    const idf = index.idf.get(token) ?? 0;
+    const numerator = frequency * (k1 + 1);
+    const denominator = frequency + k1 * (1 - b + b * (tokens.length / index.avgLength));
+    score += idf * (numerator / denominator);
+  }
+  return Number(score.toFixed(3));
+}
+
+function activationDocumentTokens(entry: LearnV2ActivationIndex["entries"][number]): string[] {
+  const textParts = [
+    entry.title,
+    ...entry.phrases,
+    ...entry.taskTypes,
+    ...entry.commands,
+    ...entry.pathGlobs.flatMap(pathTokens)
+  ];
+  return textParts.flatMap((part) => [...tokenSet(part)]);
+}
+
+function pathTokens(value: string): string[] {
+  return normalizePath(value)
+    .split(/[/.\\_-]+/)
+    .filter((item) => item.length > 3 && item !== "**");
 }
 
 function pathGlobMatches(glob: string, file: string): boolean {
