@@ -21,6 +21,8 @@ export interface LearnV2ModelRequest {
   episodeId: string;
   bundlePath: string;
   promptPath: string;
+  manifestPath: string;
+  expectedOutputPath: string;
   outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1";
 }
 
@@ -71,12 +73,32 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
     const dir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", episode.id);
     const bundlePath = path.join(dir, "episode-learning-bundle.json");
     const promptPath = path.join(dir, "concept-extraction-prompt.md");
+    const manifestPath = path.join(dir, "request-manifest.json");
+    const expectedOutputPath = path.join(dir, "response.json");
     await writeJsonAtomic(bundlePath, bundle);
     await fs.writeFile(promptPath, prompt, "utf8");
+    await writeJsonAtomic(manifestPath, {
+      schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
+      generatedAt: now.toISOString(),
+      episodeId: episode.id,
+      promptPath,
+      bundlePath,
+      expectedOutputPath,
+      outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      evidenceIds: episode.evidenceIds,
+      rawRefsIncluded: false,
+      instructions: [
+        "Send concept-extraction-prompt.md to an OpenCode-configured concept-extractor agent.",
+        "Save strict JSON output to response.json in this directory.",
+        "Do not include raw vault refs, raw paths, secrets, or raw transcript text in the response."
+      ]
+    });
     requests.push({
       episodeId: episode.id,
       bundlePath,
       promptPath,
+      manifestPath,
+      expectedOutputPath,
       outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1"
     });
   }

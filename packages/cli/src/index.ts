@@ -2097,7 +2097,8 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
 function renderLearnV2ModelRequests(result: Awaited<ReturnType<typeof writeLearnV2ModelRequests>>): string {
   const lines = [
     `Learn v2 model requests: ${result.requestCount}`,
-    ...result.requests.map((request) => `  ${request.episodeId}: ${request.promptPath}`)
+    ...result.requests.map((request) => `  ${request.episodeId}: ${request.promptPath} -> ${request.expectedOutputPath}`),
+    ...result.requests.map((request) => `  manifest: ${request.manifestPath}`)
   ];
   lines.push(...result.instructions);
   return lines.join("\n");

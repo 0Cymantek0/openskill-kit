@@ -375,12 +375,18 @@ describe("learn-v2 substrate", () => {
     const request = requests.requests[0]!;
     const prompt = await readText(request.promptPath);
     const bundle = await readText(request.bundlePath);
+    const manifest = JSON.parse(await readText(request.manifestPath));
     expect(prompt).toContain("EpisodeLearningBundle");
     expect(prompt).not.toContain(root);
     expect(bundle).not.toContain("raw_");
+    expect(manifest.schemaVersion).toBe("openskill-kit.learn-v2.model-request-manifest.v1");
+    expect(manifest.episodeId).toBe(request.episodeId);
+    expect(manifest.expectedOutputPath).toBe(request.expectedOutputPath);
+    expect(manifest.rawRefsIncluded).toBe(false);
+    expect(JSON.stringify(manifest)).not.toContain("raw_");
 
     const [evidenceId] = learned.learnV2.episodes[0]!.evidenceIds;
-    const outputPath = path.join(path.dirname(request.promptPath), "response.json");
+    const outputPath = request.expectedOutputPath;
     await writeFile(outputPath, JSON.stringify({
       schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
       atoms: [{
