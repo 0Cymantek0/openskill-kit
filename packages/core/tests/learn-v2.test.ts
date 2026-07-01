@@ -439,8 +439,9 @@ describe("learn-v2 substrate", () => {
     const malformedOutputPath = path.join(root, "malformed-response.json");
     await writeFile(malformedOutputPath, "{", "utf8");
 
-    const applied = await applyLearnV2ModelProposalOutputs(root, [outputPath, badOutputPath, staleOutputPath, malformedOutputPath], new Date("2026-06-30T00:02:00Z"));
+    const applied = await applyLearnV2ModelProposalOutputs(root, [request.manifestPath, badOutputPath, staleOutputPath, malformedOutputPath], new Date("2026-06-30T00:02:00Z"));
     const store = await readLearnV2ConceptStore(root);
+    expect(applied.outputFiles).toContain(outputPath);
     expect(applied.atomCount).toBe(1);
     expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining(["unexpected-output-path", "stale-request-manifest", "invalid-json-or-schema"]));
     expect(store.cards.some((card) => /parser regression tests/i.test(card.canonicalBehavior))).toBe(true);

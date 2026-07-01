@@ -47,7 +47,7 @@ openskill-kit osk learn --reconstruct-episodes
 openskill-kit osk learn --extract-concepts
 openskill-kit osk learn --run-learn-v2-eval --learn-v2-goldens learn-v2-goldens.json
 openskill-kit osk learn --prepare-model-requests
-openskill-kit osk learn --model-output .openskill-kit/learn-v2/model-requests/episode_.../response.json
+openskill-kit osk learn --model-output .openskill-kit/learn-v2/model-requests/episode_.../request-manifest.json
 openskill-kit osk learn --activation-query "parser change" --activation-path packages/core/src/parser.ts --activation-task-type parser-change
 openskill-kit osk learn --record-concept-outcome concept_... --concept-outcome helpful --activation-query "parser change"
 openskill-kit osk learn --raw-vault-status
@@ -81,7 +81,7 @@ openskill-kit osk review --write
 - Learn v2 counterfactual trace eval writes declassified `.openskill-kit/learn-v2/evals/*/counterfactual-trace-cases.json` cases and checks expected concept activation plus negative-trigger suppression without running a sandbox agent.
 - Learn v2 activation replay checks whether replayable concepts can be retrieved from originating episode context. Activation scoring uses deterministic lexical, path, command, task-type, confidence, status, and negative-trigger features.
 - Learn v2 concept outcome telemetry stores concept ids plus hashes of query/path/command/task identifiers. It does not store raw task prompts, raw paths, or raw commands.
-- Learn v2 model request artifacts contain declassified episode bundles, request manifests, expected response paths, and prompts only. Model responses are untrusted local inputs; `--model-output` accepts only strict JSON with valid evidence ids and rejects malformed files or secret-like statements without aborting the whole batch.
+- Learn v2 model request artifacts contain declassified episode bundles, request manifests, expected response paths, and prompts only. Model responses are untrusted local inputs; `--model-output` accepts either `request-manifest.json` or the expected `response.json`, then only merges strict JSON with valid evidence ids and rejects malformed files, wrong response paths, stale manifests, or secret-like statements without aborting the whole batch.
 - Review-gated command/path label candidates for repeated safe hashes.
 - Review queue path.
 - Privacy statement confirming no raw prompts, raw diffs, secrets, or hidden benchmark answers were copied.

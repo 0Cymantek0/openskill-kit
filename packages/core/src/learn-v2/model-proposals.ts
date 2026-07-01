@@ -138,7 +138,8 @@ export async function applyLearnV2ModelProposalOutputs(
   const episodesById = new Map(episodeStore.episodes.map((episode) => [episode.id, episode]));
   const atoms: LearnV2BehaviorAtom[] = [];
   const rejected: LearnV2ModelProposalApplyResult["rejected"] = [];
-  const outputFiles = outputPathsInput.map((file) => path.resolve(root, file));
+  const outputFiles = (await Promise.all(outputPathsInput.map((file) => resolveModelOutputInputPath(root, file, rejected))))
+    .filter((file): file is string => Boolean(file));
   for (const outputPath of outputFiles) {
     const text = await fs.readFile(outputPath, "utf8").catch((error: unknown) => {
       rejected.push({ outputPath, id: "file", reason: "read-failed", detail: error instanceof Error ? error.message : String(error) });
@@ -252,6 +253,30 @@ async function readSiblingModelRequestManifest(outputPath: string): Promise<Lear
   const manifestPath = path.join(path.dirname(outputPath), "request-manifest.json");
   const text = await fs.readFile(manifestPath, "utf8").catch(() => undefined);
   if (!text) return undefined;
+  return parseModelRequestManifest(text, manifestPath);
+}
+
+async function resolveModelOutputInputPath(
+  root: string,
+  inputPath: string,
+  rejected: LearnV2ModelProposalApplyResult["rejected"]
+): Promise<string | undefined> {
+  const absolute = path.resolve(root, inputPath);
+  if (path.basename(absolute) !== "request-manifest.json") return absolute;
+  const text = await fs.readFile(absolute, "utf8").catch((error: unknown) => {
+    rejected.push({ outputPath: absolute, id: "file", reason: "read-failed", detail: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  });
+  if (!text) return undefined;
+  try {
+    return path.resolve(root, parseModelRequestManifest(text, absolute).expectedOutputPath);
+  } catch (error) {
+    rejected.push({ outputPath: absolute, id: "file", reason: "invalid-request-manifest", detail: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  }
+}
+
+function parseModelRequestManifest(text: string, manifestPath: string): LearnV2ModelRequestManifest {
   const value = JSON.parse(text) as Partial<LearnV2ModelRequestManifest>;
   if (
     value.schemaVersion !== "openskill-kit.learn-v2.model-request-manifest.v1" ||
