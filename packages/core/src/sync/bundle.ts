@@ -37,7 +37,8 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
       ".openskill-kit/compiled/behavior/command-policy.md",
       ".openskill-kit/compiled/behavior/review-checklist.md",
       ".openskill-kit/compiled/hooks/hooks.json",
-      ".openskill-kit/compiled/mcp/server-config.json"
+      ".openskill-kit/compiled/mcp/server-config.json",
+      ".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json"
     ];
     for (const rel of files) {
       const source = path.join(root, rel);

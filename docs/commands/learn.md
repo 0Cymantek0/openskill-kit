@@ -69,6 +69,7 @@ openskill-kit osk review --write
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
 - Learn v2 concept store and activation index under `.openskill-kit/learn-v2/`; these remain project-local and are excluded from packs.
 - Learn v2 review supports card merge, split, supersession, narrowing, edits, counterevidence, and status changes under one locked store transaction so activation indexes and graph sync stay consistent.
+- Active Learn v2 concepts compile into `.openskill-kit/compiled/mcp/resources/learn-v2-concepts.json` as declassified MCP-style resources with behavior, scope, activation, confidence, risk, and evidence counts only.
 - Learn v2 raw vault maintenance reports hot/pinned/compacted bytes and can garbage-collect expired unpinned blobs.
 - Learn v2 extraction goldens can assert expected concept text, atom kinds, task hints, paths, and forbidden leak text during raw learning eval.
 - Learn v2 activation replay checks whether replayable concepts can be retrieved from originating episode context. Activation scoring uses deterministic lexical, path, command, task-type, confidence, status, and negative-trigger features.

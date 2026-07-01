@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   compileLearnV2ConceptPreview,
+  compileBehaviorLayer,
+  exportProjectBehaviorPack,
   extractLearnV2BehaviorAtoms,
   applyLearnV2ConceptReview,
   activateLearnV2Concepts,
@@ -412,6 +414,15 @@ describe("learn-v2 substrate", () => {
     const activationIndex = await readText(reviewed.activationIndexPath);
     expect(activationIndex).toContain(concept.id);
     expect(activationIndex).not.toContain("raw_");
+    const compiled = await compileBehaviorLayer(root, { targets: ["mcp-resources"] });
+    expect(compiled.mcpResourcePath).toContain("learn-v2-concepts.json");
+    const conceptResources = await readText(compiled.mcpResourcePath!);
+    expect(conceptResources).toContain(concept.id);
+    expect(conceptResources).toContain("openskill-kit://learn-v2/concepts/");
+    expect(conceptResources).not.toContain("raw_");
+    expect(conceptResources).not.toContain(root);
+    const pack = await exportProjectBehaviorPack(root);
+    expect(pack.files).toContain(".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json");
   });
 
   it("merges splits and supersedes concept cards with lifecycle-safe review operations", async () => {

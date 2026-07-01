@@ -13,6 +13,8 @@ import { readPreferenceGraph } from "../preferences/graph.js";
 import { validateMemoryIntegrity, writeMemoryIntegrityReport } from "../preferences/integrity.js";
 import { renderPreferenceGraphMarkdown } from "../preferences/render.js";
 import { withFileLock, writeJsonAtomic } from "../storage/atomic.js";
+import { readLearnV2ConceptStore } from "../learn-v2/store.js";
+import type { LearnV2ConceptCard } from "../learn-v2/schemas.js";
 
 export interface CompileBehaviorLayerResult {
   schemaVersion: "openskill-kit.compile.v1";
@@ -25,6 +27,7 @@ export interface CompileBehaviorLayerResult {
   mcpConfigPath?: string;
   mcpDescriptorPath?: string;
   mcpDescriptorHashPath?: string;
+  mcpResourcePath?: string;
   pluginManifestPath?: string;
   policyArtifactPaths: string[];
   graphMarkdownPath?: string;
@@ -66,6 +69,7 @@ export async function compileBehaviorLayer(projectRoot: string, options: Compile
       mcpConfigPath: mcp?.configPath,
       mcpDescriptorPath: mcp?.descriptorPath,
       mcpDescriptorHashPath: mcp?.hashPath,
+      mcpResourcePath: mcp?.resourcePath,
       pluginManifestPath: plugin?.manifestPath,
       policyArtifactPaths: policy ? [policy.pathMapPath, policy.commandPolicyPath, policy.reviewChecklistPath] : [],
       graphMarkdownPath,
@@ -79,6 +83,7 @@ interface CompileMcpConfigResult {
   configPath: string;
   descriptorPath: string;
   hashPath: string;
+  resourcePath: string;
 }
 
 interface McpToolDescriptor {
@@ -86,6 +91,40 @@ interface McpToolDescriptor {
   category: string;
   writeRisk: "read-only" | "local-write" | "approval-required";
   approvalRequired: boolean;
+}
+
+interface CompiledConceptResource {
+  uri: string;
+  name: string;
+  title: string;
+  mimeType: "application/json";
+  annotations: {
+    audience: ["assistant"];
+    priority: number;
+    lastModified: string;
+  };
+  concept: {
+    id: string;
+    behavior: string;
+    behaviorDelta: string;
+    scope: {
+      level: LearnV2ConceptCard["scope"]["level"];
+      paths: string[];
+      taskTypes: string[];
+      negativeTriggers: string[];
+    };
+    activation: LearnV2ConceptCard["activation"];
+    confidence: number;
+    risk: LearnV2ConceptCard["risk"];
+    status: "active" | "locked";
+    evidenceCount: number;
+    sourceReliability: number;
+  };
+  privacy: {
+    class: "project-private";
+    rawRefsExported: false;
+    rationale: string;
+  };
 }
 
 const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
@@ -177,7 +216,9 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
   const publicDescriptorPath = path.join(mcpDir, "descriptors.public.json");
   const profilePath = path.join(mcpDir, "profiles.json");
   const hashPath = path.join(mcpDir, "descriptor-hashes.json");
+  const resourcePath = path.join(mcpDir, "resources", "learn-v2-concepts.json");
   const mcpConfigPath = path.join(root, ".openskill-kit", "compiled", "mcp", "server-config.json");
+  const conceptResources = await compileLearnV2ConceptResources(root);
   const descriptors = {
     schemaVersion: "openskill-kit.mcp-descriptors.v1",
     server: "openskill-kit-mcp",
@@ -202,9 +243,11 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
   const descriptorHash = sha256Stable(descriptors);
   const publicDescriptorHash = sha256Stable(publicDescriptors);
   const profileHash = sha256Stable(profiles);
+  const resourceHash = sha256Stable(conceptResources);
   await writeJsonAtomic(descriptorPath, descriptors);
   await writeJsonAtomic(publicDescriptorPath, publicDescriptors);
   await writeJsonAtomic(profilePath, profiles);
+  await writeJsonAtomic(resourcePath, conceptResources);
   await writeJsonAtomic(hashPath, {
     schemaVersion: "openskill-kit.mcp-descriptor-hashes.v1",
     algorithm: "sha256",
@@ -214,6 +257,8 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
     descriptorsHash: descriptorHash,
     publicDescriptorsHash: publicDescriptorHash,
     profilesHash: profileHash,
+    resources: "resources/learn-v2-concepts.json",
+    resourceHash,
     tools: toolHashes,
     approvalRequiredTools: MCP_TOOL_DESCRIPTORS.filter((tool) => tool.approvalRequired).map((tool) => tool.name)
   });
@@ -229,9 +274,64 @@ async function compileMcpConfig(root: string, contextPackPath?: string): Promise
     descriptorsHash: descriptorHash,
     publicDescriptorsHash: publicDescriptorHash,
     profilesHash: profileHash,
+    resources: {
+      learnV2Concepts: "resources/learn-v2-concepts.json",
+      learnV2ConceptsHash: resourceHash
+    },
     contextPack: contextPackPath ? path.relative(root, contextPackPath).replace(/\\/g, "/") : undefined
   });
-  return { configPath: mcpConfigPath, descriptorPath, hashPath };
+  return { configPath: mcpConfigPath, descriptorPath, hashPath, resourcePath };
+}
+
+async function compileLearnV2ConceptResources(root: string): Promise<{
+  schemaVersion: "openskill-kit.mcp.learn-v2-concept-resources.v1";
+  generatedAt: string;
+  resources: CompiledConceptResource[];
+}> {
+  const now = new Date().toISOString();
+  const store = await readLearnV2ConceptStore(root).catch(() => undefined);
+  const active = (store?.cards ?? []).filter((card) => card.status === "active" || card.status === "locked");
+  return {
+    schemaVersion: "openskill-kit.mcp.learn-v2-concept-resources.v1",
+    generatedAt: now,
+    resources: active.map((card) => conceptResource(card, now))
+  };
+}
+
+function conceptResource(card: LearnV2ConceptCard, generatedAt: string): CompiledConceptResource {
+  return {
+    uri: `openskill-kit://learn-v2/concepts/${encodeURIComponent(card.id)}`,
+    name: `learn-v2 concept ${card.id}`,
+    title: card.title,
+    mimeType: "application/json",
+    annotations: {
+      audience: ["assistant"],
+      priority: Number(Math.min(1, Math.max(0.1, card.confidence)).toFixed(2)),
+      lastModified: card.lifecycle.updatedAt || generatedAt
+    },
+    concept: {
+      id: card.id,
+      behavior: card.canonicalBehavior,
+      behaviorDelta: card.behaviorDelta,
+      scope: {
+        level: card.scope.level,
+        paths: card.scope.paths,
+        taskTypes: card.scope.taskTypes,
+        negativeTriggers: card.scope.negativeTriggers
+      },
+      activation: card.activation,
+      confidence: card.confidence,
+      risk: card.risk,
+      status: card.status === "locked" ? "locked" : "active",
+      evidenceCount: card.evidenceIds.length,
+      sourceReliability: card.sourceReliability
+    },
+    privacy: {
+      class: "project-private",
+      rawRefsExported: false,
+      rationale: "Compiled from reviewed Learn v2 concept card. Raw refs, raw vault paths, and raw evidence content are excluded."
+    }
+  };
 }
 
 function descriptor(name: string, category: string, writeRisk: McpToolDescriptor["writeRisk"], approvalRequired = false): McpToolDescriptor {
