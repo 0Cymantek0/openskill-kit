@@ -61,11 +61,17 @@ describe("raw local learning", () => {
     const reviewQueue = await readFile(preview.artifacts.learnV2ReviewQueuePath, "utf8");
     expect(reviewQueue).toContain("Evidence Snippet Summary");
     expect(reviewQueue).toContain("Evidence snippets:");
+    expect(reviewQueue).toContain("Drift Summary");
     expect(reviewQueue).not.toContain("sk-live-secret");
+    const conceptDrift = await readFile(preview.artifacts.learnV2ConceptDriftPath!, "utf8");
+    expect(conceptDrift).toContain("openskill-kit.learn-v2.concept-drift.v1");
+    expect(conceptDrift).not.toContain(root);
+    expect(conceptDrift).not.toContain("sk-live-secret");
     const previewObservability = await readFile(preview.artifacts.learnV2ObservabilityReportPath, "utf8");
     expect(previewObservability).toContain("openskill-kit.learn-v2.pipeline-observability.v1");
     expect(previewObservability).toContain("\"episodes\"");
     expect(previewObservability).toContain("\"declassifiedSnippets\"");
+    expect(previewObservability).toContain("\"driftHealthScore\"");
     expect(previewObservability).toContain("\"qualityTierCounts\"");
     expect(previewObservability).toContain("\"rawRefsExported\": false");
     expect(previewObservability).not.toContain(root);

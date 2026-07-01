@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
 import { learnV2SafeLocalPath } from "./utils.js";
 
 export const LearnV2PipelineObservabilityReportSchema = z.object({
@@ -59,7 +59,10 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     counterevidenceItems: z.number().int().min(0),
     reviewReadyCards: z.number().int().min(0),
     unresolvedConflicts: z.number().int().min(0),
-    conflictTypeCounts: z.record(z.string(), z.number().int().min(0)).default({})
+    conflictTypeCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    driftHealthScore: z.number().min(0).max(1),
+    staleDriftCandidates: z.number().int().min(0),
+    driftReasonCounts: z.record(z.string(), z.number().int().min(0)).default({})
   }),
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
@@ -95,6 +98,7 @@ export interface LearnV2PipelineObservabilityInput {
   episodes: LearnV2TaskEpisode[];
   concepts: LearnV2ConceptCard[];
   conflictLedger?: LearnV2ConflictLedger;
+  conceptDrift?: LearnV2ConceptDriftReport;
   declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
@@ -138,6 +142,7 @@ export async function writeLearnV2PipelineObservabilityReport(
   const auditOnlyPatches = patches.filter((patch) => patch.behaviorEligible === false);
   const evidenceQualityScores = input.evidenceQualityScores ?? [];
   const conflictLedger = input.conflictLedger;
+  const conceptDrift = input.conceptDrift;
   const declassifiedSnippets = input.declassifiedSnippets;
   const report = LearnV2PipelineObservabilityReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.pipeline-observability.v1",
@@ -193,7 +198,10 @@ export async function writeLearnV2PipelineObservabilityReport(
       counterevidenceItems: input.concepts.reduce((sum, concept) => sum + concept.counterevidence.length, 0),
       reviewReadyCards: input.concepts.filter((concept) => concept.evidenceIds.length && concept.confidence >= 0.55).length,
       unresolvedConflicts: conflictLedger?.unresolvedCount ?? input.reviewQueue.conflictSummary.unresolvedCount,
-      conflictTypeCounts: countBy((conflictLedger?.conflicts ?? []).map((conflict) => conflict.conflictType))
+      conflictTypeCounts: countBy((conflictLedger?.conflicts ?? []).map((conflict) => conflict.conflictType)),
+      driftHealthScore: conceptDrift?.healthScore ?? input.reviewQueue.driftSummary.healthScore,
+      staleDriftCandidates: conceptDrift?.staleCandidates.length ?? input.reviewQueue.driftSummary.staleCandidateCount,
+      driftReasonCounts: conceptDrift ? countBy(conceptDrift.staleCandidates.map((candidate) => candidate.reason)) : input.reviewQueue.driftSummary.reasonCounts
     },
     qualityGates: {
       evalStatus: input.evalReport.status,
@@ -267,6 +275,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Review-ready cards: ${report.concepts.reviewReadyCards}`,
     `- Unresolved conflicts: ${report.concepts.unresolvedConflicts}`,
     `- Conflict types: ${renderCounts(report.concepts.conflictTypeCounts)}`,
+    `- Drift health: ${report.concepts.driftHealthScore.toFixed(2)} (${report.concepts.staleDriftCandidates} stale, ${renderCounts(report.concepts.driftReasonCounts)})`,
     `- Eval: ${report.qualityGates.evalStatus}`,
     `- Leak check: ${report.qualityGates.leakStatus}`,
     "",

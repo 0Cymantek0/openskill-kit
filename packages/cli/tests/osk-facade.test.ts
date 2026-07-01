@@ -572,7 +572,10 @@ function sampleLearnV2ObservabilityReport() {
       counterevidenceItems: 0,
       reviewReadyCards: 1,
       unresolvedConflicts: 1,
-      conflictTypeCounts: { "direct-opposite": 1 }
+      conflictTypeCounts: { "direct-opposite": 1 },
+      driftHealthScore: 0.5,
+      staleDriftCandidates: 1,
+      driftReasonCounts: { "stale-no-outcomes": 1 }
     },
     qualityGates: {
       evalStatus: "pass",

@@ -107,6 +107,7 @@ export interface RawLocalLearningResult {
     learnV2EvidenceQualityPath?: string;
     learnV2ConflictLedgerPath?: string;
     learnV2DeclassifiedSnippetsPath?: string;
+    learnV2ConceptDriftPath?: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {

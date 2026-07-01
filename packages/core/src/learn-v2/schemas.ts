@@ -417,10 +417,21 @@ export const LearnV2ReviewQueueSchema = z.object({
     residualRisk: z.enum(["low", "medium", "high"]),
     blockedFromCompile: z.boolean().default(false)
   })).default([]),
+  driftSummary: z.object({
+    healthScore: z.number().min(0).max(1),
+    staleCandidateCount: z.number().int().min(0),
+    reasonCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    reportPath: z.string().optional()
+  }).default({
+    healthScore: 1,
+    staleCandidateCount: 0,
+    reasonCounts: {}
+  }),
   artifacts: z.object({
     markdown: z.string(),
     conflictLedger: z.string().optional(),
-    declassifiedSnippets: z.string().optional()
+    declassifiedSnippets: z.string().optional(),
+    conceptDrift: z.string().optional()
   })
 });
 export type LearnV2ReviewQueue = z.infer<typeof LearnV2ReviewQueueSchema>;

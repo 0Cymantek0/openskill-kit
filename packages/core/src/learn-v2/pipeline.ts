@@ -21,6 +21,7 @@ import { writeLearnV2PipelineObservabilityReport } from "./observability.js";
 import { learnV2EvidenceQualityArtifactPath, writeLearnV2EvidenceQualityArtifact } from "./quality.js";
 import { writeLearnV2ConceptStore } from "./store.js";
 import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
+import { detectLearnV2ConceptDrift } from "./drift.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { learnV2ModelRequestsRoot, writeLearnV2EpisodeStore, writeLearnV2ModelRequests } from "./model-proposals.js";
 import {
@@ -99,6 +100,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2EvidenceQualityPath: string;
     learnV2ConflictLedgerPath: string;
     learnV2DeclassifiedSnippetsPath: string;
+    learnV2ConceptDriftPath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -285,7 +287,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const modelRequests = await writeLearnV2ModelRequests(root, episodes, now);
   const extracted = extractLearnV2BehaviorAtoms(episodes);
   const concepts = mergeLearnV2ConceptCards(extracted.atoms, now);
-  await writeLearnV2ConceptStore(root, concepts, now);
+  const conceptStore = await writeLearnV2ConceptStore(root, concepts, now);
+  const conceptDrift = await detectLearnV2ConceptDrift(root, conceptStore.cards, { now });
   const conflictLedger = await writeLearnV2ConflictLedger(root, concepts, config.projectId, now);
   const modelRouting = await ensureLearnV2ModelRoutingArtifacts(root, now);
   for (const source of sourceDigests) {
@@ -297,7 +300,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const reviewQueue = await writeLearnV2ReviewQueue(root, concepts, now, {
     ledger: conflictLedger.ledger,
     markdownPath: conflictLedger.artifactPaths.markdown,
-    declassifiedSnippets
+    declassifiedSnippets,
+    conceptDrift
   });
   const compilePreview = await compileLearnV2ConceptPreview(root, config, concepts, now);
   const evalReport = await runLearnV2Eval(root, episodes, concepts, now, { goldensPath: options.learnV2GoldensPath });
@@ -342,9 +346,11 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ModelRequestDir: learnV2ModelRequestsRoot(root),
       learnV2EvidenceQualityPath: evidenceQualityPath,
       learnV2ConflictLedgerPath: conflictLedger.artifactPaths.markdown,
-      learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown
+      learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
+      learnV2ConceptDriftPath: conceptDrift.artifactPath
     },
     conflictLedger: conflictLedger.ledger,
+    conceptDrift: conceptDrift.report,
     declassifiedSnippets,
     evidenceQualityScores: evidenceQuality.scores,
     nextActions
@@ -374,7 +380,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ObservabilityReportPath: path.resolve(root, observability.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, "")),
       learnV2EvidenceQualityPath: evidenceQualityPath,
       learnV2ConflictLedgerPath: conflictLedger.artifactPaths.markdown,
-      learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown
+      learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
+      learnV2ConceptDriftPath: conceptDrift.artifactPath
     },
     lifecycle,
     digest: {
@@ -604,6 +611,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Evidence quality: ${result.artifacts.learnV2EvidenceQualityPath}`,
     `- Conflict ledger: ${result.artifacts.learnV2ConflictLedgerPath}`,
     `- Declassified snippets: ${result.artifacts.learnV2DeclassifiedSnippetsPath}`,
+    `- Concept drift: ${result.artifacts.learnV2ConceptDriftPath}`,
     `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
     "",
     "## Quality",

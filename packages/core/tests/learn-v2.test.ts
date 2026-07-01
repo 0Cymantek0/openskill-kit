@@ -39,6 +39,7 @@ import {
   writeLearnV2ModelRequests,
   writeLearnV2ConflictLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
+  detectLearnV2ConceptDrift,
   runLearnV2Eval,
   scoreLearnV2ProjectRelevance,
   scoreLearnV2ActivationEntries,
@@ -482,6 +483,49 @@ describe("learn-v2 substrate", () => {
     expect(reviewMarkdown).toContain("Evidence snippets:");
     expect(reviewMarkdown).not.toContain(root);
     expect(reviewMarkdown).not.toContain("sk-live-secret");
+  });
+
+  it("writes concept drift reports from stored outcome telemetry", async () => {
+    const root = await tempProject();
+    const createdAt = new Date("2026-03-01T00:00:00.000Z");
+    const now = new Date("2026-06-30T00:30:00.000Z");
+    const [candidate] = mergeLearnV2ConceptCards([
+      behaviorAtom("drift_parser_fixture", "Prefer parser regression fixtures before parser refactors.", "positive")
+    ], createdAt);
+    const active = {
+      ...candidate!,
+      status: "active" as const,
+      lifecycle: {
+        ...candidate!.lifecycle,
+        createdAt: createdAt.toISOString(),
+        updatedAt: createdAt.toISOString()
+      }
+    };
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: active.id,
+      outcome: "harmful",
+      reason: "activated during wrong task"
+    }, new Date("2026-06-25T00:00:00.000Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: active.id,
+      outcome: "wrong",
+      reason: "reviewer rejected activation"
+    }, new Date("2026-06-26T00:00:00.000Z"));
+
+    const drift = await detectLearnV2ConceptDrift(root, [active], { now });
+    expect(drift.report.staleCandidates[0]?.conceptId).toBe(active.id);
+    expect(drift.report.staleCandidates[0]?.reason).toBe("recent-negative-outcomes");
+    expect(drift.report.healthScore).toBe(0);
+    const driftText = await readText(drift.artifactPath);
+    expect(driftText).toContain("openskill-kit.learn-v2.concept-drift.v1");
+    expect(driftText).not.toContain("activated during wrong task");
+
+    const queue = await writeLearnV2ReviewQueue(root, [active], now, { conceptDrift: drift });
+    expect(queue.driftSummary.staleCandidateCount).toBe(1);
+    expect(queue.driftSummary.reasonCounts["recent-negative-outcomes"]).toBe(1);
+    const reviewMarkdown = await readText(queue.artifacts.markdown);
+    expect(reviewMarkdown).toContain("Drift Summary");
+    expect(reviewMarkdown).toContain("recent-negative-outcomes");
   });
 
   it("detects Python Go and Rust structural symbols without new parser dependencies", async () => {

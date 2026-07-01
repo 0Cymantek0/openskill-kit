@@ -2092,6 +2092,7 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     result.artifacts.learnV2EvidenceQualityPath ? `Evidence quality: ${result.artifacts.learnV2EvidenceQualityPath}` : undefined,
     result.artifacts.learnV2ConflictLedgerPath ? `Conflict ledger: ${result.artifacts.learnV2ConflictLedgerPath}` : undefined,
     result.artifacts.learnV2DeclassifiedSnippetsPath ? `Declassified snippets: ${result.artifacts.learnV2DeclassifiedSnippetsPath}` : undefined,
+    result.artifacts.learnV2ConceptDriftPath ? `Concept drift: ${result.artifacts.learnV2ConceptDriftPath}` : undefined,
     result.artifacts.learnV2ObservabilityReportPath ? `Observability: ${result.artifacts.learnV2ObservabilityReportPath}` : undefined,
     `Model requests: ${result.artifacts.learnV2ModelRequestDir}`
   ].filter((line): line is string => Boolean(line));
@@ -2123,6 +2124,7 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     `Patches: ${report.compression.behaviorEligiblePatches} behavior-eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches}; filters ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`,
     `Concepts: ${report.concepts.cards} cards, ${report.concepts.reviewReadyCards} review-ready, status ${renderLearnV2CountLine(report.concepts.statusCounts)}, risk ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
     `Conflicts: ${report.concepts.unresolvedConflicts} unresolved, types ${renderLearnV2CountLine(report.concepts.conflictTypeCounts)}`,
+    `Drift: health ${report.concepts.driftHealthScore.toFixed(2)}, stale ${report.concepts.staleDriftCandidates}, reasons ${renderLearnV2CountLine(report.concepts.driftReasonCounts)}`,
     `Gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}, review cards ${report.qualityGates.reviewCards}`,
     `Artifacts: ${Object.keys(report.artifacts).length ? Object.entries(report.artifacts).map(([key, value]) => `${key}=${value}`).join("; ") : "none"}`,
     `Next: ${report.nextActions.join(" | ") || "none"}`
@@ -2159,6 +2161,7 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
     `Status: ${renderLearnV2CountLine(report.concepts.statusCounts)}`,
     `Risk: ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
     `Conflicts: ${report.concepts.unresolvedConflicts} unresolved (${renderLearnV2CountLine(report.concepts.conflictTypeCounts)})`,
+    `Drift: health ${report.concepts.driftHealthScore.toFixed(2)}, stale ${report.concepts.staleDriftCandidates}`,
     `Safe bulk: ${report.qualityGates.safeBulkActions.join(", ") || "none"}`
   ].join("\n"), "Concepts");
   if (Object.keys(report.artifacts).length) {

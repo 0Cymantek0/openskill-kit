@@ -57,8 +57,9 @@ export async function detectLearnV2ConceptDrift(
   const recentOutcomeDays = options.recentOutcomeDays ?? DEFAULT_RECENT_OUTCOME_DAYS;
 
   const activeCards = cards.filter((card) => card.status === "active" || card.status === "locked");
-  const outcomeByConcept = groupOutcomesByConcept(options.outcomeRecords ?? []);
-  const activationCounts = options.activationCounts ?? new Map<string, number>();
+  const outcomeRecords = options.outcomeRecords ?? await readStoredOutcomeRecords(root);
+  const outcomeByConcept = groupOutcomesByConcept(outcomeRecords);
+  const activationCounts = options.activationCounts ?? activationCountsFromOutcomes(outcomeRecords);
 
   const staleCandidates: LearnV2ConceptDriftReport["staleCandidates"][number][] = [];
 
@@ -162,6 +163,35 @@ function groupOutcomesByConcept(
     map.set(record.conceptId, list);
   }
   return map;
+}
+
+function activationCountsFromOutcomes(records: Array<{ conceptId: string }>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const record of records) counts.set(record.conceptId, (counts.get(record.conceptId) ?? 0) + 1);
+  return counts;
+}
+
+async function readStoredOutcomeRecords(root: string): Promise<Array<{ conceptId: string; outcome: string; recordedAt: string }>> {
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "outcomes");
+  const files = (await fs.readdir(dir, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => path.join(dir, entry.name))
+    .sort();
+  const records: Array<{ conceptId: string; outcome: string; recordedAt: string }> = [];
+  for (const file of files) {
+    const lines = (await fs.readFile(file, "utf8").catch(() => "")).split(/\r?\n/).filter(Boolean);
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line) as { conceptId?: unknown; outcome?: unknown; recordedAt?: unknown };
+        if (typeof parsed.conceptId === "string" && typeof parsed.outcome === "string" && typeof parsed.recordedAt === "string") {
+          records.push({ conceptId: parsed.conceptId, outcome: parsed.outcome, recordedAt: parsed.recordedAt });
+        }
+      } catch {
+        // Local telemetry corruption should not block drift visibility.
+      }
+    }
+  }
+  return records;
 }
 
 function scopesOverlap(a: LearnV2ConceptCard, b: LearnV2ConceptCard): boolean {
