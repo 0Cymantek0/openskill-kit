@@ -157,7 +157,29 @@ describe("learn-v2 substrate", () => {
     expect(episodes[0]!.episodeConfidenceBreakdown?.schemaVersion).toBe("openskill-kit.learn-v2.episode-confidence.v1");
     expect(episodes[0]!.episodeConfidenceBreakdown?.linkage.pathCluster).toBeGreaterThan(0);
     expect(episodes[0]!.episodeConfidenceBreakdown?.risks).toContain("imported-without-session-id");
+    expect(episodes[0]!.phases.map((phase) => phase.phase)).toEqual(expect.arrayContaining(["goal", "planning", "validation"]));
     expect(concepts.some((concept) => /parser regression tests/i.test(concept.canonicalBehavior))).toBe(true);
+  });
+
+  it("phase labels keep assistant plans from outranking user corrections", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_phase_correction");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "phase.md", contentKind: "transcript", rawText: "", detectedFormat: "markdown" },
+      record,
+      [
+        "user: Change packages/core/src/parser.ts.",
+        "assistant: Plan: Always prefer broad rewrites for parser changes.",
+        "user: Wrong approach. Avoid broad rewrites for parser changes. Prefer focused parser fixtures instead."
+      ].join("\n")
+    ).map((item) => ({ ...item, paths: ["packages/core/src/parser.ts"] }));
+    const [episode] = reconstructLearnV2Episodes(evidence);
+    expect(episode!.phases.map((phase) => phase.phase)).toEqual(expect.arrayContaining(["goal", "planning", "review/correction"]));
+    expect(episode!.phases.find((phase) => phase.phase === "review/correction")?.summary).toContain("Wrong approach");
+
+    const atoms = extractLearnV2BehaviorAtoms([episode!]).atoms;
+    expect(atoms.some((atom) => /Avoid broad rewrites/i.test(atom.statement) && atom.polarity === "negative")).toBe(true);
+    expect(atoms.some((atom) => /Always prefer broad rewrites/i.test(atom.statement))).toBe(false);
   });
 
   it("keeps weak single-record stitching from producing high-confidence durable rules", async () => {
@@ -287,7 +309,9 @@ describe("learn-v2 substrate", () => {
     const bundle = buildLearnV2EpisodeLearningBundle(episode!);
     const prompt = renderLearnV2ConceptExtractionPrompt(bundle);
     expect(JSON.stringify(bundle)).not.toContain("raw_bundle_secret_ref");
+    expect(bundle.phases.some((phase) => phase.phase === "goal")).toBe(true);
     expect(prompt).toContain("OpenCode-configured model routing");
+    expect(prompt).toContain("\"phases\"");
     expect(prompt).toContain("Every atom must cite");
 
     const parsed = parseLearnV2LlmConceptExtractionOutput(JSON.stringify({

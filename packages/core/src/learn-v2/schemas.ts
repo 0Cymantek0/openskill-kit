@@ -105,6 +105,7 @@ export type LearnV2NormalizedEvidence = z.infer<typeof LearnV2NormalizedEvidence
 
 export const LearnV2ToolCallSummarySchema = z.object({
   id: z.string().min(1),
+  evidenceId: z.string().min(1).optional(),
   toolName: z.string().min(1),
   status: z.enum(["pass", "fail", "blocked", "timeout", "unknown"]),
   command: z.string().optional(),
@@ -116,6 +117,7 @@ export type LearnV2ToolCallSummary = z.infer<typeof LearnV2ToolCallSummarySchema
 
 export const LearnV2PatchComparisonSchema = z.object({
   id: z.string().min(1),
+  evidenceId: z.string().min(1).optional(),
   kind: z.enum(["agent-patch", "manual-edit", "final-patch", "diff-summary"]),
   paths: z.array(z.string()).default([]),
   structuralClasses: z.array(z.enum(["api", "parser", "test", "config", "docs", "generated", "lockfile", "formatting", "unknown"])).default([]),
@@ -194,6 +196,12 @@ export const LearnV2TaskEpisodeSchema = z.object({
     method: z.enum(["explicit-id", "trace-id", "session", "branch-path-time", "single-record"]),
     reasons: z.array(z.string()).default([])
   }),
+  phases: z.array(z.object({
+    phase: z.enum(["goal", "context-loading", "planning", "implementation", "tool-use/debugging", "validation", "review/correction", "finalization"]),
+    evidenceIds: z.array(z.string().min(1)).default([]),
+    summary: z.string().min(1),
+    confidence: z.number().min(0).max(1)
+  })).default([]),
   messages: z.array(LearnV2NormalizedEvidenceSchema).default([]),
   toolSummaries: z.array(LearnV2ToolCallSummarySchema).default([]),
   patchComparisons: z.array(LearnV2PatchComparisonSchema).default([]),
@@ -213,6 +221,7 @@ export const LearnV2EpisodeLearningBundleSchema = z.object({
   outcome: LearnV2TaskEpisodeSchema.shape.outcome,
   episodeConfidence: z.number().min(0).max(1),
   episodeConfidenceBreakdown: LearnV2TaskEpisodeSchema.shape.episodeConfidenceBreakdown,
+  phases: LearnV2TaskEpisodeSchema.shape.phases,
   scope: z.object({
     paths: z.array(z.string()).default([]),
     branch: z.string().optional()
@@ -225,6 +234,7 @@ export const LearnV2EpisodeLearningBundleSchema = z.object({
   })).default([]),
   tools: z.array(z.object({
     id: z.string().min(1),
+    evidenceId: z.string().min(1).optional(),
     toolName: z.string().min(1),
     status: LearnV2ToolCallSummarySchema.shape.status,
     command: z.string().optional(),
@@ -232,6 +242,7 @@ export const LearnV2EpisodeLearningBundleSchema = z.object({
   })).default([]),
   patches: z.array(z.object({
     id: z.string().min(1),
+    evidenceId: z.string().min(1).optional(),
     paths: z.array(z.string()).default([]),
     structuralClasses: LearnV2PatchComparisonSchema.shape.structuralClasses,
     structuralSummary: LearnV2PatchComparisonSchema.shape.structuralSummary,

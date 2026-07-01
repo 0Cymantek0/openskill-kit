@@ -30,12 +30,21 @@ export function extractLearnV2BehaviorAtoms(episodes: LearnV2TaskEpisode[]): Lea
 
 function extractEpisodeAtoms(episode: LearnV2TaskEpisode): LearnV2BehaviorAtom[] {
   const atoms: LearnV2BehaviorAtom[] = [];
+  const learningEvidenceIds = learnablePreferenceEvidenceIds(episode);
   const text = [
     ...episode.messages.map((message) => `${message.actor}: ${message.text}`),
     ...episode.toolSummaries.map((tool) => `tool:${tool.toolName}:${tool.status}:${tool.command ?? ""}:${tool.summary}`),
     ...episode.patchComparisons.map((patch) => `patch:${patch.structuralClasses.join(",")}:${patch.summary}`)
   ].join("\n");
-  for (const statement of extractPreferenceStatements(text)) {
+  const preferenceText = [
+    ...episode.messages
+      .filter((message) => learningEvidenceIds.has(message.id))
+      .map((message) => `${message.actor}: ${message.text}`),
+    ...episode.phases
+      .filter((phase) => phase.phase === "review/correction" || phase.phase === "goal" || phase.phase === "finalization")
+      .map((phase) => phase.summary)
+  ].join("\n");
+  for (const statement of extractPreferenceStatements(preferenceText)) {
     atoms.push(makeAtom(episode, {
       kind: /secret|token|credential|authorization|api key/i.test(statement) ? "security" : "workflow",
       statement,
@@ -154,6 +163,7 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
     outcome: episode.outcome,
     episodeConfidence: episode.episodeConfidence,
     episodeConfidenceBreakdown: episode.episodeConfidenceBreakdown,
+    phases: episode.phases,
     scope: {
       paths: episode.pathCluster,
       branch: episode.branch
@@ -166,6 +176,7 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
     })),
     tools: episode.toolSummaries.slice(0, 30).map((tool) => ({
       id: tool.id,
+      evidenceId: tool.evidenceId,
       toolName: tool.toolName,
       status: tool.status,
       command: tool.command,
@@ -173,6 +184,7 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
     })),
     patches: episode.patchComparisons.slice(0, 20).map((patch) => ({
       id: patch.id,
+      evidenceId: patch.evidenceId,
       paths: patch.paths,
       structuralClasses: patch.structuralClasses,
       structuralSummary: patch.structuralSummary,
@@ -188,6 +200,12 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
       "Commands must be conditional on task/path scope, never unconditional global rules."
     ]
   });
+}
+
+function learnablePreferenceEvidenceIds(episode: LearnV2TaskEpisode): Set<string> {
+  const learnablePhases = new Set<LearnV2TaskEpisode["phases"][number]["phase"]>(["goal", "review/correction", "finalization"]);
+  if (!episode.phases.length) return new Set(episode.messages.map((message) => message.id));
+  return new Set(episode.phases.filter((phase) => learnablePhases.has(phase.phase)).flatMap((phase) => phase.evidenceIds));
 }
 
 export function renderLearnV2ConceptExtractionPrompt(bundle: LearnV2EpisodeLearningBundle): string {

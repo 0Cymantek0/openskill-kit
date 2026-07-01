@@ -48,6 +48,7 @@ function buildEpisode(key: string, evidence: LearnV2NormalizedEvidence[]): Learn
         : key.startsWith("heuristic:") ? "branch-path-time"
           : "single-record";
   const confidence = buildEpisodeConfidence(method, evidence, pathCluster);
+  const phases = buildEpisodePhases(evidence, toolSummaries, patchComparisons);
   return {
     schemaVersion: "openskill-kit.learn-v2.task-episode.v1",
     id: `episode_${learnV2ShortHash(`${key}:${evidenceIds.join(",")}`)}`,
@@ -68,6 +69,7 @@ function buildEpisode(key: string, evidence: LearnV2NormalizedEvidence[]): Learn
       method,
       reasons: stitchReasons(method, evidence, pathCluster)
     },
+    phases,
     messages,
     toolSummaries,
     patchComparisons,
@@ -99,6 +101,75 @@ function inferOutcome(evidence: LearnV2NormalizedEvidence[]): LearnV2TaskEpisode
   if (evidence.some((item) => item.status === "fail")) return "failed";
   if (evidence.some((item) => item.status === "pass")) return "passed";
   return "unknown";
+}
+
+function buildEpisodePhases(
+  evidence: LearnV2NormalizedEvidence[],
+  tools: ReturnType<typeof summarizeLearnV2Tools>,
+  patches: ReturnType<typeof summarizeLearnV2Patches>
+): LearnV2TaskEpisode["phases"] {
+  const phaseItems = new Map<LearnV2TaskEpisode["phases"][number]["phase"], { evidenceIds: string[]; snippets: string[]; confidence: number }>();
+  const add = (phase: LearnV2TaskEpisode["phases"][number]["phase"], evidenceId: string, snippet: string, confidence: number) => {
+    const current = phaseItems.get(phase) ?? { evidenceIds: [], snippets: [], confidence: 0 };
+    phaseItems.set(phase, {
+      evidenceIds: [...new Set([...current.evidenceIds, evidenceId])].slice(0, 20),
+      snippets: [...current.snippets, learnV2Snippet(snippet, 180)].slice(0, 4),
+      confidence: Math.max(current.confidence, confidence)
+    });
+  };
+  for (const item of evidence) {
+    const phase = classifyEvidencePhase(item);
+    add(phase.phase, item.id, `${item.actor}:${item.kind}:${item.text || item.commands.join(" ") || item.status}`, phase.confidence);
+  }
+  for (const tool of tools) {
+    add(tool.status === "pass" ? "validation" : "tool-use/debugging", tool.evidenceId ?? tool.id, `tool:${tool.toolName}:${tool.status}:${tool.command ?? ""}:${tool.summary}`, tool.status === "pass" ? 0.86 : 0.78);
+  }
+  for (const patch of patches) {
+    add(patch.kind === "manual-edit" ? "review/correction" : "implementation", patch.evidenceId ?? patch.id, `patch:${patch.kind}:${patch.structuralClasses.join(",")}:${patch.summary}`, patch.kind === "manual-edit" ? 0.9 : 0.76);
+  }
+  const order: LearnV2TaskEpisode["phases"][number]["phase"][] = [
+    "goal",
+    "context-loading",
+    "planning",
+    "implementation",
+    "tool-use/debugging",
+    "validation",
+    "review/correction",
+    "finalization"
+  ];
+  return order
+    .filter((phase) => phaseItems.has(phase))
+    .map((phase) => {
+      const item = phaseItems.get(phase)!;
+      return {
+        phase,
+        evidenceIds: item.evidenceIds,
+        summary: phaseSummary(phase, item.snippets),
+        confidence: round(item.confidence)
+      };
+    });
+}
+
+function classifyEvidencePhase(item: LearnV2NormalizedEvidence): { phase: LearnV2TaskEpisode["phases"][number]["phase"]; confidence: number } {
+  const text = `${item.text} ${item.commands.join(" ")}`.toLowerCase();
+  const actor = text.match(/^\s*(user|assistant|reviewer|tool|ci)\s*:/)?.[1] ?? item.actor;
+  if (actor === "user" && /\b(wrong|instead|manual edit|user edited|should have|reject|rejected|bad approach|avoid)\b/.test(text)) {
+    return { phase: "review/correction", confidence: 0.92 };
+  }
+  if (item.kind === "review" || actor === "reviewer") return { phase: "review/correction", confidence: 0.9 };
+  if (item.kind === "test-result" || /\b(pass|fail|failed|passed|vitest|pytest|assertion|expected)\b/.test(text)) return { phase: "validation", confidence: 0.84 };
+  if (item.kind === "command" || item.kind === "tool-call" || item.commands.length) return { phase: "tool-use/debugging", confidence: 0.82 };
+  if (item.kind === "file-change") return { phase: "implementation", confidence: 0.8 };
+  if (actor === "user") return { phase: "goal", confidence: 0.78 };
+  if (actor === "assistant" && /\b(plan|approach|will|steps?|todo)\b/.test(text)) return { phase: "planning", confidence: 0.68 };
+  if (actor === "assistant" && /\b(done|summary|final|implemented|changed|verified)\b/.test(text)) return { phase: "finalization", confidence: 0.72 };
+  if (/\b(read|inspect|context|open|search|grep|rg)\b/.test(text)) return { phase: "context-loading", confidence: 0.62 };
+  if (actor === "assistant") return { phase: "planning", confidence: 0.45 };
+  return { phase: "context-loading", confidence: 0.4 };
+}
+
+function phaseSummary(phase: LearnV2TaskEpisode["phases"][number]["phase"], snippets: string[]): string {
+  return `${phase}: ${snippets.join(" | ")}`;
 }
 
 function buildEpisodeConfidence(

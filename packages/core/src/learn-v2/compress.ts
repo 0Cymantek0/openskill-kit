@@ -7,6 +7,7 @@ export function summarizeLearnV2Tools(evidence: LearnV2NormalizedEvidence[]): Le
     .filter((item) => item.kind === "tool-call" || item.kind === "command" || item.commands.length)
     .map((item) => ({
       id: `tool_${learnV2ShortHash(`${item.id}:${item.toolName}:${item.commands.join("\n")}`)}`,
+      evidenceId: item.id,
       toolName: item.toolName ?? (item.commands.length ? "shell" : item.kind),
       status: item.status,
       command: item.commands[0],
@@ -27,6 +28,7 @@ export function summarizeLearnV2Patches(evidence: LearnV2NormalizedEvidence[]): 
     const removedLines = item.text.split(/\r?\n/).filter((line) => line.startsWith("-") && !line.startsWith("---")).length;
     patches.push({
       id: `patch_${learnV2ShortHash(`${item.id}:${paths.join(",")}:${addedLines}:${removedLines}`)}`,
+      evidenceId: item.id,
       kind: /\bmanual edit\b/i.test(item.text) ? "manual-edit" : /\bfinal patch\b/i.test(item.text) ? "final-patch" : "diff-summary",
       paths,
       structuralClasses: structuralClassesFromSummary(structuralSummary),
