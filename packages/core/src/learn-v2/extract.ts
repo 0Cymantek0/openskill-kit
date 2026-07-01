@@ -31,10 +31,11 @@ export function extractLearnV2BehaviorAtoms(episodes: LearnV2TaskEpisode[]): Lea
 function extractEpisodeAtoms(episode: LearnV2TaskEpisode): LearnV2BehaviorAtom[] {
   const atoms: LearnV2BehaviorAtom[] = [];
   const learningEvidenceIds = learnablePreferenceEvidenceIds(episode);
+  const learningPatches = learnablePatchComparisons(episode);
   const text = [
     ...episode.messages.map((message) => `${message.actor}: ${message.text}`),
     ...episode.toolSummaries.map((tool) => `tool:${tool.toolName}:${tool.status}:${tool.command ?? ""}:${tool.summary}`),
-    ...episode.patchComparisons.map((patch) => `patch:${patch.structuralClasses.join(",")}:${patch.summary}`)
+    ...learningPatches.map((patch) => `patch:${patch.structuralClasses.join(",")}:${patch.summary}`)
   ].join("\n");
   const preferenceText = [
     ...episode.messages
@@ -116,7 +117,7 @@ function makeAtom(
   const supportConfidence = 0.72
     + (episode.outcome === "edited" || episode.outcome === "rejected" ? 0.12 : 0)
     + (episode.rawRefs.length > 1 ? 0.04 : 0)
-    + (episode.patchComparisons.length ? 0.04 : 0);
+    + (learnablePatchComparisons(episode).length ? 0.04 : 0);
   const episodeCap = 0.34 + (episode.episodeConfidence * 0.58);
   const confidence = Math.min(input.confidenceCap, episodeCap, supportConfidence * episode.episodeConfidence);
   const sourceReliability = Number(Math.min(0.95, 0.35 + episode.episodeConfidence * 0.5 + (episode.outcome === "edited" || episode.outcome === "rejected" ? 0.08 : 0)).toFixed(2));
@@ -190,6 +191,8 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
       paths: patch.paths,
       structuralClasses: patch.structuralClasses,
       structuralSummary: patch.structuralSummary,
+      behaviorEligible: patch.behaviorEligible !== false,
+      filterReasons: patch.filterReasons ?? [],
       addedLines: patch.addedLines,
       removedLines: patch.removedLines,
       summary: learnV2Snippet(patch.summary, 1000)
@@ -199,9 +202,14 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
       "Every atom must cite one or more evidenceIds from this bundle.",
       "Do not include raw refs, raw local paths, secrets, credentials, or private identifiers.",
       "Prefer scoped, durable project behavior over one-off task facts.",
-      "Commands must be conditional on task/path scope, never unconditional global rules."
+      "Commands must be conditional on task/path scope, never unconditional global rules.",
+      "Do not infer behavior from patches where behaviorEligible is false; those patches are shown only for audit context."
     ]
   });
+}
+
+function learnablePatchComparisons(episode: LearnV2TaskEpisode): LearnV2TaskEpisode["patchComparisons"] {
+  return episode.patchComparisons.filter((patch) => patch.behaviorEligible !== false);
 }
 
 function learnablePreferenceEvidenceIds(episode: LearnV2TaskEpisode): Set<string> {

@@ -167,7 +167,16 @@ export const LearnV2PatchComparisonSchema = z.object({
   addedLines: z.number().int().min(0).default(0),
   removedLines: z.number().int().min(0).default(0),
   summary: z.string().min(1),
-  ignoredGenerated: z.boolean().default(false)
+  ignoredGenerated: z.boolean().default(false),
+  behaviorEligible: z.boolean().default(true),
+  filterReasons: z.array(z.enum([
+    "generated-only",
+    "dependency-lockfile-only",
+    "formatting-only",
+    "rename-only",
+    "empty-diff",
+    "non-semantic"
+  ])).default([])
 });
 export type LearnV2PatchComparison = z.infer<typeof LearnV2PatchComparisonSchema>;
 
@@ -266,6 +275,8 @@ export const LearnV2EpisodeLearningBundleSchema = z.object({
     paths: z.array(z.string()).default([]),
     structuralClasses: LearnV2PatchComparisonSchema.shape.structuralClasses,
     structuralSummary: LearnV2PatchComparisonSchema.shape.structuralSummary,
+    behaviorEligible: LearnV2PatchComparisonSchema.shape.behaviorEligible,
+    filterReasons: LearnV2PatchComparisonSchema.shape.filterReasons,
     addedLines: z.number().int().min(0),
     removedLines: z.number().int().min(0),
     summary: z.string().max(1000)

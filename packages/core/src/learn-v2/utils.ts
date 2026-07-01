@@ -138,6 +138,10 @@ export function learnV2FilePathsFromText(text: string): string[] {
 
 export function learnV2IsGeneratedPath(file: string): boolean {
   return /(^|\/)(dist|build|coverage|node_modules|\.next|target|generated|__generated__)\//.test(file)
-    || /(?:package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|go\.sum)$/.test(file)
+    || learnV2IsLockfilePath(file)
     || /\.min\.[jt]s$/.test(file);
+}
+
+export function learnV2IsLockfilePath(file: string): boolean {
+  return /(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|Cargo\.lock|go\.sum|poetry\.lock|Pipfile\.lock)$/.test(file);
 }

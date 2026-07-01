@@ -1,6 +1,6 @@
 import type { LearnV2NormalizedEvidence, LearnV2PatchComparison, LearnV2ToolCallSummary } from "./schemas.js";
 import { analyzeLearnV2StructuralDiff, structuralClassesFromSummary } from "./structural-diff.js";
-import { learnV2FilePathsFromText, learnV2ShortHash, learnV2Snippet } from "./utils.js";
+import { learnV2FilePathsFromText, learnV2IsLockfilePath, learnV2ShortHash, learnV2Snippet } from "./utils.js";
 
 export function summarizeLearnV2Tools(evidence: LearnV2NormalizedEvidence[]): LearnV2ToolCallSummary[] {
   return evidence
@@ -154,6 +154,7 @@ export function summarizeLearnV2Patches(evidence: LearnV2NormalizedEvidence[]): 
     const ignoredGenerated = structuralSummary.ignoredFiles.length > 0;
     const addedLines = item.text.split(/\r?\n/).filter((line) => line.startsWith("+") && !line.startsWith("+++")).length;
     const removedLines = item.text.split(/\r?\n/).filter((line) => line.startsWith("-") && !line.startsWith("---")).length;
+    const eligibility = patchLearningEligibility(structuralSummary, item.text, item.paths, addedLines, removedLines);
     patches.push({
       id: `patch_${learnV2ShortHash(`${item.id}:${paths.join(",")}:${addedLines}:${removedLines}`)}`,
       evidenceId: item.id,
@@ -163,8 +164,10 @@ export function summarizeLearnV2Patches(evidence: LearnV2NormalizedEvidence[]): 
       structuralSummary,
       addedLines,
       removedLines,
-      summary: renderPatchSummary(structuralSummary, item.text),
-      ignoredGenerated
+      summary: renderPatchSummary(structuralSummary, item.text, eligibility.filterReasons),
+      ignoredGenerated,
+      behaviorEligible: eligibility.behaviorEligible,
+      filterReasons: eligibility.filterReasons
     });
   }
   return patches;
@@ -180,14 +183,51 @@ export function learnV2TokenBudget(evidence: LearnV2NormalizedEvidence[], compre
   };
 }
 
-function renderPatchSummary(summary: LearnV2PatchComparison["structuralSummary"], text: string): string {
+function patchLearningEligibility(
+  summary: LearnV2PatchComparison["structuralSummary"],
+  text: string,
+  fallbackPaths: string[],
+  addedLines: number,
+  removedLines: number
+): Pick<LearnV2PatchComparison, "behaviorEligible" | "filterReasons"> {
+  const reasons = new Set<LearnV2PatchComparison["filterReasons"][number]>();
+  const allPaths = [...new Set([
+    ...summary.fileSummaries.map((file) => file.path),
+    ...summary.ignoredFiles,
+    ...fallbackPaths
+  ].filter(Boolean))];
+  const changedLineCount = addedLines + removedLines;
+  if (allPaths.length > 0 && allPaths.every((file) => learnV2IsLockfilePath(file))) reasons.add("dependency-lockfile-only");
+  if (summary.ignoredFiles.length > 0 && summary.fileSummaries.length === 0 && !reasons.has("dependency-lockfile-only")) reasons.add("generated-only");
+  if (summary.formattingOnly) reasons.add("formatting-only");
+  if (isRenameOnlyDiff(text)) reasons.add("rename-only");
+  if (changedLineCount === 0 && !reasons.has("rename-only")) reasons.add("empty-diff");
+  if (!summary.semanticChange && !reasons.size) reasons.add("non-semantic");
+  return {
+    behaviorEligible: reasons.size === 0,
+    filterReasons: [...reasons].sort()
+  };
+}
+
+function isRenameOnlyDiff(text: string): boolean {
+  const blocks = text.split(/(?=^diff --git )/m).filter((block) => /^diff --git /m.test(block));
+  if (!blocks.length) return false;
+  return blocks.every((block) => {
+    const hasRenameMetadata = /^rename from .+/m.test(block) && /^rename to .+/m.test(block);
+    const hasContentHunk = /^@@/m.test(block) || /^[+-](?![+-]{2})/m.test(block);
+    return hasRenameMetadata && !hasContentHunk;
+  });
+}
+
+function renderPatchSummary(summary: LearnV2PatchComparison["structuralSummary"], text: string, filterReasons: LearnV2PatchComparison["filterReasons"] = []): string {
   const parts = [
     summary.languages.length ? `languages=${summary.languages.join(",")}` : undefined,
     summary.fileSummaries.length ? `files=${summary.fileSummaries.map((file) => file.path).slice(0, 6).join(",")}` : undefined,
     summary.changedSymbols.length ? `symbols=${summary.changedSymbols.slice(0, 8).join(",")}` : undefined,
     summary.changedImports.length ? `imports=${summary.changedImports.slice(0, 5).join(",")}` : undefined,
     summary.ignoredFiles.length ? `ignored=${summary.ignoredFiles.slice(0, 5).join(",")}` : undefined,
-    summary.formattingOnly ? "formatting-only" : summary.semanticChange ? "semantic-change" : undefined
+    summary.formattingOnly ? "formatting-only" : summary.semanticChange ? "semantic-change" : undefined,
+    filterReasons.length ? `learning-filter=${filterReasons.join(",")}` : undefined
   ].filter(Boolean);
   return parts.length ? parts.join("; ") : learnV2Snippet(text, 320) || "Patch summary";
 }

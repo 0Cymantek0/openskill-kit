@@ -283,6 +283,74 @@ describe("learn-v2 substrate", () => {
     expect(patches[0]!.structuralClasses).toEqual(expect.arrayContaining(["api", "parser", "generated", "lockfile"]));
     expect(patches[0]!.paths).toEqual(["packages/core/src/parser.ts"]);
     expect(patches[0]!.ignoredGenerated).toBe(true);
+    expect(patches[0]!.behaviorEligible).toBe(true);
+    expect(patches[0]!.filterReasons).toEqual([]);
+  });
+
+  it("marks non-semantic generated lockfile formatting and rename-only patches as audit-only", async () => {
+    const generatedOnly = [
+      "diff --git a/packages/core/src/generated/client.ts b/packages/core/src/generated/client.ts",
+      "--- a/packages/core/src/generated/client.ts",
+      "+++ b/packages/core/src/generated/client.ts",
+      "@@",
+      "-export const version = 1;",
+      "+export const version = 2;"
+    ].join("\n");
+    const lockfileOnly = [
+      "diff --git a/package-lock.json b/package-lock.json",
+      "--- a/package-lock.json",
+      "+++ b/package-lock.json",
+      "@@",
+      "-  \"version\": \"1\"",
+      "+  \"version\": \"2\""
+    ].join("\n");
+    const formattingOnly = [
+      "diff --git a/packages/core/src/client.ts b/packages/core/src/client.ts",
+      "--- a/packages/core/src/client.ts",
+      "+++ b/packages/core/src/client.ts",
+      "@@",
+      "-export function createClient(input:string){return parse(input);}",
+      "+export   function createClient ( input : string ) { return parse ( input ) ; }"
+    ].join("\n");
+    const renameOnly = [
+      "diff --git a/packages/core/src/old-client.ts b/packages/core/src/client.ts",
+      "similarity index 100%",
+      "rename from packages/core/src/old-client.ts",
+      "rename to packages/core/src/client.ts"
+    ].join("\n");
+    const patches = summarizeLearnV2Patches([
+      normalizedFileChange("ev_generated_only", generatedOnly),
+      normalizedFileChange("ev_lockfile_only", lockfileOnly),
+      normalizedFileChange("ev_formatting_only", formattingOnly),
+      normalizedFileChange("ev_rename_only", renameOnly)
+    ]);
+
+    expect(patches.map((patch) => patch.behaviorEligible)).toEqual([false, false, false, false]);
+    expect(patches[0]!.filterReasons).toEqual(["generated-only"]);
+    expect(patches[1]!.filterReasons).toEqual(["dependency-lockfile-only"]);
+    expect(patches[2]!.filterReasons).toEqual(["formatting-only"]);
+    expect(patches[3]!.filterReasons).toEqual(["rename-only"]);
+    expect(patches.every((patch) => patch.summary.includes("learning-filter="))).toBe(true);
+  });
+
+  it("keeps audit-only patches out of task hints and model behavior inference", async () => {
+    const formattingOnly = [
+      "diff --git a/packages/core/src/client.ts b/packages/core/src/client.ts",
+      "--- a/packages/core/src/client.ts",
+      "+++ b/packages/core/src/client.ts",
+      "@@",
+      "-export function createClient(input:string){return parse(input);}",
+      "+export   function createClient ( input : string ) { return parse ( input ) ; }"
+    ].join("\n");
+    const [episode] = reconstructLearnV2Episodes([normalizedFileChange("ev_formatting_episode", formattingOnly)]);
+    expect(episode!.patchComparisons[0]!.behaviorEligible).toBe(false);
+    expect(episode!.taskHints).toContain("formatting-only");
+    expect(episode!.taskHints).not.toContain("api-change");
+
+    const bundle = buildLearnV2EpisodeLearningBundle(episode!);
+    expect(bundle.patches[0]!.behaviorEligible).toBe(false);
+    expect(bundle.patches[0]!.filterReasons).toEqual(["formatting-only"]);
+    expect(bundle.instructions.join("\n")).toContain("behaviorEligible is false");
   });
 
   it("detects Python Go and Rust structural symbols without new parser dependencies", async () => {
@@ -1000,6 +1068,22 @@ function previewRecord(root: string, id: string): LearnV2RawEvidenceRecord {
     trace: {
       sessionIds: []
     }
+  };
+}
+
+function normalizedFileChange(id: string, text: string) {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.normalized-evidence.v1" as const,
+    id,
+    rawRef: `raw_${id}`,
+    sourceHash: `sha256:${id}`,
+    kind: "file-change" as const,
+    actor: "assistant" as const,
+    text,
+    status: "unknown" as const,
+    paths: [],
+    commands: [],
+    metadata: {}
   };
 }
 

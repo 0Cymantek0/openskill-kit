@@ -37,10 +37,12 @@ function buildEpisode(key: string, evidence: LearnV2NormalizedEvidence[]): Learn
   const messages = evidence.filter((item) => item.kind === "message" || item.kind === "review" || item.kind === "test-result" || item.kind === "log-line").slice(0, 80);
   const toolSummaries = summarizeLearnV2Tools(evidence).slice(0, 40);
   const patchComparisons = summarizeLearnV2Patches(evidence).slice(0, 20);
+  const learningPatchComparisons = patchComparisons.filter(isLearningPatch);
   const compressed = [
     ...messages.map((item) => `${item.actor}: ${learnV2Snippet(item.text, 240)}`),
     ...toolSummaries.map((item) => `tool:${item.toolName}:${item.status}:${item.summary}`),
-    ...patchComparisons.map((item) => `patch:${item.structuralClasses.join(",")}:${item.summary}`)
+    ...learningPatchComparisons.map((item) => `patch:${item.structuralClasses.join(",")}:${item.summary}`),
+    ...patchComparisons.filter((item) => !isLearningPatch(item)).map((item) => `patch-filtered:${item.filterReasons.join(",")}:${item.summary}`)
   ].join("\n");
   const method = key.startsWith("episode:") ? "explicit-id"
     : key.startsWith("trace:") ? "trace-id"
@@ -79,15 +81,16 @@ function buildEpisode(key: string, evidence: LearnV2NormalizedEvidence[]): Learn
 
 function inferTaskHints(evidence: LearnV2NormalizedEvidence[], patches: ReturnType<typeof summarizeLearnV2Patches>): string[] {
   const text = evidence.map((item) => item.text).join("\n");
+  const learningPatches = patches.filter(isLearningPatch);
   const hints = new Set<string>();
   if (/\bparser|parse|grammar|lexer\b/i.test(text)) hints.add("parser-change");
   if (/\bsecurity|secret|token|credential|authorization\b/i.test(text)) hints.add("security");
   if (/\btest|fixture|regression|vitest|pytest\b/i.test(text)) hints.add("testing");
   if (/\brefactor|rewrite|broad\b/i.test(text)) hints.add("refactor-boundary");
   if (/\bdependency|package|library\b/i.test(text)) hints.add("dependency");
-  if (patches.some((patch) => patch.structuralClasses.includes("parser"))) hints.add("parser-change");
-  if (patches.some((patch) => patch.structuralClasses.includes("test"))) hints.add("testing");
-  if (patches.some((patch) => patch.structuralClasses.includes("api"))) hints.add("api-change");
+  if (learningPatches.some((patch) => patch.structuralClasses.includes("parser"))) hints.add("parser-change");
+  if (learningPatches.some((patch) => patch.structuralClasses.includes("test"))) hints.add("testing");
+  if (learningPatches.some((patch) => patch.structuralClasses.includes("api"))) hints.add("api-change");
   if (patches.some((patch) => patch.structuralSummary.formattingOnly)) hints.add("formatting-only");
   for (const command of evidence.flatMap((item) => item.commands)) hints.add(`command:${learnV2CanonicalKey(command).slice(0, 40)}`);
   return [...hints].slice(0, 12);
@@ -125,7 +128,8 @@ function buildEpisodePhases(
     add(tool.status === "pass" ? "validation" : "tool-use/debugging", tool.evidenceId ?? tool.id, `tool:${tool.toolName}:${tool.status}:${tool.command ?? ""}:${tool.summary}`, tool.status === "pass" ? 0.86 : 0.78);
   }
   for (const patch of patches) {
-    add(patch.kind === "manual-edit" ? "review/correction" : "implementation", patch.evidenceId ?? patch.id, `patch:${patch.kind}:${patch.structuralClasses.join(",")}:${patch.summary}`, patch.kind === "manual-edit" ? 0.9 : 0.76);
+    const prefix = isLearningPatch(patch) ? "patch" : `patch-filtered:${patch.filterReasons.join(",")}`;
+    add(patch.kind === "manual-edit" ? "review/correction" : "implementation", patch.evidenceId ?? patch.id, `${prefix}:${patch.kind}:${patch.structuralClasses.join(",")}:${patch.summary}`, patch.kind === "manual-edit" ? 0.9 : 0.76);
   }
   const order: LearnV2TaskEpisode["phases"][number]["phase"][] = [
     "goal",
@@ -148,6 +152,10 @@ function buildEpisodePhases(
         confidence: round(item.confidence)
       };
     });
+}
+
+function isLearningPatch(patch: ReturnType<typeof summarizeLearnV2Patches>[number]): boolean {
+  return patch.behaviorEligible !== false;
 }
 
 function classifyEvidencePhase(item: LearnV2NormalizedEvidence): { phase: LearnV2TaskEpisode["phases"][number]["phase"]; confidence: number } {
