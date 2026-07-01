@@ -120,7 +120,10 @@ async function ensureGitignore(gitignorePath: string): Promise<void> {
     "preferences/candidates/",
     "lock.json",
     "*.local.json",
-    "**/*.local.json"
+    "**/*.local.json",
+    ".*.lock",
+    "**/.lock",
+    "**/*.lock"
   ];
 
   const allIgnores = [...new Set([...cleanDirs, ...cleanFiles, ...otherIgnores])].sort();

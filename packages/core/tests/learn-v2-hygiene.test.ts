@@ -162,6 +162,42 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
       expect(preview.declassificationReport.issues).toContain(testCase.issue);
     }
   });
+
+  it("proves dot-lock file patterns are present in gitignore", async () => {
+    const root = await tempProject();
+    const gitignorePath = path.join(root, ".openskill-kit", ".gitignore");
+    const gitignoreContent = await readFile(gitignorePath, "utf8");
+    const lines = gitignoreContent.split("\n").map((line) => line.trim()).filter(Boolean);
+
+    expect(lines).toContain(".*.lock");
+    expect(lines).toContain("**/.lock");
+    expect(lines).toContain("**/*.lock");
+  });
+
+  it("proves pack verification and export reject lock files", async () => {
+    const root = await tempProject();
+
+    const lockPath = path.join(root, ".openskill-kit", "learn-v2", ".concepts.lock");
+    await fs.mkdir(path.dirname(lockPath), { recursive: true });
+    await writeFile(lockPath, "lock", "utf8");
+
+    const pack = await exportProjectBehaviorPack(root);
+    expect(pack.files.some((f) => f.endsWith(".lock"))).toBe(false);
+
+    const manifestPath = path.join(pack.packPath, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.files.push(".openskill-kit/learn-v2/.concepts.lock");
+    manifest.hashes[".openskill-kit/learn-v2/.concepts.lock"] = "dummyhash";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const extractedLockPath = path.join(pack.packPath, ".openskill-kit", "learn-v2", ".concepts.lock");
+    await fs.mkdir(path.dirname(extractedLockPath), { recursive: true });
+    await writeFile(extractedLockPath, "lock", "utf8");
+
+    const verified = await verifyProjectBehaviorPack(pack.packPath);
+    expect(verified.status).toBe("fail");
+    expect(verified.issues.some((issue) => issue.includes("Lock file included"))).toBe(true);
+  });
 });
 
 async function tempProject(): Promise<string> {

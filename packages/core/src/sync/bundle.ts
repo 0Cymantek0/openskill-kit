@@ -232,6 +232,11 @@ export async function verifyProjectBehaviorPack(packPathInput: string): Promise<
     if (manifest.files?.some((file: string) => file.startsWith(blocked))) issues.push(`Private path included: ${blocked}`);
   }
   for (const file of manifest.files ?? []) {
+    if (file.endsWith(".lock") || path.basename(file).endsWith(".lock")) {
+      issues.push(`Lock file included: ${file}`);
+    }
+  }
+  for (const file of manifest.files ?? []) {
     const expected = manifest.hashes?.[file];
     if (!expected) {
       issues.push(`Missing hash for ${file}`);
@@ -466,11 +471,20 @@ async function auditProjectBehaviorPackPayload(packRoot: string, files: string[]
 
 function auditPackPath(file: string): ProjectBehaviorPackPublishAuditFinding[] {
   const findings: ProjectBehaviorPackPublishAuditFinding[] = [];
+  if (file.endsWith(".lock") || path.basename(file).endsWith(".lock")) {
+    findings.push({
+      ruleId: "lock-file-in-pack",
+      level: "block" as const,
+      file,
+      message: "Behavior packs must not include lock files.",
+      sample: file
+    });
+  }
   for (const prefix of privatePackPathPrefixes()) {
     if (file.startsWith(prefix)) {
       findings.push({
         ruleId: "private-path-in-pack",
-        level: "block",
+        level: "block" as const,
         file,
         message: "Behavior packs must not include raw local learning, review, telemetry, eval-run, or private evidence paths.",
         sample: prefix
