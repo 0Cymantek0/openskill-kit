@@ -80,7 +80,7 @@ openskill-kit osk review --write
 - Learn v2 extraction goldens can assert expected concept text, atom kinds, task hints, paths, and forbidden leak text during raw learning eval.
 - Learn v2 counterfactual trace eval writes declassified `.openskill-kit/learn-v2/evals/*/counterfactual-trace-cases.json` cases and checks expected concept activation plus negative-trigger suppression without running a sandbox agent.
 - Learn v2 activation replay checks whether replayable concepts can be retrieved from originating episode context. Activation scoring uses deterministic BM25-style lexical evidence plus path, command, task-type, confidence, status, and negative-trigger features.
-- Learn v2 concept outcome telemetry stores concept ids plus hashes of query/path/command/task identifiers. It does not store raw task prompts, raw paths, or raw commands.
+- Learn v2 concept outcome telemetry stores concept ids plus hashes of query/path/command/task identifiers. It does not store raw task prompts, raw paths, or raw commands. Later activation reads this local telemetry: helpful outcomes can boost retrieval, while harmful or superseded outcomes suppress stale concepts.
 - Learn v2 model request artifacts contain declassified episode bundles, request manifests, expected response paths, and prompts only. Model responses are untrusted local inputs; `--model-output` accepts either `request-manifest.json` or the expected `response.json`, then only merges strict JSON with valid evidence ids and rejects malformed files, wrong response paths, stale manifests, or secret-like statements without aborting the whole batch.
 - Review-gated command/path label candidates for repeated safe hashes.
 - Review queue path.

@@ -40,6 +40,7 @@ export interface LearnV2ConceptActivationMatch {
   score: number;
   reasons: string[];
   suppressed: boolean;
+  outcomeFeedback?: LearnV2ConceptOutcomeFeedback;
 }
 
 export interface LearnV2ConceptActivationResult {
@@ -64,6 +65,15 @@ export interface LearnV2ConceptOutcomeResult {
   record: LearnV2ConceptOutcome;
 }
 
+export interface LearnV2ConceptOutcomeFeedback {
+  helpful: number;
+  ignored: number;
+  wrong: number;
+  harmful: number;
+  superseded: number;
+  lastRecordedAt?: string;
+}
+
 export async function activateLearnV2Concepts(
   rootInput: string,
   query: LearnV2ConceptActivationQuery,
@@ -71,7 +81,8 @@ export async function activateLearnV2Concepts(
 ): Promise<LearnV2ConceptActivationResult> {
   const root = path.resolve(rootInput);
   const index = await readOrBuildActivationIndex(root, now);
-  const scored = scoreActivationEntries(index.entries, query);
+  const outcomeFeedback = await readLearnV2ConceptOutcomeFeedback(root);
+  const scored = scoreActivationEntries(index.entries, query, outcomeFeedback);
   const limit = Math.max(1, Math.min(50, query.limit ?? 8));
   const visible = scored.filter((match) => !match.suppressed && match.score > 0).slice(0, limit);
   const suppressed = scored.filter((match) => match.suppressed).slice(0, limit);
@@ -143,7 +154,11 @@ export function learnV2ConceptOutcomePath(root: string, now = new Date()): strin
   return path.join(root, ".openskill-kit", "learn-v2", "outcomes", `${now.toISOString().slice(0, 7)}.jsonl`);
 }
 
-function scoreActivationEntries(entries: LearnV2ActivationIndex["entries"], query: LearnV2ConceptActivationQuery): LearnV2ConceptActivationMatch[] {
+function scoreActivationEntries(
+  entries: LearnV2ActivationIndex["entries"],
+  query: LearnV2ConceptActivationQuery,
+  outcomeFeedback: Map<string, LearnV2ConceptOutcomeFeedback> = new Map()
+): LearnV2ConceptActivationMatch[] {
   const queryText = normalizeText(query.query ?? "");
   const queryTokens = tokenSet(queryText);
   const paths = (query.paths ?? []).map(normalizePath);
@@ -153,7 +168,7 @@ function scoreActivationEntries(entries: LearnV2ActivationIndex["entries"], quer
   const visibleEntries = entries.filter((entry) => query.includeCandidates === true || entry.status === "active" || entry.status === "locked");
   const bm25 = buildActivationBm25Index(visibleEntries);
   return visibleEntries
-    .map((entry) => scoreEntry(entry, { queryText, queryTokens, paths, commands, taskTypes, negativeSignals, bm25 }))
+    .map((entry) => scoreEntry(entry, { queryText, queryTokens, paths, commands, taskTypes, negativeSignals, bm25, outcomeFeedback }))
     .sort((a, b) => Number(a.suppressed) - Number(b.suppressed) || b.score - a.score || a.title.localeCompare(b.title));
 }
 
@@ -167,12 +182,18 @@ function scoreEntry(
     taskTypes: Set<string>;
     negativeSignals: Set<string>;
     bm25: ActivationBm25Index;
+    outcomeFeedback: Map<string, LearnV2ConceptOutcomeFeedback>;
   }
 ): LearnV2ConceptActivationMatch {
   const reasons: string[] = [];
+  const feedback = query.outcomeFeedback.get(entry.conceptId);
   const suppressedBy = entry.negativeTriggers.map(normalizeText).filter((trigger) => query.negativeSignals.has(trigger));
   if (suppressedBy.length) {
-    return baseMatch(entry, 0, suppressedBy.map((trigger) => `negative-trigger:${trigger}`), true);
+    return baseMatch(entry, 0, suppressedBy.map((trigger) => `negative-trigger:${trigger}`), true, feedback);
+  }
+  if (feedback && (feedback.harmful > 0 || feedback.superseded > 0)) {
+    const reason = feedback.harmful > 0 ? "outcome:harmful" : "outcome:superseded";
+    return baseMatch(entry, 0, [reason], true, feedback);
   }
 
   let score = entry.confidence * 0.22;
@@ -217,15 +238,27 @@ function scoreEntry(
     reasons.push(`bm25:${bm25Score.toFixed(2)}`);
   }
 
+  if (feedback) {
+    const helpfulBoost = Math.min(0.16, feedback.helpful * 0.05);
+    const wrongPenalty = Math.min(0.24, feedback.wrong * 0.12);
+    const ignoredPenalty = Math.min(0.08, feedback.ignored * 0.03);
+    score += helpfulBoost;
+    score -= wrongPenalty + ignoredPenalty;
+    if (helpfulBoost > 0) reasons.push(`outcome:helpful:${feedback.helpful}`);
+    if (wrongPenalty > 0) reasons.push(`outcome:wrong:${feedback.wrong}`);
+    if (ignoredPenalty > 0) reasons.push(`outcome:ignored:${feedback.ignored}`);
+  }
+
   if (!reasons.length) score = 0;
-  return baseMatch(entry, Number(Math.min(1, score).toFixed(3)), reasons, false);
+  return baseMatch(entry, Number(Math.max(0, Math.min(1, score)).toFixed(3)), reasons, false, feedback);
 }
 
 function baseMatch(
   entry: LearnV2ActivationIndex["entries"][number],
   score: number,
   reasons: string[],
-  suppressed: boolean
+  suppressed: boolean,
+  outcomeFeedback?: LearnV2ConceptOutcomeFeedback
 ): LearnV2ConceptActivationMatch {
   return {
     conceptId: entry.conceptId,
@@ -235,7 +268,8 @@ function baseMatch(
     confidence: entry.confidence,
     score,
     reasons,
-    suppressed
+    suppressed,
+    outcomeFeedback
   };
 }
 
@@ -249,6 +283,31 @@ async function readOrBuildActivationIndex(root: string, now: Date): Promise<Lear
 
 function learnV2ActivationIndexPath(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "activation-index.json");
+}
+
+async function readLearnV2ConceptOutcomeFeedback(root: string): Promise<Map<string, LearnV2ConceptOutcomeFeedback>> {
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "outcomes");
+  const out = new Map<string, LearnV2ConceptOutcomeFeedback>();
+  const files = (await fs.readdir(dir, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => path.join(dir, entry.name))
+    .sort();
+  for (const file of files) {
+    const text = await fs.readFile(file, "utf8").catch(() => "");
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const record = LearnV2ConceptOutcomeSchema.parse(JSON.parse(line));
+        const current = out.get(record.conceptId) ?? { helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 };
+        current[record.outcome] += 1;
+        if (!current.lastRecordedAt || current.lastRecordedAt < record.recordedAt) current.lastRecordedAt = record.recordedAt;
+        out.set(record.conceptId, current);
+      } catch {
+        // Ignore malformed local telemetry; model activation should remain usable.
+      }
+    }
+  }
+  return out;
 }
 
 function tokenSet(value: string): Set<string> {

@@ -651,6 +651,30 @@ describe("learn-v2 substrate", () => {
     expect(rawOutcome).not.toContain(root);
     expect(rawOutcome).not.toContain("npm test -- parser");
     expect(rawOutcome).not.toContain("packages/core/src/parser.ts");
+
+    const boosted = await activateLearnV2Concepts(root, {
+      query: "parser change needs focused test",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    }, new Date("2026-06-30T00:05:00Z"));
+    expect(boosted.matches[0]?.conceptId).toBe(concept.id);
+    expect(boosted.matches[0]?.reasons.join(",")).toContain("outcome:helpful:1");
+    expect(boosted.matches[0]?.score).toBeGreaterThanOrEqual(activated.matches[0]!.score);
+
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: concept.id,
+      outcome: "harmful",
+      activationScore: boosted.matches[0]!.score,
+      query: "parser change needs focused test",
+      reason: "bad future retrieval"
+    }, new Date("2026-06-30T00:06:00Z"));
+    const suppressed = await activateLearnV2Concepts(root, {
+      query: "parser change needs focused test",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    }, new Date("2026-06-30T00:07:00Z"));
+    expect(suppressed.matches.some((match) => match.conceptId === concept.id)).toBe(false);
+    expect(suppressed.suppressed.find((match) => match.conceptId === concept.id)?.reasons).toContain("outcome:harmful");
   });
 
   it("ranks activation entries with deterministic BM25-style lexical evidence", async () => {
