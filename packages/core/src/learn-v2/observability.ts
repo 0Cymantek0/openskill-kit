@@ -94,6 +94,25 @@ export interface LearnV2PipelineObservabilityInput {
   nextActions: string[];
 }
 
+export async function readLearnV2PipelineObservabilityReport(rootInput: string, reportPathInput?: string): Promise<LearnV2PipelineObservabilityReport> {
+  const root = path.resolve(rootInput);
+  const file = reportPathInput ? path.resolve(root, reportPathInput) : await latestLearnV2PipelineObservabilityReportPath(root);
+  const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+  return LearnV2PipelineObservabilityReportSchema.parse(parsed);
+}
+
+export async function latestLearnV2PipelineObservabilityReportPath(rootInput: string): Promise<string> {
+  const root = path.resolve(rootInput);
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "observability");
+  const files = (await fs.readdir(dir, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isFile() && /^pipeline-\d+\.json$/.test(entry.name))
+    .map((entry) => path.join(dir, entry.name))
+    .sort();
+  const latest = files.at(-1);
+  if (!latest) throw new Error(`No Learn v2 observability report found under ${learnV2SafeLocalPath(dir, root)}. Run /osk learn --raw first.`);
+  return latest;
+}
+
 export async function writeLearnV2PipelineObservabilityReport(
   rootInput: string,
   input: LearnV2PipelineObservabilityInput

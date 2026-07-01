@@ -10,6 +10,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "dependencies": {
+    "@clack/prompts": "^1.6.0",
     "@openskill-kit/core": "file:../core",
     "commander": "^14.0.2"
   }

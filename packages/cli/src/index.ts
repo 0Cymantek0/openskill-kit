@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command, Option } from "commander";
+import { intro as clackIntro, log as clackLog, note as clackNote, outro as clackOutro } from "@clack/prompts";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -88,6 +89,7 @@ import {
   runPersistedLearnV2Eval,
   writeLearnV2ModelRequests,
   runLearnV2RawVaultMaintenance,
+  readLearnV2PipelineObservabilityReport,
   RawLearningModelModes,
   readEvidenceCards,
   runBehaviorEval,
@@ -118,6 +120,7 @@ import {
   type InstallTarget,
   type LearnRun,
   type RawLocalLearningResult,
+  type LearnV2PipelineObservabilityReport,
   type LearnSourcePlan,
   type CommandTelemetryFamily
 } from "@openskill-kit/core";
@@ -320,6 +323,8 @@ osk.command("learn")
   .option("--raw", "Run raw local learning over explicitly supplied surface files")
   .option("--raw-vault-status", "Show learn-v2 raw vault retention and budget status")
   .option("--gc-raw-vault", "Compact or expire learn-v2 raw vault blobs whose retention window has elapsed")
+  .option("--observability", "Show latest Learn-v2 pipeline observability dashboard")
+  .option("--observability-file <path>", "Specific Learn-v2 pipeline observability JSON report")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
   .option("--reconstruct-episodes", "Rebuild Learn-v2 episodes from persisted analysis frames")
   .option("--extract-concepts", "Extract deterministic Learn-v2 concepts from the persisted episode store")
@@ -350,6 +355,12 @@ osk.command("learn")
         maxHotBytes: options.maxRawVaultBytes
       });
       output(options.json, result, renderRawVaultMaintenance(result));
+      return;
+    }
+    if (options.observability === true || options.observabilityFile) {
+      const report = await readLearnV2PipelineObservabilityReport(process.cwd(), options.observabilityFile);
+      if (options.json === true || !process.stdout.isTTY) output(options.json, report, renderLearnV2ObservabilityPlain(report));
+      else renderLearnV2ObservabilityTui(report);
       return;
     }
     if (options.reconstructEpisodes === true) {
@@ -2093,6 +2104,63 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
   }
   lines.push(...result.nextActions);
   return lines.join("\n");
+}
+
+function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityReport): string {
+  return [
+    "Learn v2 observability",
+    `Generated: ${report.generatedAt}`,
+    `Mode: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
+    `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
+    `Evidence: ${report.evidence.normalizedEvidence} records, ${report.evidence.episodes} episodes, confidence high/medium/low ${report.evidence.confidenceBuckets.high}/${report.evidence.confidenceBuckets.medium}/${report.evidence.confidenceBuckets.low}`,
+    `Stitching: ${renderLearnV2CountLine(report.evidence.stitchingMethodCounts)}`,
+    `Tools: ${report.compression.tools} summaries, ${report.compression.totalToolOmittedBytes} omitted bytes, strategies ${renderLearnV2CountLine(report.compression.toolCompressionStrategyCounts)}`,
+    `Patches: ${report.compression.behaviorEligiblePatches} behavior-eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches}; filters ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`,
+    `Concepts: ${report.concepts.cards} cards, ${report.concepts.reviewReadyCards} review-ready, status ${renderLearnV2CountLine(report.concepts.statusCounts)}, risk ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
+    `Gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}, review cards ${report.qualityGates.reviewCards}`,
+    `Artifacts: ${Object.keys(report.artifacts).length ? Object.entries(report.artifacts).map(([key, value]) => `${key}=${value}`).join("; ") : "none"}`,
+    `Next: ${report.nextActions.join(" | ") || "none"}`
+  ].join("\n");
+}
+
+function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityReport): void {
+  clackIntro("OpenSkillKit Learn v2");
+  clackNote([
+    `Generated: ${report.generatedAt}`,
+    `Run: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
+    `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
+    `Quality gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}`
+  ].join("\n"), "Pipeline");
+  clackNote([
+    `Evidence: ${report.evidence.normalizedEvidence} records -> ${report.evidence.episodes} episodes`,
+    `Confidence: high ${report.evidence.confidenceBuckets.high}, medium ${report.evidence.confidenceBuckets.medium}, low ${report.evidence.confidenceBuckets.low}`,
+    `Stitching: ${renderLearnV2CountLine(report.evidence.stitchingMethodCounts)}`,
+    `Risks: ${renderLearnV2CountLine(report.evidence.stitchingRiskCounts)}`
+  ].join("\n"), "Episodes");
+  clackNote([
+    `Tools: ${report.compression.tools}`,
+    `Compression: ${renderLearnV2CountLine(report.compression.toolCompressionStrategyCounts)}`,
+    `Omitted bytes: ${report.compression.totalToolOmittedBytes}`,
+    `Patches: ${report.compression.behaviorEligiblePatches} eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches}`,
+    `Patch filters: ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`
+  ].join("\n"), "Compression");
+  clackNote([
+    `Cards: ${report.concepts.cards}`,
+    `Review-ready: ${report.concepts.reviewReadyCards}`,
+    `Status: ${renderLearnV2CountLine(report.concepts.statusCounts)}`,
+    `Risk: ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
+    `Safe bulk: ${report.qualityGates.safeBulkActions.join(", ") || "none"}`
+  ].join("\n"), "Concepts");
+  if (Object.keys(report.artifacts).length) {
+    clackNote(Object.entries(report.artifacts).map(([key, value]) => `${key}: ${value}`).join("\n"), "Artifacts");
+  }
+  for (const action of report.nextActions) clackLog.step(action);
+  clackOutro("Learn v2 visibility complete. Raw evidence stayed local-only.");
+}
+
+function renderLearnV2CountLine(counts: Record<string, number>): string {
+  const entries = Object.entries(counts);
+  return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join(", ") : "none";
 }
 
 function renderLearnV2ModelRequests(result: Awaited<ReturnType<typeof writeLearnV2ModelRequests>>): string {

@@ -17,6 +17,7 @@ import {
   summarizeLearnV2Patches,
   summarizeLearnV2Tools,
   buildLearnV2EpisodeLearningBundle,
+  readLearnV2PipelineObservabilityReport,
   writeLearnV2PipelineObservabilityReport,
   renderLearnV2ConceptExtractionPrompt,
   parseLearnV2LlmConceptExtractionOutput,
@@ -411,6 +412,10 @@ describe("learn-v2 substrate", () => {
     const reportText = await readText(reportPath);
     expect(reportText).not.toContain(root);
     expect(reportText).not.toContain("raw_ev_observable");
+
+    const latest = await readLearnV2PipelineObservabilityReport(root);
+    expect(latest.generatedAt).toBe(report.generatedAt);
+    expect(latest.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
   });
 
   it("detects Python Go and Rust structural symbols without new parser dependencies", async () => {

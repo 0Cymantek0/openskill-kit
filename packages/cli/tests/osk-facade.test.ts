@@ -44,6 +44,24 @@ describe("osk CLI facade", () => {
     expect(parsed.privacyPreview.join(" ")).toContain("No raw prompts");
   });
 
+  it("renders the Learn v2 observability dashboard from latest report", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-observability-"));
+    const dir = path.join(root, ".openskill-kit", "learn-v2", "observability");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "pipeline-20260630001000.json"), JSON.stringify(sampleLearnV2ObservabilityReport(), null, 2), "utf8");
+
+    const jsonResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--observability", "--json"], { cwd: root, windowsHide: true });
+    const parsed = JSON.parse(jsonResult.stdout);
+    expect(parsed.schemaVersion).toBe("openskill-kit.learn-v2.pipeline-observability.v1");
+    expect(parsed.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
+
+    const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--observability"], { cwd: root, windowsHide: true });
+    expect(textResult.stdout).toContain("Learn v2 observability");
+    expect(textResult.stdout).toContain("Patches: 1 behavior-eligible, 1 audit-only / 2");
+    expect(textResult.stdout).not.toContain(root);
+    expect(textResult.stdout).not.toContain("raw_");
+  });
+
   it("prompts for /osk learn sources in interactive terminal mode", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-picker-"));
     await mkdir(path.join(root, "src"), { recursive: true });
@@ -502,6 +520,74 @@ describe("osk CLI facade", () => {
     await expect(stat(path.join(root, ".openskill-kit", "openworld", "tasks", task.task.id, "sources", `${applied.execution.sourceIds[0]}.json`))).resolves.toBeTruthy();
   });
 });
+
+function sampleLearnV2ObservabilityReport() {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.pipeline-observability.v1",
+    generatedAt: "2026-06-30T00:10:00.000Z",
+    run: {
+      previewOnly: true,
+      modelMode: "heuristic-only",
+      eventsAppended: 0,
+      modelRequestCount: 0
+    },
+    sources: {
+      considered: 1,
+      included: 1,
+      reviewNeeded: 0,
+      excluded: 0,
+      totalBytes: 120,
+      redactedSources: 0
+    },
+    evidence: {
+      normalizedEvidence: 2,
+      episodes: 1,
+      phaseCounts: { implementation: 1 },
+      outcomeCounts: { unknown: 1 },
+      stitchingMethodCounts: { "single-record": 1 },
+      stitchingRiskCounts: { "single-record-only": 1 },
+      confidenceBuckets: { high: 0, medium: 1, low: 0 }
+    },
+    compression: {
+      tools: 1,
+      toolStatusCounts: { pass: 1 },
+      toolCompressionStrategyCounts: { "status-only": 1 },
+      totalToolOmittedBytes: 10,
+      patches: 2,
+      behaviorEligiblePatches: 1,
+      auditOnlyPatches: 1,
+      patchFilterReasonCounts: { "generated-only": 1 },
+      structuralClassCounts: { api: 1, generated: 1 }
+    },
+    concepts: {
+      cards: 1,
+      statusCounts: { candidate: 1 },
+      riskCounts: { medium: 1 },
+      counterevidenceItems: 0,
+      reviewReadyCards: 1
+    },
+    qualityGates: {
+      evalStatus: "pass",
+      leakStatus: "pass",
+      reviewCards: 1,
+      safeBulkActions: ["accept-low-risk"]
+    },
+    artifacts: {
+      review: "[PROJECT_ROOT]/.openskill-kit/learn-v2/review/concept-review-queue.md"
+    },
+    privacy: {
+      rawRefsExported: false,
+      rawSourcePathsExported: false,
+      localPathsRedacted: true,
+      notes: ["Report contains counts only."]
+    },
+    nextActions: ["Inspect review queue."],
+    artifactsWritten: {
+      json: "[PROJECT_ROOT]/.openskill-kit/learn-v2/observability/pipeline-20260630001000.json",
+      markdown: "[PROJECT_ROOT]/.openskill-kit/learn-v2/observability/pipeline-20260630001000.md"
+    }
+  };
+}
 
 async function execCliJson(args: string[], cwd: string): Promise<any> {
   const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, ...args], {
