@@ -1,4 +1,5 @@
 import type { LearnV2BehaviorAtom, LearnV2ConceptCard } from "./schemas.js";
+import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring } from "./scoring.js";
 import { learnV2CanonicalKey, learnV2NormalizeStatement, learnV2ShortHash, learnV2Title } from "./utils.js";
 
 export function mergeLearnV2ConceptCards(atoms: LearnV2BehaviorAtom[], now: Date): LearnV2ConceptCard[] {
@@ -17,8 +18,8 @@ function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2Concep
   const rawRefs = [...new Set(items.flatMap((item) => item.rawRefs))];
   const paths = [...new Set(items.flatMap((item) => item.scope.paths))].slice(0, 20);
   const taskTypes = [...new Set(items.flatMap((item) => item.scope.taskTypes))].slice(0, 12);
-  const confidence = Math.min(0.95, Math.max(...items.map((item) => item.confidence)) + Math.min(0.12, (items.length - 1) * 0.03));
-  const durability = Math.min(0.95, 0.45 + Math.min(0.25, evidenceIds.length * 0.03) + Math.min(0.15, rawRefs.length * 0.05) + (first.risk === "low" ? 0.08 : 0));
+  const risk = items.some((item) => item.risk === "high") ? "high" : items.some((item) => item.risk === "medium") ? "medium" : "low";
+  const scoring = calculateLearnV2ConceptScoring({ atoms: items, evidenceIds, rawRefs, risk });
   return {
     schemaVersion: "openskill-kit.learn-v2.concept-card.v1",
     id: `concept_${learnV2ShortHash(`${first.kind}:${first.polarity}:${first.statement}:${evidenceIds.join(",")}`)}`,
@@ -37,10 +38,11 @@ function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2Concep
       pathGlobs: paths.map(pathToGlob),
       commands: first.kind === "command-policy" ? commandSnippets(first.statement) : []
     },
-    confidence: Number(confidence.toFixed(2)),
-    durability: Number(durability.toFixed(2)),
-    sourceReliability: Number((items.reduce((sum, item) => sum + item.sourceReliability, 0) / items.length).toFixed(2)),
-    risk: items.some((item) => item.risk === "high") ? "high" : items.some((item) => item.risk === "medium") ? "medium" : "low",
+    confidence: scoring.confidence,
+    durability: scoring.durability,
+    sourceReliability: scoring.sourceReliability,
+    scoring,
+    risk,
     evidenceIds,
     rawRefs,
     atoms: items,
@@ -63,14 +65,14 @@ function applyConflictCounterevidence(cards: LearnV2ConceptCard[]): LearnV2Conce
   return cards.map((card) => {
     const conflicts = cards.filter((other) => other.id !== card.id && conceptConflict(card, other));
     if (!conflicts.length) return card;
-    return {
+    return withLearnV2ConceptScoring({
       ...card,
       status: "conflict",
       counterevidence: conflicts.flatMap((other) => other.evidenceIds.map((evidenceId) => ({
         evidenceId,
         reason: `Potential conflict with ${other.id}: ${other.canonicalBehavior}`
       })))
-    };
+    });
   });
 }
 
@@ -114,4 +116,3 @@ function pathToGlob(file: string): string {
 function commandSnippets(statement: string): string[] {
   return [...statement.matchAll(/`([^`]+)`/g)].map((match) => match[1]!).slice(0, 6);
 }
-

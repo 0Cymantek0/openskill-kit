@@ -8,6 +8,7 @@ export * from "./structural-diff.js";
 export * from "./compress.js";
 export * from "./episodes.js";
 export * from "./extract.js";
+export * from "./scoring.js";
 export * from "./concepts.js";
 export * from "./review.js";
 export * from "./compile.js";

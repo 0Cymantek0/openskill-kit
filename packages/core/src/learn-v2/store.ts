@@ -7,6 +7,7 @@ import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowNode } from "../w
 import { readWorkflowGraph, writeWorkflowGraph } from "../workflows/store.js";
 import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
+import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring } from "./scoring.js";
 import { LearnV2ConceptCardSchema, type LearnV2ConceptCard } from "./schemas.js";
 import { learnV2NormalizeStatement, learnV2ShortHash, learnV2Title } from "./utils.js";
 
@@ -166,6 +167,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
           ],
           lifecycle: { ...next.lifecycle, updatedAt: now.toISOString() }
         }, modifiedIds);
+        next = withLearnV2ConceptScoring(next);
       }
       return LearnV2ConceptCardSchema.parse(next);
     });
@@ -256,7 +258,7 @@ function mergeConceptCards(existing: LearnV2ConceptCard[], incoming: LearnV2Conc
   const byId = new Map(existing.map((card) => [card.id, card]));
   for (const card of incoming) {
     const previous = byId.get(card.id);
-    byId.set(card.id, previous ? {
+    byId.set(card.id, withLearnV2ConceptScoring(previous ? {
       ...card,
       status: previous.status,
       counterevidence: previous.counterevidence.length ? previous.counterevidence : card.counterevidence,
@@ -267,7 +269,7 @@ function mergeConceptCards(existing: LearnV2ConceptCard[], incoming: LearnV2Conc
         supersedes: previous.lifecycle.supersedes,
         supersededBy: previous.lifecycle.supersededBy
       }
-    } : card);
+    } : card));
   }
   return sortConceptCards([...byId.values()]);
 }
@@ -294,7 +296,7 @@ export function applyLearnV2AutoPolicies(
     if (!isAssistantOnlyLike(card)) continue;
     const successor = values().find((candidate) => candidate.id !== card.id && isStrongManualLikeSuccessor(card, candidate, config));
     if (!successor) continue;
-    byId.set(card.id, LearnV2ConceptCardSchema.parse({
+    byId.set(card.id, LearnV2ConceptCardSchema.parse(withLearnV2ConceptScoring({
       ...card,
       status: "superseded",
       counterevidence: [...card.counterevidence, {
@@ -302,7 +304,7 @@ export function applyLearnV2AutoPolicies(
         reason: `Auto-superseded weak assistant-only-like candidate by stronger reviewed evidence candidate ${successor.id}.`
       }],
       lifecycle: { ...card.lifecycle, updatedAt: now.toISOString(), supersededBy: successor.id }
-    }));
+    })));
     byId.set(successor.id, LearnV2ConceptCardSchema.parse({
       ...successor,
       lifecycle: { ...successor.lifecycle, updatedAt: now.toISOString(), supersedes: [...new Set([...successor.lifecycle.supersedes, card.id])] }
@@ -455,8 +457,14 @@ function rebuildConceptFromAtoms(input: {
   const evidenceIds = [...new Set(input.atoms.flatMap((atom) => atom.evidenceIds))];
   const rawRefs = [...new Set(input.atoms.flatMap((atom) => atom.rawRefs))];
   const canonicalBehavior = learnV2NormalizeStatement(input.canonicalBehavior ?? input.base.canonicalBehavior ?? first.statement);
-  const confidence = Math.min(0.95, Math.max(...input.atoms.map((atom) => atom.confidence)) + Math.min(0.12, (input.atoms.length - 1) * 0.03));
-  const durability = Math.min(0.95, 0.45 + Math.min(0.25, evidenceIds.length * 0.03) + Math.min(0.15, rawRefs.length * 0.05) + (input.atoms.every((atom) => atom.risk === "low") ? 0.08 : 0));
+  const risk = input.atoms.some((atom) => atom.risk === "high") ? "high" : input.atoms.some((atom) => atom.risk === "medium") ? "medium" : "low";
+  const scoring = calculateLearnV2ConceptScoring({
+    atoms: input.atoms,
+    evidenceIds,
+    rawRefs,
+    risk,
+    counterevidenceCount: input.counterevidence.length
+  });
   return {
     ...input.base,
     title: input.title ?? learnV2Title(canonicalBehavior),
@@ -474,10 +482,11 @@ function rebuildConceptFromAtoms(input: {
       pathGlobs: paths.map(pathToGlob),
       commands: input.atoms.some((atom) => atom.kind === "command-policy") ? [...new Set(input.atoms.flatMap((atom) => commandSnippets(atom.statement)))] : input.base.activation.commands
     },
-    confidence: Number(confidence.toFixed(2)),
-    durability: Number(durability.toFixed(2)),
-    sourceReliability: Number((input.atoms.reduce((sum, atom) => sum + atom.sourceReliability, 0) / input.atoms.length).toFixed(2)),
-    risk: input.atoms.some((atom) => atom.risk === "high") ? "high" : input.atoms.some((atom) => atom.risk === "medium") ? "medium" : "low",
+    confidence: scoring.confidence,
+    durability: scoring.durability,
+    sourceReliability: scoring.sourceReliability,
+    scoring,
+    risk,
     evidenceIds,
     rawRefs,
     atoms: input.atoms,

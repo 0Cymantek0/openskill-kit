@@ -610,6 +610,38 @@ describe("learn-v2 substrate", () => {
     expect(supersedeReview.messages.join("\n")).toContain("superseded by");
   });
 
+  it("persists concept scoring breakdowns and penalizes counterevidence", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_scoring");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Prefer focused parser tests for packages/core/src/parser.ts."
+    ).map((item) => ({ ...item, paths: ["packages/core/src/parser.ts"] }));
+    const [concept] = mergeLearnV2ConceptCards(extractLearnV2BehaviorAtoms(reconstructLearnV2Episodes(evidence)).atoms, new Date("2026-06-30T00:00:00Z"));
+    await writeLearnV2ConceptStore(root, [concept!], new Date("2026-06-30T00:01:00Z"));
+    const initial = await readLearnV2ConceptStore(root);
+    const stored = initial.cards[0]!;
+    expect(stored.scoring?.schemaVersion).toBe("openskill-kit.learn-v2.concept-scoring.v1");
+    expect(stored.scoring?.reasons.join(",")).toContain("max-atom-confidence:");
+    expect(stored.scoring?.penalties).toHaveLength(0);
+
+    const reviewed = await applyLearnV2ConceptReview(root, {
+      addCounterevidence: [{
+        id: stored.id,
+        evidenceId: stored.evidenceIds[0]!,
+        reason: "Reviewer marked this concept too broad for automatic use."
+      }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+    const rescored = reviewed.store.cards.find((card) => card.id === stored.id)!;
+    expect(rescored.status).toBe("conflict");
+    expect(rescored.scoring?.counterevidenceCount).toBe(1);
+    expect(rescored.scoring?.penalties.join(",")).toContain("counterevidence:");
+    expect(rescored.confidence).toBeLessThan(stored.confidence);
+  });
+
   it("activates reviewed concepts deterministically and records hashed outcome telemetry", async () => {
     const root = await tempProject();
     const transcript = path.join(root, "session.md");
