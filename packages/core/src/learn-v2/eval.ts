@@ -22,6 +22,19 @@ export interface LearnV2EvalOptions {
   goldensPath?: string;
 }
 
+export interface LearnV2CounterfactualTraceEvalCase {
+  schemaVersion: "openskill-kit.counterfactual-trace-eval-case.v1";
+  id: string;
+  conceptId: string;
+  sourceEpisodeId?: string;
+  taskPrompt: string;
+  paths: string[];
+  commands: string[];
+  taskTypes: string[];
+  expectedBehavior: string;
+  negativeSignals: string[];
+}
+
 export async function runLearnV2Eval(
   rootInput: string,
   episodes: LearnV2TaskEpisode[],
@@ -33,8 +46,10 @@ export async function runLearnV2Eval(
   const runDir = path.join(root, ".openskill-kit", "learn-v2", "evals", now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z"));
   const json = path.join(runDir, "learn-v2-eval.json");
   const markdown = path.join(runDir, "learn-v2-eval.md");
+  const counterfactualCasesPath = path.join(runDir, "counterfactual-trace-cases.json");
   const leakIssues = leakIssuesForConcepts(concepts);
   const goldens = options.goldensPath ? await loadLearnV2ExtractionGoldens(root, options.goldensPath) : [];
+  const counterfactualCases = buildCounterfactualTraceCases(episodes, concepts);
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
   const results = [
@@ -66,12 +81,14 @@ export async function runLearnV2Eval(
       }]
     },
     evaluateActivationReplay(episodes, concepts),
+    evaluateCounterfactualTraceCases(concepts, counterfactualCases),
     ...goldens.map((golden) => evaluateGolden(golden, episodes, concepts))
   ];
   const report = LearnV2EvalReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.eval-report.v1",
     status: results.every((result) => result.status === "pass") ? "pass" : "fail",
     extractionGoldenCount: goldens.length,
+    counterfactualTraceCaseCount: counterfactualCases.length,
     replayEpisodeCount: episodes.length,
     leakCheck: {
       status: leakIssues.length ? "fail" : "pass",
@@ -83,7 +100,12 @@ export async function runLearnV2Eval(
       compressionRatio: rawChars ? Number(Math.min(1, compressedChars / rawChars).toFixed(3)) : 1
     },
     results,
-    artifacts: { json, markdown }
+    artifacts: { json, markdown, counterfactualCases: counterfactualCasesPath }
+  });
+  await writeJsonAtomic(counterfactualCasesPath, {
+    schemaVersion: "openskill-kit.counterfactual-trace-eval-cases.v1",
+    generatedAt: now.toISOString(),
+    cases: counterfactualCases
   });
   await writeJsonAtomic(json, report);
   await fs.writeFile(markdown, renderLearnV2Eval(report), "utf8");
@@ -147,6 +169,90 @@ function evaluateGolden(golden: LearnV2ExtractionGoldenScenario, episodes: Learn
     id: `golden:${golden.id}`,
     status: checks.every((item) => item.status === "pass") ? "pass" : "fail",
     checks
+  };
+}
+
+function buildCounterfactualTraceCases(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2CounterfactualTraceEvalCase[] {
+  return concepts
+    .filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded")
+    .map((concept) => {
+      const episode = episodes.find((item) => item.evidenceIds.some((id) => concept.evidenceIds.includes(id)));
+      const promptParts = [
+        ...concept.scope.taskTypes,
+        ...concept.activation.phrases.slice(0, 6),
+        concept.title
+      ].filter(Boolean);
+      return {
+        schemaVersion: "openskill-kit.counterfactual-trace-eval-case.v1" as const,
+        id: `counterfactual_${concept.id}`,
+        conceptId: concept.id,
+        sourceEpisodeId: episode?.id,
+        taskPrompt: promptParts.join(" "),
+        paths: concept.scope.paths,
+        commands: concept.activation.commands,
+        taskTypes: concept.scope.taskTypes,
+        expectedBehavior: concept.canonicalBehavior,
+        negativeSignals: [],
+        // Negative triggers are intentionally tested separately by passing each one as a suppression signal.
+      };
+    });
+}
+
+function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases: LearnV2CounterfactualTraceEvalCase[]): LearnV2EvalReport["results"][number] {
+  const entries = concepts
+    .filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded")
+    .map((concept) => ({
+      conceptId: concept.id,
+      status: concept.status,
+      title: concept.title,
+      phrases: concept.activation.phrases,
+      pathGlobs: concept.activation.pathGlobs,
+      commands: concept.activation.commands,
+      taskTypes: concept.scope.taskTypes,
+      negativeTriggers: concept.scope.negativeTriggers,
+      confidence: concept.confidence,
+      risk: concept.risk
+    }));
+  const misses: string[] = [];
+  const suppressionMisses: string[] = [];
+  for (const item of cases) {
+    const ranked = scoreLearnV2ActivationEntries(entries, {
+      includeCandidates: true,
+      query: item.taskPrompt,
+      paths: item.paths,
+      commands: item.commands,
+      taskTypes: item.taskTypes
+    });
+    if (!ranked.slice(0, 5).some((match) => match.conceptId === item.conceptId && match.score > 0)) misses.push(item.conceptId);
+    const concept = concepts.find((card) => card.id === item.conceptId);
+    for (const trigger of concept?.scope.negativeTriggers ?? []) {
+      const suppressed = scoreLearnV2ActivationEntries(entries, {
+        includeCandidates: true,
+        query: item.taskPrompt,
+        paths: item.paths,
+        commands: item.commands,
+        taskTypes: item.taskTypes,
+        negativeSignals: [trigger]
+      });
+      if (!suppressed.some((match) => match.conceptId === item.conceptId && match.suppressed)) suppressionMisses.push(`${item.conceptId}:${trigger}`);
+    }
+  }
+  const pass = misses.length === 0 && suppressionMisses.length === 0;
+  return {
+    id: "counterfactual-trace-eval",
+    status: pass ? "pass" : "fail",
+    checks: [
+      check(
+        "expected-concept-activation",
+        misses.length === 0,
+        cases.length ? `${cases.length - misses.length}/${cases.length} counterfactual case(s) activated expected concept${misses.length ? `; misses: ${misses.slice(0, 6).join(", ")}` : ""}` : "no counterfactual cases"
+      ),
+      check(
+        "negative-trigger-suppression",
+        suppressionMisses.length === 0,
+        suppressionMisses.length ? `suppression misses: ${suppressionMisses.slice(0, 6).join(", ")}` : "negative triggers suppress matching concepts"
+      )
+    ]
   };
 }
 
@@ -222,6 +328,7 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     `Status: ${report.status}`,
     `Episodes replayed: ${report.replayEpisodeCount}`,
     `Extraction goldens: ${report.extractionGoldenCount}`,
+    `Counterfactual trace cases: ${report.counterfactualTraceCaseCount}`,
     `Leak check: ${report.leakCheck.status}`,
     `Compression ratio: ${report.tokenBudget.compressionRatio}`,
     "",

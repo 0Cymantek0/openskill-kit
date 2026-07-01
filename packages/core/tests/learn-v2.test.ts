@@ -250,7 +250,13 @@ describe("learn-v2 substrate", () => {
     });
     expect(report.status).toBe("pass");
     expect(report.extractionGoldenCount).toBe(1);
+    expect(report.counterfactualTraceCaseCount).toBeGreaterThanOrEqual(1);
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
+    expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
+    const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
+    expect(counterfactualCases).toContain("openskill-kit.counterfactual-trace-eval-case.v1");
+    expect(counterfactualCases).not.toContain("raw_");
+    expect(counterfactualCases).not.toContain(root);
   });
 
   it("compiles active concepts but excludes candidates from compatibility outputs", async () => {
