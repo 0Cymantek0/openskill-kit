@@ -93,9 +93,9 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
       schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
       generatedAt: now.toISOString(),
       episodeId: episode.id,
-      promptPath,
-      bundlePath,
-      expectedOutputPath,
+      promptPath: learnV2ProjectRelativePath(root, promptPath),
+      bundlePath: learnV2ProjectRelativePath(root, bundlePath),
+      expectedOutputPath: learnV2ProjectRelativePath(root, expectedOutputPath),
       outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
       evidenceIds: episode.evidenceIds,
       rawRefsIncluded: false,
@@ -180,6 +180,11 @@ export function learnV2EpisodeStorePath(root: string): string {
 
 export function learnV2ModelRequestsRoot(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "model-requests");
+}
+
+function learnV2ProjectRelativePath(root: string, file: string): string {
+  const relative = path.relative(root, file).replace(/\\/g, "/");
+  return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : file;
 }
 
 function safeParseModelOutput(

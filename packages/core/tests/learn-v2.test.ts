@@ -381,9 +381,10 @@ describe("learn-v2 substrate", () => {
     expect(bundle).not.toContain("raw_");
     expect(manifest.schemaVersion).toBe("openskill-kit.learn-v2.model-request-manifest.v1");
     expect(manifest.episodeId).toBe(request.episodeId);
-    expect(manifest.expectedOutputPath).toBe(request.expectedOutputPath);
+    expect(path.resolve(root, manifest.expectedOutputPath)).toBe(request.expectedOutputPath);
     expect(manifest.rawRefsIncluded).toBe(false);
     expect(JSON.stringify(manifest)).not.toContain("raw_");
+    expect(JSON.stringify(manifest)).not.toContain(root);
 
     const [evidenceId] = learned.learnV2.episodes[0]!.evidenceIds;
     const outputPath = request.expectedOutputPath;
