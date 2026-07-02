@@ -54,6 +54,17 @@ describe("raw local learning", () => {
       currentRun: preview.digest.currentRunConceptCards,
       mergedForArtifacts: preview.digest.mergedConceptCards
     });
+    expect(preview.sources[0]!.learnV2.adapterId).toMatch(/^(opencode|codex)$/);
+    expect(preview.sources[0]!.learnV2.adapterLabel).toMatch(/OpenCode|Codex/);
+    expect(preview.sources[0]!.learnV2.surfacePolicy).toMatchObject({
+      selection: "explicit-only",
+      read: "raw-local-file",
+      learnerInput: "raw-local-in-memory",
+      persistence: "preview-artifacts-or-apply-vault",
+      modelBoundary: "declassified-only",
+      rawRefsExportable: false,
+      sensitivity: "high"
+    });
     expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
@@ -118,6 +129,8 @@ describe("raw local learning", () => {
     const analysisFrame = await readFile(applied.sources[0]!.analysisFramePath, "utf8");
     expect(analysisFrame).not.toContain(root);
     expect(analysisFrame).not.toContain("sk-live-secret");
+    expect(analysisFrame).toContain("\"surfaceAdapter\"");
+    expect(analysisFrame).toContain("\"modelBoundary\": \"declassified-only\"");
     const episodeStore = await readFile(applied.artifacts.learnV2EpisodeStorePath, "utf8");
     expect(episodeStore).not.toContain(root);
     expect(episodeStore).not.toContain("sk-live-secret");

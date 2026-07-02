@@ -7,7 +7,7 @@ import { runLifecycleOnce, type LifecycleRunnerResult } from "../lifecycle/runne
 import { buildReviewQueue } from "../preferences/proposals.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { ensureLearnV2ProjectRelevanceCalibration, scoreLearnV2ProjectRelevance } from "./relevance.js";
-import { readLearnV2Surface } from "./surfaces.js";
+import { readLearnV2Surface, type LearnV2SurfaceAdapterPolicy } from "./surfaces.js";
 import { storeLearnV2RawEvidence, learnV2VaultRoot } from "./vault.js";
 import { LearnV2ConceptCardSchema, LearnV2RawEvidenceRecordSchema, type LearnV2BehaviorAtom, type LearnV2ConceptCard, type LearnV2NormalizedEvidence, type LearnV2RawEvidenceRecord, type LearnV2TaskEpisode } from "./schemas.js";
 import { normalizeLearnV2Evidence } from "./normalize.js";
@@ -81,8 +81,10 @@ interface LearnV2SourceDigestCompat {
   learnV2: {
     rawRef: string;
     adapterId: string;
+    adapterLabel?: string;
     detectedFormat: string;
     contentKind: string;
+    surfacePolicy?: LearnV2SurfaceAdapterPolicy;
     v2AnalysisPath: string;
     v2RawVaultDir: string;
   };
@@ -259,6 +261,13 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       sourceHash: rawRecord.source.contentHash,
       sourcePath: learnV2SafeLocalPath(sourcePath, root),
       projectRelevance: relevance,
+      surfaceAdapter: {
+        id: surface.adapterId,
+        label: surface.adapterLabel,
+        contentKind: surface.contentKind,
+        detectedFormat: surface.detectedFormat,
+        policy: surface.policy
+      },
       modelMode,
       learningInputBoundary,
       promptSafe: true,
@@ -302,8 +311,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2: {
         rawRef: rawRecord.id,
         adapterId: surface.adapterId,
+        adapterLabel: surface.adapterLabel,
         detectedFormat: surface.detectedFormat,
         contentKind: surface.contentKind,
+        surfacePolicy: surface.policy,
         v2AnalysisPath,
         v2RawVaultDir: learnV2VaultRoot(root)
       }

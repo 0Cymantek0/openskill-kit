@@ -75,6 +75,7 @@ openskill-kit osk review --write
 - Signals extracted.
 - Candidate preferences and workflows.
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
+- Raw local source entries include adapter label, detected format/content kind, explicit-only raw-local read policy, sensitivity, persistence boundary, and `modelBoundary: "declassified-only"` so CLI/TUI status views can show why a source is safe to inspect without implying raw-to-model dispatch.
 - Learn v2 raw-learning result includes `learningInputBoundary: "raw-local-in-memory-declassified-artifacts"` so callers can distinguish local raw deterministic extraction from declassified persisted/model-request artifacts and future raw-to-model execution.
 - Raw-learning top-level `concepts` remains the legacy current-run projection. The nested `learnV2.concepts` array is the merged concept set used for review, conflict, compile preview, eval, and observability; `digest.currentRunConceptCards`, `digest.mergedConceptCards`, and `learnV2.conceptCounts` make that scope explicit.
 - Learn v2 writes a declassified pipeline observability report with source intake counts, episode confidence/stitching counts, tool compression strategies, patch filter reasons, concept status/risk counts, quality gates, artifact pointers, and next actions.
