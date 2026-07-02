@@ -1345,6 +1345,10 @@ describe("learn-v2 substrate", () => {
     expect(manifest.routingReasons.length).toBeGreaterThan(0);
     expect(manifest.priority).toBeGreaterThan(0);
     expect(path.resolve(root, manifest.expectedOutputPath)).toBe(request.expectedOutputPath);
+    expect(manifest.promptHash).toBe(request.promptHash);
+    expect(manifest.bundleHash).toBe(request.bundleHash);
+    expect(manifest.executionBoundary).toBe("opencode-host-sanitized-only");
+    expect(manifest.opencodeAgentId).toBe("osk-learn-v2-concept-extractor");
     expect(manifest.rawRefsIncluded).toBe(false);
     expect(JSON.stringify(manifest)).not.toContain("raw_");
     expect(JSON.stringify(manifest)).not.toContain(root);
@@ -1422,25 +1426,42 @@ describe("learn-v2 substrate", () => {
       }],
       rejected: []
     }), "utf8");
+    const tamperedBundleDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_tampered_bundle");
+    const tamperedBundleOutputPath = path.join(tamperedBundleDir, "response.json");
+    await mkdir(tamperedBundleDir, { recursive: true });
+    await writeFile(path.join(tamperedBundleDir, "concept-extraction-prompt.md"), prompt, "utf8");
+    await writeFile(path.join(tamperedBundleDir, "episode-learning-bundle.json"), `${bundle}\n{"tampered":true}\n`, "utf8");
+    await writeFile(path.join(tamperedBundleDir, "request-manifest.json"), JSON.stringify({
+      ...manifest,
+      episodeId: request.episodeId,
+      promptPath: path.join(tamperedBundleDir, "concept-extraction-prompt.md"),
+      bundlePath: path.join(tamperedBundleDir, "episode-learning-bundle.json"),
+      expectedOutputPath: tamperedBundleOutputPath,
+      evidenceIds: [evidenceId]
+    }), "utf8");
+    await writeFile(tamperedBundleOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "For parser changes, prefer focused parser regression tests before broad suites.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [evidenceId],
+        confidence: 0.72
+      }],
+      rejected: []
+    }), "utf8");
     const staleDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_stale");
     const staleOutputPath = path.join(staleDir, "response.json");
     await mkdir(staleDir, { recursive: true });
     await writeFile(path.join(staleDir, "concept-extraction-prompt.md"), prompt, "utf8");
     await writeFile(path.join(staleDir, "episode-learning-bundle.json"), bundle, "utf8");
     await writeFile(path.join(staleDir, "request-manifest.json"), JSON.stringify({
-      schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
-      generatedAt: "2026-06-30T00:01:00.000Z",
+      ...manifest,
       episodeId: "episode_missing",
-      modelRole: "concept-extractor",
-      routingPolicy: "learn-v2-roi-v1",
-      routingReasons: ["durable-language-signal"],
-      priority: 0.7,
       promptPath: path.join(staleDir, "concept-extraction-prompt.md"),
       bundlePath: path.join(staleDir, "episode-learning-bundle.json"),
       expectedOutputPath: staleOutputPath,
-      outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
-      evidenceIds: [evidenceId],
-      rawRefsIncluded: false
+      evidenceIds: [evidenceId]
     }), "utf8");
     await writeFile(staleOutputPath, JSON.stringify({
       schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
@@ -1473,6 +1494,7 @@ describe("learn-v2 substrate", () => {
       badOutputPath,
       tamperedPromptOutputPath,
       tamperedMissingOutputPath,
+      tamperedBundleOutputPath,
       staleOutputPath,
       malformedOutputPath,
       bareOutputPath
@@ -1484,6 +1506,7 @@ describe("learn-v2 substrate", () => {
       "unexpected-output-path",
       "unexpected-request-file-path",
       "missing-request-file",
+      "request-file-hash-mismatch",
       "stale-request-manifest",
       "invalid-json-or-schema",
       "missing-request-manifest"

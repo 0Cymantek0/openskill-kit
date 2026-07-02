@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readProjectConfig } from "../events/store.js";
-import { writeJsonAtomic } from "../storage/atomic.js";
+import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { writeLearnV2ConflictLedger } from "./conflicts.js";
 import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
@@ -17,6 +17,7 @@ import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { type LearnV2BehaviorAtom, type LearnV2TaskEpisode } from "./schemas.js";
+import { learnV2Hash } from "./utils.js";
 
 export interface LearnV2EpisodeStore {
   schemaVersion: "openskill-kit.learn-v2.episode-store.v1";
@@ -28,6 +29,8 @@ export interface LearnV2ModelRequest {
   episodeId: string;
   bundlePath: string;
   promptPath: string;
+  promptHash: string;
+  bundleHash: string;
   manifestPath: string;
   expectedOutputPath: string;
   outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1";
@@ -74,6 +77,8 @@ interface LearnV2ModelRequestManifest {
   priority: number;
   promptPath: string;
   bundlePath: string;
+  promptHash: string;
+  bundleHash: string;
   expectedOutputPath: string;
   outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1";
   opencodeAgentId: string;
@@ -134,8 +139,11 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
     const promptPath = path.join(dir, "concept-extraction-prompt.md");
     const manifestPath = path.join(dir, "request-manifest.json");
     const expectedOutputPath = path.join(dir, "response.json");
-    await writeJsonAtomic(bundlePath, bundle);
-    await fs.writeFile(promptPath, prompt, "utf8");
+    const bundleText = `${JSON.stringify(bundle, null, 2)}\n`;
+    const promptHash = learnV2Hash(prompt);
+    const bundleHash = learnV2Hash(bundleText);
+    await writeFileAtomic(bundlePath, bundleText);
+    await writeFileAtomic(promptPath, prompt);
     await writeJsonAtomic(manifestPath, {
       schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
       generatedAt: now.toISOString(),
@@ -146,6 +154,8 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
       priority: routing.priority,
       promptPath: learnV2ProjectRelativePath(root, promptPath),
       bundlePath: learnV2ProjectRelativePath(root, bundlePath),
+      promptHash,
+      bundleHash,
       expectedOutputPath: learnV2ProjectRelativePath(root, expectedOutputPath),
       outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
       opencodeAgentId: conceptExtractorAgent.opencodeAgentId,
@@ -166,6 +176,8 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
       episodeId: episode.id,
       bundlePath,
       promptPath,
+      promptHash,
+      bundleHash,
       manifestPath,
       expectedOutputPath,
       outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
@@ -406,8 +418,15 @@ function parseModelRequestManifest(text: string, manifestPath: string): LearnV2M
     typeof value.priority !== "number" ||
     typeof value.promptPath !== "string" ||
     typeof value.bundlePath !== "string" ||
+    typeof value.promptHash !== "string" ||
+    typeof value.bundleHash !== "string" ||
     typeof value.expectedOutputPath !== "string" ||
     value.outputSchema !== "openskill-kit.learn-v2.llm-concept-extraction-output.v1" ||
+    value.opencodeAgentId !== "osk-learn-v2-concept-extractor" ||
+    typeof value.agentFile !== "string" ||
+    typeof value.modelRoutingArtifactPath !== "string" ||
+    typeof value.opencodeAgentIndexPath !== "string" ||
+    value.executionBoundary !== "opencode-host-sanitized-only" ||
     !Array.isArray(value.evidenceIds) ||
     value.evidenceIds.some((item) => typeof item !== "string") ||
     value.rawRefsIncluded !== false
@@ -452,6 +471,25 @@ async function validateModelRequestManifestFiles(
         id: "file",
         reason: "missing-request-file",
         detail: `${item.label} is missing from the request directory.`
+      });
+      return false;
+    }
+  }
+  const [promptText, bundleText] = await Promise.all([
+    fs.readFile(promptPath, "utf8"),
+    fs.readFile(bundlePath, "utf8")
+  ]);
+  const actualHashes = [
+    { label: "promptHash", actual: learnV2Hash(promptText), expected: manifest.promptHash },
+    { label: "bundleHash", actual: learnV2Hash(bundleText), expected: manifest.bundleHash }
+  ];
+  for (const item of actualHashes) {
+    if (item.actual !== item.expected) {
+      rejected.push({
+        outputPath,
+        id: "file",
+        reason: "request-file-hash-mismatch",
+        detail: `${item.label} does not match the request manifest.`
       });
       return false;
     }
