@@ -7,6 +7,7 @@ import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowNode } from "../w
 import { readWorkflowGraph, writeWorkflowGraph } from "../workflows/store.js";
 import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
+import { findLearnV2ActivationGateFailures } from "./concept-quality-gates.js";
 import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring } from "./scoring.js";
 import { LearnV2ConceptCardSchema, type LearnV2ConceptCard } from "./schemas.js";
 import { learnV2NormalizeStatement, learnV2ShortHash, learnV2Title } from "./utils.js";
@@ -181,6 +182,13 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       updatedAt: now.toISOString(),
       cards: sortConceptCards(policyApplied)
     };
+    const activatedModifiedIds = nextStore.cards
+      .filter((card) => modifiedIds.has(card.id) && (card.status === "active" || card.status === "locked"))
+      .map((card) => card.id);
+    const activationGateFailures = findLearnV2ActivationGateFailures(nextStore.cards, activatedModifiedIds);
+    if (activationGateFailures.length) {
+      throw new Error(renderLearnV2ActivationGateError(activationGateFailures));
+    }
     await writeJsonAtomic(learnV2ConceptStorePath(root), nextStore);
     const activationIndex = await writeLearnV2ActivationIndex(root, nextStore, now);
     let preferenceGraphPath: string | undefined;
@@ -209,6 +217,11 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       store: nextStore
     };
   });
+}
+
+function renderLearnV2ActivationGateError(failures: ReturnType<typeof findLearnV2ActivationGateFailures>): string {
+  const failedChecks = failures.map((failure) => `${failure.name}(${failure.conceptIds.join(",")})`).join("; ");
+  return `Learn-v2 activation gate blocked concept review: ${failedChecks}. Narrow scope, lower confidence, add evidence/counterevidence handling, add activation triggers, or leave the concept as candidate.`;
 }
 
 export async function writeLearnV2ActivationIndex(rootInput: string, store: LearnV2ConceptStore, now = new Date()): Promise<LearnV2ActivationIndex> {

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { LearnV2EvalReportSchema, type LearnV2ConceptCard, type LearnV2EvalReport, type LearnV2TaskEpisode } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { scoreLearnV2ActivationEntries } from "./activation.js";
+import { evaluateLearnV2ConceptQualityGates } from "./concept-quality-gates.js";
 
 export const LearnV2ExtractionGoldenScenarioSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.extraction-golden.v1"),
@@ -80,7 +81,7 @@ export async function runLearnV2Eval(
         details: leakIssues.length ? leakIssues.join("; ") : "no raw secret/path patterns found in concept output"
       }]
     },
-    evaluateConceptQualityGates(concepts),
+    evaluateLearnV2ConceptQualityGates(concepts),
     evaluateActivationReplay(episodes, concepts),
     evaluateCounterfactualTraceCases(concepts, counterfactualCases),
     ...goldens.map((golden) => evaluateGolden(golden, episodes, concepts))
@@ -306,100 +307,6 @@ function evaluateActivationReplay(episodes: LearnV2TaskEpisode[], concepts: Lear
       pass,
       replayable.length ? `${replayable.length - misses.length}/${replayable.length} concept(s) retrieved from originating episode context${misses.length ? `; misses: ${misses.slice(0, 6).join(", ")}` : ""}` : "no replayable concepts"
     )]
-  };
-}
-
-function evaluateConceptQualityGates(concepts: LearnV2ConceptCard[]): LearnV2EvalReport["results"][number] {
-  const reviewable = concepts.filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded");
-  const missingActivation = reviewable
-    .filter((concept) => !concept.activation.phrases.length && !concept.activation.pathGlobs.length && !concept.activation.commands.length)
-    .map((concept) => concept.id);
-  const overbroadWeak = reviewable
-    .filter((concept) => concept.scope.level === "project" && !concept.scope.paths.length && !concept.scope.taskTypes.length && concept.evidenceIds.length < 2 && concept.status !== "locked")
-    .map((concept) => concept.id);
-  const unsupportedHighConfidence = reviewable
-    .filter((concept) => concept.evidenceIds.length < 2 && concept.confidence > 0.85)
-    .map((concept) => concept.id);
-  const commandPoliciesWithoutCommands = reviewable
-    .filter((concept) => concept.atoms.some((atom) => atom.kind === "command-policy") && !concept.activation.commands.length)
-    .map((concept) => concept.id);
-  const activeLowReliability = reviewable
-    .filter((concept) => (concept.status === "active" || concept.status === "locked") && concept.sourceReliability < 0.45)
-    .map((concept) => concept.id);
-  const activeLowDurability = reviewable
-    .filter((concept) => (concept.status === "active" || concept.status === "locked") && concept.durability < 0.35)
-    .map((concept) => concept.id);
-  const activeWithCounterevidence = reviewable
-    .filter((concept) => (concept.status === "active" || concept.status === "locked") && concept.counterevidence.length > 0)
-    .map((concept) => concept.id);
-  const riskyWithoutSuppression = reviewable
-    .filter((concept) => (concept.risk === "high" || concept.atoms.some((atom) => atom.polarity === "negative")) && !concept.scope.negativeTriggers.length)
-    .map((concept) => concept.id);
-  const confidenceOverAtomCap = reviewable
-    .filter((concept) => {
-      const cap = Math.max(...concept.atoms.map((atom) => atom.confidenceCap), 0);
-      return concept.confidence > cap + 0.01;
-    })
-    .map((concept) => concept.id);
-  const rawExportable = reviewable
-    .filter((concept) => concept.privacy.rawRefsExportable !== false || concept.privacy.declassificationRequired !== true)
-    .map((concept) => concept.id);
-  const checks = [
-    check(
-      "activation-surface",
-      missingActivation.length === 0,
-      missingActivation.length ? `missing activation on ${missingActivation.slice(0, 6).join(", ")}` : "all reviewable concepts have activation phrases, paths, or commands"
-    ),
-    check(
-      "overbroad-weak-evidence",
-      overbroadWeak.length === 0,
-      overbroadWeak.length ? `project-scope concepts need stronger evidence or narrower scope: ${overbroadWeak.slice(0, 6).join(", ")}` : "no unlocked project-scope concept relies on single evidence"
-    ),
-    check(
-      "single-evidence-confidence-cap",
-      unsupportedHighConfidence.length === 0,
-      unsupportedHighConfidence.length ? `single-evidence concepts over confidence cap: ${unsupportedHighConfidence.slice(0, 6).join(", ")}` : "single-evidence concepts stay below high-confidence cap"
-    ),
-    check(
-      "command-policy-has-command",
-      commandPoliciesWithoutCommands.length === 0,
-      commandPoliciesWithoutCommands.length ? `command-policy concepts without extracted commands: ${commandPoliciesWithoutCommands.slice(0, 6).join(", ")}` : "command policies expose concrete command activation"
-    ),
-    check(
-      "active-source-reliability",
-      activeLowReliability.length === 0,
-      activeLowReliability.length ? `active concepts with weak source reliability: ${activeLowReliability.slice(0, 6).join(", ")}` : "active concepts meet source reliability floor"
-    ),
-    check(
-      "active-durability",
-      activeLowDurability.length === 0,
-      activeLowDurability.length ? `active concepts with weak durability: ${activeLowDurability.slice(0, 6).join(", ")}` : "active concepts meet durability floor"
-    ),
-    check(
-      "active-counterevidence",
-      activeWithCounterevidence.length === 0,
-      activeWithCounterevidence.length ? `active concepts still have counterevidence: ${activeWithCounterevidence.slice(0, 6).join(", ")}` : "counterevidence blocks active/locked concepts"
-    ),
-    check(
-      "risky-suppression",
-      riskyWithoutSuppression.length === 0,
-      riskyWithoutSuppression.length ? `risky/negative concepts missing suppression triggers: ${riskyWithoutSuppression.slice(0, 6).join(", ")}` : "risky or negative concepts expose suppression triggers"
-    ),
-    check(
-      "confidence-cap",
-      confidenceOverAtomCap.length === 0,
-      confidenceOverAtomCap.length ? `concept confidence exceeds atom cap: ${confidenceOverAtomCap.slice(0, 6).join(", ")}` : "concept confidence stays within atom confidence caps"
-    ),
-    check(
-      "privacy-boundary",
-      rawExportable.length === 0,
-      rawExportable.length ? `concept privacy boundary broken: ${rawExportable.slice(0, 6).join(", ")}` : "raw refs remain non-exportable and declassification-required"
-    )
-  ];
-  return {
-    id: "concept-quality-gates",
-    status: checks.every((item) => item.status === "pass") ? "pass" : "fail",
-    checks
   };
 }
 

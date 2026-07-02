@@ -700,6 +700,39 @@ describe("learn-v2 substrate", () => {
     expect(markdown).not.toContain("raw_ev_broad_quality");
   });
 
+  it("blocks review activation when concept quality gates fail", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:02:00Z");
+    const [card] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("bad_activation_gate", "Always apply this behavior everywhere.", "positive"),
+      scope: {
+        level: "project",
+        paths: [],
+        taskTypes: []
+      },
+      evidenceIds: ["ev_bad_activation_gate"],
+      rawRefs: ["raw_bad_activation_gate"]
+    }], now);
+    const badConcept = {
+      ...card!,
+      status: "candidate" as const,
+      activation: {
+        phrases: [],
+        pathGlobs: [],
+        commands: []
+      }
+    };
+    await writeLearnV2ConceptStore(root, [badConcept], new Date("2026-06-30T00:03:00Z"));
+
+    await expect(applyLearnV2ConceptReview(root, {
+      accept: [badConcept.id],
+      now: new Date("2026-06-30T00:04:00Z")
+    })).rejects.toThrow(/activation gate blocked.*activation-surface/);
+
+    const store = await readLearnV2ConceptStore(root);
+    expect(store.cards.find((item) => item.id === badConcept.id)?.status).toBe("candidate");
+  });
+
   it("compiles active concepts but excludes candidates from compatibility outputs", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_compile");
@@ -1257,10 +1290,10 @@ describe("learn-v2 substrate", () => {
       id: `${base!.id}_bulk_narrow`,
       status: "candidate" as const,
       risk: "low" as const,
-      confidence: 0.91,
+      confidence: 0.84,
       sourceReliability: 0.91,
       scope: { ...base!.scope, level: "path" as const, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] },
-      atoms: base!.atoms.map((atom) => ({ ...atom, risk: "low" as const, confidence: 0.91, sourceReliability: 0.91, scope: { ...atom.scope, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] } }))
+      atoms: base!.atoms.map((atom) => ({ ...atom, risk: "low" as const, confidence: 0.84, sourceReliability: 0.91, scope: { ...atom.scope, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] } }))
     };
     const broadUnsafe = {
       ...narrowSafe,
