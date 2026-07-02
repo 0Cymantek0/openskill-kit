@@ -49,6 +49,13 @@ export interface LearnV2RawVaultMaintenanceResult {
   nextActions: string[];
 }
 
+export interface LearnV2RawEvidencePinSyncResult {
+  pinnedRecordIds: string[];
+  unpinnedRecordIds: string[];
+  missingRawRefs: string[];
+  manifest: LearnV2RawEvidenceManifest;
+}
+
 export interface LearnV2PreviewArtifactSummary {
   root: string;
   previewStoreCount: number;
@@ -59,6 +66,49 @@ export interface LearnV2PreviewArtifactSummary {
   retention: {
     keepLatest: number;
     maxAgeDays: number;
+  };
+}
+
+export async function syncLearnV2RawEvidenceRecordPins(
+  rootInput: string,
+  protectedRawRefsInput: string[],
+  pin: string,
+  now = new Date(),
+  maxHotBytes = 50_000_000
+): Promise<LearnV2RawEvidencePinSyncResult> {
+  const root = path.resolve(rootInput);
+  const config = await readProjectConfig(root);
+  const protectedRawRefs = new Set(protectedRawRefsInput.filter(isSafeRawRefId));
+  const invalidProtectedRefs = protectedRawRefsInput.filter((rawRef) => !isSafeRawRefId(rawRef));
+  const recordsRoot = path.join(learnV2VaultRoot(root), "records");
+  const pinnedRecordIds: string[] = [];
+  const unpinnedRecordIds: string[] = [];
+  const missingRawRefs: string[] = [];
+  const seenRecordIds = new Set<string>();
+  for (const entry of await fs.readdir(recordsRoot, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const recordPath = path.join(recordsRoot, entry.name);
+    const record = LearnV2RawEvidenceRecordSchema.parse(JSON.parse(await fs.readFile(recordPath, "utf8")));
+    seenRecordIds.add(record.id);
+    const protect = protectedRawRefs.has(record.id);
+    if (protect && record.retention.tier === "hot-spool" && !(await rawEvidenceBlobExists(root, record))) {
+      missingRawRefs.push(record.id);
+      continue;
+    }
+    const next = protect
+      ? withRawEvidencePin(record, pin)
+      : withoutRawEvidencePin(record, pin, now);
+    if (next === record) continue;
+    await writeJsonAtomic(recordPath, next);
+    if (protect) pinnedRecordIds.push(record.id);
+    else unpinnedRecordIds.push(record.id);
+  }
+  missingRawRefs.push(...[...protectedRawRefs].filter((rawRef) => !seenRecordIds.has(rawRef)), ...invalidProtectedRefs);
+  return {
+    pinnedRecordIds: pinnedRecordIds.sort(),
+    unpinnedRecordIds: unpinnedRecordIds.sort(),
+    missingRawRefs: [...new Set(missingRawRefs)].sort(),
+    manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now)
   };
 }
 
@@ -309,6 +359,63 @@ function previewTimestampFromFile(file: string): Date | undefined {
   const [, year, month, day, hour, minute, second] = match;
   const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)));
   return Number.isFinite(date.getTime()) ? date : undefined;
+}
+
+function withRawEvidencePin(record: LearnV2RawEvidenceRecord, pin: string): LearnV2RawEvidenceRecord {
+  if (record.retention.tier === "expired") return record;
+  const pinnedBy = [...new Set([...record.retention.pinnedBy, pin])].sort();
+  const alreadyPinnedBy = pinnedBy.length === record.retention.pinnedBy.length && pinnedBy.every((item, index) => item === record.retention.pinnedBy[index]);
+  if (record.retention.tier === "hot-spool") {
+    return LearnV2RawEvidenceRecordSchema.parse({
+      ...record,
+      retention: {
+        ...record.retention,
+        tier: "pinned",
+        pinnedBy,
+        tombstoneReason: undefined,
+        compactedRef: undefined
+      }
+    });
+  }
+  if (alreadyPinnedBy) return record;
+  return LearnV2RawEvidenceRecordSchema.parse({
+    ...record,
+    retention: {
+      ...record.retention,
+      pinnedBy
+    }
+  });
+}
+
+function withoutRawEvidencePin(record: LearnV2RawEvidenceRecord, pin: string, now: Date): LearnV2RawEvidenceRecord {
+  if (!record.retention.pinnedBy.includes(pin)) return record;
+  const pinnedBy = record.retention.pinnedBy.filter((item) => item !== pin).sort();
+  if (record.retention.tier !== "pinned" || pinnedBy.length) {
+    return LearnV2RawEvidenceRecordSchema.parse({
+      ...record,
+      retention: {
+        ...record.retention,
+        pinnedBy
+      }
+    });
+  }
+  return LearnV2RawEvidenceRecordSchema.parse({
+    ...record,
+    retention: {
+      ...record.retention,
+      tier: "hot-spool",
+      pinnedBy,
+      expiresAt: record.retention.expiresAt ?? new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString()
+    }
+  });
+}
+
+function isSafeRawRefId(rawRef: string): boolean {
+  return /^[A-Za-z0-9_.:-]+$/.test(rawRef);
+}
+
+async function rawEvidenceBlobExists(root: string, record: LearnV2RawEvidenceRecord): Promise<boolean> {
+  return fs.stat(path.join(learnV2VaultRoot(root), record.content.blobRef)).then(() => true, () => false);
 }
 
 async function compactLearnV2RawRecord(root: string, config: ProjectConfig, record: LearnV2RawEvidenceRecord, now: Date): Promise<string | undefined> {

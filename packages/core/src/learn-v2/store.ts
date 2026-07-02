@@ -11,6 +11,7 @@ import { findLearnV2ActivationGateFailures } from "./concept-quality-gates.js";
 import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring } from "./scoring.js";
 import { LearnV2ConceptCardSchema, type LearnV2ConceptCard } from "./schemas.js";
 import { learnV2NormalizeStatement, learnV2ShortHash, learnV2Title } from "./utils.js";
+import { syncLearnV2RawEvidenceRecordPins } from "./vault.js";
 
 export interface LearnV2ConceptStore {
   schemaVersion: "openskill-kit.learn-v2.concept-store.v1";
@@ -95,6 +96,7 @@ export async function writeLearnV2ConceptStore(projectRoot: string, cards: Learn
     cards: policyApplied
   };
   await writeJsonAtomic(learnV2ConceptStorePath(root), store);
+  await syncLearnV2ConceptStoreRawPins(root, store.cards, now);
   await writeLearnV2ActivationIndex(root, store, now);
   return store;
 }
@@ -210,6 +212,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       throw new Error(renderLearnV2ActivationGateError(activationGateFailures));
     }
     await writeJsonAtomic(learnV2ConceptStorePath(root), nextStore);
+    await syncLearnV2ConceptStoreRawPins(root, nextStore.cards, now);
     const activationIndex = await writeLearnV2ActivationIndex(root, nextStore, now);
     let preferenceGraphPath: string | undefined;
     let workflowGraphPath: string | undefined;
@@ -524,6 +527,20 @@ function sortConceptCards(cards: LearnV2ConceptCard[]): LearnV2ConceptCard[] {
 
 function isReviewableStatus(status: LearnV2ConceptCard["status"]): boolean {
   return status === "candidate" || status === "staged" || status === "conflict";
+}
+
+async function syncLearnV2ConceptStoreRawPins(root: string, cards: LearnV2ConceptCard[], now: Date): Promise<void> {
+  const rawRefs = new Set<string>();
+  for (const card of cards) {
+    if (!isRetainedConceptStatus(card.status)) continue;
+    for (const rawRef of card.rawRefs) rawRefs.add(rawRef);
+    for (const atom of card.atoms) for (const rawRef of atom.rawRefs) rawRefs.add(rawRef);
+  }
+  await syncLearnV2RawEvidenceRecordPins(root, [...rawRefs], "concept-store", now);
+}
+
+function isRetainedConceptStatus(status: LearnV2ConceptCard["status"]): boolean {
+  return status === "candidate" || status === "staged" || status === "conflict" || status === "active" || status === "locked";
 }
 
 function isAssistantOnlyLike(card: LearnV2ConceptCard): boolean {

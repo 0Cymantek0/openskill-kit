@@ -40,12 +40,14 @@ import {
   writeLearnV2EpisodeStore,
   writeLearnV2ConflictLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
+  storeLearnV2RawEvidence,
   detectLearnV2ConceptDrift,
   runLearnV2Eval,
   scoreLearnV2ProjectRelevance,
   scoreLearnV2ActivationEntries,
   validateLearnV2LlmExtractionProposal,
   readLearnV2ConceptActivationRuns,
+  readProjectConfig,
   type LearnV2BehaviorAtom,
   type LearnV2TaskEpisode,
   type LearnV2RawEvidenceRecord
@@ -1234,11 +1236,26 @@ describe("learn-v2 substrate", () => {
     const root = await tempProject();
     const transcript = path.join(root, "low-relevance.txt");
     await writeFile(transcript, "unrelated temporary transcript with ghp_123456789012345678901234567890123456 and no project markers", "utf8");
-    await runRawLocalLearning(root, {
-      sourceFiles: [transcript],
-      previewOnly: false,
-      allowDuplicateImports: true,
+    const config = await readProjectConfig(root);
+    await storeLearnV2RawEvidence({
+      root,
+      config,
       now: new Date("2026-06-30T00:00:00Z")
+    }, {
+      adapterId: "test",
+      sourcePath: transcript,
+      text: await readText(transcript),
+      contentKind: "transcript",
+      relevance: {
+        score: 0.3,
+        decision: "review",
+        gate: "hard-review",
+        calibrationVersion: "test",
+        featureValues: {},
+        reasons: ["test-unpinned-record"],
+        matchedPaths: [],
+        matchedRemotes: []
+      }
     });
     const status = await runLearnV2RawVaultMaintenance(root, {
       maxHotBytes: 1,
@@ -1261,6 +1278,69 @@ describe("learn-v2 substrate", () => {
     expect(compactedArtifact).toContain("openskill-kit.learn-v2.compacted-raw-evidence.v1");
     expect(compactedArtifact).not.toContain("ghp_123456789012345678901234567890123456");
     await expect(import("node:fs/promises").then((fs) => fs.stat(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", gc.removedBlobRefs[0]!)))).rejects.toThrow();
+  });
+
+  it("pins raw vault records for retained concept cards and releases rejected-only refs", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const source = path.join(root, "pinning-session.md");
+    await writeFile(source, `user: ${root} prefer focused parser tests in packages/core/src/parser.ts.`, "utf8");
+    const config = await readProjectConfig(root);
+    const stored = await storeLearnV2RawEvidence({
+      root,
+      config,
+      now,
+      retentionDays: 1
+    }, {
+      adapterId: "test",
+      sourcePath: source,
+      text: await readText(source),
+      contentKind: "transcript",
+      relevance: {
+        score: 0.5,
+        decision: "review",
+        gate: "hard-review",
+        calibrationVersion: "test",
+        featureValues: {},
+        reasons: ["test-review-record"],
+        matchedPaths: ["packages/core/src/parser.ts"],
+        matchedRemotes: []
+      }
+    });
+    expect(stored.record.retention.tier).toBe("hot-spool");
+
+    const [concept] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("raw_pin_parser_tests", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_raw_pin_parser_tests"],
+      rawRefs: [stored.record.id]
+    }], now);
+    await writeLearnV2ConceptStore(root, [concept!], now);
+    const pinnedRecord = JSON.parse(await readText(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", "records", `${stored.record.id}.json`)));
+    expect(pinnedRecord.retention.tier).toBe("pinned");
+    expect(pinnedRecord.retention.pinnedBy).toContain("concept-store");
+
+    const protectedGc = await runLearnV2RawVaultMaintenance(root, {
+      gc: true,
+      now: new Date("2026-07-05T00:00:00Z")
+    });
+    expect(protectedGc.compactedRecords).toBe(0);
+    expect(protectedGc.removedBlobRefs).not.toContain(stored.record.content.blobRef);
+    expect(protectedGc.manifest.records.find((record) => record.id === stored.record.id)?.retentionTier).toBe("pinned");
+
+    await applyLearnV2ConceptReview(root, {
+      reject: [concept!.id],
+      now: new Date("2026-07-05T00:01:00Z")
+    });
+    const releasedRecord = JSON.parse(await readText(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", "records", `${stored.record.id}.json`)));
+    expect(releasedRecord.retention.tier).toBe("hot-spool");
+    expect(releasedRecord.retention.pinnedBy).not.toContain("concept-store");
+
+    const releasedGc = await runLearnV2RawVaultMaintenance(root, {
+      gc: true,
+      now: new Date("2026-07-06T00:00:00Z")
+    });
+    expect(releasedGc.compactedRecords).toBe(1);
+    expect(releasedGc.removedBlobRefs).toContain(stored.record.content.blobRef);
   });
 
   it("reports and prunes old preview concept stores without touching canonical state", async () => {
