@@ -391,6 +391,15 @@ export const LearnV2ReviewQueueSchema = z.object({
   generatedAt: z.string().datetime(),
   cards: z.array(LearnV2ConceptCardSchema),
   behaviorDeltaFirst: z.literal(true),
+  reviewFocus: z.object({
+    focusCardIds: z.array(z.string()).default([]),
+    omittedCardCount: z.number().int().min(0).default(0),
+    reasons: z.record(z.string(), z.array(z.string())).default({})
+  }).default({
+    focusCardIds: [],
+    omittedCardCount: 0,
+    reasons: {}
+  }),
   safeBulkActions: z.array(z.enum(["accept-low-risk", "reject-one-off", "mark-superseded"])).default([]),
   conflictSummary: z.object({
     unresolvedCount: z.number().int().min(0),

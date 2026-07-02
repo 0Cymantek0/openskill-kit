@@ -22,11 +22,13 @@ export async function writeLearnV2ReviewQueue(
   const json = path.join(reviewDir, "concept-review-queue.json");
   const conflictTypeCounts = context?.ledger ? countBy(context.ledger.conflicts.map((conflict) => conflict.conflictType)) : {};
   const evidenceSnippets = selectReviewEvidenceSnippets(cards, context?.declassifiedSnippets);
+  const reviewFocus = selectReviewFocus(cards, context);
   const queue = LearnV2ReviewQueueSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.review-queue.v1",
     generatedAt: now.toISOString(),
     cards,
     behaviorDeltaFirst: true,
+    reviewFocus,
     safeBulkActions: ["accept-low-risk", "reject-one-off", "mark-superseded"],
     conflictSummary: {
       unresolvedCount: context?.ledger?.unresolvedCount ?? 0,
@@ -65,6 +67,8 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     "",
     `Generated: ${queue.generatedAt}`,
     `Cards: ${queue.cards.length}`,
+    `Focus cards: ${queue.reviewFocus.focusCardIds.length}`,
+    `Appendix cards: ${queue.reviewFocus.omittedCardCount}`,
     `Behavior delta first: ${queue.behaviorDeltaFirst}`,
     `Unresolved conflicts: ${queue.conflictSummary.unresolvedCount}`,
     "",
@@ -93,12 +97,17 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     `Reasons: ${renderCounts(queue.driftSummary.reasonCounts)}`,
     queue.driftSummary.reportPath ? `Report: ${queue.driftSummary.reportPath}` : "Report: not written",
     "",
-    "## Cards",
+    "## Focus Cards",
     ""
   ];
-  for (const card of queue.cards) {
+  const focusIds = new Set(queue.reviewFocus.focusCardIds);
+  const focusCards = queue.cards.filter((card) => focusIds.has(card.id));
+  const appendixCards = queue.cards.filter((card) => !focusIds.has(card.id));
+  for (const card of focusCards) {
     lines.push(`### ${card.title}`);
     lines.push("");
+    const reasons = queue.reviewFocus.reasons[card.id] ?? [];
+    if (reasons.length) lines.push(`Focus reasons: ${reasons.join(", ")}`);
     lines.push(`Status: ${card.status}`);
     lines.push(`Delta: ${card.behaviorDelta}`);
     lines.push(`Behavior: ${card.canonicalBehavior}`);
@@ -122,7 +131,59 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     }
     lines.push("");
   }
+  if (appendixCards.length) {
+    lines.push("## Full Store Appendix");
+    lines.push("");
+    lines.push("Cards below are present in the merged concept store but are not the primary review focus for this run.");
+    lines.push("");
+    for (const card of appendixCards) {
+      lines.push(`- ${card.id}: ${card.title} (${card.status}, confidence=${card.confidence.toFixed(2)}, risk=${card.risk})`);
+    }
+    lines.push("");
+  }
   return `${lines.join("\n")}\n`;
+}
+
+function selectReviewFocus(
+  cards: LearnV2ConceptCard[],
+  context?: {
+    ledger?: LearnV2ConflictLedger;
+    conceptDrift?: { report: LearnV2ConceptDriftReport; artifactPath: string };
+  }
+): LearnV2ReviewQueue["reviewFocus"] {
+  const reasons = new Map<string, Set<string>>();
+  const add = (id: string, reason: string): void => {
+    if (!cards.some((card) => card.id === id)) return;
+    const current = reasons.get(id) ?? new Set<string>();
+    current.add(reason);
+    reasons.set(id, current);
+  };
+  for (const card of cards) {
+    if (card.status === "candidate" || card.status === "staged" || card.status === "conflict") add(card.id, `status:${card.status}`);
+    if (card.counterevidence.length) add(card.id, "counterevidence");
+  }
+  for (const conflict of context?.ledger?.conflicts ?? []) {
+    if (conflict.resolved) continue;
+    for (const id of conflict.conceptIds) add(id, `conflict:${conflict.conflictType}`);
+  }
+  for (const stale of context?.conceptDrift?.report.staleCandidates ?? []) add(stale.conceptId, `drift:${stale.reason}`);
+  const focusCardIds = cards
+    .filter((card) => reasons.has(card.id))
+    .sort((a, b) => focusRank(a, reasons.get(a.id)!) - focusRank(b, reasons.get(b.id)!) || b.confidence - a.confidence || a.title.localeCompare(b.title))
+    .map((card) => card.id);
+  return {
+    focusCardIds,
+    omittedCardCount: Math.max(0, cards.length - focusCardIds.length),
+    reasons: Object.fromEntries([...reasons.entries()].map(([id, values]) => [id, [...values].sort()]))
+  };
+}
+
+function focusRank(card: LearnV2ConceptCard, reasons: Set<string>): number {
+  if ([...reasons].some((reason) => reason.startsWith("conflict:"))) return 0;
+  if (card.status === "conflict") return 1;
+  if (card.status === "candidate" || card.status === "staged") return 2;
+  if ([...reasons].some((reason) => reason.startsWith("drift:"))) return 3;
+  return 4;
 }
 
 function selectReviewEvidenceSnippets(cards: LearnV2ConceptCard[], artifact?: LearnV2DeclassifiedEvidenceSnippetArtifact): LearnV2ReviewQueue["evidenceSnippets"] {

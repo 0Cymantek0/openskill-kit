@@ -450,6 +450,41 @@ describe("learn-v2 substrate", () => {
     expect(ledgerText).not.toContain("raw_");
   });
 
+  it("renders review focus cards before full merged-store appendix", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:22:00.000Z");
+    const conflictingCards = mergeLearnV2ConceptCards([
+      behaviorAtom("focus_prefer_parser_tests", "Prefer focused parser tests for parser changes.", "positive"),
+      behaviorAtom("focus_avoid_parser_tests", "Avoid focused parser tests for parser changes.", "negative")
+    ], now);
+    const [unrelated] = mergeLearnV2ConceptCards([
+      behaviorAtom("unrelated_active_docs", "Prefer concise docs updates for docs changes.", "positive")
+    ], now);
+    const unrelatedActive = {
+      ...unrelated!,
+      id: `${unrelated!.id}_active_appendix`,
+      status: "active" as const,
+      scope: { ...unrelated!.scope, paths: ["docs/guide.md"], taskTypes: ["docs"] },
+      atoms: unrelated!.atoms.map((atom) => ({ ...atom, id: `${atom.id}_active_appendix`, scope: { ...atom.scope, paths: ["docs/guide.md"], taskTypes: ["docs"] } }))
+    };
+    const cards = [...conflictingCards, unrelatedActive];
+    const ledger = await writeLearnV2ConflictLedger(root, cards, "project", now);
+    const queue = await writeLearnV2ReviewQueue(root, cards, now, {
+      ledger: ledger.ledger,
+      markdownPath: ledger.artifactPaths.markdown
+    });
+
+    expect(queue.cards).toHaveLength(3);
+    expect(queue.reviewFocus.focusCardIds).toEqual(expect.arrayContaining(conflictingCards.map((card) => card.id)));
+    expect(queue.reviewFocus.focusCardIds).not.toContain(unrelatedActive.id);
+    expect(queue.reviewFocus.omittedCardCount).toBe(1);
+    const markdown = await readText(queue.artifacts.markdown);
+    expect(markdown).toContain("## Focus Cards");
+    expect(markdown).toContain("Focus reasons: conflict:direct-opposite");
+    expect(markdown).toContain("## Full Store Appendix");
+    expect(markdown).toContain(unrelatedActive.id);
+  });
+
   it("does not promote one-off passing commands into command-policy atoms", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_single_command");
