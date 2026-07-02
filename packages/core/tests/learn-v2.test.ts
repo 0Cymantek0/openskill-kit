@@ -657,6 +657,49 @@ describe("learn-v2 substrate", () => {
     expect(counterfactualCases).not.toContain(root);
   });
 
+  it("fails eval for overbroad or underspecified concept quality", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:02:00Z");
+    const [episode] = reconstructLearnV2Episodes([
+      normalizedMessage("ev_broad_quality", "Always do the right thing.", "user")
+    ]);
+    const [card] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("broad_quality", "Always apply this project-wide behavior.", "positive"),
+      kind: "command-policy",
+      scope: {
+        level: "project",
+        paths: [],
+        taskTypes: []
+      },
+      evidenceIds: ["ev_broad_quality"],
+      rawRefs: ["raw_ev_broad_quality"],
+      confidence: 0.96
+    }], now);
+    const concept = {
+      ...card!,
+      confidence: 0.96,
+      activation: {
+        phrases: [],
+        pathGlobs: [],
+        commands: []
+      }
+    };
+    const report = await runLearnV2Eval(root, [episode!], [concept], now);
+    expect(report.status).toBe("fail");
+    const quality = report.results.find((result) => result.id === "concept-quality-gates")!;
+    expect(quality.status).toBe("fail");
+    expect(quality.checks.filter((item) => item.status === "fail").map((item) => item.name)).toEqual(expect.arrayContaining([
+      "activation-surface",
+      "overbroad-weak-evidence",
+      "single-evidence-confidence-cap",
+      "command-policy-has-command",
+      "confidence-cap"
+    ]));
+    const markdown = await readText(report.artifacts.markdown);
+    expect(markdown).toContain("concept-quality-gates");
+    expect(markdown).not.toContain("raw_ev_broad_quality");
+  });
+
   it("compiles active concepts but excludes candidates from compatibility outputs", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_compile");
