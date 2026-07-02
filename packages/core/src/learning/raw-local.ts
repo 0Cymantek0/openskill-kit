@@ -3,6 +3,7 @@ import type { LifecycleRunnerResult } from "../lifecycle/runner.js";
 import {
   LearnV2RawLearningModelModes,
   runLearnV2RawLocalLearning,
+  type LearnV2LearningInputBoundary,
   type LearnV2RawLearningModelMode,
   type LearnV2RawLearningModelModeInput
 } from "../learn-v2/pipeline.js";
@@ -125,7 +126,7 @@ export interface RawLocalLearningResult {
     conceptCards: number;
     eventsAppended: number;
     reviewCandidates: number;
-    learningInputBoundary: "minimal-secret-path-placeholdering";
+    learningInputBoundary: LearnV2LearningInputBoundary;
   };
   quality: {
     relevanceScore: number;
@@ -140,7 +141,7 @@ export interface RawLocalLearningResult {
   nextActions: string[];
   learnV2?: {
     schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1";
-    learningInputBoundary: "minimal-secret-path-placeholdering";
+    learningInputBoundary: LearnV2LearningInputBoundary;
     episodes: unknown[];
     concepts: unknown[];
     rejectedAtoms: unknown[];

@@ -4,10 +4,11 @@ Teach OSK from current session, safe detected sources, or explicit imports.
 
 Raw local learning is available for explicitly supplied files. It reads full
 project evidence locally, writes raw evidence only into the project-local
-Learn v2 vault on apply, normalizes minimally declassified learner text with
-secrets and machine-local paths replaced by typed placeholders, writes
-declassified compatibility records and analysis artifacts, reconstructs task
-episodes, mines concept cards, then keeps activation review-gated.
+Learn v2 vault on apply, normalizes raw learner text in memory for deterministic
+extraction while replacing machine-local path prefixes with typed placeholders,
+writes declassified compatibility records and analysis artifacts, reconstructs
+task episodes, mines declassified concept cards, then keeps activation
+review-gated.
 
 ## Source Selection
 
@@ -73,7 +74,7 @@ openskill-kit osk review --write
 - Signals extracted.
 - Candidate preferences and workflows.
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
-- Learn v2 raw-learning result includes `learningInputBoundary: "minimal-secret-path-placeholdering"` so callers can distinguish current deterministic extraction from future raw-to-model execution.
+- Learn v2 raw-learning result includes `learningInputBoundary: "raw-local-in-memory-declassified-artifacts"` so callers can distinguish local raw deterministic extraction from declassified persisted/model-request artifacts and future raw-to-model execution.
 - Learn v2 writes a declassified pipeline observability report with source intake counts, episode confidence/stitching counts, tool compression strategies, patch filter reasons, concept status/risk counts, quality gates, artifact pointers, and next actions.
 - Learn v2 writes declassified evidence-quality artifacts that score normalized records for prioritization and model-routing ROI without dropping raw-local learning evidence.
 - Learn v2 writes a concept conflict ledger and links it from the review queue so contradictory, superseding, or overlapping concepts stay reviewable instead of hidden in scoring side effects.

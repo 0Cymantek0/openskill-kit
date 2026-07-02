@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -44,8 +44,8 @@ describe("raw local learning", () => {
     expect(preview.digest.rawVaultRecordsWritten).toBe(0);
     expect(preview.digest.previewWritesLocalArtifacts).toBe(true);
     expect(preview.digest.canonicalConceptStateWritten).toBe(false);
-    expect(preview.digest.learningInputBoundary).toBe("minimal-secret-path-placeholdering");
-    expect(preview.learnV2.learningInputBoundary).toBe("minimal-secret-path-placeholdering");
+    expect(preview.digest.learningInputBoundary).toBe("raw-local-in-memory-declassified-artifacts");
+    expect(preview.learnV2.learningInputBoundary).toBe("raw-local-in-memory-declassified-artifacts");
     expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
@@ -54,7 +54,7 @@ describe("raw local learning", () => {
     expect(preview.quality.strengths.join(" ")).toContain("reviewable concept");
     expect(preview.concepts.some((concept) => /regression fixture|broad rewrite/i.test(concept.canonicalBehavior))).toBe(true);
     expect(await readFile(preview.artifacts.reviewMarkdownPath, "utf8")).not.toContain("sk-live-secret");
-    expect(await readFile(preview.artifacts.reviewMarkdownPath, "utf8")).toContain("Learning input boundary: minimal-secret-path-placeholdering");
+    expect(await readFile(preview.artifacts.reviewMarkdownPath, "utf8")).toContain("Learning input boundary: raw-local-in-memory-declassified-artifacts");
     const evidenceQuality = await readFile(preview.artifacts.learnV2EvidenceQualityPath!, "utf8");
     expect(evidenceQuality).toContain("openskill-kit.learn-v2.evidence-quality-artifact.v1");
     expect(evidenceQuality).toContain("\"dropsEvidence\": false");
@@ -103,9 +103,29 @@ describe("raw local learning", () => {
     expect(rawVault).toContain("API_KEY=[REDACTED:secret-assignment]");
     expect(rawVault).not.toContain(root);
     expect(rawVault).not.toContain("sk-live-secret");
+    const v2RawRecord = JSON.parse(await readFile(path.join(applied.artifacts.learnV2RawVaultDir, "records", `${applied.sources[0]!.learnV2.rawRef}.json`), "utf8"));
+    const v2RawBlob = await readFile(path.join(applied.artifacts.learnV2RawVaultDir, v2RawRecord.content.blobRef), "utf8");
+    expect(v2RawBlob).toContain(root.replace(/\\/g, "\\\\"));
+    expect(v2RawBlob).toContain("sk-live-secret");
     const analysisFrame = await readFile(applied.sources[0]!.analysisFramePath, "utf8");
     expect(analysisFrame).not.toContain(root);
     expect(analysisFrame).not.toContain("sk-live-secret");
+    const episodeStore = await readFile(applied.artifacts.learnV2EpisodeStorePath, "utf8");
+    expect(episodeStore).not.toContain(root);
+    expect(episodeStore).not.toContain("sk-live-secret");
+    expect(JSON.stringify(applied.learnV2.episodes)).not.toContain(root);
+    expect(JSON.stringify(applied.learnV2.episodes)).not.toContain("sk-live-secret");
+    expect(JSON.stringify(applied.learnV2.concepts)).not.toContain(root);
+    expect(JSON.stringify(applied.learnV2.concepts)).not.toContain("sk-live-secret");
+    const requestDirs = await readdir(applied.artifacts.learnV2ModelRequestDir, { withFileTypes: true }).catch(() => []);
+    for (const entry of requestDirs.filter((item) => item.isDirectory())) {
+      const requestDir = path.join(applied.artifacts.learnV2ModelRequestDir, entry.name);
+      for (const file of ["episode-learning-bundle.json", "concept-extraction-prompt.md"]) {
+        const requestText = await readFile(path.join(requestDir, file), "utf8");
+        expect(requestText).not.toContain(root);
+        expect(requestText).not.toContain("sk-live-secret");
+      }
+    }
     const events = await readEvents(root);
     expect(JSON.stringify(events)).not.toContain(root);
     expect(JSON.stringify(events)).not.toContain("sk-live-secret");

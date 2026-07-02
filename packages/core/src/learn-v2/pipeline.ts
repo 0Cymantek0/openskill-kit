@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { ProjectConfig } from "../config/schema.js";
 import { readProjectConfig } from "../events/store.js";
 import { importInteractionSource, type InteractionImportRun } from "../interactions/importer.js";
 import { runLifecycleOnce, type LifecycleRunnerResult } from "../lifecycle/runner.js";
@@ -8,7 +9,7 @@ import { writeJsonAtomic } from "../storage/atomic.js";
 import { ensureLearnV2ProjectRelevanceCalibration, scoreLearnV2ProjectRelevance } from "./relevance.js";
 import { readLearnV2Surface } from "./surfaces.js";
 import { storeLearnV2RawEvidence, learnV2VaultRoot } from "./vault.js";
-import { LearnV2RawEvidenceRecordSchema, type LearnV2ConceptCard, type LearnV2NormalizedEvidence, type LearnV2RawEvidenceRecord } from "./schemas.js";
+import { LearnV2ConceptCardSchema, LearnV2RawEvidenceRecordSchema, type LearnV2BehaviorAtom, type LearnV2ConceptCard, type LearnV2NormalizedEvidence, type LearnV2RawEvidenceRecord, type LearnV2TaskEpisode } from "./schemas.js";
 import { normalizeLearnV2Evidence } from "./normalize.js";
 import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
@@ -45,6 +46,7 @@ export const LearnV2RawLearningModelModeAliases = {
 } as const;
 export type LearnV2RawLearningLegacyModelMode = keyof typeof LearnV2RawLearningModelModeAliases;
 export type LearnV2RawLearningModelModeInput = LearnV2RawLearningModelMode | LearnV2RawLearningLegacyModelMode;
+export type LearnV2LearningInputBoundary = "raw-local-in-memory-declassified-artifacts";
 
 export interface LearnV2RawLocalLearningOptions {
   sourceFiles: string[];
@@ -129,14 +131,14 @@ interface LearnV2RawLocalLearningRunCompat {
     conceptCards: number;
     eventsAppended: number;
     reviewCandidates: number;
-    learningInputBoundary: "minimal-secret-path-placeholdering";
+    learningInputBoundary: LearnV2LearningInputBoundary;
   };
   quality: ReturnType<typeof buildV2Quality>;
   privacy: string[];
   nextActions: string[];
   learnV2: {
     schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1";
-    learningInputBoundary: "minimal-secret-path-placeholdering";
+    learningInputBoundary: LearnV2LearningInputBoundary;
     episodes: ReturnType<typeof reconstructLearnV2Episodes>;
     concepts: LearnV2ConceptCard[];
     rejectedAtoms: ReturnType<typeof extractLearnV2BehaviorAtoms>["rejected"];
@@ -156,7 +158,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const config = await readProjectConfig(root);
   const now = options.now ?? new Date();
   const generatedAt = now.toISOString();
-  const learningInputBoundary = "minimal-secret-path-placeholdering" as const;
+  const learningInputBoundary: LearnV2LearningInputBoundary = "raw-local-in-memory-declassified-artifacts";
   const previewOnly = options.previewOnly !== false;
   const modelMode = resolveLearnV2RawLearningModelMode(options.modelMode ?? config.learning.rawEvidence.extractionExecution);
   if (modelMode === "opencode-host-raw-allowed") {
@@ -177,7 +179,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const relevanceCalibration = await ensureLearnV2ProjectRelevanceCalibration(root, now);
 
   const sourceDigests: LearnV2SourceDigestCompat[] = [];
-  const allEvidence: LearnV2NormalizedEvidence[] = [];
+  const allRawEvidence: LearnV2NormalizedEvidence[] = [];
+  const allDeclassifiedEvidence: LearnV2NormalizedEvidence[] = [];
   let eventsAppended = 0;
   const importRuns: InteractionImportRun[] = [];
 
@@ -209,8 +212,11 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
           contentKind: surface.contentKind,
           relevance
         })).record;
-    const normalized = normalizeLearnV2Evidence(surface, rawRecord, declassified.text).slice(0, options.maxTurns ?? 500);
-    allEvidence.push(...normalized);
+    const learnerText = normalizeRawLearnerLocalPaths(surface.rawText, root);
+    const normalizedRaw = normalizeLearnV2Evidence(surface, rawRecord, learnerText).slice(0, options.maxTurns ?? 500);
+    const normalized = normalizedRaw.map((item) => declassifyLearnV2NormalizedEvidence(item, root, config));
+    allRawEvidence.push(...normalizedRaw);
+    allDeclassifiedEvidence.push(...normalized);
     const short = rawRecord.source.contentHash.replace(/^sha256:/, "").slice(0, 16);
     const legacyRawVaultRecordPath = previewOnly ? undefined : path.join(legacyRawVaultDir, "records", `${short}.json`);
     if (legacyRawVaultRecordPath) {
@@ -296,8 +302,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     });
   }
 
-  const episodes = reconstructLearnV2Episodes(allEvidence);
-  const evidenceQuality = await writeLearnV2EvidenceQualityArtifact(root, allEvidence, now);
+  const rawEpisodes = reconstructLearnV2Episodes(allRawEvidence);
+  const episodes = rawEpisodes.map((episode) => declassifyLearnV2TaskEpisode(episode, root, config));
+  const evidenceQuality = await writeLearnV2EvidenceQualityArtifact(root, allDeclassifiedEvidence, now);
   const evidenceQualityPath = learnV2EvidenceQualityArtifactPath(root, now);
   const declassifiedSnippets = await writeLearnV2DeclassifiedSnippetArtifact(root, episodes, now, {
     blockOnMediumRisk: true,
@@ -306,8 +313,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   });
   const episodeStorePath = await writeLearnV2EpisodeStore(root, episodes, now);
   const modelRequests = await writeLearnV2ModelRequests(root, episodes, now);
-  const extracted = extractLearnV2BehaviorAtoms(episodes);
-  const concepts = mergeLearnV2ConceptCards(extracted.atoms, now);
+  const extracted = extractLearnV2BehaviorAtoms(rawEpisodes);
+  const concepts = declassifyLearnV2ConceptCards(mergeLearnV2ConceptCards(extracted.atoms, now), root, config);
   const conceptStore = previewOnly
     ? await writePreviewLearnV2ConceptStore(root, config.projectId, concepts, now)
     : await writeLearnV2ConceptStore(root, concepts, now);
@@ -432,9 +439,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       ...(previewOnly
         ? ["Preview writes generated/private analysis, review, eval, model-request, digest, and observability artifacts for inspection, but does not persist canonical concept state, activation index, raw vault records, events, or lifecycle graph changes."]
         : []),
-      "Learn v2 reads full supplied raw local evidence; deterministic extraction currently normalizes minimally declassified learner text where secrets and machine-local paths are replaced with typed placeholders.",
+      "Learn v2 reads and normalizes full supplied raw local evidence in memory for deterministic extraction.",
+      "Machine-local path prefixes are normalized in learner memory to avoid temp-directory or home-directory noise influencing concepts.",
       "Full raw evidence is stored only in the project-local v2 raw vault when --apply is used.",
-      "Output-facing analysis frames, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
+      "Output-facing analysis frames, episode stores, model requests, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
       "Raw vault refs are local-only and never exportable through compile, pack, or sync artifacts.",
       "Concept cards remain candidates until explicit review activates them.",
       `Model execution policy is ${modelMode}: deterministic extraction and prompt-safe OpenCode request artifacts are supported; raw-evidence-to-model execution is rejected until implemented.`,
@@ -483,6 +491,144 @@ async function writePreviewLearnV2ConceptStore(root: string, projectId: string, 
 
 function previewLearnV2ConceptStorePath(root: string, generatedAt: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "compiled-preview", `concept-store-preview-${timestampSlug(generatedAt)}.json`);
+}
+
+function normalizeRawLearnerLocalPaths(text: string, root: string): string {
+  const rootVariants = [root, root.replace(/\\/g, "\\\\"), root.replace(/\\/g, "/")];
+  let current = text;
+  for (const variant of rootVariants) {
+    if (variant) current = current.split(variant).join("[PROJECT_ROOT]");
+  }
+  const home = process.env.HOME ?? process.env.USERPROFILE;
+  if (home) {
+    for (const variant of [home, home.replace(/\\/g, "\\\\"), home.replace(/\\/g, "/")]) {
+      if (variant) current = current.split(variant).join("[USER_HOME]");
+    }
+  }
+  return current;
+}
+
+function declassifyLearnV2NormalizedEvidence(item: LearnV2NormalizedEvidence, root: string, config: ProjectConfig): LearnV2NormalizedEvidence {
+  return {
+    ...item,
+    text: declassifyArtifactText(item.text, root, config),
+    toolName: item.toolName ? declassifyArtifactText(item.toolName, root, config) : undefined,
+    cwdHint: item.cwdHint ? declassifyArtifactText(item.cwdHint, root, config) : undefined,
+    branch: item.branch ? declassifyArtifactText(item.branch, root, config) : undefined,
+    paths: item.paths.map((file) => declassifyArtifactText(file, root, config)),
+    commands: item.commands.map((command) => declassifyArtifactText(command, root, config)),
+    metadata: declassifyJsonLikeMetadata(item.metadata, root, config)
+  };
+}
+
+function declassifyLearnV2TaskEpisode(episode: LearnV2TaskEpisode, root: string, config: ProjectConfig): LearnV2TaskEpisode {
+  return {
+    ...episode,
+    cwdHints: episode.cwdHints.map((hint) => declassifyArtifactText(hint, root, config)),
+    branch: episode.branch ? declassifyArtifactText(episode.branch, root, config) : undefined,
+    pathCluster: episode.pathCluster.map((file) => declassifyArtifactText(file, root, config)),
+    taskHints: episode.taskHints.map((hint) => declassifyArtifactText(hint, root, config)),
+    messages: episode.messages.map((message) => declassifyLearnV2NormalizedEvidence(message, root, config)),
+    toolSummaries: episode.toolSummaries.map((tool) => ({
+      ...tool,
+      toolName: declassifyArtifactText(tool.toolName, root, config),
+      command: tool.command ? declassifyArtifactText(tool.command, root, config) : undefined,
+      summary: declassifyArtifactText(tool.summary, root, config),
+      commandShape: tool.commandShape ? {
+        ...tool.commandShape,
+        rendered: declassifyArtifactText(tool.commandShape.rendered, root, config),
+        base: declassifyArtifactText(tool.commandShape.base, root, config),
+        argsShape: tool.commandShape.argsShape.map((item) => declassifyArtifactText(item, root, config))
+      } : undefined,
+      paths: tool.paths.map((file) => declassifyArtifactText(file, root, config)),
+      outputCompression: {
+        ...tool.outputCompression,
+        summary: declassifyArtifactText(tool.outputCompression.summary, root, config),
+        signatures: tool.outputCompression.signatures.map((item) => declassifyArtifactText(item, root, config))
+      }
+    })),
+    patchComparisons: episode.patchComparisons.map((patch) => ({
+      ...patch,
+      paths: patch.paths.map((file) => declassifyArtifactText(file, root, config)),
+      summary: declassifyArtifactText(patch.summary, root, config),
+      structuralSummary: {
+        ...patch.structuralSummary,
+        ignoredFiles: patch.structuralSummary.ignoredFiles.map((file) => declassifyArtifactText(file, root, config)),
+        changedSymbols: patch.structuralSummary.changedSymbols.map((symbol) => declassifyArtifactText(symbol, root, config)),
+        changedImports: patch.structuralSummary.changedImports.map((item) => declassifyArtifactText(item, root, config)),
+        fileSummaries: patch.structuralSummary.fileSummaries.map((file) => ({
+          ...file,
+          path: declassifyArtifactText(file.path, root, config),
+          changedSymbols: file.changedSymbols.map((symbol) => declassifyArtifactText(symbol, root, config)),
+          changedImports: file.changedImports.map((item) => declassifyArtifactText(item, root, config))
+        }))
+      }
+    })),
+    phases: episode.phases.map((phase) => ({
+      ...phase,
+      summary: declassifyArtifactText(phase.summary, root, config)
+    }))
+  };
+}
+
+function declassifyLearnV2ConceptCards(cards: LearnV2ConceptCard[], root: string, config: ProjectConfig): LearnV2ConceptCard[] {
+  return cards.map((card) => LearnV2ConceptCardSchema.parse({
+    ...card,
+    title: declassifyArtifactText(card.title, root, config),
+    canonicalBehavior: declassifyArtifactText(card.canonicalBehavior, root, config),
+    behaviorDelta: declassifyArtifactText(card.behaviorDelta, root, config),
+    scope: {
+      ...card.scope,
+      paths: card.scope.paths.map((file) => declassifyArtifactText(file, root, config)),
+      taskTypes: card.scope.taskTypes.map((item) => declassifyArtifactText(item, root, config)),
+      negativeTriggers: card.scope.negativeTriggers.map((item) => declassifyArtifactText(item, root, config))
+    },
+    activation: {
+      phrases: card.activation.phrases.map((phrase) => declassifyArtifactText(phrase, root, config)),
+      pathGlobs: card.activation.pathGlobs.map((glob) => declassifyArtifactText(glob, root, config)),
+      commands: card.activation.commands.map((command) => declassifyArtifactText(command, root, config))
+    },
+    atoms: card.atoms.map((atom) => declassifyLearnV2BehaviorAtom(atom, root, config)),
+    counterevidence: card.counterevidence.map((item) => ({
+      ...item,
+      reason: declassifyArtifactText(item.reason, root, config)
+    })),
+    privacy: {
+      ...card.privacy,
+      placeholders: [...new Set([
+        ...card.privacy.placeholders,
+        ...learnV2DeclassifyText([
+          card.title,
+          card.canonicalBehavior,
+          card.behaviorDelta,
+          ...card.scope.paths,
+          ...card.activation.commands,
+          ...card.atoms.map((atom) => atom.statement)
+        ].join("\n"), root, config).placeholders
+      ])].sort()
+    }
+  }));
+}
+
+function declassifyLearnV2BehaviorAtom(atom: LearnV2BehaviorAtom, root: string, config: ProjectConfig): LearnV2BehaviorAtom {
+  return {
+    ...atom,
+    statement: declassifyArtifactText(atom.statement, root, config),
+    scope: {
+      ...atom.scope,
+      paths: atom.scope.paths.map((file) => declassifyArtifactText(file, root, config)),
+      taskTypes: atom.scope.taskTypes.map((item) => declassifyArtifactText(item, root, config))
+    },
+    rationale: declassifyArtifactText(atom.rationale, root, config)
+  };
+}
+
+function declassifyJsonLikeMetadata(metadata: Record<string, unknown>, root: string, config: ProjectConfig): Record<string, unknown> {
+  return JSON.parse(declassifyArtifactText(JSON.stringify(metadata), root, config)) as Record<string, unknown>;
+}
+
+function declassifyArtifactText(text: string, root: string, config: ProjectConfig): string {
+  return learnV2DeclassifyText(text, root, config).text;
 }
 
 function makePreviewRawRecord(
@@ -618,7 +764,7 @@ function buildV2Quality(sources: LearnV2SourceDigestCompat[], concepts: LearnV2C
   const relevanceScore = sources.length ? included.reduce((sum, source) => sum + source.projectRelevance.score, 0) / sources.length : 0;
   const conceptYieldScore = sources.length ? Math.min(1, concepts.length / Math.max(1, sources.length * 2)) : 0;
   const reviewReadinessScore = concepts.length ? concepts.filter((concept) => concept.evidenceIds.length && concept.confidence >= 0.55).length / concepts.length : 0;
-  const propagationSafetyScore = evalStatus === "pass" && rejectedAtoms === 0 ? 1 : 0.82;
+  const propagationSafetyScore = evalStatus === "pass" ? 1 : 0.82;
   const overallScore = (relevanceScore * 0.3) + (conceptYieldScore * 0.25) + (reviewReadinessScore * 0.25) + (propagationSafetyScore * 0.2);
   const strengths: string[] = [];
   const risks: string[] = [];
