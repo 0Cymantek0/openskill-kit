@@ -356,7 +356,7 @@ osk.command("learn")
   .option("--concept-outcome-reason <text>", "Short safe reason for --record-concept-outcome")
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--learn-v2-goldens <path>", "Learn-v2 extraction golden scenario JSON file")
-  .option("--model-mode <mode>", `Raw learning model mode: ${RawLearningPublicModelModes.join("|")}`, parseRawLearningModelMode)
+  .option("--model-mode <mode>", `Learn v2 execution policy: ${RawLearningPublicModelModes.join("|")}; legacy aliases normalize to these names; raw-to-model dispatch is not implemented`, parseRawLearningModelMode)
   .option("--all-detected", "Select all safe detected sources")
   .option("--apply", "Apply selected sources after preview approval")
   .option("--max-events <number>", "Maximum events", parseIntegerOption, 250)
@@ -2506,7 +2506,7 @@ function parseRawLearningModelMode(value: string): typeof RawLearningModelModes[
   if ((RawLearningPublicModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
   const alias = RawLearningLegacyModelModeAliases[value];
   if (alias) return alias as typeof RawLearningModelModes[number];
-  throw new Error(`Invalid raw learning model mode: ${value}. Expected one of: ${RawLearningPublicModelModes.join(", ")}`);
+  throw new Error(`Invalid Learn v2 execution policy: ${value}. Expected one of: ${RawLearningPublicModelModes.join(", ")}. Legacy aliases heuristic-only, remote-redacted, remote-explicit, and local-raw normalize to canonical policies; raw-to-model dispatch is not implemented.`);
 }
 
 function parseConceptOutcome(value: string | undefined): Parameters<typeof recordLearnV2ConceptOutcome>[1]["outcome"] {

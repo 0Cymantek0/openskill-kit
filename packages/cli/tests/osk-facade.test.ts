@@ -44,6 +44,14 @@ describe("osk CLI facade", () => {
     expect(parsed.privacyPreview.join(" ")).toContain("No raw prompts");
   });
 
+  it("documents Learn v2 model mode as execution policy, not raw dispatch", async () => {
+    const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--help"], { cwd: repoRoot, windowsHide: true });
+
+    expect(stdout).toContain("Learn v2 execution policy");
+    expect(stdout).toContain("legacy aliases normalize");
+    expect(stdout).toContain("raw-to-model dispatch is not implemented");
+  });
+
   it("renders the Learn v2 observability dashboard from latest report", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-observability-"));
     const dir = path.join(root, ".openskill-kit", "learn-v2", "observability");

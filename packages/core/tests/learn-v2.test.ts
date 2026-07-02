@@ -118,17 +118,26 @@ describe("learn-v2 substrate", () => {
     const cursor = path.join(root, "cursor-chat.md");
     const diff = path.join(root, "session.diff");
     const generic = path.join(root, "session.md");
+    const summaryCollision = path.join(root, "ordinary-session.md");
+    const docs = path.join(root, "README.md");
+    const handoff = path.join(root, "handoff.md");
     await writeFile(codex, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(claude, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(cursor, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(diff, "diff --git a/src/parser.ts b/src/parser.ts\n+test", "utf8");
     await writeFile(generic, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(summaryCollision, "Summary: we discussed the plan.\nuser: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(docs, "# Project Plan\nPrefer focused parser tests.", "utf8");
+    await writeFile(handoff, "Summary: changed parser tests.\nTests: npm test -- parser\nNext: review.", "utf8");
 
     const codexSurface = await readLearnV2Surface(codex);
     const claudeSurface = await readLearnV2Surface(claude);
     const cursorSurface = await readLearnV2Surface(cursor);
     const diffSurface = await readLearnV2Surface(diff);
     const genericSurface = await readLearnV2Surface(generic);
+    const summaryCollisionSurface = await readLearnV2Surface(summaryCollision);
+    const docsSurface = await readLearnV2Surface(docs);
+    const handoffSurface = await readLearnV2Surface(handoff);
 
     expect(codexSurface.adapterId).toBe("codex");
     expect(codexSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
@@ -138,6 +147,12 @@ describe("learn-v2 substrate", () => {
     expect(diffSurface.contentKind).toBe("diff");
     expect(genericSurface.adapterId).toBe("generic-transcript");
     expect(genericSurface.adapterDetection).toMatchObject({ matchedBy: "fallback", confidence: "low" });
+    expect(summaryCollisionSurface.adapterId).toBe("generic-transcript");
+    expect(summaryCollisionSurface.adapterDetection).toMatchObject({ matchedBy: "fallback", confidence: "low" });
+    expect(docsSurface.adapterId).toBe("project-docs");
+    expect(docsSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
+    expect(handoffSurface.adapterId).toBe("agent-summaries");
+    expect(handoffSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
   });
 
   it("normalizes terminal review ci docs and agent-summary adapters with domain-specific actors and kinds", async () => {

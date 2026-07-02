@@ -23,6 +23,22 @@ review-gated.
 | Raw local surface file | explicit only | raw local | Reads raw local evidence, stores content-addressed raw blobs under `.openskill-kit/learn-v2/raw-vault/`, writes declassified analysis/review/eval artifacts, keeps legacy deidentified compatibility records under `.openskill-kit/raw-vault/`, and stages reviewable concepts. |
 | User/global memory stores | never selected | blocked | Metadata-only detection; import requires an explicit export file. |
 
+## Raw Surface Adapter Detection
+
+| Adapter | Typical filename/content marker | Content kind | Sensitivity | Notes |
+|---|---|---:|---:|---|
+| `opencode` | `opencode-*`, `tool.execute`, `provider: opencode` | inferred | high | Conversation/tool traces may include prompts, paths, commands, and outputs. |
+| `codex` | `codex-*` or Codex marker in content prefix | inferred | high | Transcript source; explicit file selection still required. |
+| `claude-code` | `claude-*` or Claude marker in content prefix | inferred | high | Transcript source; explicit file selection still required. |
+| `cursor` | `cursor-*` or Cursor marker in content prefix | inferred | high | Transcript source; explicit file selection still required. |
+| `git` | `.diff`, `.patch`, `git-*`, or `diff --git` | diff | high | Raw diffs stay local; output artifacts receive summaries. |
+| `terminal` | `terminal-*`, `shell-*`, `console-*`, command/history marker | log | high | Shell output can contain local paths or secrets. |
+| `review-local` | `review-*`, `comments-*`, `pull-request-*`, or explicit `review comment:` prefix | document | medium | Review evidence is declassified before output. |
+| `ci-log` | `ci-*`, `junit-*`, `vitest-*`, `.log`, `PASS`, `FAIL`, `ERROR` | log | medium | Logs are compressed and diagnostics are retained. |
+| `project-docs` | `README*`, `docs*`, `notes*`, `plan*` filename only | document | low | Words like `plan` in ordinary transcript content do not force this adapter. |
+| `agent-summaries` | `summary*`, `handoff*`, `finish*` filename only | summary | medium | Words like `Summary:` in ordinary transcript content do not force this adapter. |
+| `generic-transcript` | fallback when no specific marker matches | inferred | high | Default for explicit raw files with no trusted adapter identity. |
+
 ## Workflow
 
 1. Detect candidate learning sources.
@@ -32,7 +48,7 @@ review-gated.
 5. Run lifecycle learning and stage candidates.
 6. For raw local learning, run the Learn v2 project relevance hard gate, persist the relevance calibration artifact, reconstruct task episodes, compress tool/diff/log evidence, extract deterministic behavior atoms, merge concept cards, write a behavior-delta-first review queue, compile preview, and learn-v2 eval report.
 7. For activation, write a deterministic Concept Activation Index and replay originating episodes to check that concepts are retrievable from similar task context.
-8. For model-assisted extraction, choose a Learn v2 execution policy: `deterministic-only`, `opencode-host-sanitized-only`, or `opencode-host-raw-allowed`. The current implementation supports deterministic extraction plus prompt-safe sanitized OpenCode request artifacts; `opencode-host-raw-allowed` is rejected until raw OpenCode dispatch is implemented.
+8. For model-assisted extraction, choose a Learn v2 execution policy: `deterministic-only`, `opencode-host-sanitized-only`, or `opencode-host-raw-allowed`. Supported today: deterministic extraction and sanitized OpenCode request-artifact generation. Unsupported today: raw OpenCode dispatch; `opencode-host-raw-allowed` is a reserved future policy and is rejected until implemented.
 9. For supported sanitized model assistance, write prompt-safe episode bundles, request manifests, expected `response.json` paths, and concept-extraction prompts under `.openskill-kit/learn-v2/model-requests/`; OpenCode-configured agents may fill JSON responses, and OSK validates schema, evidence ids, and leak rules before merging atoms.
 10. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
 
@@ -86,7 +102,7 @@ openskill-kit osk review --write
 - Behavior pack export/verify runs a publish-boundary audit over shareable payload files; raw learning stays permissive, but packs fail if compiled artifacts contain secrets, raw refs, local paths, private Learn v2 artifact references, inactive/stale Learn v2 resources, unsupported concepts, weak evidence counts, overbroad low-support scope, weak source reliability, or unsafe command activation.
 - Learn v2 writes a concept drift report from stored concept/outcome telemetry and links stale or negatively reinforced active concepts into the review queue.
 - Learn v2 model request generation uses deterministic ROI routing: high-value correction/security/scope/semantic-patch episodes get prompt-safe OpenCode requests, weak/no-signal episodes are skipped with reasons in a routing manifest.
-- Learn v2 raw learning model modes are `deterministic-only`, `opencode-host-sanitized-only`, and `opencode-host-raw-allowed`. Legacy aliases `heuristic-only`, `remote-redacted`, `remote-explicit`, and `local-raw` normalize to those policy names; raw-to-model execution still hard-fails until implemented.
+- Learn v2 raw learning execution policies are `deterministic-only`, `opencode-host-sanitized-only`, and `opencode-host-raw-allowed`. Legacy aliases `heuristic-only`, `remote-redacted`, `remote-explicit`, and `local-raw` normalize to those policy names for compatibility; they are not preferred public names. Raw-to-model execution still hard-fails until implemented.
 - Learn v2 model routing artifacts include host-ready OpenCode subagent markdown under `.openskill-kit/model-routing/opencode-agents/` for evidence summarization, concept extraction, contradiction review, scope inference, declassification review, eval planning, and publish/export auditing. OSK writes schemas, prompts, routes, and permission-scoped agent definitions only; OpenCode remains the model executor.
 - Applying OpenCode model proposal outputs refreshes the concept review queue, conflict ledger, declassified snippet index, drift report, and eval report so model-derived atoms remain visible proposal data instead of hidden store mutations.
 - Learn v2 eval includes concept-quality gates for activation surface, broad-scope evidence strength, confidence caps, command-policy extraction, active reliability/durability, counterevidence, risky suppression, and privacy boundaries.

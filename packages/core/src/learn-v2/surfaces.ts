@@ -44,10 +44,10 @@ export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
   makeAdapter("cursor", "Cursor transcript", /cursor/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
   makeAdapter("git", "Git diff or metadata", /(?:\.diff|\.patch|^git[-_.]?|diff --git)/i, "diff", "high", ["Raw diffs are local-only learner input; output artifacts receive declassified summaries."]),
   makeAdapter("terminal", "Terminal transcript", /(?:terminal|shell|console|history|commands?)/i, "log", "high", ["Shell history and output can contain secrets or machine-local paths."]),
-  makeAdapter("review-local", "Local review notes", /\b(?:review|comments?|pr|pull-request)\b/i, "document", "medium", ["Review notes are explicit local evidence and remain declassified before output."]),
+  makeAdapter("review-local", "Local review notes", /\b(?:review|comments?|pr|pull-request)\b/i, "document", "medium", ["Review notes are explicit local evidence and remain declassified before output."], /(?:^|\n)\s*(?:reviewer|review comment|pr comment|pull request comment|pull-request comment)\s*:/i),
   makeAdapter("ci-log", "CI or test log", /\b(?:ci|junit|vitest|pytest|build|log|PASS|FAIL|ERROR|WARN)\b/i, "log", "medium", ["Logs can be large and may include environment-specific paths or outputs."]),
-  makeAdapter("project-docs", "Project documentation", /(?:README|docs?|notes?|plan)/i, "document", "low", ["Project documentation is still treated as explicit local raw evidence when supplied."]),
-  makeAdapter("agent-summaries", "Agent summary", /(?:summary|handoff|finish)/i, "summary", "medium", ["Summaries are explicit local evidence and may still contain private project details."]),
+  makeAdapter("project-docs", "Project documentation", /(?:README|docs?|notes?|plan)/i, "document", "low", ["Project documentation is still treated as explicit local raw evidence when supplied."], false),
+  makeAdapter("agent-summaries", "Agent summary", /(?:summary|handoff|finish)/i, "summary", "medium", ["Summaries are explicit local evidence and may still contain private project details."], false),
   {
     id: "generic-transcript",
     label: "Generic transcript",
@@ -100,7 +100,8 @@ function makeAdapter(
   pathPattern: RegExp,
   contentKind?: LearnV2SurfaceRead["contentKind"],
   sensitivity: LearnV2SurfaceAdapterPolicy["sensitivity"] = "high",
-  notes: string[] = []
+  notes: string[] = [],
+  contentPattern: RegExp | false | undefined = undefined
 ): LearnV2SurfaceAdapter {
   const policy = rawSurfacePolicy(sensitivity, notes);
   return {
@@ -116,7 +117,8 @@ function makeAdapter(
           reasons: [`filename:${filename}`]
         };
       }
-      if (pathPattern.test(rawText.slice(0, 1000))) {
+      const textPattern = contentPattern === false ? undefined : contentPattern ?? pathPattern;
+      if (textPattern?.test(rawText.slice(0, 1000))) {
         return {
           matchedBy: "content",
           confidence: "medium",

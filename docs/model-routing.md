@@ -140,7 +140,9 @@ agents: `mode: subagent`, selected model route fields, and singular
 manifests reference the exact agent id/file. The execution boundary remains
 sanitized: request bundles and prompts are declassified, `rawRefsIncluded` is
 false, and OSK treats model output as untrusted proposal JSON until schema,
-evidence-id, path, and leak checks pass.
+evidence-id, path, and leak checks pass. Preparing these requests does not
+invoke OpenCode or any provider; OSK only writes artifacts for the operator or
+harness to run through the named OpenCode agent.
 
 ## Validation
 
