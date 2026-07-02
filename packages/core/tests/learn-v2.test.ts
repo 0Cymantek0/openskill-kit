@@ -974,6 +974,56 @@ describe("learn-v2 substrate", () => {
     expect(store.cards.find((item) => item.id === badConcept.id)?.status).toBe("candidate");
   });
 
+  it("compiles active Learn v2 command concepts into structured command policy artifacts", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:02:30Z");
+    const [card] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("compile_command_policy", "When changing parser code, run `npm test -- parser` before final summary.", "positive"),
+      kind: "command-policy",
+      scope: {
+        level: "path",
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"]
+      },
+      evidenceIds: ["ev_compile_command_policy_a", "ev_compile_command_policy_b"],
+      rawRefs: ["raw_compile_command_policy_a", "raw_compile_command_policy_b"],
+      confidence: 0.84,
+      sourceReliability: 0.84,
+      risk: "low"
+    }], now);
+    await writeLearnV2ConceptStore(root, [{
+      ...card!,
+      status: "active",
+      risk: "low",
+      activation: {
+        ...card!.activation,
+        commands: ["npm test -- parser"],
+        pathGlobs: ["packages/core/src/**"]
+      }
+    }], now);
+
+    const compiled = await compileBehaviorLayer(root, { targets: ["project-rules"] });
+    const commandPolicyPath = compiled.policyArtifactPaths.find((item) => item.endsWith("command-policy.md"))!;
+    const commandPolicyJsonPath = compiled.policyArtifactPaths.find((item) => item.endsWith("command-policy.json"))!;
+    const markdown = await readText(commandPolicyPath);
+    const json = JSON.parse(await readText(commandPolicyJsonPath));
+
+    expect(markdown).toContain("Learn v2 Structured Command Rules");
+    expect(markdown).toContain("npm test -- parser");
+    expect(markdown).toContain("Changes touch packages/core/src/parser.ts");
+    expect(json.learnV2.schemaVersion).toBe("openskill-kit.learn-v2.command-policy.v1");
+    expect(json.learnV2.ruleCount).toBe(1);
+    expect(json.learnV2.rules[0]).toMatchObject({
+      command: "npm test -- parser",
+      status: "suggested",
+      scopePaths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"],
+      costClass: "cheap",
+      evidenceConceptIds: [card!.id]
+    });
+    expect(JSON.stringify(json.learnV2)).not.toContain("raw_compile_command_policy");
+  });
+
   it("compiles active concepts but excludes candidates from compatibility outputs", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_compile");

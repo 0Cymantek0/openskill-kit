@@ -1,5 +1,7 @@
 import path from "node:path";
 import { readProjectConfig } from "../events/store.js";
+import { buildLearnV2CommandPolicyRules, renderLearnV2CommandPolicyMarkdown } from "../learn-v2/command-policy.js";
+import { readLearnV2ConceptStore } from "../learn-v2/store.js";
 import { readApprovedAmbientLabels } from "../preferences/labels.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
 import type { PreferenceNode } from "../preferences/schema.js";
@@ -22,14 +24,16 @@ export async function compilePolicyArtifacts(projectRoot: string): Promise<Compi
   const workflowGraph = await readWorkflowGraph(root, config.projectId, new Date());
   const active = graph.nodes.filter((node) => node.status === "active" || node.status === "locked");
   const activeWorkflows = workflowGraph.nodes.filter((node) => node.status === "active" || node.status === "locked");
+  const learnV2Store = await readLearnV2ConceptStore(root).catch(() => undefined);
+  const learnV2CommandRules = buildLearnV2CommandPolicyRules(learnV2Store?.cards ?? []);
   const approvedLabels = await readApprovedAmbientLabels(root);
   const pathMapPath = path.join(root, ".openskill-kit", "compiled", "behavior", "path-map.json");
   const commandPolicyPath = path.join(root, ".openskill-kit", "compiled", "behavior", "command-policy.md");
   const commandPolicyJsonPath = path.join(root, ".openskill-kit", "compiled", "behavior", "command-policy.json");
   const reviewChecklistPath = path.join(root, ".openskill-kit", "compiled", "behavior", "review-checklist.md");
   await writeJsonAtomic(pathMapPath, renderPathMap(active, activeWorkflows));
-  await writeFileAtomic(commandPolicyPath, renderCommandPolicy(active, activeWorkflows, approvedLabels.commands));
-  await writeJsonAtomic(commandPolicyJsonPath, renderCommandPolicyJson(active, activeWorkflows, approvedLabels.commands));
+  await writeFileAtomic(commandPolicyPath, renderCommandPolicy(active, activeWorkflows, approvedLabels.commands, learnV2CommandRules));
+  await writeJsonAtomic(commandPolicyJsonPath, renderCommandPolicyJson(active, activeWorkflows, approvedLabels.commands, learnV2CommandRules));
   await writeFileAtomic(reviewChecklistPath, renderReviewChecklist(active, activeWorkflows, approvedLabels));
   return { schemaVersion: "openskill-kit.policy-artifacts.v1", pathMapPath, commandPolicyPath, commandPolicyJsonPath, reviewChecklistPath };
 }
@@ -66,10 +70,15 @@ function renderPathMap(nodes: PreferenceNode[], workflows: WorkflowNode[]) {
   };
 }
 
-function renderCommandPolicy(nodes: PreferenceNode[], workflows: WorkflowNode[], commandLabels: Awaited<ReturnType<typeof readApprovedAmbientLabels>>["commands"]): string {
+function renderCommandPolicy(
+  nodes: PreferenceNode[],
+  workflows: WorkflowNode[],
+  commandLabels: Awaited<ReturnType<typeof readApprovedAmbientLabels>>["commands"],
+  learnV2CommandRules: ReturnType<typeof buildLearnV2CommandPolicyRules>
+): string {
   const commandNodes = nodes.filter((node) => node.category === "tooling" || node.category === "testing" || /command|script|npm|test|build|lint|typecheck/i.test(node.statement));
   const lines = ["# Command Policy", ""];
-  if (commandNodes.length === 0 && workflows.length === 0 && commandLabels.length === 0) lines.push("No active command policy yet.", "");
+  if (commandNodes.length === 0 && workflows.length === 0 && commandLabels.length === 0 && learnV2CommandRules.length === 0) lines.push("No active command policy yet.", "");
   for (const node of commandNodes.sort(sortNodes)) lines.push(`- ${node.statement} (confidence ${node.confidence})`);
   if (commandLabels.length) {
     lines.push("", "## Approved Ambient Command Labels", "");
@@ -88,11 +97,20 @@ function renderCommandPolicy(nodes: PreferenceNode[], workflows: WorkflowNode[],
       lines.push(`- ${workflow.name}: ${workflow.trigger.commands.join(" -> ")} when ${conditions} (confidence ${workflow.confidence})`);
     }
   }
+  if (learnV2CommandRules.length) {
+    lines.push("", "## Learn v2 Structured Command Rules", "");
+    lines.push(renderLearnV2CommandPolicyMarkdown(learnV2CommandRules).replace(/^# Learn v2 Command Policy\s*/u, "").trim());
+  }
   lines.push("");
   return lines.join("\n");
 }
 
-function renderCommandPolicyJson(nodes: PreferenceNode[], workflows: WorkflowNode[], commandLabels: Awaited<ReturnType<typeof readApprovedAmbientLabels>>["commands"]) {
+function renderCommandPolicyJson(
+  nodes: PreferenceNode[],
+  workflows: WorkflowNode[],
+  commandLabels: Awaited<ReturnType<typeof readApprovedAmbientLabels>>["commands"],
+  learnV2CommandRules: ReturnType<typeof buildLearnV2CommandPolicyRules>
+) {
   const commandNodes = nodes.filter((node) => node.category === "tooling" || node.category === "testing" || /command|script|npm|test|build|lint|typecheck/i.test(node.statement));
   const workflowPolicies = workflows
     .filter((workflow) => workflow.trigger.commands.length || workflow.steps.some((step) => step.command))
@@ -141,7 +159,12 @@ function renderCommandPolicyJson(nodes: PreferenceNode[], workflows: WorkflowNod
     invariant: "Commands are conditional on task, path, reviewed workflow, or approved label evidence; do not treat as unconditional global commands.",
     workflows: workflowPolicies,
     preferences: preferencePolicies,
-    approvedAmbientCommandLabels: labelPolicies
+    approvedAmbientCommandLabels: labelPolicies,
+    learnV2: {
+      schemaVersion: "openskill-kit.learn-v2.command-policy.v1",
+      ruleCount: learnV2CommandRules.length,
+      rules: learnV2CommandRules
+    }
   };
 }
 
