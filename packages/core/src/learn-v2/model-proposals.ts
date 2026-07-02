@@ -1,13 +1,19 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { readProjectConfig } from "../events/store.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
+import { writeLearnV2ConflictLedger } from "./conflicts.js";
+import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
+import { detectLearnV2ConceptDrift } from "./drift.js";
+import { runLearnV2Eval } from "./eval.js";
 import {
   buildLearnV2EpisodeLearningBundle,
   parseLearnV2LlmConceptExtractionOutput,
   renderLearnV2ConceptExtractionPrompt,
   validateLearnV2LlmConceptExtractionOutput
 } from "./extract.js";
+import { writeLearnV2ReviewQueue } from "./review.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { type LearnV2BehaviorAtom, type LearnV2TaskEpisode } from "./schemas.js";
 
@@ -45,6 +51,12 @@ export interface LearnV2ModelProposalApplyResult {
   rejected: Array<{ outputPath: string; id: string; reason: string; detail?: string }>;
   conceptCount: number;
   conceptStorePath: string;
+  reviewQueuePath: string;
+  conflictLedgerPath: string;
+  declassifiedSnippetsPath: string;
+  conceptDriftPath: string;
+  evalReportPath: string;
+  evalStatus: "pass" | "fail";
 }
 
 interface LearnV2ModelRequestManifest {
@@ -208,6 +220,21 @@ export async function applyLearnV2ModelProposalOutputs(
   const concepts = mergeLearnV2ConceptCards(atoms, now);
   const existing = await readLearnV2ConceptStore(root, now).catch(() => undefined);
   const store = await writeLearnV2ConceptStore(root, [...(existing?.cards ?? []), ...concepts], now);
+  const config = await readProjectConfig(root);
+  const conflictLedger = await writeLearnV2ConflictLedger(root, store.cards, config.projectId, now);
+  const declassifiedSnippets = await writeLearnV2DeclassifiedSnippetArtifact(root, episodeStore.episodes, now, {
+    blockOnMediumRisk: true,
+    maxChars: 700,
+    maxSnippets: 200
+  });
+  const conceptDrift = await detectLearnV2ConceptDrift(root, store.cards, { now });
+  const evalReport = await runLearnV2Eval(root, episodeStore.episodes, store.cards, now);
+  const reviewQueue = await writeLearnV2ReviewQueue(root, store.cards, now, {
+    ledger: conflictLedger.ledger,
+    markdownPath: conflictLedger.artifactPaths.markdown,
+    declassifiedSnippets,
+    conceptDrift
+  });
   return {
     schemaVersion: "openskill-kit.learn-v2.model-proposal-apply-result.v1",
     appliedAt: now.toISOString(),
@@ -215,7 +242,13 @@ export async function applyLearnV2ModelProposalOutputs(
     atomCount: atoms.length,
     rejected,
     conceptCount: store.cards.length,
-    conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json")
+    conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
+    reviewQueuePath: reviewQueue.artifacts.markdown,
+    conflictLedgerPath: conflictLedger.artifactPaths.markdown,
+    declassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
+    conceptDriftPath: conceptDrift.artifactPath,
+    evalReportPath: evalReport.artifacts.markdown,
+    evalStatus: evalReport.status
   };
 }
 

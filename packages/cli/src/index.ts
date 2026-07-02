@@ -2223,7 +2223,12 @@ function renderLearnV2ModelProposalApply(result: Awaited<ReturnType<typeof apply
     `Validated atoms: ${result.atomCount}`,
     `Rejected proposals: ${result.rejected.length}`,
     `Concept store cards: ${result.conceptCount}`,
-    `Concept store: ${result.conceptStorePath}`
+    `Concept store: ${result.conceptStorePath}`,
+    `Review queue: ${result.reviewQueuePath}`,
+    `Conflict ledger: ${result.conflictLedgerPath}`,
+    `Eval: ${result.evalStatus} (${result.evalReportPath})`,
+    `Declassified snippets: ${result.declassifiedSnippetsPath}`,
+    `Concept drift: ${result.conceptDriftPath}`
   ];
   for (const item of result.rejected.slice(0, 20)) {
     lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);

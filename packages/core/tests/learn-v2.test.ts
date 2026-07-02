@@ -814,6 +814,13 @@ describe("learn-v2 substrate", () => {
     expect(applied.outputFiles).toContain(outputPath);
     expect(applied.atomCount).toBe(1);
     expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining(["unexpected-output-path", "stale-request-manifest", "invalid-json-or-schema"]));
+    expect(applied.evalStatus).toBe("pass");
+    expect(await readText(applied.reviewQueuePath)).toContain("Evidence Snippet Summary");
+    expect(await readText(applied.reviewQueuePath)).toContain("For parser changes, prefer focused parser regression tests before broad suites.");
+    expect(await readText(applied.conflictLedgerPath)).toContain("Learn v2 Conflict Ledger");
+    expect(await readText(applied.evalReportPath)).toContain("Learn v2 Eval");
+    expect(await readText(applied.declassifiedSnippetsPath)).toContain("Learn v2 Declassified Evidence Snippets");
+    expect(await readText(applied.conceptDriftPath)).toContain("openskill-kit.learn-v2.concept-drift.v1");
     expect(store.cards.some((card) => /parser regression tests/i.test(card.canonicalBehavior))).toBe(true);
     expect(JSON.stringify(store)).not.toContain("sk-12345678901234567890");
   });
