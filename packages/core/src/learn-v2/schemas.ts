@@ -138,6 +138,7 @@ export const LearnV2PatchComparisonSchema = z.object({
   id: z.string().min(1),
   evidenceId: z.string().min(1).optional(),
   kind: z.enum(["agent-patch", "manual-edit", "final-patch", "diff-summary"]),
+  pairedWithIds: z.array(z.string().min(1)).default([]),
   paths: z.array(z.string()).default([]),
   structuralClasses: z.array(z.enum(["api", "parser", "test", "config", "docs", "generated", "lockfile", "formatting", "unknown"])).default([]),
   structuralSummary: z.object({
@@ -178,7 +179,37 @@ export const LearnV2PatchComparisonSchema = z.object({
     "rename-only",
     "empty-diff",
     "non-semantic"
-  ])).default([])
+  ])).default([]),
+  comparison: z.object({
+    schemaVersion: z.literal("openskill-kit.learn-v2.patch-comparison.v1"),
+    role: z.enum(["agent-proposed", "user-final", "manual-edit", "standalone"]),
+    relation: z.enum(["standalone", "proposed-vs-final", "manual-edit-over-agent"]),
+    counterpartPatchId: z.string().min(1).optional(),
+    sharedPaths: z.array(z.string()).default([]),
+    proposedOnlyPaths: z.array(z.string()).default([]),
+    finalOnlyPaths: z.array(z.string()).default([]),
+    sharedStructuralClasses: z.array(z.enum(["api", "parser", "test", "config", "docs", "generated", "lockfile", "formatting", "unknown"])).default([]),
+    proposedOnlyStructuralClasses: z.array(z.enum(["api", "parser", "test", "config", "docs", "generated", "lockfile", "formatting", "unknown"])).default([]),
+    finalOnlyStructuralClasses: z.array(z.enum(["api", "parser", "test", "config", "docs", "generated", "lockfile", "formatting", "unknown"])).default([]),
+    proposedOnlySymbols: z.array(z.string()).default([]),
+    finalOnlySymbols: z.array(z.string()).default([]),
+    proposedOnlyImports: z.array(z.string()).default([]),
+    finalOnlyImports: z.array(z.string()).default([]),
+    addedLineDelta: z.number().int(),
+    removedLineDelta: z.number().int(),
+    behaviorSignal: z.enum([
+      "user-expanded-scope",
+      "user-narrowed-scope",
+      "user-added-tests",
+      "user-removed-generated-or-lockfile",
+      "user-changed-api-surface",
+      "user-kept-proposal",
+      "user-reworked-patch",
+      "unknown"
+    ]),
+    confidence: z.number().min(0).max(1),
+    reasons: z.array(z.string()).default([])
+  }).optional()
 });
 export type LearnV2PatchComparison = z.infer<typeof LearnV2PatchComparisonSchema>;
 
@@ -277,6 +308,7 @@ export const LearnV2EpisodeLearningBundleSchema = z.object({
     paths: z.array(z.string()).default([]),
     structuralClasses: LearnV2PatchComparisonSchema.shape.structuralClasses,
     structuralSummary: LearnV2PatchComparisonSchema.shape.structuralSummary,
+    comparison: LearnV2PatchComparisonSchema.shape.comparison,
     behaviorEligible: LearnV2PatchComparisonSchema.shape.behaviorEligible,
     filterReasons: LearnV2PatchComparisonSchema.shape.filterReasons,
     addedLines: z.number().int().min(0),

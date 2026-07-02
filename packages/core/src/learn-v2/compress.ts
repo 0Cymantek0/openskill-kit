@@ -148,7 +148,9 @@ function dedupeConsecutive(lines: string[]): string[] {
 export function summarizeLearnV2Patches(evidence: LearnV2NormalizedEvidence[]): LearnV2PatchComparison[] {
   const patches: LearnV2PatchComparison[] = [];
   for (const item of evidence) {
-    if (item.kind !== "file-change" && !/^diff --git /m.test(item.text) && !/\b(?:patched|manual edit|final patch|diff)\b/i.test(item.text)) continue;
+    const hasUnifiedDiff = /^diff --git /m.test(item.text);
+    const hasPatchKeywordWithPathContext = item.paths.length > 0 && /\b(?:patched|manual edit|final patch|proposed patch|diff)\b/i.test(item.text);
+    if (item.kind !== "file-change" && !hasUnifiedDiff && !hasPatchKeywordWithPathContext) continue;
     const structuralSummary = analyzeLearnV2StructuralDiff(item.text, item.paths);
     const paths = structuralSummary.fileSummaries.map((file) => file.path).slice(0, 30);
     const ignoredGenerated = structuralSummary.ignoredFiles.length > 0;
@@ -158,7 +160,8 @@ export function summarizeLearnV2Patches(evidence: LearnV2NormalizedEvidence[]): 
     patches.push({
       id: `patch_${learnV2ShortHash(`${item.id}:${paths.join(",")}:${addedLines}:${removedLines}`)}`,
       evidenceId: item.id,
-      kind: /\bmanual edit\b/i.test(item.text) ? "manual-edit" : /\bfinal patch\b/i.test(item.text) ? "final-patch" : "diff-summary",
+      kind: inferPatchKind(item),
+      pairedWithIds: [],
       paths,
       structuralClasses: structuralClassesFromSummary(structuralSummary),
       structuralSummary,
@@ -170,7 +173,208 @@ export function summarizeLearnV2Patches(evidence: LearnV2NormalizedEvidence[]): 
       filterReasons: eligibility.filterReasons
     });
   }
-  return patches;
+  return attachPatchPairComparisons(patches);
+}
+
+function inferPatchKind(item: LearnV2NormalizedEvidence): LearnV2PatchComparison["kind"] {
+  const metadataKind = [item.metadata.patchKind, item.metadata.diffKind, item.metadata.role, item.metadata.sourceRole]
+    .map((value) => typeof value === "string" ? value : "")
+    .join(" ");
+  const text = `${metadataKind}\n${item.text}`;
+  if (/\b(?:manual edit|manual-edited|user edited|user patch|user final edit)\b/i.test(text)) return "manual-edit";
+  if (/\b(?:final patch|accepted patch|user final|finalPatch|final-patch)\b/i.test(text)) return "final-patch";
+  if (/\b(?:agent patch|assistant patch|proposed patch|agent-proposed|proposedPatch|proposed-patch)\b/i.test(text)) return "agent-patch";
+  return "diff-summary";
+}
+
+function attachPatchPairComparisons(patches: LearnV2PatchComparison[]): LearnV2PatchComparison[] {
+  const out = patches.map((patch) => ({ ...patch, pairedWithIds: [...patch.pairedWithIds] }));
+  const usedFinal = new Set<number>();
+  for (const [proposedIndex, proposed] of out.entries()) {
+    if (proposed.kind !== "agent-patch" || proposed.behaviorEligible === false) continue;
+    const finalIndex = bestPatchPairCandidate(out, proposedIndex, usedFinal);
+    if (finalIndex === undefined) continue;
+    const finalPatch = out[finalIndex]!;
+    const comparison = comparePatchPair(proposed, finalPatch);
+    out[proposedIndex] = {
+      ...proposed,
+      pairedWithIds: uniqueStrings([...proposed.pairedWithIds, finalPatch.id]),
+      comparison: {
+        ...comparison,
+        role: "agent-proposed",
+        counterpartPatchId: finalPatch.id
+      }
+    };
+    out[finalIndex] = {
+      ...finalPatch,
+      pairedWithIds: uniqueStrings([...finalPatch.pairedWithIds, proposed.id]),
+      comparison: {
+        ...comparison,
+        role: finalPatch.kind === "manual-edit" ? "manual-edit" : "user-final",
+        relation: finalPatch.kind === "manual-edit" ? "manual-edit-over-agent" : "proposed-vs-final",
+        counterpartPatchId: proposed.id
+      }
+    };
+    usedFinal.add(finalIndex);
+  }
+  return out;
+}
+
+function bestPatchPairCandidate(patches: LearnV2PatchComparison[], proposedIndex: number, usedFinal: Set<number>): number | undefined {
+  let best: { index: number; score: number } | undefined;
+  const proposed = patches[proposedIndex]!;
+  for (let index = proposedIndex + 1; index < patches.length; index += 1) {
+    if (usedFinal.has(index)) continue;
+    const candidate = patches[index]!;
+    if (candidate.kind !== "manual-edit" && candidate.kind !== "final-patch") continue;
+    if (candidate.behaviorEligible === false) continue;
+    const score = patchPairScore(proposed, candidate, index - proposedIndex);
+    if (score <= 0) continue;
+    if (!best || score > best.score) best = { index, score };
+  }
+  return best?.index;
+}
+
+function patchPairScore(proposed: LearnV2PatchComparison, finalPatch: LearnV2PatchComparison, distance: number): number {
+  const sharedPathCount = intersectStrings(proposed.paths, finalPatch.paths).length;
+  const sharedDirectory = proposed.paths.some((left) => finalPatch.paths.some((right) => pathFamily(left) === pathFamily(right)));
+  const sharedClassCount = intersectStrings(proposed.structuralClasses, finalPatch.structuralClasses).length;
+  const symbolOverlap = intersectStrings(proposed.structuralSummary.changedSymbols, finalPatch.structuralSummary.changedSymbols).length;
+  const fallbackSinglePair = !proposed.paths.length && !finalPatch.paths.length && sharedClassCount > 0;
+  return (sharedPathCount * 4)
+    + (sharedDirectory ? 2 : 0)
+    + sharedClassCount
+    + Math.min(2, symbolOverlap)
+    + (fallbackSinglePair ? 1 : 0)
+    - Math.min(2, Math.max(0, distance - 1) * 0.25);
+}
+
+function comparePatchPair(proposed: LearnV2PatchComparison, finalPatch: LearnV2PatchComparison): NonNullable<LearnV2PatchComparison["comparison"]> {
+  const sharedPaths = intersectStrings(proposed.paths, finalPatch.paths);
+  const proposedOnlyPaths = differenceStrings(proposed.paths, finalPatch.paths);
+  const finalOnlyPaths = differenceStrings(finalPatch.paths, proposed.paths);
+  const sharedStructuralClasses = intersectStrings(proposed.structuralClasses, finalPatch.structuralClasses);
+  const proposedOnlyStructuralClasses = differenceStrings(proposed.structuralClasses, finalPatch.structuralClasses);
+  const finalOnlyStructuralClasses = differenceStrings(finalPatch.structuralClasses, proposed.structuralClasses);
+  const proposedOnlySymbols = differenceStrings(proposed.structuralSummary.changedSymbols, finalPatch.structuralSummary.changedSymbols);
+  const finalOnlySymbols = differenceStrings(finalPatch.structuralSummary.changedSymbols, proposed.structuralSummary.changedSymbols);
+  const proposedOnlyImports = differenceStrings(proposed.structuralSummary.changedImports, finalPatch.structuralSummary.changedImports);
+  const finalOnlyImports = differenceStrings(finalPatch.structuralSummary.changedImports, proposed.structuralSummary.changedImports);
+  const addedLineDelta = finalPatch.addedLines - proposed.addedLines;
+  const removedLineDelta = finalPatch.removedLines - proposed.removedLines;
+  const { behaviorSignal, reasons } = patchBehaviorSignal({
+    proposed,
+    finalPatch,
+    sharedPaths,
+    proposedOnlyPaths,
+    finalOnlyPaths,
+    proposedOnlyStructuralClasses,
+    finalOnlyStructuralClasses,
+    proposedOnlySymbols,
+    finalOnlySymbols,
+    proposedOnlyImports,
+    finalOnlyImports,
+    addedLineDelta,
+    removedLineDelta
+  });
+  const confidence = patchComparisonConfidence({
+    sharedPaths,
+    sharedStructuralClasses,
+    proposedOnlyPaths,
+    finalOnlyPaths,
+    finalOnlyStructuralClasses,
+    reasons,
+    behaviorSignal
+  });
+  return {
+    schemaVersion: "openskill-kit.learn-v2.patch-comparison.v1",
+    role: "standalone",
+    relation: finalPatch.kind === "manual-edit" ? "manual-edit-over-agent" : "proposed-vs-final",
+    sharedPaths,
+    proposedOnlyPaths,
+    finalOnlyPaths,
+    sharedStructuralClasses,
+    proposedOnlyStructuralClasses,
+    finalOnlyStructuralClasses,
+    proposedOnlySymbols,
+    finalOnlySymbols,
+    proposedOnlyImports,
+    finalOnlyImports,
+    addedLineDelta,
+    removedLineDelta,
+    behaviorSignal,
+    confidence,
+    reasons
+  };
+}
+
+function patchBehaviorSignal(input: {
+  proposed: LearnV2PatchComparison;
+  finalPatch: LearnV2PatchComparison;
+  sharedPaths: string[];
+  proposedOnlyPaths: string[];
+  finalOnlyPaths: string[];
+  proposedOnlyStructuralClasses: LearnV2PatchComparison["structuralClasses"];
+  finalOnlyStructuralClasses: LearnV2PatchComparison["structuralClasses"];
+  proposedOnlySymbols: string[];
+  finalOnlySymbols: string[];
+  proposedOnlyImports: string[];
+  finalOnlyImports: string[];
+  addedLineDelta: number;
+  removedLineDelta: number;
+}): { behaviorSignal: NonNullable<LearnV2PatchComparison["comparison"]>["behaviorSignal"]; reasons: string[] } {
+  const reasons: string[] = [];
+  const finalAddedTests = input.finalOnlyStructuralClasses.includes("test") || input.finalOnlyPaths.some((file) => /(?:test|spec|fixture)/i.test(file));
+  if (finalAddedTests) {
+    reasons.push("final-patch-added-test-scope");
+    return { behaviorSignal: "user-added-tests", reasons };
+  }
+  const proposedGeneratedOrLock = input.proposed.structuralClasses.some((item) => item === "generated" || item === "lockfile");
+  const finalGeneratedOrLock = input.finalPatch.structuralClasses.some((item) => item === "generated" || item === "lockfile");
+  if (proposedGeneratedOrLock && !finalGeneratedOrLock) {
+    reasons.push("final-patch-removed-generated-or-lockfile-scope");
+    return { behaviorSignal: "user-removed-generated-or-lockfile", reasons };
+  }
+  const apiChanged = input.finalOnlyStructuralClasses.includes("api")
+    || input.finalOnlySymbols.length > 0
+    || input.finalOnlyImports.length > 0
+    || input.proposedOnlySymbols.length > 0
+    || input.proposedOnlyImports.length > 0;
+  if (apiChanged && input.sharedPaths.length) {
+    reasons.push("final-patch-changed-api-symbols-or-imports");
+    return { behaviorSignal: "user-changed-api-surface", reasons };
+  }
+  if (input.finalOnlyPaths.length > input.proposedOnlyPaths.length || input.finalOnlyStructuralClasses.length > input.proposedOnlyStructuralClasses.length) {
+    reasons.push("final-patch-expanded-scope");
+    return { behaviorSignal: "user-expanded-scope", reasons };
+  }
+  if (input.proposedOnlyPaths.length > input.finalOnlyPaths.length || input.proposedOnlyStructuralClasses.length > input.finalOnlyStructuralClasses.length) {
+    reasons.push("final-patch-narrowed-scope");
+    return { behaviorSignal: "user-narrowed-scope", reasons };
+  }
+  if (input.addedLineDelta === 0 && input.removedLineDelta === 0 && !input.finalOnlySymbols.length && !input.proposedOnlySymbols.length) {
+    reasons.push("final-patch-kept-proposal-shape");
+    return { behaviorSignal: "user-kept-proposal", reasons };
+  }
+  reasons.push("final-patch-materially-reworked-proposal");
+  return { behaviorSignal: "user-reworked-patch", reasons };
+}
+
+function patchComparisonConfidence(input: {
+  sharedPaths: string[];
+  sharedStructuralClasses: LearnV2PatchComparison["structuralClasses"];
+  proposedOnlyPaths: string[];
+  finalOnlyPaths: string[];
+  finalOnlyStructuralClasses: LearnV2PatchComparison["structuralClasses"];
+  reasons: string[];
+  behaviorSignal: NonNullable<LearnV2PatchComparison["comparison"]>["behaviorSignal"];
+}): number {
+  const sharedPathBoost = Math.min(0.22, input.sharedPaths.length * 0.08);
+  const sharedClassBoost = Math.min(0.14, input.sharedStructuralClasses.length * 0.04);
+  const finalScopeBoost = Math.min(0.12, (input.finalOnlyPaths.length + input.finalOnlyStructuralClasses.length) * 0.03);
+  const signalBoost = input.behaviorSignal === "user-kept-proposal" || input.behaviorSignal === "unknown" ? 0 : 0.08;
+  const reasonBoost = Math.min(0.06, input.reasons.length * 0.03);
+  return Number(Math.min(0.9, 0.42 + sharedPathBoost + sharedClassBoost + finalScopeBoost + signalBoost + reasonBoost).toFixed(2));
 }
 
 export function learnV2TokenBudget(evidence: LearnV2NormalizedEvidence[], compressed: string): { inputChars: number; compressedChars: number; compressionRatio: number } {
@@ -230,4 +434,23 @@ function renderPatchSummary(summary: LearnV2PatchComparison["structuralSummary"]
     filterReasons.length ? `learning-filter=${filterReasons.join(",")}` : undefined
   ].filter(Boolean);
   return parts.length ? parts.join("; ") : learnV2Snippet(text, 320) || "Patch summary";
+}
+
+function intersectStrings<T extends string>(left: T[], right: T[]): T[] {
+  const rightSet = new Set(right);
+  return uniqueStrings(left.filter((item) => rightSet.has(item))) as T[];
+}
+
+function differenceStrings<T extends string>(left: T[], right: T[]): T[] {
+  const rightSet = new Set(right);
+  return uniqueStrings(left.filter((item) => !rightSet.has(item))) as T[];
+}
+
+function uniqueStrings<T extends string>(values: T[]): T[] {
+  return [...new Set(values.filter(Boolean))].sort();
+}
+
+function pathFamily(file: string): string {
+  const parts = file.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts.length > 1 ? parts.slice(0, -1).join("/") : file;
 }

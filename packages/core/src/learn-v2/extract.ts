@@ -36,7 +36,10 @@ function extractEpisodeAtoms(episode: LearnV2TaskEpisode): LearnV2BehaviorAtom[]
   const text = [
     ...episode.messages.map((message) => `${message.actor}: ${message.text}`),
     ...episode.toolSummaries.map((tool) => `tool:${tool.toolName}:${tool.status}:${tool.command ?? ""}:${tool.summary}`),
-    ...learningPatches.map((patch) => `patch:${patch.structuralClasses.join(",")}:${patch.summary}`)
+    ...learningPatches.map((patch) => `patch:${patch.structuralClasses.join(",")}:${patch.summary}`),
+    ...learningPatches
+      .filter((patch) => patch.comparison)
+      .map((patch) => `patch-comparison:${patch.comparison!.relation}:${patch.comparison!.behaviorSignal}:${patch.comparison!.reasons.join(",")}`)
   ].join("\n");
   const preferenceText = [
     ...episode.messages
@@ -76,6 +79,7 @@ function extractEpisodeAtoms(episode: LearnV2TaskEpisode): LearnV2BehaviorAtom[]
       risk: "medium"
     }));
   }
+  atoms.push(...extractPatchCorrectionAtoms(episode, learningPatches));
   if (episode.taskHints.includes("parser-change") && episode.taskHints.includes("testing")) {
     atoms.push(makeAtom(episode, {
       kind: "verification",
@@ -216,6 +220,7 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
       paths: patch.paths,
       structuralClasses: patch.structuralClasses,
       structuralSummary: patch.structuralSummary,
+      comparison: patch.comparison,
       behaviorEligible: patch.behaviorEligible !== false,
       filterReasons: patch.filterReasons ?? [],
       addedLines: patch.addedLines,
@@ -235,6 +240,150 @@ export function buildLearnV2EpisodeLearningBundle(episode: LearnV2TaskEpisode): 
 
 function learnablePatchComparisons(episode: LearnV2TaskEpisode): LearnV2TaskEpisode["patchComparisons"] {
   return episode.patchComparisons.filter((patch) => patch.behaviorEligible !== false);
+}
+
+function extractPatchCorrectionAtoms(
+  episode: LearnV2TaskEpisode,
+  patches: LearnV2TaskEpisode["patchComparisons"]
+): LearnV2BehaviorAtom[] {
+  const byId = new Map(patches.map((patch) => [patch.id, patch]));
+  const atoms: LearnV2BehaviorAtom[] = [];
+  for (const patch of patches) {
+    const comparison = patch.comparison;
+    if (!comparison || (comparison.role !== "user-final" && comparison.role !== "manual-edit")) continue;
+    if (comparison.confidence < 0.5) continue;
+    if (comparison.behaviorSignal === "user-kept-proposal" || comparison.behaviorSignal === "unknown") continue;
+    const counterpart = comparison.counterpartPatchId ? byId.get(comparison.counterpartPatchId) : undefined;
+    const evidenceIds = uniqueStrings([patch.evidenceId, counterpart?.evidenceId].filter((value): value is string => Boolean(value)));
+    const correctionScopePaths = uniqueStrings([
+      ...comparison.sharedPaths,
+      ...comparison.finalOnlyPaths,
+      ...patch.paths
+    ]).filter((file) => !file.includes("[")).slice(0, 12);
+    const common = {
+      evidenceIds: evidenceIds.length ? evidenceIds : episode.evidenceIds,
+      rawRefs: episode.rawRefs,
+      scope: {
+        level: correctionScopePaths.length ? "path" as const : "task" as const,
+        paths: correctionScopePaths,
+        taskTypes: uniqueStrings([
+          ...episode.taskHints.filter((hint) => !hint.startsWith("command:")),
+          "patch-correction",
+          comparison.behaviorSignal
+        ]).slice(0, 8)
+      },
+      activationHints: patchComparisonActivationHints(comparison, correctionScopePaths),
+      counterevidence: counterpart?.evidenceId ? [{
+        evidenceId: counterpart.evidenceId,
+        reason: `Earlier proposed patch differed from final patch: ${comparison.reasons.join(", ") || comparison.behaviorSignal}.`
+      }] : undefined
+    };
+    if (comparison.behaviorSignal === "user-added-tests") {
+      atoms.push(makeAtom(episode, {
+        kind: "verification",
+        statement: "When final edits add tests over an earlier patch, include focused regression coverage for the changed behavior.",
+        polarity: "positive",
+        rationale: "Final patch added test scope that was absent from the proposed patch.",
+        confidenceCap: 0.88,
+        risk: "medium",
+        conditions: {
+          appliesWhen: ["A user-final or manual-edit patch adds tests, fixtures, or regression coverage absent from the proposed patch."],
+          doesNotApplyWhen: ["Patch comparison is generated-only, lockfile-only, formatting-only, or lacks shared semantic scope."]
+        },
+        ...common
+      }));
+    } else if (comparison.behaviorSignal === "user-narrowed-scope") {
+      atoms.push(makeAtom(episode, {
+        kind: "scope-boundary",
+        statement: "Avoid broad patch scope when final user edits narrow the assistant proposal; keep changes to the semantic files needed for the task.",
+        polarity: "negative",
+        rationale: "Final patch removed paths or structural classes from the proposed patch.",
+        confidenceCap: 0.84,
+        risk: "medium",
+        conditions: {
+          appliesWhen: ["Final patch keeps only a narrower subset of paths or structural classes from the proposed patch."],
+          doesNotApplyWhen: ["User explicitly asks for broad refactor, migration, or architecture-wide cleanup."]
+        },
+        ...common
+      }));
+    } else if (comparison.behaviorSignal === "user-removed-generated-or-lockfile") {
+      atoms.push(makeAtom(episode, {
+        kind: "scope-boundary",
+        statement: "Do not treat generated files or lockfile churn as durable learning signal when final user edits remove them from the patch.",
+        polarity: "negative",
+        rationale: "Final patch removed generated or lockfile-only changes from an earlier proposed patch.",
+        confidenceCap: 0.86,
+        risk: "low",
+        conditions: {
+          appliesWhen: ["Proposed patch includes generated or lockfile files that final user edits omit."],
+          doesNotApplyWhen: ["Task explicitly requests dependency lockfile updates or generated artifact refresh."]
+        },
+        ...common
+      }));
+    } else if (comparison.behaviorSignal === "user-changed-api-surface") {
+      atoms.push(makeAtom(episode, {
+        kind: "review-policy",
+        statement: "Treat user changes to exported symbols or imports over a proposal as API-surface correction and re-check public contracts plus dependent tests.",
+        polarity: "positive",
+        rationale: "Final patch changed symbols or imports relative to the proposed patch.",
+        confidenceCap: 0.82,
+        risk: "medium",
+        conditions: {
+          appliesWhen: ["Final patch changes exported symbols, public declarations, or imports compared with the proposed patch."],
+          doesNotApplyWhen: ["Only comments, formatting, generated files, or lockfiles changed."]
+        },
+        ...common
+      }));
+    } else if (comparison.behaviorSignal === "user-expanded-scope") {
+      atoms.push(makeAtom(episode, {
+        kind: "workflow",
+        statement: "When final user edits expand scope beyond the proposal, carry related semantic files and focused tests needed to complete the task.",
+        polarity: "positive",
+        rationale: "Final patch added paths or structural classes that were absent from the proposed patch.",
+        confidenceCap: 0.82,
+        risk: "medium",
+        conditions: {
+          appliesWhen: ["Final patch adds related semantic files, test files, or structural classes absent from the proposed patch."],
+          doesNotApplyWhen: ["Expansion is generated-only, dependency-only, or unrelated to the task path cluster."]
+        },
+        ...common
+      }));
+    } else if (comparison.behaviorSignal === "user-reworked-patch") {
+      atoms.push(makeAtom(episode, {
+        kind: "review-policy",
+        statement: "When user final edits materially rework a patch, prefer the final diff structure over the assistant proposal as learning evidence.",
+        polarity: "positive",
+        rationale: "Final patch materially changed the proposal without a simpler scope-only signal.",
+        confidenceCap: 0.76,
+        risk: "medium",
+        conditions: {
+          appliesWhen: ["Final patch shares task scope with the proposed patch but has materially different structural details."],
+          doesNotApplyWhen: ["Final patch keeps the proposal shape or only changes formatting."]
+        },
+        ...common
+      }));
+    }
+  }
+  return atoms;
+}
+
+function patchComparisonActivationHints(
+  comparison: NonNullable<LearnV2TaskEpisode["patchComparisons"][number]["comparison"]>,
+  paths: string[]
+): LearnV2BehaviorAtom["activationHints"] {
+  return {
+    phrases: uniqueStrings([
+      "patch correction",
+      comparison.behaviorSignal.replace(/^user-/, "").replace(/-/g, " "),
+      ...comparison.finalOnlyStructuralClasses.map((item) => `${item} patch`)
+    ]).slice(0, 8),
+    pathGlobs: paths.map((file) => {
+      const parts = file.split("/").filter(Boolean);
+      return parts.length > 1 ? `${parts.slice(0, -1).join("/")}/**` : file;
+    }).slice(0, 8),
+    commands: [],
+    negativeTriggers: ["formatting-only", "generated-only", "lockfile-only"]
+  };
 }
 
 function learnablePreferenceEvidenceIds(episode: LearnV2TaskEpisode): Set<string> {

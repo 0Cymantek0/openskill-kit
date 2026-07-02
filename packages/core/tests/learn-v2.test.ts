@@ -51,6 +51,7 @@ import {
   readLearnV2ConceptActivationRuns,
   readProjectConfig,
   type LearnV2BehaviorAtom,
+  type LearnV2NormalizedEvidence,
   type LearnV2OpenCodeInvocation,
   type LearnV2TaskEpisode,
   type LearnV2RawEvidenceRecord
@@ -451,6 +452,83 @@ describe("learn-v2 substrate", () => {
     expect(bundle.patches[0]!.behaviorEligible).toBe(false);
     expect(bundle.patches[0]!.filterReasons).toEqual(["formatting-only"]);
     expect(bundle.instructions.join("\n")).toContain("behaviorEligible is false");
+  });
+
+  it("compares proposed patches against final user edits and extracts correction atoms", async () => {
+    const proposedPatch = [
+      "proposed patch",
+      "diff --git a/packages/core/src/parser.ts b/packages/core/src/parser.ts",
+      "--- a/packages/core/src/parser.ts",
+      "+++ b/packages/core/src/parser.ts",
+      "@@",
+      "-export function parseSkill(input: string) { return oldParse(input); }",
+      "+export function parseSkill(input: string) { return parseWithRegression(input); }"
+    ].join("\n");
+    const finalPatch = [
+      "final patch",
+      "diff --git a/packages/core/src/parser.ts b/packages/core/src/parser.ts",
+      "--- a/packages/core/src/parser.ts",
+      "+++ b/packages/core/src/parser.ts",
+      "@@",
+      "-export function parseSkill(input: string) { return oldParse(input); }",
+      "+export function parseSkill(input: string) { return parseWithRegression(input); }",
+      "diff --git a/packages/core/tests/parser.test.ts b/packages/core/tests/parser.test.ts",
+      "--- a/packages/core/tests/parser.test.ts",
+      "+++ b/packages/core/tests/parser.test.ts",
+      "@@",
+      "+import { describe, expect, it } from \"vitest\";",
+      "+import { parseSkill } from \"../src/parser.js\";",
+      "+describe(\"parseSkill\", () => {",
+      "+  it(\"keeps regression behavior\", () => {",
+      "+    expect(parseSkill(\"value\")).toContain(\"value\");",
+      "+  });",
+      "+});"
+    ].join("\n");
+    const evidence = [
+      normalizedFileChange("ev_agent_patch", proposedPatch, {
+        sessionId: "sess_patch_compare",
+        timestamp: "2026-06-30T00:00:00.000Z",
+        paths: ["packages/core/src/parser.ts"]
+      }),
+      normalizedFileChange("ev_final_patch", finalPatch, {
+        actor: "user",
+        sessionId: "sess_patch_compare",
+        timestamp: "2026-06-30T00:02:00.000Z",
+        paths: ["packages/core/src/parser.ts", "packages/core/tests/parser.test.ts"]
+      }),
+      normalizedMessage("ev_user_edit", "I edited the final patch to add the missing focused regression test.", "user")
+    ].map((item) => ({
+      ...item,
+      sessionId: item.sessionId ?? "sess_patch_compare",
+      timestamp: item.timestamp ?? "2026-06-30T00:03:00.000Z"
+    }));
+
+    const patches = summarizeLearnV2Patches(evidence);
+    expect(patches.map((patch) => patch.kind)).toEqual(["agent-patch", "final-patch"]);
+    expect(patches[0]!.comparison?.role).toBe("agent-proposed");
+    expect(patches[1]!.comparison?.role).toBe("user-final");
+    expect(patches[1]!.comparison?.behaviorSignal).toBe("user-added-tests");
+    expect(patches[1]!.comparison?.sharedPaths).toEqual(["packages/core/src/parser.ts"]);
+    expect(patches[1]!.comparison?.finalOnlyPaths).toEqual(["packages/core/tests/parser.test.ts"]);
+    expect(patches[1]!.comparison?.finalOnlyStructuralClasses).toContain("test");
+    expect(patches[1]!.comparison?.confidence).toBeGreaterThanOrEqual(0.5);
+
+    const [episode] = reconstructLearnV2Episodes(evidence);
+    expect(episode!.patchComparisons[1]!.comparison?.behaviorSignal).toBe("user-added-tests");
+    const bundle = buildLearnV2EpisodeLearningBundle(episode!);
+    expect(bundle.patches[1]!.comparison?.behaviorSignal).toBe("user-added-tests");
+
+    const atoms = extractLearnV2BehaviorAtoms([episode!]).atoms;
+    const correctionAtom = atoms.find((atom) => atom.statement.includes("include focused regression coverage"));
+    expect(correctionAtom).toBeDefined();
+    expect(correctionAtom!.kind).toBe("verification");
+    expect(correctionAtom!.evidenceIds).toEqual(expect.arrayContaining(["ev_agent_patch", "ev_final_patch"]));
+    expect(correctionAtom!.scope.paths).toEqual(expect.arrayContaining([
+      "packages/core/src/parser.ts",
+      "packages/core/tests/parser.test.ts"
+    ]));
+    expect(correctionAtom!.activationHints?.negativeTriggers).toEqual(expect.arrayContaining(["generated-only", "lockfile-only"]));
+    expect(correctionAtom!.counterevidence?.[0]?.evidenceId).toBe("ev_agent_patch");
   });
 
   it("writes declassified pipeline observability metrics for patch filters", async () => {
@@ -2626,7 +2704,11 @@ function previewRecord(root: string, id: string): LearnV2RawEvidenceRecord {
   };
 }
 
-function normalizedFileChange(id: string, text: string) {
+function normalizedFileChange(
+  id: string,
+  text: string,
+  overrides: Partial<LearnV2NormalizedEvidence> = {}
+) {
   return {
     schemaVersion: "openskill-kit.learn-v2.normalized-evidence.v1" as const,
     id,
@@ -2638,7 +2720,8 @@ function normalizedFileChange(id: string, text: string) {
     status: "unknown" as const,
     paths: [],
     commands: [],
-    metadata: {}
+    metadata: {},
+    ...overrides
   };
 }
 
