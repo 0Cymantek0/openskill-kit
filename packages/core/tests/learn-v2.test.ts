@@ -909,17 +909,21 @@ describe("learn-v2 substrate", () => {
     const evidence = normalizeLearnV2Evidence(
       { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
       record,
-      "user: Prefer focused parser regression tests.\nassistant: ok"
-    );
+      "user: Change packages/core/src/parser.ts and prefer focused parser regression tests.\nassistant: ok"
+    ).map((item) => ({ ...item, paths: ["packages/core/src/parser.ts"] }));
     const [episode] = reconstructLearnV2Episodes(evidence);
     const bundle = buildLearnV2EpisodeLearningBundle(episode!);
     const prompt = renderLearnV2ConceptExtractionPrompt(bundle);
     expect(JSON.stringify(bundle)).not.toContain("raw_bundle_secret_ref");
-    expect(bundle.phases.some((phase) => phase.phase === "goal")).toBe(true);
+    expect(bundle.evidenceIds).toContain(episode!.evidenceIds[0]);
     expect(prompt).toContain("OpenCode-configured model routing");
     expect(prompt).toContain("\"phases\"");
+    expect(prompt).toContain("appliesWhen");
+    expect(prompt).toContain("counterevidence");
+    expect(prompt).toContain("confidenceCap");
     expect(prompt).toContain("Every atom must cite");
 
+    const scopedPath = episode!.pathCluster[0]!;
     const parsed = parseLearnV2LlmConceptExtractionOutput(JSON.stringify({
       schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
       atoms: [{
@@ -927,7 +931,26 @@ describe("learn-v2 substrate", () => {
         kind: "verification",
         polarity: "positive",
         evidenceIds: [episode!.evidenceIds[0]],
+        scope: {
+          level: "path",
+          paths: [scopedPath],
+          taskTypes: ["parser-change"]
+        },
+        appliesWhen: ["Parser files changed and regression behavior is under test."],
+        doesNotApplyWhen: ["Task is documentation-only or unrelated to parser behavior."],
+        activation: {
+          phrases: ["parser regression fixture"],
+          pathGlobs: [scopedPath.split("/").slice(0, -1).join("/") + "/**"],
+          commands: ["npm test -- parser"],
+          negativeTriggers: ["docs-only"]
+        },
+        counterevidence: [{
+          evidenceId: episode!.evidenceIds[0],
+          reason: "Same episode shows this is scoped to parser work, not every task."
+        }],
+        risk: "low",
         confidence: 0.74,
+        confidenceCap: 0.76,
         rationale: "The user explicitly requested parser regression tests."
       }],
       rejected: []
@@ -935,6 +958,19 @@ describe("learn-v2 substrate", () => {
     const valid = validateLearnV2LlmConceptExtractionOutput(episode!, parsed);
     expect(valid.atoms).toHaveLength(1);
     expect(valid.atoms[0]!.confidenceCap).toBeLessThanOrEqual(0.78);
+    expect(valid.atoms[0]!.scope.paths).toContain(scopedPath);
+    expect(valid.atoms[0]!.conditions?.appliesWhen).toContain("Parser files changed and regression behavior is under test.");
+    expect(valid.atoms[0]!.activationHints?.phrases).toContain("parser regression fixture");
+    expect(valid.atoms[0]!.activationHints?.commands).toContain("npm test -- parser");
+    expect(valid.atoms[0]!.counterevidence[0]?.reason).toContain("scoped to parser work");
+    const [concept] = mergeLearnV2ConceptCards(valid.atoms, new Date("2026-06-30T00:00:00Z"));
+    expect(concept!.conditions?.appliesWhen).toContain("Parser files changed and regression behavior is under test.");
+    expect(concept!.conditions?.doesNotApplyWhen).toContain("Task is documentation-only or unrelated to parser behavior.");
+    expect(concept!.scope.negativeTriggers).toEqual(expect.arrayContaining(["docs-only", "Task is documentation-only or unrelated to parser behavior."]));
+    expect(concept!.activation.phrases).toContain("parser regression fixture");
+    expect(concept!.activation.commands).toContain("npm test -- parser");
+    expect(concept!.counterevidence).toHaveLength(1);
+    expect(concept!.scoring?.counterevidenceCount).toBe(1);
 
     const invalid = validateLearnV2LlmConceptExtractionOutput(episode!, {
       schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
@@ -944,10 +980,21 @@ describe("learn-v2 substrate", () => {
         polarity: "negative",
         evidenceIds: ["missing"],
         confidence: 0.9
+      }, {
+        statement: "For parser changes, prefer focused regression tests before broad suites.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [episode!.evidenceIds[0]],
+        scope: {
+          level: "path",
+          paths: ["other-project/src/parser.ts"],
+          taskTypes: ["parser-change"]
+        }
       }],
       rejected: []
     });
     expect(invalid.rejected.map((item) => item.reason)).toContain("missing-or-invalid-evidence-id");
+    expect(invalid.rejected.map((item) => item.reason)).toContain("invalid-scope");
   });
 
   it("runs extraction golden scenarios against episodes and concepts", async () => {
@@ -1397,6 +1444,8 @@ describe("learn-v2 substrate", () => {
 
     const requestEpisode = learned.learnV2.episodes.find((episode) => episode.id === request.episodeId)!;
     const [evidenceId] = requestEpisode.evidenceIds;
+    const requestPath = requestEpisode.pathCluster[0]!;
+    expect(requestPath).toBeTruthy();
     const outputPath = request.expectedOutputPath;
     await writeFile(outputPath, JSON.stringify({
       schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
@@ -1405,7 +1454,26 @@ describe("learn-v2 substrate", () => {
         kind: "verification",
         polarity: "positive",
         evidenceIds: [evidenceId],
+        scope: {
+          level: "path",
+          paths: [requestPath],
+          taskTypes: ["parser-change"]
+        },
+        appliesWhen: ["Parser behavior changes need focused regression coverage."],
+        doesNotApplyWhen: ["Task is unrelated to parser behavior."],
+        activation: {
+          phrases: ["focused parser regression"],
+          pathGlobs: [requestPath.split("/").slice(0, -1).join("/") + "/**"],
+          commands: ["npm test -- parser"],
+          negativeTriggers: ["unrelated-task-scope"]
+        },
+        counterevidence: [{
+          evidenceId,
+          reason: "Evidence supports parser scope only."
+        }],
+        risk: "low",
         confidence: 0.74,
+        confidenceCap: 0.76,
         rationale: "The episode asks for focused parser regression tests."
       }],
       rejected: []
@@ -1560,7 +1628,13 @@ describe("learn-v2 substrate", () => {
     expect(await readText(applied.evalReportPath)).toContain("Learn v2 Eval");
     expect(await readText(applied.declassifiedSnippetsPath)).toContain("Learn v2 Declassified Evidence Snippets");
     expect(await readText(applied.conceptDriftPath)).toContain("openskill-kit.learn-v2.concept-drift.v1");
-    expect(store.cards.some((card) => /parser regression tests/i.test(card.canonicalBehavior))).toBe(true);
+    const richCard = store.cards.find((card) => card.conditions?.appliesWhen.includes("Parser behavior changes need focused regression coverage."))!;
+    expect(richCard).toBeTruthy();
+    expect(richCard.conditions?.appliesWhen).toContain("Parser behavior changes need focused regression coverage.");
+    expect(richCard.conditions?.doesNotApplyWhen).toContain("Task is unrelated to parser behavior.");
+    expect(richCard.activation.phrases).toContain("focused parser regression");
+    expect(richCard.activation.commands).toContain("npm test -- parser");
+    expect(richCard.counterevidence.some((item) => item.reason === "Evidence supports parser scope only.")).toBe(true);
     expect(JSON.stringify(store)).not.toContain("sk-12345678901234567890");
   });
 
@@ -2101,13 +2175,33 @@ describe("learn-v2 substrate", () => {
     const [first] = mergeLearnV2ConceptCards([{
       ...behaviorAtom("cross_run_first", "Prefer focused parser tests for parser changes.", "positive"),
       evidenceIds: ["ev_cross_run_first"],
-      rawRefs: ["raw_cross_run_first"]
+      rawRefs: ["raw_cross_run_first"],
+      conditions: {
+        appliesWhen: ["Parser implementation changed."],
+        doesNotApplyWhen: []
+      },
+      activationHints: {
+        phrases: ["parser implementation"],
+        pathGlobs: [],
+        commands: [],
+        negativeTriggers: []
+      }
     }], now);
     await writeLearnV2ConceptStore(root, [first!], now);
     const [second] = mergeLearnV2ConceptCards([{
       ...behaviorAtom("cross_run_second", "Prefer focused parser tests for parser changes.", "positive"),
       evidenceIds: ["ev_cross_run_second"],
-      rawRefs: ["raw_cross_run_second"]
+      rawRefs: ["raw_cross_run_second"],
+      conditions: {
+        appliesWhen: [],
+        doesNotApplyWhen: ["Docs-only parser mention."]
+      },
+      activationHints: {
+        phrases: [],
+        pathGlobs: [],
+        commands: ["npm test -- parser"],
+        negativeTriggers: ["docs-only"]
+      }
     }], new Date("2026-06-30T00:01:00Z"));
 
     const store = await writeLearnV2ConceptStore(root, [second!], new Date("2026-06-30T00:02:00Z"));
@@ -2118,6 +2212,11 @@ describe("learn-v2 substrate", () => {
     expect(cards[0]!.evidenceIds).toEqual(expect.arrayContaining(["ev_cross_run_first", "ev_cross_run_second"]));
     expect(cards[0]!.rawRefs).toEqual(expect.arrayContaining(["raw_cross_run_first", "raw_cross_run_second"]));
     expect(cards[0]!.atoms.map((atom) => atom.id)).toEqual(expect.arrayContaining(["cross_run_first", "cross_run_second"]));
+    expect(cards[0]!.conditions?.appliesWhen).toContain("Parser implementation changed.");
+    expect(cards[0]!.conditions?.doesNotApplyWhen).toContain("Docs-only parser mention.");
+    expect(cards[0]!.activation.phrases).toContain("parser implementation");
+    expect(cards[0]!.activation.commands).toContain("npm test -- parser");
+    expect(cards[0]!.scope.negativeTriggers).toContain("docs-only");
     expect(cards[0]!.scoring?.supportAtomCount).toBe(2);
   });
 

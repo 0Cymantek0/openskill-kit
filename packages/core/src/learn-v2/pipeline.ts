@@ -626,6 +626,10 @@ function declassifyLearnV2ConceptCards(cards: LearnV2ConceptCard[], root: string
       pathGlobs: card.activation.pathGlobs.map((glob) => declassifyArtifactText(glob, root, config)),
       commands: card.activation.commands.map((command) => declassifyArtifactText(command, root, config))
     },
+    conditions: card.conditions ? {
+      appliesWhen: card.conditions.appliesWhen.map((item) => declassifyArtifactText(item, root, config)),
+      doesNotApplyWhen: card.conditions.doesNotApplyWhen.map((item) => declassifyArtifactText(item, root, config))
+    } : undefined,
     atoms: card.atoms.map((atom) => declassifyLearnV2BehaviorAtom(atom, root, config)),
     counterevidence: card.counterevidence.map((item) => ({
       ...item,
@@ -641,6 +645,8 @@ function declassifyLearnV2ConceptCards(cards: LearnV2ConceptCard[], root: string
           card.behaviorDelta,
           ...card.scope.paths,
           ...card.activation.commands,
+          ...(card.conditions?.appliesWhen ?? []),
+          ...(card.conditions?.doesNotApplyWhen ?? []),
           ...card.atoms.map((atom) => atom.statement)
         ].join("\n"), root, config).placeholders
       ])].sort()
@@ -657,7 +663,21 @@ function declassifyLearnV2BehaviorAtom(atom: LearnV2BehaviorAtom, root: string, 
       paths: atom.scope.paths.map((file) => declassifyArtifactText(file, root, config)),
       taskTypes: atom.scope.taskTypes.map((item) => declassifyArtifactText(item, root, config))
     },
-    rationale: declassifyArtifactText(atom.rationale, root, config)
+    rationale: declassifyArtifactText(atom.rationale, root, config),
+    conditions: atom.conditions ? {
+      appliesWhen: atom.conditions.appliesWhen.map((item) => declassifyArtifactText(item, root, config)),
+      doesNotApplyWhen: atom.conditions.doesNotApplyWhen.map((item) => declassifyArtifactText(item, root, config))
+    } : undefined,
+    activationHints: atom.activationHints ? {
+      phrases: atom.activationHints.phrases.map((item) => declassifyArtifactText(item, root, config)),
+      pathGlobs: atom.activationHints.pathGlobs.map((item) => declassifyArtifactText(item, root, config)),
+      commands: atom.activationHints.commands.map((item) => declassifyArtifactText(item, root, config)),
+      negativeTriggers: atom.activationHints.negativeTriggers.map((item) => declassifyArtifactText(item, root, config))
+    } : undefined,
+    counterevidence: (atom.counterevidence ?? []).map((item) => ({
+      ...item,
+      reason: declassifyArtifactText(item.reason, root, config)
+    }))
   };
 }
 

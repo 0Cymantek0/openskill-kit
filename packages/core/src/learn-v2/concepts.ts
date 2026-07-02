@@ -48,8 +48,15 @@ function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2Concep
   const rawRefs = [...new Set(items.flatMap((item) => item.rawRefs))];
   const paths = [...new Set(items.flatMap((item) => item.scope.paths))].slice(0, 20);
   const taskTypes = [...new Set(items.flatMap((item) => item.scope.taskTypes))].slice(0, 12);
+  const appliesWhen = uniqueStrings(items.flatMap((item) => item.conditions?.appliesWhen ?? [])).slice(0, 16);
+  const doesNotApplyWhen = uniqueStrings(items.flatMap((item) => item.conditions?.doesNotApplyWhen ?? [])).slice(0, 16);
+  const activationHintPhrases = uniqueStrings(items.flatMap((item) => item.activationHints?.phrases ?? [])).slice(0, 16);
+  const activationHintPathGlobs = uniqueStrings(items.flatMap((item) => item.activationHints?.pathGlobs ?? [])).slice(0, 12);
+  const activationHintCommands = uniqueStrings(items.flatMap((item) => item.activationHints?.commands ?? [])).slice(0, 12);
+  const activationHintNegativeTriggers = uniqueStrings(items.flatMap((item) => item.activationHints?.negativeTriggers ?? [])).slice(0, 16);
+  const counterevidence = uniqueCounterevidence(items.flatMap((item) => item.counterevidence ?? [])).slice(0, 24);
   const risk = items.some((item) => item.risk === "high") ? "high" : items.some((item) => item.risk === "medium") ? "medium" : "low";
-  const scoring = calculateLearnV2ConceptScoring({ atoms: items, evidenceIds, rawRefs, risk });
+  const scoring = calculateLearnV2ConceptScoring({ atoms: items, evidenceIds, rawRefs, risk, counterevidenceCount: counterevidence.length });
   const semanticKey = learnV2ConceptSemanticKeyForAtoms(items);
   return {
     schemaVersion: "openskill-kit.learn-v2.concept-card.v1",
@@ -63,13 +70,18 @@ function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2Concep
       level: paths.length ? "path" : first.scope.level,
       paths,
       taskTypes,
-      negativeTriggers: negativeTriggers(first)
+      negativeTriggers: uniqueStrings([
+        ...negativeTriggers(first),
+        ...activationHintNegativeTriggers,
+        ...doesNotApplyWhen
+      ]).slice(0, 20)
     },
     activation: {
-      phrases: activationPhrases(first.statement, taskTypes),
-      pathGlobs: paths.map(pathToGlob),
-      commands: first.kind === "command-policy" ? commandSnippets(first.statement) : []
+      phrases: uniqueStrings([...activationPhrases(first.statement, taskTypes), ...activationHintPhrases, ...appliesWhen]).slice(0, 24),
+      pathGlobs: uniqueStrings([...paths.map(pathToGlob), ...activationHintPathGlobs]).slice(0, 24),
+      commands: uniqueStrings([...(first.kind === "command-policy" ? commandSnippets(first.statement) : []), ...activationHintCommands]).slice(0, 16)
     },
+    conditions: appliesWhen.length || doesNotApplyWhen.length ? { appliesWhen, doesNotApplyWhen } : undefined,
     confidence: scoring.confidence,
     durability: scoring.durability,
     sourceReliability: scoring.sourceReliability,
@@ -78,7 +90,7 @@ function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2Concep
     evidenceIds,
     rawRefs,
     atoms: items,
-    counterevidence: [],
+    counterevidence,
     privacy: {
       outputClass: "project-private",
       declassificationRequired: true,
@@ -147,6 +159,22 @@ function pathToGlob(file: string): string {
 
 function commandSnippets(statement: string): string[] {
   return [...statement.matchAll(/`([^`]+)`/g)].map((match) => match[1]!).slice(0, 6);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((item) => item.trim()).filter(Boolean))];
+}
+
+function uniqueCounterevidence(values: LearnV2ConceptCard["counterevidence"]): LearnV2ConceptCard["counterevidence"] {
+  const seen = new Set<string>();
+  const out: LearnV2ConceptCard["counterevidence"] = [];
+  for (const item of values) {
+    const key = `${item.evidenceId}:${item.reason}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }
 
 export function learnV2ConceptBehaviorSignature(statement: string): string {

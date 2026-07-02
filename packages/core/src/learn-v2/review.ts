@@ -124,6 +124,9 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     lines.push(`Confidence: ${card.confidence.toFixed(2)} Durability: ${card.durability.toFixed(2)} Reliability: ${card.sourceReliability.toFixed(2)} Risk: ${card.risk}`);
     if (card.scope.paths.length) lines.push(`Scope paths: ${card.scope.paths.join(", ")}`);
     if (card.scope.taskTypes.length) lines.push(`Task types: ${card.scope.taskTypes.join(", ")}`);
+    if (card.conditions?.appliesWhen.length) lines.push(`Applies when: ${card.conditions.appliesWhen.join("; ")}`);
+    if (card.conditions?.doesNotApplyWhen.length) lines.push(`Does not apply when: ${card.conditions.doesNotApplyWhen.join("; ")}`);
+    if (card.scope.negativeTriggers.length) lines.push(`Negative triggers: ${card.scope.negativeTriggers.join(", ")}`);
     if (card.activation.phrases.length) lines.push(`Activation: ${card.activation.phrases.join(", ")}`);
     if (card.activation.commands.length) lines.push(`Commands: ${card.activation.commands.join(", ")}`);
     lines.push(`Evidence: ${card.evidenceIds.join(", ")}`);

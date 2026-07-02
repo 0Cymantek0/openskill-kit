@@ -137,6 +137,10 @@ function mergeStoredConceptSupport(previous: LearnV2ConceptCard, incoming: Learn
   const paths = uniqueStrings([...previous.scope.paths, ...incoming.scope.paths]).slice(0, 20);
   const taskTypes = uniqueStrings([...previous.scope.taskTypes, ...incoming.scope.taskTypes]).slice(0, 12);
   const negativeTriggers = uniqueStrings([...previous.scope.negativeTriggers, ...incoming.scope.negativeTriggers]).slice(0, 20);
+  const conditions = {
+    appliesWhen: uniqueStrings([...(previous.conditions?.appliesWhen ?? []), ...(incoming.conditions?.appliesWhen ?? [])]).slice(0, 16),
+    doesNotApplyWhen: uniqueStrings([...(previous.conditions?.doesNotApplyWhen ?? []), ...(incoming.conditions?.doesNotApplyWhen ?? [])]).slice(0, 16)
+  };
   const counterevidence = [
     ...previous.counterevidence,
     ...incoming.counterevidence.filter((item) => !previous.counterevidence.some((previousItem) => previousItem.evidenceId === item.evidenceId && previousItem.reason === item.reason))
@@ -158,6 +162,7 @@ function mergeStoredConceptSupport(previous: LearnV2ConceptCard, incoming: Learn
       pathGlobs: uniqueStrings([...previous.activation.pathGlobs, ...incoming.activation.pathGlobs, ...paths.map(pathToGlob)]).slice(0, 24),
       commands: uniqueStrings([...previous.activation.commands, ...incoming.activation.commands]).slice(0, 16)
     },
+    conditions: conditions.appliesWhen.length || conditions.doesNotApplyWhen.length ? conditions : undefined,
     confidence: scoring.confidence,
     durability: scoring.durability,
     sourceReliability: scoring.sourceReliability,
@@ -416,7 +421,11 @@ function applyConceptRestructure(
         updatedAt: now.toISOString(),
         supersedes: [...new Set([...target.lifecycle.supersedes, ...sources.map((card) => card.id), ...sources.flatMap((card) => card.lifecycle.supersedes)])]
       },
-      counterevidence: [...target.counterevidence, ...sources.flatMap((card) => card.counterevidence)]
+      counterevidence: [...target.counterevidence, ...sources.flatMap((card) => card.counterevidence)],
+      conditions: {
+        appliesWhen: uniqueStrings([...(target.conditions?.appliesWhen ?? []), ...sources.flatMap((card) => card.conditions?.appliesWhen ?? [])]).slice(0, 16),
+        doesNotApplyWhen: uniqueStrings([...(target.conditions?.doesNotApplyWhen ?? []), ...sources.flatMap((card) => card.conditions?.doesNotApplyWhen ?? [])]).slice(0, 16)
+      }
     });
     byId.set(target.id, LearnV2ConceptCardSchema.parse(merged));
     modifiedIds.add(target.id);
@@ -510,6 +519,7 @@ function rebuildConceptFromAtoms(input: {
   status: LearnV2ConceptCard["status"];
   lifecycle: LearnV2ConceptCard["lifecycle"];
   counterevidence: LearnV2ConceptCard["counterevidence"];
+  conditions?: LearnV2ConceptCard["conditions"];
 }): LearnV2ConceptCard {
   const first = input.atoms[0]!;
   const paths = input.paths ?? [...new Set(input.atoms.flatMap((atom) => atom.scope.paths))].slice(0, 20);
@@ -543,6 +553,7 @@ function rebuildConceptFromAtoms(input: {
       pathGlobs: paths.map(pathToGlob),
       commands: input.atoms.some((atom) => atom.kind === "command-policy") ? [...new Set(input.atoms.flatMap((atom) => commandSnippets(atom.statement)))] : input.base.activation.commands
     },
+    conditions: input.conditions ?? input.base.conditions,
     confidence: scoring.confidence,
     durability: scoring.durability,
     sourceReliability: scoring.sourceReliability,

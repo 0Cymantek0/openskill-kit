@@ -112,9 +112,22 @@ function extractEpisodeAtoms(episode: LearnV2TaskEpisode): LearnV2BehaviorAtom[]
 
 function makeAtom(
   episode: LearnV2TaskEpisode,
-  input: Pick<LearnV2BehaviorAtom, "kind" | "statement" | "polarity" | "rationale" | "confidenceCap" | "risk">
+  input: Pick<LearnV2BehaviorAtom, "kind" | "statement" | "polarity" | "rationale" | "confidenceCap" | "risk"> & {
+    evidenceIds?: string[];
+    rawRefs?: string[];
+    scope?: Partial<LearnV2BehaviorAtom["scope"]>;
+    conditions?: LearnV2BehaviorAtom["conditions"];
+    activationHints?: LearnV2BehaviorAtom["activationHints"];
+    counterevidence?: LearnV2BehaviorAtom["counterevidence"];
+  }
 ): LearnV2BehaviorAtom {
   const scopedPaths = episode.pathCluster.filter((file) => !file.includes("[")).slice(0, 12);
+  const inputPaths = (input.scope?.paths ?? []).filter((file) => !file.includes("[")).slice(0, 12);
+  const paths = inputPaths.length ? inputPaths : scopedPaths;
+  const taskTypes = uniqueStrings([
+    ...(input.scope?.taskTypes ?? []),
+    ...episode.taskHints.filter((hint) => !hint.startsWith("command:"))
+  ]).slice(0, 8);
   const supportConfidence = 0.72
     + (episode.outcome === "edited" || episode.outcome === "rejected" ? 0.12 : 0)
     + (episode.rawRefs.length > 1 ? 0.04 : 0)
@@ -129,17 +142,20 @@ function makeAtom(
     statement: learnV2NormalizeStatement(input.statement),
     polarity: input.polarity,
     scope: {
-      level: scopedPaths.length ? "path" : "project",
-      paths: scopedPaths,
-      taskTypes: episode.taskHints.filter((hint) => !hint.startsWith("command:")).slice(0, 8)
+      level: input.scope?.level ?? (paths.length ? "path" : "project"),
+      paths,
+      taskTypes
     },
     confidence: Number(confidence.toFixed(2)),
     confidenceCap: input.confidenceCap,
     sourceReliability,
-    evidenceIds: episode.evidenceIds,
-    rawRefs: episode.rawRefs,
+    evidenceIds: input.evidenceIds ?? episode.evidenceIds,
+    rawRefs: input.rawRefs ?? episode.rawRefs,
     rationale: input.rationale,
-    risk: input.risk
+    risk: input.risk,
+    conditions: input.conditions,
+    activationHints: input.activationHints,
+    counterevidence: input.counterevidence ?? []
   };
 }
 
@@ -152,7 +168,15 @@ export interface LearnV2LlmExtractionProposal {
     evidenceIds: string[];
     rawRefs?: string[];
     confidence?: number;
+    confidenceCap?: number;
     rationale?: string;
+    risk?: LearnV2BehaviorAtom["risk"];
+    scope?: Partial<LearnV2BehaviorAtom["scope"]>;
+    appliesWhen?: string[];
+    doesNotApplyWhen?: string[];
+    activation?: LearnV2BehaviorAtom["activationHints"];
+    counterevidence?: LearnV2BehaviorAtom["counterevidence"];
+    oneOff?: boolean;
   }>;
 }
 
@@ -232,7 +256,27 @@ export function renderLearnV2ConceptExtractionPrompt(bundle: LearnV2EpisodeLearn
         kind: "workflow|security|verification|dependency-policy|review-policy|command-policy|scope-boundary",
         polarity: "positive|negative|neutral",
         evidenceIds: ["ev_..."],
+        scope: {
+          level: "path|directory|task|project",
+          paths: ["path/from/bundle"],
+          taskTypes: ["parser-change"]
+        },
+        appliesWhen: ["Only under bounded condition supported by cited evidence."],
+        doesNotApplyWhen: ["Condition where this behavior should be suppressed."],
+        activation: {
+          phrases: ["short task phrase"],
+          pathGlobs: ["packages/core/src/**"],
+          commands: ["npm test -- parser"],
+          negativeTriggers: ["unrelated-task-scope"]
+        },
+        counterevidence: [{
+          evidenceId: "ev_...",
+          reason: "Why this cited evidence limits or contradicts the atom."
+        }],
+        risk: "low|medium|high",
         confidence: 0.7,
+        confidenceCap: 0.78,
+        oneOff: false,
         rationale: "Why this follows from cited evidence."
       }],
       rejected: []
@@ -254,7 +298,8 @@ export function validateLearnV2LlmExtractionProposal(episode: LearnV2TaskEpisode
   const rejected: LearnV2ExtractorResult["rejected"] = [];
   for (const [index, item] of proposal.atoms.entries()) {
     const id = item.id ?? `llm_atom_${index}`;
-    if (!item.evidenceIds.length || item.evidenceIds.some((evidenceId) => !validEvidence.has(evidenceId))) {
+    const evidenceIds = uniqueStrings(item.evidenceIds);
+    if (!evidenceIds.length || evidenceIds.some((evidenceId) => !validEvidence.has(evidenceId))) {
       rejected.push({ id, reason: "missing-or-invalid-evidence-id" });
       continue;
     }
@@ -262,17 +307,51 @@ export function validateLearnV2LlmExtractionProposal(episode: LearnV2TaskEpisode
       rejected.push({ id, reason: "invalid-raw-ref" });
       continue;
     }
-    if (containsRawSecret(item.statement)) {
+    const rawRefs = item.rawRefs?.length ? uniqueStrings(item.rawRefs) : episode.rawRefs.filter((rawRef) => evidenceIds.some((evidenceId) => rawRef.includes(evidenceId))).slice(0, 12);
+    const richText = [
+      item.statement,
+      item.rationale ?? "",
+      ...(item.appliesWhen ?? []),
+      ...(item.doesNotApplyWhen ?? []),
+      ...(item.activation?.phrases ?? []),
+      ...(item.activation?.pathGlobs ?? []),
+      ...(item.activation?.commands ?? []),
+      ...(item.activation?.negativeTriggers ?? []),
+      ...(item.counterevidence ?? []).flatMap((entry) => [entry.evidenceId, entry.reason])
+    ].join("\n");
+    if (containsRawSecret(richText)) {
       rejected.push({ id, reason: "raw-secret-like-output" });
       continue;
     }
+    const scope = normalizeLlmProposalScope(episode, item.scope);
+    if (scope === "invalid") {
+      rejected.push({ id, reason: "invalid-scope" });
+      continue;
+    }
+    const counterevidence = normalizeLlmCounterevidence(item.counterevidence ?? [], validEvidence);
+    if (counterevidence === "invalid") {
+      rejected.push({ id, reason: "invalid-counterevidence" });
+      continue;
+    }
+    const activationHints = normalizeLlmActivationHints(episode, item.activation);
+    const conditions = normalizeLlmConditions(item.appliesWhen ?? [], item.doesNotApplyWhen ?? [], item.oneOff === true);
+    const confidenceCap = Math.min(
+      item.oneOff === true ? 0.42 : 0.78,
+      item.confidenceCap ?? item.confidence ?? 0.7
+    );
     atoms.push(makeAtom(episode, {
       kind: item.kind,
       statement: item.statement,
       polarity: item.polarity,
       rationale: item.rationale ?? "OpenCode-routed model proposal validated against episode evidence.",
-      confidenceCap: Math.min(0.78, item.confidence ?? 0.7),
-      risk: item.kind === "security" ? "high" : "medium"
+      confidenceCap,
+      risk: item.risk ?? (item.kind === "security" ? "high" : "medium"),
+      evidenceIds,
+      rawRefs: rawRefs.length ? rawRefs : episode.rawRefs,
+      scope,
+      conditions,
+      activationHints,
+      counterevidence
     }));
   }
   return { atoms, rejected };
@@ -386,4 +465,87 @@ function dedupeAtoms(atoms: LearnV2BehaviorAtom[]): LearnV2BehaviorAtom[] {
 
 function containsRawSecret(text: string): boolean {
   return /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)\b/.test(text);
+}
+
+function normalizeLlmProposalScope(
+  episode: LearnV2TaskEpisode,
+  scope: Partial<LearnV2BehaviorAtom["scope"]> | undefined
+): LearnV2BehaviorAtom["scope"] | "invalid" | undefined {
+  if (!scope) return undefined;
+  const knownPaths = new Set(episode.pathCluster.filter((file) => !file.includes("[")));
+  const paths = uniqueStrings((scope.paths ?? []).map(normalizePathText).filter(Boolean));
+  if (paths.some((file) => !knownPaths.has(file))) return "invalid";
+  const taskTypes = uniqueStrings((scope.taskTypes ?? []).map(normalizeTaskType).filter(Boolean)).slice(0, 8);
+  return {
+    level: scope.level ?? (paths.length ? "path" : taskTypes.length ? "task" : "project"),
+    paths,
+    taskTypes
+  };
+}
+
+function normalizeLlmCounterevidence(
+  counterevidence: NonNullable<LearnV2BehaviorAtom["counterevidence"]>,
+  validEvidence: Set<string>
+): NonNullable<LearnV2BehaviorAtom["counterevidence"]> | "invalid" {
+  const out: NonNullable<LearnV2BehaviorAtom["counterevidence"]> = [];
+  for (const item of counterevidence) {
+    if (!validEvidence.has(item.evidenceId)) return "invalid";
+    const reason = safeProposalText(item.reason, 260);
+    if (!reason) return "invalid";
+    out.push({ evidenceId: item.evidenceId, reason });
+  }
+  return uniqueCounterevidence(out).slice(0, 12);
+}
+
+function normalizeLlmActivationHints(episode: LearnV2TaskEpisode, hints: LearnV2BehaviorAtom["activationHints"] | undefined): LearnV2BehaviorAtom["activationHints"] | undefined {
+  if (!hints) return undefined;
+  const knownScopes = new Set(episode.pathCluster.flatMap((file) => {
+    const normalized = normalizePathText(file);
+    const parts = normalized.split("/").filter(Boolean);
+    return [normalized, parts.length > 1 ? `${parts.slice(0, -1).join("/")}/**` : normalized];
+  }));
+  return {
+    phrases: uniqueStrings((hints.phrases ?? []).map((item) => safeProposalText(item, 100)).filter(Boolean)).slice(0, 10),
+    pathGlobs: uniqueStrings((hints.pathGlobs ?? []).map(normalizePathText).filter((item) => knownScopes.has(item))).slice(0, 10),
+    commands: uniqueStrings((hints.commands ?? []).map((item) => safeProposalText(item, 160)).filter(Boolean)).slice(0, 8),
+    negativeTriggers: uniqueStrings((hints.negativeTriggers ?? []).map((item) => safeProposalText(item, 140)).filter(Boolean)).slice(0, 10)
+  };
+}
+
+function normalizeLlmConditions(appliesWhen: string[], doesNotApplyWhen: string[], oneOff: boolean): LearnV2BehaviorAtom["conditions"] | undefined {
+  const applies = uniqueStrings(appliesWhen.map((item) => safeProposalText(item, 220)).filter(Boolean)).slice(0, 8);
+  const exclusions = uniqueStrings([
+    ...doesNotApplyWhen.map((item) => safeProposalText(item, 220)).filter(Boolean),
+    ...(oneOff ? ["One-off episode; require repeated support before activation."] : [])
+  ]).slice(0, 8);
+  return applies.length || exclusions.length ? { appliesWhen: applies, doesNotApplyWhen: exclusions } : undefined;
+}
+
+function normalizePathText(value: string): string {
+  return value.replace(/\\/g, "/").replace(/^\.\//, "").trim();
+}
+
+function normalizeTaskType(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+}
+
+function safeProposalText(value: string, max: number): string {
+  const text = learnV2Snippet(value.replace(/\s+/g, " ").trim(), max);
+  return containsRawSecret(text) ? "" : text;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((item) => item.trim()).filter(Boolean))];
+}
+
+function uniqueCounterevidence(values: NonNullable<LearnV2BehaviorAtom["counterevidence"]>): NonNullable<LearnV2BehaviorAtom["counterevidence"]> {
+  const seen = new Set<string>();
+  const out: NonNullable<LearnV2BehaviorAtom["counterevidence"]> = [];
+  for (const item of values) {
+    const key = `${item.evidenceId}:${item.reason}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }

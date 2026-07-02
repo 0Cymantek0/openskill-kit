@@ -105,7 +105,7 @@ function buildRule(card: LearnV2ConceptCard, command: string): CommandPolicyRule
 }
 
 function buildAppliesWhen(card: LearnV2ConceptCard): string[] {
-  const conditions: string[] = [];
+  const conditions: string[] = [...(card.conditions?.appliesWhen ?? [])];
   if (card.scope.paths.length) conditions.push(`Changes touch ${card.scope.paths.slice(0, 4).join(" or ")}`);
   if (card.scope.taskTypes.length) conditions.push(`Task type is ${card.scope.taskTypes.slice(0, 4).join(" or ")}`);
   if (card.activation.phrases.length) conditions.push(`Context matches: ${card.activation.phrases.slice(0, 4).join(", ")}`);
@@ -114,7 +114,7 @@ function buildAppliesWhen(card: LearnV2ConceptCard): string[] {
 }
 
 function buildDoesNotApplyWhen(card: LearnV2ConceptCard): string[] {
-  const exclusions = [...card.scope.negativeTriggers];
+  const exclusions = [...(card.conditions?.doesNotApplyWhen ?? []), ...card.scope.negativeTriggers];
   if (card.scope.taskTypes.length) exclusions.push(`Task is not ${card.scope.taskTypes.slice(0, 3).join(" or ")}`);
   if (!exclusions.length) exclusions.push("Direct user instruction overrides this policy");
   return exclusions.slice(0, 6);

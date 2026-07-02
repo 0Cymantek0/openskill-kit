@@ -304,7 +304,21 @@ export const LearnV2BehaviorAtomSchema = z.object({
   evidenceIds: z.array(z.string()).min(1),
   rawRefs: z.array(z.string()).min(1),
   rationale: z.string().min(1),
-  risk: z.enum(["low", "medium", "high"]).default("medium")
+  risk: z.enum(["low", "medium", "high"]).default("medium"),
+  conditions: z.object({
+    appliesWhen: z.array(z.string()).default([]),
+    doesNotApplyWhen: z.array(z.string()).default([])
+  }).optional(),
+  activationHints: z.object({
+    phrases: z.array(z.string()).default([]),
+    pathGlobs: z.array(z.string()).default([]),
+    commands: z.array(z.string()).default([]),
+    negativeTriggers: z.array(z.string()).default([])
+  }).optional(),
+  counterevidence: z.array(z.object({
+    evidenceId: z.string().min(1),
+    reason: z.string().min(1)
+  })).optional()
 });
 export type LearnV2BehaviorAtom = z.infer<typeof LearnV2BehaviorAtomSchema>;
 
@@ -317,7 +331,27 @@ export const LearnV2LlmConceptExtractionOutputSchema = z.object({
     polarity: LearnV2BehaviorAtomSchema.shape.polarity,
     evidenceIds: z.array(z.string().min(1)).min(1),
     confidence: z.number().min(0).max(1).optional(),
-    rationale: z.string().min(1).max(800).optional()
+    confidenceCap: z.number().min(0).max(1).optional(),
+    rationale: z.string().min(1).max(800).optional(),
+    risk: LearnV2BehaviorAtomSchema.shape.risk.optional(),
+    scope: z.object({
+      level: LearnV2BehaviorAtomSchema.shape.scope.shape.level.optional(),
+      paths: z.array(z.string().min(1)).default([]),
+      taskTypes: z.array(z.string().min(1)).default([])
+    }).optional(),
+    appliesWhen: z.array(z.string().min(1).max(240)).default([]),
+    doesNotApplyWhen: z.array(z.string().min(1).max(240)).default([]),
+    activation: z.object({
+      phrases: z.array(z.string().min(1).max(120)).default([]),
+      pathGlobs: z.array(z.string().min(1).max(200)).default([]),
+      commands: z.array(z.string().min(1).max(200)).default([]),
+      negativeTriggers: z.array(z.string().min(1).max(160)).default([])
+    }).optional(),
+    counterevidence: z.array(z.object({
+      evidenceId: z.string().min(1),
+      reason: z.string().min(1).max(300)
+    })).default([]),
+    oneOff: z.boolean().optional()
   })).default([]),
   rejected: z.array(z.object({
     reason: z.string().min(1),
@@ -345,6 +379,10 @@ export const LearnV2ConceptCardSchema = z.object({
     pathGlobs: z.array(z.string()).default([]),
     commands: z.array(z.string()).default([])
   }),
+  conditions: z.object({
+    appliesWhen: z.array(z.string()).default([]),
+    doesNotApplyWhen: z.array(z.string()).default([])
+  }).optional(),
   confidence: z.number().min(0).max(1),
   durability: z.number().min(0).max(1),
   sourceReliability: z.number().min(0).max(1),
