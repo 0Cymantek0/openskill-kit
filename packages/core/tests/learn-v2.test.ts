@@ -1331,9 +1331,57 @@ describe("learn-v2 substrate", () => {
       }],
       rejected: []
     }), "utf8");
+    const tamperedPromptDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_tampered_prompt");
+    const tamperedPromptOutputPath = path.join(tamperedPromptDir, "response.json");
+    await mkdir(tamperedPromptDir, { recursive: true });
+    await writeFile(path.join(tamperedPromptDir, "episode-learning-bundle.json"), bundle, "utf8");
+    await writeFile(path.join(tamperedPromptDir, "request-manifest.json"), JSON.stringify({
+      ...manifest,
+      episodeId: request.episodeId,
+      promptPath: path.join(root, ".openskill-kit", "learn-v2", "model-requests", "other", "concept-extraction-prompt.md"),
+      bundlePath: path.join(tamperedPromptDir, "episode-learning-bundle.json"),
+      expectedOutputPath: tamperedPromptOutputPath,
+      evidenceIds: [evidenceId]
+    }), "utf8");
+    await writeFile(tamperedPromptOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "For parser changes, prefer focused parser regression tests before broad suites.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [evidenceId],
+        confidence: 0.72
+      }],
+      rejected: []
+    }), "utf8");
+    const tamperedMissingDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_missing_bundle");
+    const tamperedMissingOutputPath = path.join(tamperedMissingDir, "response.json");
+    await mkdir(tamperedMissingDir, { recursive: true });
+    await writeFile(path.join(tamperedMissingDir, "concept-extraction-prompt.md"), prompt, "utf8");
+    await writeFile(path.join(tamperedMissingDir, "request-manifest.json"), JSON.stringify({
+      ...manifest,
+      episodeId: request.episodeId,
+      promptPath: path.join(tamperedMissingDir, "concept-extraction-prompt.md"),
+      bundlePath: path.join(tamperedMissingDir, "episode-learning-bundle.json"),
+      expectedOutputPath: tamperedMissingOutputPath,
+      evidenceIds: [evidenceId]
+    }), "utf8");
+    await writeFile(tamperedMissingOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "For parser changes, prefer focused parser regression tests before broad suites.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [evidenceId],
+        confidence: 0.72
+      }],
+      rejected: []
+    }), "utf8");
     const staleDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_stale");
     const staleOutputPath = path.join(staleDir, "response.json");
     await mkdir(staleDir, { recursive: true });
+    await writeFile(path.join(staleDir, "concept-extraction-prompt.md"), prompt, "utf8");
+    await writeFile(path.join(staleDir, "episode-learning-bundle.json"), bundle, "utf8");
     await writeFile(path.join(staleDir, "request-manifest.json"), JSON.stringify({
       schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
       generatedAt: "2026-06-30T00:01:00.000Z",
@@ -1362,12 +1410,39 @@ describe("learn-v2 substrate", () => {
     }), "utf8");
     const malformedOutputPath = path.join(root, "malformed-response.json");
     await writeFile(malformedOutputPath, "{", "utf8");
+    const bareOutputPath = path.join(root, "response.json");
+    await writeFile(bareOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "For parser changes, prefer focused parser regression tests before broad suites.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [evidenceId],
+        confidence: 0.72
+      }],
+      rejected: []
+    }), "utf8");
 
-    const applied = await applyLearnV2ModelProposalOutputs(root, [request.manifestPath, badOutputPath, staleOutputPath, malformedOutputPath], new Date("2026-06-30T00:02:00Z"));
+    const applied = await applyLearnV2ModelProposalOutputs(root, [
+      request.manifestPath,
+      badOutputPath,
+      tamperedPromptOutputPath,
+      tamperedMissingOutputPath,
+      staleOutputPath,
+      malformedOutputPath,
+      bareOutputPath
+    ], new Date("2026-06-30T00:02:00Z"));
     const store = await readLearnV2ConceptStore(root);
     expect(applied.outputFiles).toContain(outputPath);
     expect(applied.atomCount).toBe(1);
-    expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining(["unexpected-output-path", "stale-request-manifest", "invalid-json-or-schema"]));
+    expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining([
+      "unexpected-output-path",
+      "unexpected-request-file-path",
+      "missing-request-file",
+      "stale-request-manifest",
+      "invalid-json-or-schema",
+      "missing-request-manifest"
+    ]));
     expect(applied.evalStatus).toBe("pass");
     expect(await readText(applied.reviewQueuePath)).toContain("Evidence Snippet Summary");
     expect(await readText(applied.reviewQueuePath)).toContain("For parser changes, prefer focused parser regression tests before broad suites.");

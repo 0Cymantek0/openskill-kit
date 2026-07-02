@@ -321,12 +321,16 @@ async function resolveEpisodeForModelOutput(
   episodesById: Map<string, LearnV2TaskEpisode>,
   rejected: LearnV2ModelProposalApplyResult["rejected"]
 ): Promise<LearnV2TaskEpisode | undefined> {
-  const manifest = await readSiblingModelRequestManifest(outputPath).catch((error: unknown) => {
+  const manifestRead = await readSiblingModelRequestManifest(outputPath).catch((error: unknown) => {
     rejected.push({ outputPath, id: "file", reason: "invalid-request-manifest", detail: error instanceof Error ? error.message : String(error) });
     return undefined;
   });
   if (rejected.some((item) => item.outputPath === outputPath && item.reason === "invalid-request-manifest")) return undefined;
-  if (!manifest) return episodesById.get(inferEpisodeIdForOutput(outputPath, episodesById));
+  if (!manifestRead) {
+    rejected.push({ outputPath, id: "file", reason: "missing-request-manifest", detail: "Model outputs must be applied from a request directory containing request-manifest.json." });
+    return undefined;
+  }
+  const { manifest, manifestPath } = manifestRead;
 
   const expectedOutput = path.resolve(root, manifest.expectedOutputPath);
   const actualOutput = path.resolve(outputPath);
@@ -339,6 +343,7 @@ async function resolveEpisodeForModelOutput(
     });
     return undefined;
   }
+  if (!(await validateModelRequestManifestFiles(root, manifest, manifestPath, outputPath, rejected))) return undefined;
   const episode = episodesById.get(manifest.episodeId);
   if (!episode) {
     rejected.push({ outputPath, id: "file", reason: "stale-request-manifest", detail: `Unknown episode ${manifest.episodeId}` });
@@ -361,11 +366,11 @@ async function resolveEpisodeForModelOutput(
   return episode;
 }
 
-async function readSiblingModelRequestManifest(outputPath: string): Promise<LearnV2ModelRequestManifest | undefined> {
+async function readSiblingModelRequestManifest(outputPath: string): Promise<{ manifest: LearnV2ModelRequestManifest; manifestPath: string } | undefined> {
   const manifestPath = path.join(path.dirname(outputPath), "request-manifest.json");
   const text = await fs.readFile(manifestPath, "utf8").catch(() => undefined);
   if (!text) return undefined;
-  return parseModelRequestManifest(text, manifestPath);
+  return { manifest: parseModelRequestManifest(text, manifestPath), manifestPath };
 }
 
 async function resolveModelOutputInputPath(
@@ -412,6 +417,48 @@ function parseModelRequestManifest(text: string, manifestPath: string): LearnV2M
   return value as LearnV2ModelRequestManifest;
 }
 
+async function validateModelRequestManifestFiles(
+  root: string,
+  manifest: LearnV2ModelRequestManifest,
+  manifestPath: string,
+  outputPath: string,
+  rejected: LearnV2ModelProposalApplyResult["rejected"]
+): Promise<boolean> {
+  const requestDir = path.dirname(path.resolve(manifestPath));
+  const promptPath = path.resolve(root, manifest.promptPath);
+  const bundlePath = path.resolve(root, manifest.bundlePath);
+  const expectedOutputPath = path.resolve(root, manifest.expectedOutputPath);
+  const expectedFiles = [
+    { label: "promptPath", file: promptPath, basename: "concept-extraction-prompt.md" },
+    { label: "bundlePath", file: bundlePath, basename: "episode-learning-bundle.json" },
+    { label: "expectedOutputPath", file: expectedOutputPath, basename: "response.json" }
+  ];
+  for (const item of expectedFiles) {
+    if (path.dirname(item.file) !== requestDir || path.basename(item.file) !== item.basename) {
+      rejected.push({
+        outputPath,
+        id: "file",
+        reason: "unexpected-request-file-path",
+        detail: `${item.label} must be ${item.basename} inside the request directory.`
+      });
+      return false;
+    }
+  }
+  for (const item of expectedFiles.slice(0, 2)) {
+    const stat = await fs.stat(item.file).catch(() => undefined);
+    if (!stat?.isFile()) {
+      rejected.push({
+        outputPath,
+        id: "file",
+        reason: "missing-request-file",
+        detail: `${item.label} is missing from the request directory.`
+      });
+      return false;
+    }
+  }
+  return true;
+}
+
 function routeLearnV2EpisodeForModelRequest(episode: LearnV2TaskEpisode): LearnV2ModelRequestRoutingDecision {
   const reasons = new Set<string>();
   const text = [
@@ -440,14 +487,4 @@ function routeLearnV2EpisodeForModelRequest(episode: LearnV2TaskEpisode): LearnV
   if (episode.episodeConfidence < 0.35 && !reasons.has("user-correction-or-rejection") && !reasons.has("durable-language-signal")) return { decision: "skip", priority, reasons: [...reasons, "weak-stitching-confidence"] };
   if (priority < 0.3 && !reasons.has("durable-language-signal")) return { decision: "skip", priority, reasons: [...reasons, "low-routing-priority"] };
   return { decision: "request", priority, reasons: [...reasons].sort() };
-}
-
-function inferEpisodeIdForOutput(outputPath: string, episodesById: Map<string, LearnV2TaskEpisode>): string {
-  const normalized = outputPath.replace(/\\/g, "/");
-  for (const id of episodesById.keys()) {
-    if (normalized.includes(id)) return id;
-  }
-  const basename = path.basename(outputPath, path.extname(outputPath));
-  if (episodesById.has(basename)) return basename;
-  return episodesById.size === 1 ? [...episodesById.keys()][0]! : basename;
 }
