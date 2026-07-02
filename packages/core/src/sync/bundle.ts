@@ -454,6 +454,7 @@ async function auditProjectBehaviorPackPayload(packRoot: string, files: string[]
     const text = await fs.readFile(full, "utf8").catch(() => undefined);
     if (typeof text !== "string") continue;
     findings.push(...auditPackContent(file, text));
+    findings.push(...auditStructuredPackContent(file, text));
   }
   const summary = {
     warn: findings.filter((finding) => finding.level === "warn").length,
@@ -565,6 +566,70 @@ function auditPackContent(file: string, text: string): ProjectBehaviorPackPublis
     });
   }
   return findings;
+}
+
+function auditStructuredPackContent(file: string, text: string): ProjectBehaviorPackPublishAuditFinding[] {
+  if (file !== ".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [finding("learn-v2-resource-invalid-json", "block", file, "Compiled Learn v2 concept resource JSON is invalid.", "<INVALID_JSON>")];
+  }
+  if (!parsed || typeof parsed !== "object" || (parsed as { schemaVersion?: unknown }).schemaVersion !== "openskill-kit.mcp.learn-v2-concept-resources.v1") {
+    return [finding("learn-v2-resource-invalid-schema", "block", file, "Compiled Learn v2 concept resources use an unexpected schema.", "<INVALID_SCHEMA>")];
+  }
+  const resources = Array.isArray((parsed as { resources?: unknown }).resources) ? (parsed as { resources: unknown[] }).resources : [];
+  const findings: ProjectBehaviorPackPublishAuditFinding[] = [];
+  for (const resource of resources) {
+    const concept = resource && typeof resource === "object" ? (resource as { concept?: unknown }).concept : undefined;
+    if (!concept || typeof concept !== "object") {
+      findings.push(finding("learn-v2-resource-missing-concept", "block", file, "Compiled Learn v2 resource is missing concept payload.", "<MISSING_CONCEPT>"));
+      continue;
+    }
+    const item = concept as {
+      id?: unknown;
+      behavior?: unknown;
+      status?: unknown;
+      scope?: { level?: unknown; paths?: unknown; taskTypes?: unknown };
+      activation?: { commands?: unknown };
+      confidence?: unknown;
+      risk?: unknown;
+      evidenceCount?: unknown;
+      sourceReliability?: unknown;
+    };
+    const id = typeof item.id === "string" && item.id ? item.id : "<unknown>";
+    const evidenceCount = typeof item.evidenceCount === "number" ? item.evidenceCount : 0;
+    const sourceReliability = typeof item.sourceReliability === "number" ? item.sourceReliability : 0;
+    const paths = Array.isArray(item.scope?.paths) ? item.scope.paths : [];
+    const taskTypes = Array.isArray(item.scope?.taskTypes) ? item.scope.taskTypes : [];
+    const commands = Array.isArray(item.activation?.commands) ? item.activation.commands : [];
+    const scopeLevel = typeof item.scope?.level === "string" ? item.scope.level : "unknown";
+    const risk = typeof item.risk === "string" ? item.risk : "unknown";
+    if (typeof item.behavior !== "string" || item.behavior.trim().length === 0) {
+      findings.push(finding("learn-v2-unsupported-resource", "block", file, "Compiled Learn v2 concept has no behavior text.", id));
+    }
+    if (item.status !== "active" && item.status !== "locked") {
+      findings.push(finding("learn-v2-inactive-resource", "block", file, "Compiled Learn v2 resource includes a non-active concept.", id));
+    }
+    if (evidenceCount < 1) {
+      findings.push(finding("learn-v2-concept-without-evidence", "block", file, "Compiled Learn v2 concept has no evidence count.", id));
+    }
+    if (sourceReliability < 0.45) {
+      findings.push(finding("learn-v2-weak-source-reliability", "block", file, "Compiled Learn v2 concept source reliability is too weak for export.", id));
+    }
+    if (scopeLevel === "project" && paths.length === 0 && taskTypes.length === 0 && evidenceCount < 2) {
+      findings.push(finding("learn-v2-overbroad-weak-concept", "block", file, "Compiled Learn v2 project-scope concept has weak evidence and no narrowing scope.", id));
+    }
+    if (commands.length > 0 && (risk === "high" || scopeLevel === "project" && paths.length === 0 && taskTypes.length === 0)) {
+      findings.push(finding("learn-v2-unsafe-command-policy", "block", file, "Compiled Learn v2 command activation is high-risk or too broadly scoped for export.", id));
+    }
+  }
+  return findings;
+}
+
+function finding(ruleId: string, level: ProjectBehaviorPackPublishAuditFinding["level"], file: string, message: string, sample: string): ProjectBehaviorPackPublishAuditFinding {
+  return { ruleId, level, file, message, sample };
 }
 
 function privatePackPathPrefixes(): string[] {

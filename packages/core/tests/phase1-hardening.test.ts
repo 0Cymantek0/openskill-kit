@@ -187,6 +187,50 @@ describe("phase 1 hardening", () => {
     expect(result.issues.some((issue) => issue.includes("Publish audit block: policy.md: absolute-user-path"))).toBe(true);
   });
 
+  it("fails pack verification when compiled learn-v2 resources are unsafe to publish", async () => {
+    const pack = await mkdtemp(path.join(os.tmpdir(), "osk-pack-learn-v2-unsafe-"));
+    const resourceRel = ".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json";
+    const resourcePath = path.join(pack, resourceRel);
+    await mkdir(path.dirname(resourcePath), { recursive: true });
+    await writeJson(resourcePath, {
+      schemaVersion: "openskill-kit.mcp.learn-v2-concept-resources.v1",
+      generatedAt: "2026-06-30T00:00:00.000Z",
+      resources: [{
+        uri: "openskill-kit://learn-v2/concepts/concept_bad",
+        name: "learn-v2 concept concept_bad",
+        title: "Bad exported command",
+        mimeType: "application/json",
+        annotations: { audience: ["assistant"], priority: 1, lastModified: "2026-06-30T00:00:00.000Z" },
+        concept: {
+          id: "concept_bad",
+          behavior: "",
+          behaviorDelta: "Adds a broad risky command rule.",
+          scope: { level: "project", paths: [], taskTypes: [], negativeTriggers: [] },
+          activation: { phrases: [], pathGlobs: [], commands: ["npm run deploy"] },
+          confidence: 0.99,
+          risk: "high",
+          status: "superseded",
+          evidenceCount: 0,
+          sourceReliability: 0.2
+        },
+        privacy: { class: "project-private", rawRefsExported: false, rationale: "test" }
+      }]
+    });
+    await writeJson(path.join(pack, "manifest.json"), {
+      schemaVersion: "openskill-kit.project-pack.v1",
+      privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
+      files: [resourceRel],
+      hashes: { [resourceRel]: await sha256(resourcePath) }
+    });
+
+    const result = await verifyProjectBehaviorPack(pack);
+    expect(result.status).toBe("fail");
+    expect(result.issues.some((issue) => issue.includes("Publish audit block: .openskill-kit/compiled/mcp/resources/learn-v2-concepts.json: learn-v2-inactive-resource"))).toBe(true);
+    expect(result.issues.some((issue) => issue.includes("learn-v2-concept-without-evidence"))).toBe(true);
+    expect(result.issues.some((issue) => issue.includes("learn-v2-overbroad-weak-concept"))).toBe(true);
+    expect(result.issues.some((issue) => issue.includes("learn-v2-unsafe-command-policy"))).toBe(true);
+  });
+
   it("plans pack import without writing files or importing hooks by default", async () => {
     const pack = await mkdtemp(path.join(os.tmpdir(), "osk-pack-good-"));
     await writeFile(path.join(pack, "policy.md"), "# Policy\n", "utf8");
