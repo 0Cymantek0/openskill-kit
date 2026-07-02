@@ -5,8 +5,10 @@ import path from "node:path";
 import {
   exportProjectBehaviorPack,
   initAdaptiveProject,
+  mergeLearnV2ConceptCards,
   readEvents,
   runRawLocalLearning,
+  writeLearnV2ConceptStore,
   verifyProjectBehaviorPack
 } from "../src/index.js";
 
@@ -40,6 +42,8 @@ describe("raw local learning", () => {
     });
     expect(preview.digest.sourcesIncluded).toBe(1);
     expect(preview.digest.rawVaultRecordsWritten).toBe(0);
+    expect(preview.digest.previewWritesLocalArtifacts).toBe(true);
+    expect(preview.digest.canonicalConceptStateWritten).toBe(false);
     expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
@@ -79,6 +83,7 @@ describe("raw local learning", () => {
     expect(previewObservability).toContain("\"rawRefsExported\": false");
     expect(previewObservability).not.toContain(root);
     expect(previewObservability).not.toContain("sk-live-secret");
+    expect(await readFile(preview.artifacts.reviewMarkdownPath, "utf8")).toContain("Preview writes local generated artifacts: true");
 
     const applied = await runRawLocalLearning(root, {
       sourceFiles: [transcript],
@@ -121,9 +126,59 @@ describe("raw local learning", () => {
 
     expect(preview.previewOnly).toBe(true);
     expect(preview.digest.rawVaultRecordsWritten).toBe(0);
+    expect(preview.digest.previewWritesLocalArtifacts).toBe(true);
+    expect(preview.digest.canonicalConceptStateWritten).toBe(false);
     expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
+  });
+
+  it("uses virtual merged preview state without mutating existing canonical store or activation index", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T01:30:00.000Z");
+    const [existing] = mergeLearnV2ConceptCards([{
+      schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
+      id: "atom_existing_parser_tests",
+      kind: "workflow",
+      statement: "Prefer focused parser tests for parser changes.",
+      polarity: "positive",
+      scope: {
+        level: "path",
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"]
+      },
+      confidence: 0.86,
+      confidenceCap: 0.9,
+      sourceReliability: 0.82,
+      evidenceIds: ["ev_existing_parser_tests"],
+      rawRefs: ["raw_existing_parser_tests"],
+      rationale: "Explicit preference or correction language in episode.",
+      risk: "medium"
+    }], now);
+    await writeLearnV2ConceptStore(root, [{ ...existing!, status: "active" }], now);
+    const storePath = path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
+    const activationPath = path.join(root, ".openskill-kit", "learn-v2", "activation-index.json");
+    const storeBefore = await readFile(storePath, "utf8");
+    const activationBefore = await readFile(activationPath, "utf8");
+    const transcript = path.join(root, "preview-session.md");
+    await writeFile(transcript, [
+      `user: ${root} Avoid focused parser tests for packages/core/src/parser.ts parser changes.`,
+      "assistant: ok"
+    ].join("\n"), "utf8");
+
+    const preview = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      now: new Date("2026-06-30T01:31:00.000Z")
+    });
+
+    expect(await readFile(storePath, "utf8")).toBe(storeBefore);
+    expect(await readFile(activationPath, "utf8")).toBe(activationBefore);
+    expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
+    expect(preview.learnV2.concepts.some((card) => card.id === existing!.id)).toBe(true);
+    const conflictLedger = await readFile(preview.artifacts.learnV2ConflictLedgerPath, "utf8");
+    expect(conflictLedger).toContain(existing!.id);
+    expect(conflictLedger).toContain("Unresolved: 1");
   });
 
   it("keeps raw learning vault and prompt frames out of behavior packs", async () => {

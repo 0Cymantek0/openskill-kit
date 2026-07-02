@@ -108,7 +108,9 @@ interface LearnV2RawLocalLearningRunCompat {
     sourcesIncluded: number;
     sourcesAsk: number;
     sourcesExcluded: number;
+    previewWritesLocalArtifacts: boolean;
     rawVaultRecordsWritten: number;
+    canonicalConceptStateWritten: boolean;
     analysisFramesWritten: number;
     learningWindows: number;
     behaviorAtoms: number;
@@ -395,7 +397,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       sourcesIncluded: sourceDigests.filter((source) => source.projectRelevance.decision === "include").length,
       sourcesAsk: sourceDigests.filter((source) => source.projectRelevance.decision === "ask").length,
       sourcesExcluded: sourceDigests.filter((source) => source.projectRelevance.decision === "exclude").length,
+      previewWritesLocalArtifacts: previewOnly,
       rawVaultRecordsWritten: sourceDigests.filter((source) => source.rawVaultRecordPath).length,
+      canonicalConceptStateWritten: !previewOnly,
       analysisFramesWritten: sourceDigests.length,
       learningWindows: episodes.length,
       behaviorAtoms: extracted.atoms.length,
@@ -405,6 +409,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     },
     quality: buildV2Quality(sourceDigests, conceptCardsForArtifacts, extracted.rejected.length, previewOnly, evalReport.status),
     privacy: [
+      ...(previewOnly
+        ? ["Preview writes generated/private analysis, review, eval, model-request, digest, and observability artifacts for inspection, but does not persist canonical concept state, activation index, raw vault records, events, or lifecycle graph changes."]
+        : []),
       "Learn v2 reads full supplied raw local evidence and stores it only in the project-local v2 raw vault when --apply is used.",
       "Output-facing analysis frames, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
       "Raw vault refs are local-only and never exportable through compile, pack, or sync artifacts.",
@@ -616,6 +623,8 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     "",
     `- Sources considered: ${result.digest.sourcesConsidered}`,
     `- Sources included: ${result.digest.sourcesIncluded}`,
+    `- Preview writes local generated artifacts: ${result.digest.previewWritesLocalArtifacts}`,
+    `- Canonical concept state written: ${result.digest.canonicalConceptStateWritten}`,
     `- Task episodes: ${result.digest.learningWindows}`,
     `- Behavior atoms: ${result.digest.behaviorAtoms}`,
     `- Concept cards: ${result.digest.conceptCards}`,
