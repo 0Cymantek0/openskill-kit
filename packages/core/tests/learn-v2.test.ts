@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -1203,6 +1203,49 @@ describe("learn-v2 substrate", () => {
     expect(compactedArtifact).toContain("openskill-kit.learn-v2.compacted-raw-evidence.v1");
     expect(compactedArtifact).not.toContain("ghp_123456789012345678901234567890123456");
     await expect(import("node:fs/promises").then((fs) => fs.stat(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", gc.removedBlobRefs[0]!)))).rejects.toThrow();
+  });
+
+  it("reports and prunes old preview concept stores without touching canonical state", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "preview-retention.md");
+    await writeFile(transcript, `user: ${root} prefer focused parser tests in packages/core/src/parser.ts.`, "utf8");
+    const first = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      now: new Date("2026-06-01T00:00:00Z")
+    });
+    const second = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      now: new Date("2026-06-10T00:00:00Z")
+    });
+    const newest = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      now: new Date("2026-06-20T00:00:00Z")
+    });
+
+    const status = await runLearnV2RawVaultMaintenance(root, {
+      now: new Date("2026-07-01T00:00:00Z"),
+      previewRetentionDays: 0,
+      keepPreviewRuns: 1
+    });
+    expect(status.previewArtifacts.previewStoreCount).toBe(3);
+    expect(status.previewArtifacts.previewStoreBytes).toBeGreaterThan(0);
+
+    const gc = await runLearnV2RawVaultMaintenance(root, {
+      gc: true,
+      now: new Date("2026-07-01T00:00:00Z"),
+      previewRetentionDays: 0,
+      keepPreviewRuns: 1
+    });
+    expect(gc.previewArtifacts.previewStoreCount).toBe(1);
+    expect(gc.prunedPreviewArtifacts).toHaveLength(2);
+    await expect(stat(first.artifacts.learnV2ConceptStorePath)).rejects.toThrow();
+    await expect(stat(second.artifacts.learnV2ConceptStorePath)).rejects.toThrow();
+    await expect(stat(newest.artifacts.learnV2ConceptStorePath)).resolves.toBeTruthy();
+    await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
+    await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
   });
 
   it("persists reviewed concepts, writes activation index, and syncs active concepts into graphs", async () => {

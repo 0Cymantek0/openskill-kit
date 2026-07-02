@@ -42,9 +42,24 @@ export interface LearnV2RawVaultMaintenanceResult {
   expiredRecords: number;
   compactedRecords: number;
   removedBlobRefs: string[];
+  prunedPreviewArtifacts: string[];
   manifestPath: string;
   manifest: LearnV2RawEvidenceManifest;
+  previewArtifacts: LearnV2PreviewArtifactSummary;
   nextActions: string[];
+}
+
+export interface LearnV2PreviewArtifactSummary {
+  root: string;
+  previewStoreCount: number;
+  previewStoreBytes: number;
+  oldestPreviewStore?: string;
+  newestPreviewStore?: string;
+  prunedPreviewStores: string[];
+  retention: {
+    keepLatest: number;
+    maxAgeDays: number;
+  };
 }
 
 export async function storeLearnV2RawEvidence(options: LearnV2RawVaultOptions, input: LearnV2StoreRawInput): Promise<LearnV2StoredRawEvidence> {
@@ -192,7 +207,7 @@ export async function garbageCollectLearnV2RawVault(rootInput: string, config: P
 
 export async function runLearnV2RawVaultMaintenance(
   projectRootInput: string,
-  options: { gc?: boolean; maxHotBytes?: number; now?: Date } = {}
+  options: { gc?: boolean; maxHotBytes?: number; previewRetentionDays?: number; keepPreviewRuns?: number; now?: Date } = {}
 ): Promise<LearnV2RawVaultMaintenanceResult> {
   const root = path.resolve(projectRootInput);
   const config = await readProjectConfig(root);
@@ -201,6 +216,11 @@ export async function runLearnV2RawVaultMaintenance(
   const gc = options.gc === true
     ? await garbageCollectLearnV2RawVault(root, config, now, maxHotBytes)
     : { manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now), expiredRecords: 0, compactedRecords: 0, removedBlobRefs: [] };
+  const previewArtifacts = await summarizeLearnV2PreviewArtifacts(root, now, {
+    gc: options.gc,
+    previewRetentionDays: options.previewRetentionDays,
+    keepPreviewRuns: options.keepPreviewRuns
+  });
   return {
     schemaVersion: "openskill-kit.learn-v2.raw-vault-maintenance.v1",
     projectRoot: root,
@@ -209,11 +229,18 @@ export async function runLearnV2RawVaultMaintenance(
     expiredRecords: gc.expiredRecords,
     compactedRecords: gc.compactedRecords,
     removedBlobRefs: gc.removedBlobRefs,
+    prunedPreviewArtifacts: previewArtifacts.prunedPreviewStores,
     manifestPath: learnV2ManifestPath(root),
     manifest: gc.manifest,
-    nextActions: gc.manifest.budget.status === "over-budget"
-      ? ["Review pinned evidence, compact low-value raw records, or rerun maintenance with garbage collection after retention expiry."]
-      : ["Raw vault budget is within configured limits."]
+    previewArtifacts,
+    nextActions: [
+      ...(gc.manifest.budget.status === "over-budget"
+        ? ["Review pinned evidence, compact low-value raw records, or rerun maintenance with garbage collection after retention expiry."]
+        : ["Raw vault budget is within configured limits."]),
+      ...(previewArtifacts.previewStoreCount > previewArtifacts.retention.keepLatest
+        ? ["Prune old Learn v2 preview stores with --gc-raw-vault or increase preview retention settings."]
+        : ["Learn v2 preview artifact count is within retention settings."])
+    ]
   };
 }
 
@@ -223,6 +250,65 @@ export function learnV2VaultRoot(root: string): string {
 
 export function learnV2ManifestPath(root: string): string {
   return path.join(learnV2VaultRoot(root), "manifest.json");
+}
+
+async function summarizeLearnV2PreviewArtifacts(
+  root: string,
+  now: Date,
+  options: { gc?: boolean; previewRetentionDays?: number; keepPreviewRuns?: number }
+): Promise<LearnV2PreviewArtifactSummary> {
+  const previewRoot = path.join(root, ".openskill-kit", "learn-v2", "compiled-preview");
+  const keepLatest = Math.max(1, options.keepPreviewRuns ?? 20);
+  const maxAgeDays = Math.max(0, options.previewRetentionDays ?? 14);
+  const files = await readPreviewStoreFiles(previewRoot);
+  const sorted = files.sort((a, b) => b.generatedAt.getTime() - a.generatedAt.getTime() || a.file.localeCompare(b.file));
+  const pruned: string[] = [];
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+  if (options.gc === true) {
+    for (const [index, file] of sorted.entries()) {
+      const protectedByCount = index < keepLatest;
+      const tooOld = maxAgeDays === 0 || now.getTime() - file.generatedAt.getTime() > maxAgeMs;
+      if (protectedByCount || !tooOld) continue;
+      await fs.rm(file.path).catch(() => undefined);
+      pruned.push(learnV2SafeLocalPath(file.path, root));
+    }
+  }
+  const remaining = sorted.filter((file) => !pruned.includes(learnV2SafeLocalPath(file.path, root)));
+  return {
+    root: learnV2SafeLocalPath(previewRoot, root),
+    previewStoreCount: remaining.length,
+    previewStoreBytes: remaining.reduce((sum, file) => sum + file.bytes, 0),
+    oldestPreviewStore: remaining.at(-1)?.generatedAt.toISOString(),
+    newestPreviewStore: remaining[0]?.generatedAt.toISOString(),
+    prunedPreviewStores: pruned,
+    retention: { keepLatest, maxAgeDays }
+  };
+}
+
+async function readPreviewStoreFiles(previewRoot: string): Promise<Array<{ file: string; path: string; bytes: number; generatedAt: Date }>> {
+  const entries = await fs.readdir(previewRoot, { withFileTypes: true }).catch(() => []);
+  const files: Array<{ file: string; path: string; bytes: number; generatedAt: Date }> = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^concept-store-preview-\d{14}\.json$/.test(entry.name)) continue;
+    const filePath = path.join(previewRoot, entry.name);
+    const stat = await fs.stat(filePath).catch(() => undefined);
+    if (!stat) continue;
+    files.push({
+      file: entry.name,
+      path: filePath,
+      bytes: stat.size,
+      generatedAt: previewTimestampFromFile(entry.name) ?? stat.mtime
+    });
+  }
+  return files;
+}
+
+function previewTimestampFromFile(file: string): Date | undefined {
+  const match = /^concept-store-preview-(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\.json$/.exec(file);
+  if (!match) return undefined;
+  const [, year, month, day, hour, minute, second] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)));
+  return Number.isFinite(date.getTime()) ? date : undefined;
 }
 
 async function compactLearnV2RawRecord(root: string, config: ProjectConfig, record: LearnV2RawEvidenceRecord, now: Date): Promise<string | undefined> {

@@ -338,6 +338,8 @@ osk.command("learn")
   .option("--observability", "Show latest Learn-v2 pipeline observability dashboard")
   .option("--observability-file <path>", "Specific Learn-v2 pipeline observability JSON report")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
+  .option("--preview-retention-days <number>", "Learn-v2 preview artifact retention window", parseIntegerOption, 14)
+  .option("--keep-preview-runs <number>", "Minimum Learn-v2 preview concept-store files to retain", parseIntegerOption, 20)
   .option("--reconstruct-episodes", "Rebuild Learn-v2 episodes from persisted analysis frames")
   .option("--extract-concepts", "Extract deterministic Learn-v2 concepts from the persisted episode store")
   .option("--run-learn-v2-eval", "Run Learn-v2 eval from persisted episode and concept stores")
@@ -364,7 +366,9 @@ osk.command("learn")
     if (options.rawVaultStatus === true || options.gcRawVault === true) {
       const result = await runLearnV2RawVaultMaintenance(process.cwd(), {
         gc: options.gcRawVault === true,
-        maxHotBytes: options.maxRawVaultBytes
+        maxHotBytes: options.maxRawVaultBytes,
+        previewRetentionDays: options.previewRetentionDays,
+        keepPreviewRuns: options.keepPreviewRuns
       });
       output(options.json, result, renderRawVaultMaintenance(result));
       return;
@@ -2289,9 +2293,13 @@ function renderRawVaultMaintenance(result: Awaited<ReturnType<typeof runLearnV2R
     `Pinned bytes: ${result.manifest.budget.pinnedBytes}`,
     `Compacted bytes: ${result.manifest.budget.compactedBytes}`,
     `Expired records: ${result.manifest.budget.expiredCount}`,
+    `Preview stores: ${result.previewArtifacts.previewStoreCount}`,
+    `Preview store bytes: ${result.previewArtifacts.previewStoreBytes}`,
+    `Preview retention: keep ${result.previewArtifacts.retention.keepLatest}, max age ${result.previewArtifacts.retention.maxAgeDays} day(s)`,
     `GC run: ${result.gc}`,
     `Records compacted: ${result.compactedRecords}`,
     `Blobs removed: ${result.removedBlobRefs.length}`,
+    `Preview stores pruned: ${result.prunedPreviewArtifacts.length}`,
     `Manifest: ${result.manifestPath}`,
     ...result.nextActions
   ].join("\n");
