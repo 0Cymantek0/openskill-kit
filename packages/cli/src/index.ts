@@ -2132,6 +2132,8 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     `Generated: ${report.generatedAt}`,
     `Mode: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
     `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
+    `Source adapters: ${renderLearnV2CountLine(report.sources.adapterCounts)}, content ${renderLearnV2CountLine(report.sources.contentKindCounts)}`,
+    `Source policy: explicit-only ${report.sources.explicitOnlySources}, raw-local-file ${report.sources.rawLocalFileSources}, declassified-only model ${report.sources.declassifiedOnlyModelSources}, sensitivity ${renderLearnV2CountLine(report.sources.sensitivityCounts)}`,
     `Evidence: ${report.evidence.normalizedEvidence} records, ${report.evidence.episodes} episodes, confidence high/medium/low ${report.evidence.confidenceBuckets.high}/${report.evidence.confidenceBuckets.medium}/${report.evidence.confidenceBuckets.low}`,
     `Evidence quality: ${renderLearnV2CountLine(report.evidence.qualityTierCounts)}, actions ${renderLearnV2CountLine(report.evidence.qualityActionCounts)}`,
     `Snippets: ${report.evidence.declassifiedSnippets} declassified, ${report.evidence.blockedDeclassifiedSnippets} compile-blocked, risk ${renderLearnV2CountLine(report.evidence.snippetResidualRiskCounts)}`,
@@ -2156,6 +2158,9 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
     `Generated: ${report.generatedAt}`,
     `Run: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
     `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
+    `Adapters: ${renderLearnV2CountLine(report.sources.adapterCounts)}`,
+    `Source policy: explicit-only ${report.sources.explicitOnlySources}, raw-local-file ${report.sources.rawLocalFileSources}, declassified-only model ${report.sources.declassifiedOnlyModelSources}`,
+    `Sensitivity: ${renderLearnV2CountLine(report.sources.sensitivityCounts)}`,
     `Quality gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}`,
     `Health: ${report.health.status} (${report.health.score.toFixed(2)})`
   ].join("\n"), "Pipeline");

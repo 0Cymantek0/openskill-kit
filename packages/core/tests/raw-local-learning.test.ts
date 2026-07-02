@@ -102,6 +102,10 @@ describe("raw local learning", () => {
     expect(previewObservability).toContain("\"declassifiedSnippets\"");
     expect(previewObservability).toContain("\"driftHealthScore\"");
     expect(previewObservability).toContain("\"qualityTierCounts\"");
+    expect(previewObservability).toContain("\"adapterCounts\"");
+    expect(previewObservability).toContain("\"sensitivityCounts\"");
+    expect(previewObservability).toContain("\"modelBoundaryCounts\"");
+    expect(previewObservability).toContain("\"declassifiedOnlyModelSources\"");
     expect(previewObservability).toContain("\"rawRefsExported\": false");
     expect(previewObservability).not.toContain(root);
     expect(previewObservability).not.toContain("sk-live-secret");

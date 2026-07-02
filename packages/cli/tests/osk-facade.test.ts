@@ -57,6 +57,8 @@ describe("osk CLI facade", () => {
 
     const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--observability"], { cwd: root, windowsHide: true });
     expect(textResult.stdout).toContain("Learn v2 observability");
+    expect(textResult.stdout).toContain("Source adapters: opencode=1, content transcript=1");
+    expect(textResult.stdout).toContain("Source policy: explicit-only 1, raw-local-file 1, declassified-only model 1, sensitivity high=1");
     expect(textResult.stdout).toContain("Patches: 1 behavior-eligible, 1 audit-only / 2");
     expect(textResult.stdout).toContain("Review focus: 1 focus, 2 appendix");
     expect(textResult.stdout).toContain("Health: warn (0.84), blockers 0, warnings 2");
@@ -571,7 +573,14 @@ function sampleLearnV2ObservabilityReport() {
       reviewNeeded: 0,
       excluded: 0,
       totalBytes: 120,
-      redactedSources: 0
+      redactedSources: 0,
+      adapterCounts: { opencode: 1 },
+      contentKindCounts: { transcript: 1 },
+      sensitivityCounts: { high: 1 },
+      modelBoundaryCounts: { "declassified-only": 1 },
+      explicitOnlySources: 1,
+      rawLocalFileSources: 1,
+      declassifiedOnlyModelSources: 1
     },
     evidence: {
       normalizedEvidence: 2,

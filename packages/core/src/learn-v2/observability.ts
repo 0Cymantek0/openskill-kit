@@ -20,7 +20,14 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     reviewNeeded: z.number().int().min(0),
     excluded: z.number().int().min(0),
     totalBytes: z.number().int().min(0),
-    redactedSources: z.number().int().min(0)
+    redactedSources: z.number().int().min(0),
+    adapterCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    contentKindCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    sensitivityCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    modelBoundaryCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    explicitOnlySources: z.number().int().min(0).default(0),
+    rawLocalFileSources: z.number().int().min(0).default(0),
+    declassifiedOnlyModelSources: z.number().int().min(0).default(0)
   }),
   evidence: z.object({
     normalizedEvidence: z.number().int().min(0),
@@ -109,6 +116,16 @@ export interface LearnV2PipelineObservabilityInput {
     projectRelevance: { decision: "include" | "ask" | "exclude" };
     deidentification: { redacted: boolean };
     turnCount: number;
+    learnV2?: {
+      adapterId?: string;
+      contentKind?: string;
+      surfacePolicy?: {
+        selection?: string;
+        read?: string;
+        modelBoundary?: string;
+        sensitivity?: string;
+      };
+    };
   }>;
   episodes: LearnV2TaskEpisode[];
   concepts: LearnV2ConceptCard[];
@@ -180,7 +197,14 @@ export async function writeLearnV2PipelineObservabilityReport(
       reviewNeeded: input.sources.filter((source) => source.projectRelevance.decision === "ask").length,
       excluded: input.sources.filter((source) => source.projectRelevance.decision === "exclude").length,
       totalBytes: input.sources.reduce((sum, source) => sum + source.byteCount, 0),
-      redactedSources: input.sources.filter((source) => source.deidentification.redacted).length
+      redactedSources: input.sources.filter((source) => source.deidentification.redacted).length,
+      adapterCounts: countBy(input.sources.map((source) => source.learnV2?.adapterId ?? "unknown")),
+      contentKindCounts: countBy(input.sources.map((source) => source.learnV2?.contentKind ?? "unknown")),
+      sensitivityCounts: countBy(input.sources.map((source) => source.learnV2?.surfacePolicy?.sensitivity ?? "unknown")),
+      modelBoundaryCounts: countBy(input.sources.map((source) => source.learnV2?.surfacePolicy?.modelBoundary ?? "unknown")),
+      explicitOnlySources: input.sources.filter((source) => source.learnV2?.surfacePolicy?.selection === "explicit-only").length,
+      rawLocalFileSources: input.sources.filter((source) => source.learnV2?.surfacePolicy?.read === "raw-local-file").length,
+      declassifiedOnlyModelSources: input.sources.filter((source) => source.learnV2?.surfacePolicy?.modelBoundary === "declassified-only").length
     },
     evidence: {
       normalizedEvidence: input.sources.reduce((sum, source) => sum + source.turnCount, 0),
@@ -270,6 +294,11 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered} considered`,
     `- Total bytes: ${report.sources.totalBytes}`,
     `- Redacted sources: ${report.sources.redactedSources}`,
+    `- Adapters: ${renderCounts(report.sources.adapterCounts)}`,
+    `- Content kinds: ${renderCounts(report.sources.contentKindCounts)}`,
+    `- Source policy: explicit-only=${report.sources.explicitOnlySources}, raw-local-file=${report.sources.rawLocalFileSources}, declassified-only-model=${report.sources.declassifiedOnlyModelSources}`,
+    `- Sensitivity: ${renderCounts(report.sources.sensitivityCounts)}`,
+    `- Model boundary: ${renderCounts(report.sources.modelBoundaryCounts)}`,
     "",
     "## Evidence Reconstruction",
     "",
