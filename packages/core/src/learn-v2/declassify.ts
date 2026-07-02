@@ -1,10 +1,12 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { ProjectConfig } from "../config/schema.js";
+import { readProjectConfig } from "../events/store.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import type { LearnV2TaskEpisode } from "./schemas.js";
 import { LearnV2DeclassifiedEvidenceSnippetArtifactSchema, LearnV2DeclassifiedEvidenceSnippetSchema, type LearnV2DeclassifiedEvidenceSnippet, type LearnV2DeclassifiedEvidenceSnippetArtifact } from "./schemas.js";
-import { learnV2ShortHash, learnV2Snippet } from "./utils.js";
+import { learnV2DeclassifyText, learnV2ShortHash, learnV2Snippet } from "./utils.js";
 
 /**
  * Plan §16.2: Standalone declassified evidence snippets.
@@ -28,6 +30,8 @@ export interface LearnV2DeclassifyOptions {
   blockOnMediumRisk?: boolean;
   /** Stable timestamp for deterministic pipeline artifacts/tests. */
   now?: Date;
+  /** Project config for the same built-in and custom redactions used by vault/event storage. */
+  config?: ProjectConfig;
 }
 
 export function buildLearnV2DeclassifiedSnippet(
@@ -38,7 +42,7 @@ export function buildLearnV2DeclassifiedSnippet(
   options: LearnV2DeclassifyOptions = {}
 ): LearnV2DeclassifiedEvidenceSnippet {
   const maxChars = options.maxChars ?? 1200;
-  const result = localDeclassify(text, projectRoot);
+  const result = options.config ? learnV2DeclassifyText(text, projectRoot, options.config) : localDeclassify(text, projectRoot);
   const snippetText = learnV2Snippet(result.text, maxChars) || "<empty-snippet>";
   const residualRisk = computeResidualRisk(snippetText, result.matches);
   const id = `decl_${learnV2ShortHash(`${evidenceId}:${rawRef}:${snippetText}`)}`;
@@ -93,10 +97,11 @@ export async function writeLearnV2DeclassifiedSnippetArtifact(
   const json = path.join(dir, "snippets.json");
   const markdown = path.join(dir, "snippets.md");
   const maxSnippets = options.maxSnippets ?? 200;
+  const config = options.config ?? await readProjectConfig(root).catch(() => undefined);
   const seen = new Set<string>();
   const snippets: LearnV2DeclassifiedEvidenceSnippet[] = [];
   for (const episode of episodes) {
-    for (const snippet of buildLearnV2HighValueSnippets(episode, root, { ...options, now })) {
+    for (const snippet of buildLearnV2HighValueSnippets(episode, root, { ...options, config, now })) {
       const key = `${snippet.evidenceId}:${snippet.text}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -191,11 +196,9 @@ function renderCounts(counts: Record<string, number>): string {
 }
 
 /**
- * Local declassification that mirrors utils.learnV2DeclassifyText but does not
- * require a ProjectConfig. This keeps snippet-building usable from review cards
- * and MCP tools that may not hold a full config object. Custom redaction patterns
- * from config are intentionally omitted here; callers needing custom redactions
- * should use utils.learnV2DeclassifyText directly before building snippets.
+ * Fallback declassification for direct unit/helper use when no ProjectConfig exists.
+ * Runtime artifact writers read project config and use utils.learnV2DeclassifyText,
+ * so custom redactions stay consistent across raw vault, events, snippets, and review.
  *
  * Matches the core redaction contract: project root, user home, absolute Windows
  * paths, secret-shaped strings, and email-like identifiers are replaced with typed

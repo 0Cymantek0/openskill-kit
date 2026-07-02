@@ -607,6 +607,38 @@ describe("learn-v2 substrate", () => {
     expect(reviewMarkdown).not.toContain("sk-live-secret");
   });
 
+  it("applies project custom redactions to declassified snippets and review cards", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = JSON.parse(await readText(configPath));
+    config.privacy.customRedactions = ["public-[0-9]+"];
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const now = new Date("2026-06-30T00:26:00.000Z");
+    const episodes = reconstructLearnV2Episodes([
+      normalizedMessage("ev_custom_redaction", "Prefer parser regression fixtures for incident public-1234.", "user")
+    ]);
+
+    const snippets = await writeLearnV2DeclassifiedSnippetArtifact(root, episodes, now, {
+      maxChars: 400
+    });
+    expect(snippets.counts.redacted).toBeGreaterThanOrEqual(1);
+    expect(snippets.snippets[0]!.text).toContain("[REDACTED:custom-1]");
+    expect(snippets.snippets[0]!.text).not.toContain("public-1234");
+    expect(Object.keys(snippets.snippets[0]!.placeholderMap)).toContain("custom-1");
+
+    const cards = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("custom_redaction_card", "Prefer parser regression fixtures for incident handling.", "positive"),
+        evidenceIds: ["ev_custom_redaction"],
+        rawRefs: ["raw_ev_custom_redaction"]
+      }
+    ], now);
+    const queue = await writeLearnV2ReviewQueue(root, cards, now, { declassifiedSnippets: snippets });
+    const reviewMarkdown = await readText(queue.artifacts.markdown);
+    expect(reviewMarkdown).toContain("[REDACTED:custom-1]");
+    expect(reviewMarkdown).not.toContain("public-1234");
+  });
+
   it("writes concept drift reports from stored outcome telemetry", async () => {
     const root = await tempProject();
     const createdAt = new Date("2026-03-01T00:00:00.000Z");
