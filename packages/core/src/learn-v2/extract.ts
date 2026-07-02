@@ -25,6 +25,7 @@ export function extractLearnV2BehaviorAtoms(episodes: LearnV2TaskEpisode[]): Lea
       atoms.push(atom);
     }
   }
+  atoms.push(...extractCrossEpisodeCommandPolicies(episodes));
   return { atoms: dedupeAtoms(atoms), rejected };
 }
 
@@ -300,6 +301,70 @@ function repeatedCommands(commands: string[]): string[] {
     .filter(([, count]) => count > 1)
     .map(([command]) => command)
     .slice(0, 4);
+}
+
+function extractCrossEpisodeCommandPolicies(episodes: LearnV2TaskEpisode[]): LearnV2BehaviorAtom[] {
+  const byCommand = new Map<string, LearnV2TaskEpisode[]>();
+  for (const episode of episodes) {
+    const commands = new Set(
+      episode.toolSummaries
+        .filter((tool) => tool.status === "pass" && tool.command && commandCanBecomePolicy(tool))
+        .map((tool) => tool.command!)
+    );
+    for (const command of commands) byCommand.set(command, [...(byCommand.get(command) ?? []), episode]);
+  }
+  const atoms: LearnV2BehaviorAtom[] = [];
+  for (const [command, supportingEpisodes] of byCommand) {
+    if (supportingEpisodes.length < 2) continue;
+    atoms.push(makeCrossEpisodeCommandAtom(command, supportingEpisodes.slice(0, 6)));
+  }
+  return atoms;
+}
+
+function commandCanBecomePolicy(tool: LearnV2TaskEpisode["toolSummaries"][number]): boolean {
+  const command = tool.command ?? "";
+  if (!command.trim()) return false;
+  if ((tool.commandShape?.riskFlags ?? []).length) return false;
+  if (/\b(?:rm|del|Remove-Item|drop|truncate|destroy|delete|deploy|release|publish)\b/i.test(command)) return false;
+  if (/\b(?:e2e|integration|full|all|soak|load-test|benchmark)\b/i.test(command)) return false;
+  return true;
+}
+
+function makeCrossEpisodeCommandAtom(command: string, episodes: LearnV2TaskEpisode[]): LearnV2BehaviorAtom {
+  const evidenceIds = [...new Set(episodes.flatMap((episode) => episode.evidenceIds))].slice(0, 20);
+  const rawRefs = [...new Set(episodes.flatMap((episode) => episode.rawRefs))].slice(0, 12);
+  const paths = [...new Set(episodes.flatMap((episode) => episode.pathCluster).filter((file) => !file.includes("[")))].slice(0, 12);
+  const taskTypes = [...new Set(episodes.flatMap((episode) => episode.taskHints).filter((hint) => !hint.startsWith("command:")))].slice(0, 8);
+  const avgConfidence = episodes.reduce((sum, episode) => sum + episode.episodeConfidence, 0) / episodes.length;
+  const confidence = Math.min(0.88, 0.68 + Math.min(0.12, episodes.length * 0.04) + (avgConfidence * 0.08));
+  return {
+    schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
+    id: `atom_${learnV2ShortHash(`cross-episode-command:${command}:${evidenceIds.join(",")}`)}`,
+    kind: "command-policy",
+    statement: learnV2NormalizeStatement(`When task scope matches ${scopeLabelForEpisodes(episodes)}, prefer running \`${command}\` as a focused verification command before broader suites`),
+    polarity: "positive",
+    scope: {
+      level: paths.length ? "path" : "project",
+      paths,
+      taskTypes
+    },
+    confidence: Number(confidence.toFixed(2)),
+    confidenceCap: 0.88,
+    sourceReliability: Number(Math.min(0.92, 0.58 + avgConfidence * 0.28).toFixed(2)),
+    evidenceIds,
+    rawRefs,
+    rationale: "Same non-risky command passed across multiple reconstructed episodes; scoped as conditional command policy.",
+    risk: "low"
+  };
+}
+
+function scopeLabelForEpisodes(episodes: LearnV2TaskEpisode[]): string {
+  const taskHints = [...new Set(episodes.flatMap((episode) => episode.taskHints))];
+  if (taskHints.includes("parser-change")) return "parser changes";
+  if (taskHints.includes("security")) return "security-sensitive changes";
+  const paths = [...new Set(episodes.flatMap((episode) => episode.pathCluster).filter(Boolean))];
+  if (paths.length) return `paths like ${paths.slice(0, 3).join(", ")}`;
+  return "similar repeated tasks";
 }
 
 function scopeLabel(episode: LearnV2TaskEpisode): string {

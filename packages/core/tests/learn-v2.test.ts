@@ -47,6 +47,7 @@ import {
   validateLearnV2LlmExtractionProposal,
   readLearnV2ConceptActivationRuns,
   type LearnV2BehaviorAtom,
+  type LearnV2TaskEpisode,
   type LearnV2RawEvidenceRecord
 } from "../src/index.js";
 
@@ -472,6 +473,25 @@ describe("learn-v2 substrate", () => {
     expect(oneOffAtoms.some((atom) => atom.kind === "command-policy")).toBe(false);
     expect(repeatedAtoms.filter((atom) => atom.kind === "command-policy")).toHaveLength(1);
     expect(repeatedAtoms.find((atom) => atom.kind === "command-policy")?.rationale).toContain("more than once");
+  });
+
+  it("promotes safe commands repeated across episodes and blocks risky repeated commands", async () => {
+    const safeAtoms = extractLearnV2BehaviorAtoms([
+      episodeWithCommand("one", "npm test -- parser", "pass", ["parser-change"]),
+      episodeWithCommand("two", "npm test -- parser", "pass", ["parser-change"])
+    ]).atoms;
+    const commandPolicy = safeAtoms.find((atom) => atom.kind === "command-policy");
+    expect(commandPolicy?.statement).toContain("npm test -- parser");
+    expect(commandPolicy?.rationale).toContain("multiple reconstructed episodes");
+    expect(commandPolicy?.evidenceIds).toEqual(expect.arrayContaining(["ev_cmd_one", "ev_cmd_two"]));
+
+    const riskyAtoms = extractLearnV2BehaviorAtoms([
+      episodeWithCommand("deploy_one", "npm run deploy -- --force", "pass", ["deployment"]),
+      episodeWithCommand("deploy_two", "npm run deploy -- --force", "pass", ["deployment"]),
+      episodeWithCommand("e2e_one", "npm run e2e", "pass", ["testing"]),
+      episodeWithCommand("e2e_two", "npm run e2e", "pass", ["testing"])
+    ]).atoms;
+    expect(riskyAtoms.some((atom) => atom.kind === "command-policy" && /deploy|e2e/.test(atom.statement))).toBe(false);
   });
 
   it("only labels supersession when newer concept has higher confidence and protected older concepts stay manual", async () => {
@@ -1614,6 +1634,70 @@ function behaviorAtom(id: string, statement: string, polarity: LearnV2BehaviorAt
     rawRefs: [`raw_${id}`],
     rationale: "test fixture atom",
     risk: "medium"
+  };
+}
+
+function episodeWithCommand(id: string, command: string, status: "pass" | "fail", taskHints: string[] = []): LearnV2TaskEpisode {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.task-episode.v1",
+    id: `episode_${id}`,
+    traceIds: [],
+    sessionIds: [`session_${id}`],
+    evidenceIds: [`ev_cmd_${id}`],
+    rawRefs: [`raw_cmd_${id}`],
+    pathCluster: ["packages/core/src/parser.ts"],
+    taskHints,
+    outcome: status === "pass" ? "passed" : "failed",
+    episodeConfidence: 0.84,
+    episodeConfidenceBreakdown: {
+      schemaVersion: "openskill-kit.learn-v2.episode-confidence.v1",
+      score: 0.84,
+      linkage: {
+        traceId: 0,
+        sessionId: 0.7,
+        branch: 0,
+        pathCluster: 0.8,
+        semanticTaskSimilarity: 0.8,
+        timeWindow: 0.7,
+        outcomeLink: 0.8
+      },
+      risks: [],
+      reasons: ["test fixture"]
+    },
+    stitching: {
+      method: "session",
+      reasons: ["test fixture"]
+    },
+    phases: [],
+    messages: [],
+    toolSummaries: [{
+      id: `tool_${id}`,
+      evidenceId: `ev_cmd_${id}`,
+      toolName: "shell",
+      status,
+      command,
+      commandShape: {
+        rendered: command,
+        base: command.split(/\s+/)[0] ?? command,
+        argsShape: [],
+        riskFlags: /\bdeploy\b|--force/.test(command) ? ["destructive-shape"] : []
+      },
+      paths: ["packages/core/src/parser.ts"],
+      summary: `${status}: ${command}`,
+      omittedBytes: 0,
+      outputCompression: {
+        strategy: "status-only",
+        summary: `${status}: ${command}`,
+        omittedBytes: 0,
+        signatures: []
+      }
+    }],
+    patchComparisons: [],
+    tokenBudget: {
+      inputChars: command.length,
+      compressedChars: command.length,
+      compressionRatio: 1
+    }
   };
 }
 
