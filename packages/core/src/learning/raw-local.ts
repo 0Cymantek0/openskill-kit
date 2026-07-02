@@ -1,5 +1,6 @@
 import type { InteractionImportRun } from "../interactions/importer.js";
 import type { LifecycleRunnerResult } from "../lifecycle/runner.js";
+import type { LearnV2SurfaceAdapterPolicy } from "../learn-v2/surfaces.js";
 import {
   LearnV2RawLearningModelModes,
   runLearnV2RawLocalLearning,
@@ -77,8 +78,10 @@ export interface RawLearningSourceDigest {
   learnV2?: {
     rawRef: string;
     adapterId: string;
+    adapterLabel?: string;
     detectedFormat: string;
     contentKind: string;
+    surfacePolicy?: LearnV2SurfaceAdapterPolicy;
     v2AnalysisPath: string;
     v2RawVaultDir: string;
   };

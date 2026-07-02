@@ -2098,6 +2098,7 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
   const lines = [
     `Raw sources considered: ${result.digest.sourcesConsidered}`,
     `Sources included: ${result.digest.sourcesIncluded}`,
+    ...renderRawLearnSourcePolicySummary(result),
     `Learning windows: ${result.digest.learningWindows}`,
     `Behavior atoms: ${result.digest.behaviorAtoms}`,
     `Concept cards: ${result.digest.currentRunConceptCards ?? result.digest.conceptCards} current-run, ${result.digest.mergedConceptCards ?? result.digest.conceptCards} merged for review/artifacts`,
@@ -2124,6 +2125,21 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
   }
   lines.push(...result.nextActions);
   return lines.join("\n");
+}
+
+function renderRawLearnSourcePolicySummary(result: RawLocalLearningResult): string[] {
+  const learnSources = result.sources.flatMap((source) => source.learnV2 ? [source.learnV2] : []);
+  if (!learnSources.length) return [];
+  const adapters = countValues(learnSources.map((source) => source.adapterId));
+  const contentKinds = countValues(learnSources.map((source) => source.contentKind));
+  const sensitivities = countValues(learnSources.map((source) => source.surfacePolicy?.sensitivity ?? "unknown"));
+  const explicitOnly = learnSources.filter((source) => source.surfacePolicy?.selection === "explicit-only").length;
+  const rawLocalFile = learnSources.filter((source) => source.surfacePolicy?.read === "raw-local-file").length;
+  const declassifiedOnly = learnSources.filter((source) => source.surfacePolicy?.modelBoundary === "declassified-only").length;
+  return [
+    `Source adapters: ${renderLearnV2CountLine(adapters)}, content ${renderLearnV2CountLine(contentKinds)}`,
+    `Source policy: explicit-only ${explicitOnly}, raw-local-file ${rawLocalFile}, declassified-only model ${declassifiedOnly}, sensitivity ${renderLearnV2CountLine(sensitivities)}`
+  ];
 }
 
 function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityReport): string {
@@ -2209,6 +2225,12 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
 function renderLearnV2CountLine(counts: Record<string, number>): string {
   const entries = Object.entries(counts);
   return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join(", ") : "none";
+}
+
+function countValues(values: string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const value of values) out[value] = (out[value] ?? 0) + 1;
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 function renderLearnV2ModelRequests(result: Awaited<ReturnType<typeof writeLearnV2ModelRequests>>): string {

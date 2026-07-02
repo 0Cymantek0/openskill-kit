@@ -98,6 +98,33 @@ describe("osk CLI facade", () => {
     expect(result.stdout).not.toContain(root);
   });
 
+  it("renders raw learning source policy in terminal output", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-raw-source-policy-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
+    const transcript = path.join(root, "codex-transcript.md");
+    await writeFile(transcript, [
+      "user: For parser changes, prefer focused parser regression fixtures.",
+      "assistant: acknowledged"
+    ].join("\n"), "utf8");
+
+    const result = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "learn",
+      "--raw",
+      "--surface-file",
+      transcript,
+      "--max-events",
+      "50"
+    ], { cwd: root, windowsHide: true, timeout: 60_000, maxBuffer: 16 * 1024 * 1024 });
+
+    expect(result.stdout).toContain("Raw sources considered: 1");
+    expect(result.stdout).toContain("Source adapters:");
+    expect(result.stdout).toContain("content transcript=1");
+    expect(result.stdout).toContain("Source policy: explicit-only 1, raw-local-file 1, declassified-only model 1");
+  });
+
   it("prompts for /osk learn sources in interactive terminal mode", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-picker-"));
     await mkdir(path.join(root, "src"), { recursive: true });
