@@ -56,6 +56,15 @@ export interface LearnV2ConceptActivationResult {
   };
   matches: LearnV2ConceptActivationMatch[];
   suppressed: LearnV2ConceptActivationMatch[];
+  diagnostics: {
+    indexEntryCount: number;
+    activeEntryCount: number;
+    lockedEntryCount: number;
+    candidateEntryCount: number;
+    scoredEntryCount: number;
+    visiblePositiveMatchCount: number;
+    suppressedMatchCount: number;
+  };
   activationIndexPath: string;
 }
 
@@ -84,8 +93,10 @@ export async function activateLearnV2Concepts(
   const outcomeFeedback = await readLearnV2ConceptOutcomeFeedback(root);
   const scored = scoreActivationEntries(index.entries, query, outcomeFeedback);
   const limit = Math.max(1, Math.min(50, query.limit ?? 8));
-  const visible = scored.filter((match) => !match.suppressed && match.score > 0).slice(0, limit);
-  const suppressed = scored.filter((match) => match.suppressed).slice(0, limit);
+  const positive = scored.filter((match) => !match.suppressed && match.score > 0);
+  const suppressedAll = scored.filter((match) => match.suppressed);
+  const visible = positive.slice(0, limit);
+  const suppressed = suppressedAll.slice(0, limit);
   return {
     schemaVersion: "openskill-kit.learn-v2.activation-result.v1",
     generatedAt: now.toISOString(),
@@ -99,6 +110,15 @@ export async function activateLearnV2Concepts(
     },
     matches: visible,
     suppressed,
+    diagnostics: {
+      indexEntryCount: index.entries.length,
+      activeEntryCount: index.entries.filter((entry) => entry.status === "active").length,
+      lockedEntryCount: index.entries.filter((entry) => entry.status === "locked").length,
+      candidateEntryCount: index.entries.filter((entry) => entry.status === "candidate" || entry.status === "staged" || entry.status === "conflict").length,
+      scoredEntryCount: scored.length,
+      visiblePositiveMatchCount: positive.length,
+      suppressedMatchCount: suppressedAll.length
+    },
     activationIndexPath: learnV2ActivationIndexPath(root)
   };
 }

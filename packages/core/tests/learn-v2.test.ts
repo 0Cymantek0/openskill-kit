@@ -1147,6 +1147,8 @@ describe("learn-v2 substrate", () => {
     expect(activated.matches[0]?.conceptId).toBe(concept.id);
     expect(activated.matches[0]?.reasons.join(",")).toContain("path:");
     expect(activated.matches[0]?.score).toBeGreaterThan(0.4);
+    expect(activated.diagnostics.activeEntryCount + activated.diagnostics.lockedEntryCount).toBeGreaterThanOrEqual(1);
+    expect(activated.diagnostics.visiblePositiveMatchCount).toBeGreaterThanOrEqual(1);
 
     const outcome = await recordLearnV2ConceptOutcome(root, {
       conceptId: concept.id,

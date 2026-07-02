@@ -2240,8 +2240,20 @@ function renderLearnV2Activation(result: Awaited<ReturnType<typeof activateLearn
   const lines = [
     `Learn v2 activation matches: ${result.matches.length}`,
     `Suppressed: ${result.suppressed.length}`,
+    `Index entries: ${result.diagnostics.indexEntryCount} total (${result.diagnostics.activeEntryCount} active, ${result.diagnostics.lockedEntryCount} locked, ${result.diagnostics.candidateEntryCount} candidate/staged/conflict)`,
+    `Scored: ${result.diagnostics.scoredEntryCount}; positive matches before limit: ${result.diagnostics.visiblePositiveMatchCount}; suppressed before limit: ${result.diagnostics.suppressedMatchCount}`,
     `Activation index: ${result.activationIndexPath}`
   ];
+  if (result.matches.length === 0) {
+    if (result.diagnostics.activeEntryCount + result.diagnostics.lockedEntryCount === 0) {
+      lines.push("No active or locked concepts are available. Review and accept/lock Learn v2 concept cards before relying on activation.");
+    } else {
+      lines.push("No active concept scored above zero for this query. Add path, command, or task-type hints, or narrow the query.");
+    }
+    if (result.diagnostics.candidateEntryCount > 0 && result.query.includeCandidates !== true) {
+      lines.push("Candidate concepts exist; rerun with --include-candidate-concepts to inspect reviewable matches without activating them.");
+    }
+  }
   for (const match of result.matches) {
     lines.push(`  [${match.score.toFixed(3)}] ${match.conceptId} ${match.title} (${match.status}; ${match.reasons.join(", ")})`);
   }

@@ -62,6 +62,35 @@ describe("osk CLI facade", () => {
     expect(textResult.stdout).not.toContain("raw_");
   });
 
+  it("renders Learn v2 activation diagnostics without a browser UI", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-activation-"));
+    const dir = path.join(root, ".openskill-kit", "learn-v2");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "activation-index.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.activation-index.v1",
+      projectId: "project",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+      entries: [{
+        conceptId: "concept_candidate",
+        status: "candidate",
+        title: "Candidate parser behavior",
+        phrases: ["parser behavior"],
+        pathGlobs: ["packages/core/src/**"],
+        commands: [],
+        taskTypes: ["parser-change"],
+        negativeTriggers: [],
+        confidence: 0.7,
+        risk: "low"
+      }]
+    }, null, 2), "utf8");
+
+    const result = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--activation-query", "parser behavior"], { cwd: root, windowsHide: true });
+    expect(result.stdout).toContain("Index entries: 1 total (0 active, 0 locked, 1 candidate/staged/conflict)");
+    expect(result.stdout).toContain("No active or locked concepts are available");
+    expect(result.stdout).toContain("--include-candidate-concepts");
+    expect(result.stdout).not.toContain(root);
+  });
+
   it("prompts for /osk learn sources in interactive terminal mode", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-picker-"));
     await mkdir(path.join(root, "src"), { recursive: true });
