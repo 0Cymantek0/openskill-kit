@@ -5,11 +5,41 @@ import { learnV2CanonicalKey, learnV2NormalizeStatement, learnV2ShortHash, learn
 export function mergeLearnV2ConceptCards(atoms: LearnV2BehaviorAtom[], now: Date): LearnV2ConceptCard[] {
   const groups = new Map<string, LearnV2BehaviorAtom[]>();
   for (const atom of atoms) {
-    const key = `${atom.kind}:${atom.scope.paths[0] ?? "project"}:${learnV2CanonicalKey(atom.statement)}`;
+    const key = learnV2ConceptSemanticKeyForAtoms([atom]);
     groups.set(key, [...(groups.get(key) ?? []), atom]);
   }
   const cards = [...groups.values()].map((items) => makeConceptCard(items, now));
   return applyConflictCounterevidence(cards).sort((a, b) => b.confidence - a.confidence || a.title.localeCompare(b.title));
+}
+
+export function learnV2ConceptSemanticKeyForAtoms(atoms: LearnV2BehaviorAtom[]): string {
+  if (!atoms.length) throw new Error("Cannot build learn-v2 concept semantic key without atoms.");
+  const first = atoms[0]!;
+  const paths = [...new Set(atoms.flatMap((atom) => atom.scope.paths))];
+  const taskTypes = [...new Set(atoms.flatMap((atom) => atom.scope.taskTypes))];
+  return [
+    `kind:${first.kind}`,
+    `polarity:${first.polarity}`,
+    `behavior:${learnV2ConceptBehaviorSignature(first.statement)}`,
+    `scope:${learnV2ConceptScopeFingerprint(paths, taskTypes)}`
+  ].join("|");
+}
+
+export function learnV2ConceptSemanticKeyForCard(card: LearnV2ConceptCard): string {
+  return card.semanticKey ?? [
+    `kind:${card.atoms[0]?.kind ?? "unknown"}`,
+    `polarity:${card.atoms[0]?.polarity ?? "neutral"}`,
+    `behavior:${learnV2ConceptBehaviorSignature(card.canonicalBehavior)}`,
+    `scope:${learnV2ConceptScopeFingerprint(card.scope.paths, card.scope.taskTypes)}`
+  ].join("|");
+}
+
+export function learnV2ConceptSemanticSignatureForCard(card: LearnV2ConceptCard): string {
+  return [
+    `kind:${card.atoms[0]?.kind ?? "unknown"}`,
+    `polarity:${card.atoms[0]?.polarity ?? "neutral"}`,
+    `behavior:${learnV2ConceptBehaviorSignature(card.canonicalBehavior)}`
+  ].join("|");
 }
 
 function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2ConceptCard {
@@ -20,9 +50,11 @@ function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2Concep
   const taskTypes = [...new Set(items.flatMap((item) => item.scope.taskTypes))].slice(0, 12);
   const risk = items.some((item) => item.risk === "high") ? "high" : items.some((item) => item.risk === "medium") ? "medium" : "low";
   const scoring = calculateLearnV2ConceptScoring({ atoms: items, evidenceIds, rawRefs, risk });
+  const semanticKey = learnV2ConceptSemanticKeyForAtoms(items);
   return {
     schemaVersion: "openskill-kit.learn-v2.concept-card.v1",
-    id: `concept_${learnV2ShortHash(`${first.kind}:${first.polarity}:${first.statement}:${evidenceIds.join(",")}`)}`,
+    id: `concept_${learnV2ShortHash(semanticKey)}`,
+    semanticKey,
     title: learnV2Title(first.statement),
     canonicalBehavior: learnV2NormalizeStatement(first.statement),
     behaviorDelta: behaviorDelta(first),
@@ -115,4 +147,75 @@ function pathToGlob(file: string): string {
 
 function commandSnippets(statement: string): string[] {
   return [...statement.matchAll(/`([^`]+)`/g)].map((match) => match[1]!).slice(0, 6);
+}
+
+export function learnV2ConceptBehaviorSignature(statement: string): string {
+  const aliases: Record<string, string> = {
+    spec: "test",
+    specs: "test",
+    test: "test",
+    tests: "test",
+    testing: "test",
+    fixture: "test",
+    fixtures: "test",
+    regression: "regression",
+    regressions: "regression",
+    parser: "parser",
+    parsing: "parser",
+    syntax: "parser",
+    grammar: "parser",
+    rewrite: "rewrite",
+    rewrites: "rewrite",
+    rewritten: "rewrite",
+    refactor: "rewrite",
+    refactors: "rewrite",
+    broad: "broad",
+    focused: "focused",
+    focus: "focused",
+    secret: "secret",
+    secrets: "secret",
+    credential: "secret",
+    credentials: "secret",
+    dependency: "dependency",
+    dependencies: "dependency"
+  };
+  const stop = new Set([
+    "always",
+    "avoid",
+    "before",
+    "change",
+    "changes",
+    "default",
+    "instead",
+    "make",
+    "must",
+    "never",
+    "prefer",
+    "require",
+    "requires",
+    "should",
+    "when",
+    "with",
+    "without"
+  ]);
+  const tokens = learnV2CanonicalKey(statement)
+    .split("-")
+    .map((token) => aliases[token] ?? token)
+    .filter((token) => token.length > 2 && !stop.has(token));
+  return [...new Set(tokens)].sort().slice(0, 16).join("-") || "general";
+}
+
+function learnV2ConceptScopeFingerprint(paths: string[], taskTypes: string[]): string {
+  const tasks = [...new Set(taskTypes.map((item) => item.toLowerCase().trim()).filter(Boolean))].sort();
+  if (tasks.length) return `task:${tasks.slice(0, 6).join("+")}`;
+  const scopes = [...new Set(paths.map(pathScopeFingerprint).filter(Boolean))].sort();
+  return scopes.length ? `path:${scopes.slice(0, 6).join("+")}` : "project";
+}
+
+function pathScopeFingerprint(file: string): string {
+  const parts = file.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (!parts.length) return "";
+  if (parts.length >= 3 && ["packages", "src", "tests", "docs"].includes(parts[0]!)) return parts.slice(0, 3).join("/");
+  if (parts.length >= 2) return parts.slice(0, 2).join("/");
+  return parts[0]!;
 }

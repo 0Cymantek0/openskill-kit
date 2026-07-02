@@ -1953,6 +1953,122 @@ describe("learn-v2 substrate", () => {
     expect(rescored.confidence).toBeLessThan(stored.confidence);
   });
 
+  it("uses stable semantic concept identity independent of evidence ids", () => {
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [first] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("semantic_identity_first", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_semantic_identity_first"],
+      rawRefs: ["raw_semantic_identity_first"]
+    }], now);
+    const [second] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("semantic_identity_second", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_semantic_identity_second"],
+      rawRefs: ["raw_semantic_identity_second"]
+    }], now);
+
+    expect(first!.id).toBe(second!.id);
+    expect(first!.semanticKey).toBe(second!.semanticKey);
+    expect(first!.semanticKey).toContain("behavior:focused-parser-test");
+  });
+
+  it("accumulates same concept evidence across runs without duplicating cards", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [first] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("cross_run_first", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_cross_run_first"],
+      rawRefs: ["raw_cross_run_first"]
+    }], now);
+    await writeLearnV2ConceptStore(root, [first!], now);
+    const [second] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("cross_run_second", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_cross_run_second"],
+      rawRefs: ["raw_cross_run_second"]
+    }], new Date("2026-06-30T00:01:00Z"));
+
+    const store = await writeLearnV2ConceptStore(root, [second!], new Date("2026-06-30T00:02:00Z"));
+    const cards = store.cards.filter((card) => /focused parser tests/i.test(card.canonicalBehavior));
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]!.id).toBe(first!.id);
+    expect(cards[0]!.evidenceIds).toEqual(expect.arrayContaining(["ev_cross_run_first", "ev_cross_run_second"]));
+    expect(cards[0]!.rawRefs).toEqual(expect.arrayContaining(["raw_cross_run_first", "raw_cross_run_second"]));
+    expect(cards[0]!.atoms.map((atom) => atom.id)).toEqual(expect.arrayContaining(["cross_run_first", "cross_run_second"]));
+    expect(cards[0]!.scoring?.supportAtomCount).toBe(2);
+  });
+
+  it("merges legacy evidence-bound concepts by semantic signature and scope", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [stable] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("legacy_semantic_first", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_legacy_semantic_first"],
+      rawRefs: ["raw_legacy_semantic_first"]
+    }], now);
+    const legacy = {
+      ...stable!,
+      id: "concept_legacy_evidence_bound",
+      semanticKey: undefined
+    };
+    await writeLearnV2ConceptStore(root, [legacy], now);
+    const [incoming] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("legacy_semantic_second", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_legacy_semantic_second"],
+      rawRefs: ["raw_legacy_semantic_second"]
+    }], new Date("2026-06-30T00:01:00Z"));
+
+    const store = await writeLearnV2ConceptStore(root, [incoming!], new Date("2026-06-30T00:02:00Z"));
+
+    expect(store.cards).toHaveLength(1);
+    expect(store.cards[0]!.id).toBe("concept_legacy_evidence_bound");
+    expect(store.cards[0]!.semanticKey).toBe(incoming!.semanticKey);
+    expect(store.cards[0]!.evidenceIds).toEqual(expect.arrayContaining(["ev_legacy_semantic_first", "ev_legacy_semantic_second"]));
+  });
+
+  it("preserves reviewer-edited concept behavior while adding later support", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [initial] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("review_edit_first", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_review_edit_first"],
+      rawRefs: ["raw_review_edit_first"]
+    }], now);
+    await writeLearnV2ConceptStore(root, [initial!], now);
+    await applyLearnV2ConceptReview(root, {
+      edits: [{
+        id: initial!.id,
+        title: "Parser regression verification",
+        canonicalBehavior: "For parser changes, keep regression verification focused before broad work.",
+        activationPhrases: ["parser focused verification"]
+      }],
+      addCounterevidence: [{
+        id: initial!.id,
+        evidenceId: "ev_review_edit_first",
+        reason: "Reviewer narrowed wording before accepting future support."
+      }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+    const [incoming] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("review_edit_second", "Prefer focused parser tests for parser changes.", "positive"),
+      evidenceIds: ["ev_review_edit_second"],
+      rawRefs: ["raw_review_edit_second"]
+    }], new Date("2026-06-30T00:02:00Z"));
+
+    const merged = await writeLearnV2ConceptStore(root, [incoming!], new Date("2026-06-30T00:03:00Z"));
+    const card = merged.cards.find((item) => item.id === initial!.id)!;
+
+    expect(card.title).toBe("Parser regression verification");
+    expect(card.canonicalBehavior).toBe("For parser changes, keep regression verification focused before broad work.");
+    expect(card.activation.phrases).toContain("parser focused verification");
+    expect(card.counterevidence).toEqual(expect.arrayContaining([{
+      evidenceId: "ev_review_edit_first",
+      reason: "Reviewer narrowed wording before accepting future support."
+    }]));
+    expect(card.evidenceIds).toEqual(expect.arrayContaining(["ev_review_edit_first", "ev_review_edit_second"]));
+    expect(card.rawRefs).toEqual(expect.arrayContaining(["raw_review_edit_first", "raw_review_edit_second"]));
+  });
+
   it("activates reviewed concepts deterministically and records hashed outcome telemetry", async () => {
     const root = await tempProject();
     const transcript = path.join(root, "session.md");
@@ -2184,7 +2300,17 @@ describe("learn-v2 substrate", () => {
 
     config.learning.mode = "auto-stage";
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-    const stagedStore = await writeLearnV2ConceptStore(root, [{ ...safe, id: `${safe.id}_stage`, status: "candidate" as const, lifecycle: { ...safe.lifecycle, supersededBy: undefined } }], new Date("2026-06-30T00:02:00Z"));
+    const stageCandidate = {
+      ...safe,
+      id: `${safe.id}_stage`,
+      semanticKey: undefined,
+      title: "Dependency-light parser fixes",
+      canonicalBehavior: "Prefer dependency-light fixes for parser changes.",
+      activation: { ...safe.activation, phrases: ["dependency light parser"] },
+      atoms: safe.atoms.map((atom) => ({ ...atom, id: `${atom.id}_stage`, statement: "Prefer dependency-light fixes for parser changes." })),
+      lifecycle: { ...safe.lifecycle, supersededBy: undefined }
+    };
+    const stagedStore = await writeLearnV2ConceptStore(root, [{ ...stageCandidate, status: "candidate" as const }], new Date("2026-06-30T00:02:00Z"));
     expect(stagedStore.cards.find((card) => card.id === `${safe.id}_stage`)?.status).toBe("staged");
   });
 

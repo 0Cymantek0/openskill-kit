@@ -329,6 +329,7 @@ export type LearnV2LlmConceptExtractionOutput = z.infer<typeof LearnV2LlmConcept
 export const LearnV2ConceptCardSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.concept-card.v1"),
   id: z.string().min(1),
+  semanticKey: z.string().min(1).optional(),
   title: z.string().min(1),
   canonicalBehavior: z.string().min(1),
   behaviorDelta: z.string().min(1),

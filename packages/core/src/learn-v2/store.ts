@@ -7,6 +7,11 @@ import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowNode } from "../w
 import { readWorkflowGraph, writeWorkflowGraph } from "../workflows/store.js";
 import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
+import {
+  learnV2ConceptSemanticKeyForAtoms,
+  learnV2ConceptSemanticKeyForCard,
+  learnV2ConceptSemanticSignatureForCard
+} from "./concepts.js";
 import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
 import { findLearnV2ActivationGateFailures } from "./concept-quality-gates.js";
 import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring } from "./scoring.js";
@@ -107,21 +112,68 @@ export async function writeLearnV2ConceptStore(projectRoot: string, cards: Learn
 export function mergeLearnV2ConceptStoreCards(existing: LearnV2ConceptCard[], incoming: LearnV2ConceptCard[], now = new Date()): LearnV2ConceptCard[] {
   const byId = new Map(existing.map((card) => [card.id, card]));
   for (const card of incoming) {
-    const previous = byId.get(card.id);
-    byId.set(card.id, withLearnV2ConceptScoring(previous ? {
+    const previous = byId.get(card.id) ?? findMatchingStoredConcept(existing, card);
+    const next = previous ? mergeStoredConceptSupport(previous, card, now) : withLearnV2ConceptScoring({
       ...card,
-      status: previous.status,
-      counterevidence: previous.counterevidence.length ? previous.counterevidence : card.counterevidence,
-      lifecycle: {
-        ...card.lifecycle,
-        createdAt: previous.lifecycle.createdAt,
-        updatedAt: now.toISOString(),
-        supersedes: previous.lifecycle.supersedes,
-        supersededBy: previous.lifecycle.supersededBy
-      }
-    } : card));
+      semanticKey: card.semanticKey ?? learnV2ConceptSemanticKeyForCard(card)
+    });
+    byId.set(next.id, next);
   }
   return sortConceptCards([...byId.values()]);
+}
+
+function findMatchingStoredConcept(existing: LearnV2ConceptCard[], incoming: LearnV2ConceptCard): LearnV2ConceptCard | undefined {
+  const incomingSemanticKey = learnV2ConceptSemanticKeyForCard(incoming);
+  const incomingSignature = learnV2ConceptSemanticSignatureForCard(incoming);
+  return existing.find((card) => card.id === incoming.id) ??
+    existing.find((card) => learnV2ConceptSemanticKeyForCard(card) === incomingSemanticKey) ??
+    existing.find((card) => learnV2ConceptSemanticSignatureForCard(card) === incomingSignature && conceptScopesOverlap(card, incoming));
+}
+
+function mergeStoredConceptSupport(previous: LearnV2ConceptCard, incoming: LearnV2ConceptCard, now: Date): LearnV2ConceptCard {
+  const atoms = uniqueAtoms([...previous.atoms, ...incoming.atoms]);
+  const evidenceIds = uniqueStrings([...previous.evidenceIds, ...incoming.evidenceIds]);
+  const rawRefs = uniqueStrings([...previous.rawRefs, ...incoming.rawRefs]);
+  const paths = uniqueStrings([...previous.scope.paths, ...incoming.scope.paths]).slice(0, 20);
+  const taskTypes = uniqueStrings([...previous.scope.taskTypes, ...incoming.scope.taskTypes]).slice(0, 12);
+  const negativeTriggers = uniqueStrings([...previous.scope.negativeTriggers, ...incoming.scope.negativeTriggers]).slice(0, 20);
+  const counterevidence = [
+    ...previous.counterevidence,
+    ...incoming.counterevidence.filter((item) => !previous.counterevidence.some((previousItem) => previousItem.evidenceId === item.evidenceId && previousItem.reason === item.reason))
+  ];
+  const risk = highestRisk([previous.risk, incoming.risk, ...atoms.map((atom) => atom.risk)]);
+  const scoring = calculateLearnV2ConceptScoring({ atoms, evidenceIds, rawRefs, risk, counterevidenceCount: counterevidence.length });
+  return LearnV2ConceptCardSchema.parse({
+    ...previous,
+    semanticKey: previous.semanticKey ?? incoming.semanticKey ?? learnV2ConceptSemanticKeyForCard(previous),
+    scope: {
+      ...previous.scope,
+      level: paths.length ? "path" : previous.scope.level,
+      paths,
+      taskTypes,
+      negativeTriggers
+    },
+    activation: {
+      phrases: uniqueStrings([...previous.activation.phrases, ...incoming.activation.phrases]).slice(0, 24),
+      pathGlobs: uniqueStrings([...previous.activation.pathGlobs, ...incoming.activation.pathGlobs, ...paths.map(pathToGlob)]).slice(0, 24),
+      commands: uniqueStrings([...previous.activation.commands, ...incoming.activation.commands]).slice(0, 16)
+    },
+    confidence: scoring.confidence,
+    durability: scoring.durability,
+    sourceReliability: scoring.sourceReliability,
+    scoring,
+    risk,
+    evidenceIds,
+    rawRefs,
+    atoms,
+    counterevidence,
+    lifecycle: {
+      ...previous.lifecycle,
+      updatedAt: now.toISOString(),
+      supersedes: uniqueStrings([...previous.lifecycle.supersedes, ...incoming.lifecycle.supersedes]),
+      supersededBy: previous.lifecycle.supersededBy
+    }
+  });
 }
 
 export async function applyLearnV2ConceptReview(projectRoot: string, options: LearnV2ConceptReviewOptions): Promise<LearnV2ConceptReviewResult> {
@@ -475,6 +527,7 @@ function rebuildConceptFromAtoms(input: {
   });
   return {
     ...input.base,
+    semanticKey: learnV2ConceptSemanticKeyForAtoms(input.atoms),
     title: input.title ?? learnV2Title(canonicalBehavior),
     canonicalBehavior,
     behaviorDelta: input.base.behaviorDelta,
@@ -511,6 +564,29 @@ function requireConcept(byId: Map<string, LearnV2ConceptCard>, id: string, label
 
 function uniqueAtoms(atoms: LearnV2ConceptCard["atoms"]): LearnV2ConceptCard["atoms"] {
   return [...new Map(atoms.map((atom) => [atom.id, atom])).values()];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function highestRisk(values: Array<LearnV2ConceptCard["risk"]>): LearnV2ConceptCard["risk"] {
+  if (values.includes("high")) return "high";
+  if (values.includes("medium")) return "medium";
+  return "low";
+}
+
+function conceptScopesOverlap(left: LearnV2ConceptCard, right: LearnV2ConceptCard): boolean {
+  const taskOverlap = !left.scope.taskTypes.length || !right.scope.taskTypes.length || left.scope.taskTypes.some((taskType) => right.scope.taskTypes.includes(taskType));
+  const pathOverlap = !left.scope.paths.length || !right.scope.paths.length || left.scope.paths.some((leftPath) => right.scope.paths.some((rightPath) => pathsOverlap(leftPath, rightPath)));
+  return taskOverlap && pathOverlap;
+}
+
+function pathsOverlap(left: string, right: string): boolean {
+  const normalizedLeft = left.replace(/\\/g, "/");
+  const normalizedRight = right.replace(/\\/g, "/");
+  return normalizedLeft === normalizedRight || normalizedLeft.startsWith(`${normalizedRight}/`) || normalizedRight.startsWith(`${normalizedLeft}/`) ||
+    path.dirname(normalizedLeft) === path.dirname(normalizedRight);
 }
 
 function sortConceptCards(cards: LearnV2ConceptCard[]): LearnV2ConceptCard[] {
