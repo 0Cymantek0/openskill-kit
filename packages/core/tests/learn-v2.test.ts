@@ -37,6 +37,7 @@ import {
   reconstructLearnV2Episodes,
   runRawLocalLearning,
   runLearnV2RawVaultMaintenance,
+  executeLearnV2ModelRequests,
   writeLearnV2ModelRequests,
   writeLearnV2EpisodeStore,
   writeLearnV2ConflictLedger,
@@ -50,6 +51,7 @@ import {
   readLearnV2ConceptActivationRuns,
   readProjectConfig,
   type LearnV2BehaviorAtom,
+  type LearnV2OpenCodeInvocation,
   type LearnV2TaskEpisode,
   type LearnV2RawEvidenceRecord
 } from "../src/index.js";
@@ -1560,6 +1562,128 @@ describe("learn-v2 substrate", () => {
     expect(await readText(applied.conceptDriftPath)).toContain("openskill-kit.learn-v2.concept-drift.v1");
     expect(store.cards.some((card) => /parser regression tests/i.test(card.canonicalBehavior))).toBe(true);
     expect(JSON.stringify(store)).not.toContain("sk-12345678901234567890");
+  });
+
+  it("executes sanitized OpenCode model requests with hash binding and strict output validation", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:00Z");
+    const [episode] = reconstructLearnV2Episodes([
+      normalizedMessage("ev_exec_prefer", "Wrong approach. Prefer focused parser regression fixtures before broad parser rewrites.", "user")
+    ]);
+    await writeLearnV2EpisodeStore(root, [episode!], now);
+    const requests = await writeLearnV2ModelRequests(root, undefined, now);
+    const request = requests.requests[0]!;
+    const invocationLog: LearnV2OpenCodeInvocation[] = [];
+    const result = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      opencodeCommand: "opencode-test",
+      timeoutMs: 20_000,
+      now,
+      runner: async (invocation) => {
+        invocationLog.push(invocation);
+        const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}");
+        expect(invocation.command).toBe("opencode-test");
+        expect(invocation.cwd).toBe(root);
+        expect(invocation.timeoutMs).toBe(20_000);
+        expect(invocation.args).toContain("run");
+        expect(invocation.args).toContain("--agent");
+        expect(invocation.args).toContain("osk-learn-v2-concept-extractor");
+        expect(invocation.args).toContain("--file");
+        expect(invocation.args).toContain(request.promptPath);
+        expect(invocation.args).toContain(request.bundlePath);
+        expect(JSON.stringify(config)).toContain("osk-learn-v2-concept-extractor");
+        expect(config.agent["osk-learn-v2-concept-extractor"].permission.bash).toBe("deny");
+        expect(config.agent["osk-learn-v2-concept-extractor"].permission.edit).toBe("deny");
+        expect(JSON.stringify(invocation.args)).not.toContain("raw_");
+        expect(JSON.stringify(config)).not.toContain("raw_");
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+            atoms: [{
+              statement: "For parser changes, prefer focused parser regression fixtures before broad parser rewrites.",
+              kind: "verification",
+              polarity: "positive",
+              evidenceIds: [episode!.evidenceIds[0]],
+              confidence: 0.76,
+              rationale: "The episode contains an explicit correction."
+            }],
+            rejected: []
+          }),
+          stderr: "diagnostic line that must not be persisted"
+        };
+      }
+    });
+
+    expect(result.writtenCount).toBe(1);
+    expect(result.failedCount).toBe(0);
+    expect(result.results[0]?.status).toBe("written");
+    expect(result.results[0]?.argsShape).toContain("[ATTACHED_FILE]");
+    expect(result.results[0]?.stdoutHash).toMatch(/^sha256:/);
+    expect(result.results[0]?.stderrHash).toMatch(/^sha256:/);
+    expect(invocationLog).toHaveLength(1);
+    expect(await readText(request.expectedOutputPath)).toContain("openskill-kit.learn-v2.llm-concept-extraction-output.v1");
+    expect(await readText(result.executionReportPath)).toContain("model-request-execution-result");
+    expect(await readText(result.executionReportPath)).not.toContain("diagnostic line");
+
+    await writeFile(request.promptPath, `${await readText(request.promptPath)}\nTampered after manifest.\n`, "utf8");
+    const tampered = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      opencodeCommand: "opencode-test",
+      runner: async () => {
+        throw new Error("runner should not be called for tampered manifests");
+      }
+    });
+    expect(tampered.writtenCount).toBe(0);
+    expect(tampered.failedCount).toBe(1);
+    expect(tampered.results[0]?.reason).toBe("request-file-hash-mismatch");
+    expect(invocationLog).toHaveLength(1);
+  });
+
+  it("rejects unsafe or malformed OpenCode execution outputs before writing response files", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:30Z");
+    const [episode] = reconstructLearnV2Episodes([
+      normalizedMessage("ev_exec_invalid", "Prefer focused parser regression fixtures for parser changes.", "user")
+    ]);
+    await writeLearnV2EpisodeStore(root, [episode!], now);
+    const requests = await writeLearnV2ModelRequests(root, undefined, now);
+    const request = requests.requests[0]!;
+
+    const invalid = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      runner: async () => ({
+        exitCode: 0,
+        stdout: "Here is JSON:\n```json\n{}\n```",
+        stderr: ""
+      })
+    });
+    expect(invalid.writtenCount).toBe(0);
+    expect(invalid.failedCount).toBe(1);
+    expect(invalid.results[0]?.reason).toBe("invalid-json-or-schema");
+    await expect(stat(request.expectedOutputPath)).rejects.toThrow();
+
+    const unsafeDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "unsafe-boundary");
+    await mkdir(unsafeDir, { recursive: true });
+    await writeFile(path.join(unsafeDir, "concept-extraction-prompt.md"), await readText(request.promptPath), "utf8");
+    await writeFile(path.join(unsafeDir, "episode-learning-bundle.json"), await readText(request.bundlePath), "utf8");
+    await writeFile(path.join(unsafeDir, "request-manifest.json"), JSON.stringify({
+      ...JSON.parse(await readText(request.manifestPath)),
+      promptPath: path.join(unsafeDir, "concept-extraction-prompt.md"),
+      bundlePath: path.join(unsafeDir, "episode-learning-bundle.json"),
+      expectedOutputPath: path.join(unsafeDir, "response.json"),
+      executionBoundary: "opencode-host-raw-allowed",
+      rawRefsIncluded: true
+    }), "utf8");
+    const unsafe = await executeLearnV2ModelRequests(root, {
+      requestManifests: [path.join(unsafeDir, "request-manifest.json")],
+      runner: async () => {
+        throw new Error("runner should not be called for unsafe requests");
+      }
+    });
+    expect(unsafe.writtenCount).toBe(0);
+    expect(unsafe.failedCount).toBe(1);
+    expect(unsafe.results[0]?.reason).toBe("invalid-request-manifest");
   });
 
   it("routes OpenCode model requests by ROI instead of prompting every episode", async () => {

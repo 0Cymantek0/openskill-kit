@@ -54,6 +54,7 @@ import {
   readLearnV2ReviewQueue,
   applyLearnV2ConceptReview,
   applyLearnV2ModelProposalOutputs,
+  executeLearnV2ModelRequests,
   activateLearnV2Concepts,
   compileLearnV2ConceptPreview,
   recordLearnV2ConceptOutcome,
@@ -572,6 +573,31 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await writeLearnV2ModelRequests(root), root);
+    }
+  );
+
+  registerTool(
+    "osk_execute_learn_v2_model_requests",
+    {
+      title: "OpenSkillKit Learn v2 OpenCode Model Execution",
+      description: "Execute prepared prompt-safe Learn v2 model requests through the configured OpenCode CLI and write validated response.json proposal files. Raw-evidence requests are rejected.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        requestManifests: z.array(z.string().min(1)).default([]),
+        opencodeCommand: z.string().min(1).optional(),
+        opencodeAttachUrl: z.string().min(1).optional(),
+        timeoutMs: z.number().int().min(5000).max(1_800_000).default(300_000)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, requestManifests, opencodeCommand, opencodeAttachUrl, timeoutMs }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => executeLearnV2ModelRequests(root, {
+        requestManifests,
+        opencodeCommand,
+        opencodeAttachUrl,
+        timeoutMs
+      })), root);
     }
   );
 

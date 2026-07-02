@@ -48,8 +48,10 @@ describe("osk CLI facade", () => {
     const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--help"], { cwd: repoRoot, windowsHide: true });
 
     expect(stdout).toContain("Learn v2 execution policy");
-    expect(stdout).toContain("legacy aliases normalize");
-    expect(stdout).toContain("raw-to-model dispatch is not implemented");
+    expect(stdout).toContain("--execute-model-requests");
+    expect(stdout).toContain("--model-request <path>");
+    expect(stdout).toContain("sanitized OpenCode execution uses");
+    expect(stdout).toContain("raw-to-model");
   });
 
   it("renders the Learn v2 observability dashboard from latest report", async () => {

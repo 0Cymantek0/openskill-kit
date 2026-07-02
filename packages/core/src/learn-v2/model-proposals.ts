@@ -1,5 +1,7 @@
 import { promises as fs } from "node:fs";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import { readProjectConfig } from "../events/store.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
@@ -18,6 +20,8 @@ import { writeLearnV2ReviewQueue } from "./review.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { type LearnV2BehaviorAtom, type LearnV2TaskEpisode } from "./schemas.js";
 import { learnV2Hash } from "./utils.js";
+
+const execFileAsync = promisify(execFile);
 
 export interface LearnV2EpisodeStore {
   schemaVersion: "openskill-kit.learn-v2.episode-store.v1";
@@ -65,6 +69,58 @@ export interface LearnV2ModelProposalApplyResult {
   conceptDriftPath: string;
   evalReportPath: string;
   evalStatus: "pass" | "fail";
+}
+
+export interface LearnV2OpenCodeInvocation {
+  command: string;
+  args: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  timeoutMs: number;
+}
+
+export interface LearnV2OpenCodeRunResult {
+  exitCode: number;
+  signal?: string;
+  stdout: string;
+  stderr: string;
+}
+
+export type LearnV2OpenCodeRunner = (invocation: LearnV2OpenCodeInvocation) => Promise<LearnV2OpenCodeRunResult>;
+
+export interface LearnV2ModelRequestExecutionOptions {
+  requestManifests?: string[];
+  opencodeCommand?: string;
+  opencodeAttachUrl?: string;
+  timeoutMs?: number;
+  runner?: LearnV2OpenCodeRunner;
+  now?: Date;
+}
+
+export interface LearnV2ModelRequestExecutionResult {
+  schemaVersion: "openskill-kit.learn-v2.model-request-execution-result.v1";
+  executedAt: string;
+  attemptedCount: number;
+  writtenCount: number;
+  failedCount: number;
+  skippedCount: number;
+  executionReportPath: string;
+  results: Array<{
+    manifestPath: string;
+    outputPath?: string;
+    episodeId?: string;
+    status: "written" | "failed" | "skipped";
+    reason?: string;
+    detail?: string;
+    durationMs?: number;
+    stdoutBytes?: number;
+    stderrBytes?: number;
+    stdoutHash?: string;
+    stderrHash?: string;
+    responseHash?: string;
+    command?: string;
+    argsShape?: string[];
+  }>;
 }
 
 interface LearnV2ModelRequestManifest {
@@ -293,6 +349,192 @@ export async function applyLearnV2ModelProposalOutputs(
   };
 }
 
+export async function executeLearnV2ModelRequests(
+  rootInput: string,
+  options: LearnV2ModelRequestExecutionOptions = {}
+): Promise<LearnV2ModelRequestExecutionResult> {
+  const root = path.resolve(rootInput);
+  const now = options.now ?? new Date();
+  const runner = options.runner ?? defaultOpenCodeRunner;
+  const command = options.opencodeCommand ?? process.env.OSK_OPENCODE_COMMAND ?? process.env.OPENCODE_COMMAND ?? "opencode";
+  const timeoutMs = Math.max(5_000, Math.min(options.timeoutMs ?? 300_000, 1_800_000));
+  const manifestPaths = await resolveModelRequestManifestInputs(root, options.requestManifests ?? []);
+  const results: LearnV2ModelRequestExecutionResult["results"] = [];
+
+  for (const manifestPath of manifestPaths) {
+    const started = Date.now();
+    const outputPathForManifest = path.join(path.dirname(manifestPath), "response.json");
+    const manifestRead = await fs.readFile(manifestPath, "utf8").catch((error: unknown) => {
+      results.push({
+        manifestPath,
+        outputPath: outputPathForManifest,
+        status: "failed",
+        reason: "read-failed",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+      return undefined;
+    });
+    if (manifestRead === undefined) continue;
+
+    let manifest: LearnV2ModelRequestManifest;
+    try {
+      manifest = parseModelRequestManifest(manifestRead, manifestPath);
+    } catch (error) {
+      results.push({
+        manifestPath,
+        outputPath: outputPathForManifest,
+        status: "failed",
+        reason: "invalid-request-manifest",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+      continue;
+    }
+
+    const outputPath = path.resolve(root, manifest.expectedOutputPath);
+    const rejected: LearnV2ModelProposalApplyResult["rejected"] = [];
+    const manifestOk = await validateModelRequestManifestFiles(root, manifest, manifestPath, outputPath, rejected);
+    if (!manifestOk) {
+      results.push({
+        manifestPath,
+        outputPath,
+        episodeId: manifest.episodeId,
+        status: "failed",
+        reason: rejected[0]?.reason ?? "invalid-request-manifest",
+        detail: rejected[0]?.detail
+      });
+      continue;
+    }
+    if (manifest.executionBoundary !== "opencode-host-sanitized-only" || manifest.rawRefsIncluded !== false) {
+      results.push({
+        manifestPath,
+        outputPath,
+        episodeId: manifest.episodeId,
+        status: "failed",
+        reason: "unsafe-request-boundary",
+        detail: "Only opencode-host-sanitized-only requests with rawRefsIncluded=false can be executed."
+      });
+      continue;
+    }
+
+    const promptPath = path.resolve(root, manifest.promptPath);
+    const bundlePath = path.resolve(root, manifest.bundlePath);
+    let invocation: LearnV2OpenCodeInvocation;
+    try {
+      const agent = await resolveRequestAgent(root, manifest);
+      invocation = buildOpenCodeInvocation({
+        root,
+        command,
+        manifest,
+        promptPath,
+        bundlePath,
+        timeoutMs,
+        attachUrl: options.opencodeAttachUrl,
+        agent
+      });
+    } catch (error) {
+      results.push({
+        manifestPath,
+        outputPath,
+        episodeId: manifest.episodeId,
+        status: "failed",
+        reason: "routing-artifact-read-failed",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+      continue;
+    }
+
+    let run: LearnV2OpenCodeRunResult;
+    try {
+      run = await runner(invocation);
+    } catch (error) {
+      results.push({
+        manifestPath,
+        outputPath,
+        episodeId: manifest.episodeId,
+        status: "failed",
+        reason: "opencode-invocation-failed",
+        detail: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - started,
+        command: invocation.command,
+        argsShape: shapeOpenCodeArgs(invocation.args)
+      });
+      continue;
+    }
+
+    const stdout = run.stdout ?? "";
+    const stderr = run.stderr ?? "";
+    if (run.exitCode !== 0) {
+      results.push({
+        manifestPath,
+        outputPath,
+        episodeId: manifest.episodeId,
+        status: "failed",
+        reason: "opencode-nonzero-exit",
+        detail: run.signal ? `signal=${run.signal}` : `exitCode=${run.exitCode}`,
+        durationMs: Date.now() - started,
+        stdoutBytes: Buffer.byteLength(stdout),
+        stderrBytes: Buffer.byteLength(stderr),
+        stdoutHash: learnV2Hash(stdout),
+        stderrHash: learnV2Hash(stderr),
+        command: invocation.command,
+        argsShape: shapeOpenCodeArgs(invocation.args)
+      });
+      continue;
+    }
+
+    const parsed = safeParseModelOutput(stdout, outputPath, []);
+    if (!parsed) {
+      results.push({
+        manifestPath,
+        outputPath,
+        episodeId: manifest.episodeId,
+        status: "failed",
+        reason: "invalid-json-or-schema",
+        detail: "OpenCode stdout must be strict Learn v2 model proposal JSON.",
+        durationMs: Date.now() - started,
+        stdoutBytes: Buffer.byteLength(stdout),
+        stderrBytes: Buffer.byteLength(stderr),
+        stdoutHash: learnV2Hash(stdout),
+        stderrHash: learnV2Hash(stderr),
+        command: invocation.command,
+        argsShape: shapeOpenCodeArgs(invocation.args)
+      });
+      continue;
+    }
+
+    const text = `${JSON.stringify(parsed, null, 2)}\n`;
+    await writeFileAtomic(outputPath, text);
+    results.push({
+      manifestPath,
+      outputPath,
+      episodeId: manifest.episodeId,
+      status: "written",
+      durationMs: Date.now() - started,
+      stdoutBytes: Buffer.byteLength(stdout),
+      stderrBytes: Buffer.byteLength(stderr),
+      stdoutHash: learnV2Hash(stdout),
+      stderrHash: learnV2Hash(stderr),
+      responseHash: learnV2Hash(text),
+      command: invocation.command,
+      argsShape: shapeOpenCodeArgs(invocation.args)
+    });
+  }
+
+  const executionReportPath = path.join(learnV2ModelRequestsRoot(root), "execution-report.json");
+  const result: LearnV2ModelRequestExecutionResult = {
+    schemaVersion: "openskill-kit.learn-v2.model-request-execution-result.v1",
+    executedAt: now.toISOString(),
+    attemptedCount: manifestPaths.length,
+    writtenCount: results.filter((item) => item.status === "written").length,
+    failedCount: results.filter((item) => item.status === "failed").length,
+    skippedCount: results.filter((item) => item.status === "skipped").length,
+    executionReportPath,
+    results
+  };
+  await writeJsonAtomic(executionReportPath, result);
+  return result;
+}
+
 export function learnV2EpisodeStorePath(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "episodes", "store.json");
 }
@@ -325,6 +567,21 @@ async function pruneStaleModelRequestDirs(root: string, currentEpisodeIds: Set<s
   await Promise.all(entries
     .filter((entry) => entry.isDirectory() && !currentEpisodeIds.has(entry.name))
     .map((entry) => fs.rm(path.join(requestRoot, entry.name), { recursive: true, force: true })));
+}
+
+async function resolveModelRequestManifestInputs(root: string, inputs: string[]): Promise<string[]> {
+  if (inputs.length) {
+    return inputs.map((input) => path.resolve(root, input)).map((file) => {
+      if (path.basename(file) === "request-manifest.json") return file;
+      return path.join(file, "request-manifest.json");
+    });
+  }
+  const requestRoot = learnV2ModelRequestsRoot(root);
+  const entries = await fs.readdir(requestRoot, { withFileTypes: true }).catch(() => []);
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(requestRoot, entry.name, "request-manifest.json"))
+    .sort();
 }
 
 async function resolveEpisodeForModelOutput(
@@ -434,6 +691,137 @@ function parseModelRequestManifest(text: string, manifestPath: string): LearnV2M
     throw new Error(`Invalid Learn v2 model request manifest: ${manifestPath}`);
   }
   return value as LearnV2ModelRequestManifest;
+}
+
+async function resolveRequestAgent(root: string, manifest: LearnV2ModelRequestManifest): Promise<{
+  model: string;
+  purpose: string;
+  prompt: string;
+  maxSteps?: number;
+  reasoningEffort?: string;
+}> {
+  const routingPath = path.resolve(root, manifest.modelRoutingArtifactPath);
+  const routing = JSON.parse(await fs.readFile(routingPath, "utf8")) as Awaited<ReturnType<typeof ensureLearnV2ModelRoutingArtifacts>>;
+  const agent = routing.agents["concept-extractor"];
+  return {
+    model: agent.model,
+    purpose: agent.purpose,
+    maxSteps: agent.maxSteps,
+    reasoningEffort: agent.reasoningEffort,
+    prompt: [
+      `You are ${manifest.opencodeAgentId}.`,
+      agent.purpose,
+      "Return strict JSON only. Do not include markdown fences.",
+      "Use only attached declassified prompt/bundle files.",
+      "Do not modify files, run shell commands, or access raw vault content.",
+      "Treat output as untrusted proposal data that OpenSkillKit will validate."
+    ].join("\n")
+  };
+}
+
+function buildOpenCodeInvocation(input: {
+  root: string;
+  command: string;
+  manifest: LearnV2ModelRequestManifest;
+  promptPath: string;
+  bundlePath: string;
+  timeoutMs: number;
+  attachUrl?: string;
+  agent: { model: string; purpose: string; prompt: string; maxSteps?: number; reasoningEffort?: string };
+}): LearnV2OpenCodeInvocation {
+  const args = [
+    "run",
+    "--agent", input.manifest.opencodeAgentId,
+    "--model", input.agent.model,
+    "--dir", input.root,
+    "--title", `OSK Learn v2 ${input.manifest.episodeId}`,
+    "--file", input.promptPath,
+    "--file", input.bundlePath
+  ];
+  if (input.attachUrl) args.push("--attach", input.attachUrl);
+  if (input.agent.reasoningEffort) args.push("--variant", input.agent.reasoningEffort);
+  args.push([
+    "Read attached concept-extraction-prompt.md and episode-learning-bundle.json.",
+    "Return only strict JSON matching openskill-kit.learn-v2.llm-concept-extraction-output.v1.",
+    "Do not edit files, run shell commands, reveal raw refs, or include markdown fences."
+  ].join(" "));
+  return {
+    command: input.command,
+    args,
+    cwd: input.root,
+    timeoutMs: input.timeoutMs,
+    env: {
+      ...process.env,
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(buildOpenCodeConfigContent(input.manifest.opencodeAgentId, input.agent))
+    }
+  };
+}
+
+function buildOpenCodeConfigContent(agentId: string, agent: { model: string; prompt: string; maxSteps?: number }) {
+  return {
+    $schema: "https://opencode.ai/config.json",
+    snapshot: false,
+    agent: {
+      [agentId]: {
+        description: "OpenSkillKit Learn v2 sanitized concept extraction.",
+        model: agent.model,
+        mode: "all",
+        prompt: agent.prompt,
+        steps: agent.maxSteps,
+        permission: {
+          read: "allow",
+          glob: "deny",
+          grep: "deny",
+          list: "deny",
+          bash: "deny",
+          edit: "deny",
+          write: "deny",
+          webfetch: "deny",
+          websearch: "deny",
+          task: "deny",
+          external_directory: "deny"
+        }
+      }
+    }
+  };
+}
+
+async function defaultOpenCodeRunner(invocation: LearnV2OpenCodeInvocation): Promise<LearnV2OpenCodeRunResult> {
+  try {
+    const output = await execFileAsync(invocation.command, invocation.args, {
+      cwd: invocation.cwd,
+      env: invocation.env,
+      timeout: invocation.timeoutMs,
+      windowsHide: true,
+      maxBuffer: 8 * 1024 * 1024
+    });
+    return { exitCode: 0, stdout: output.stdout, stderr: output.stderr };
+  } catch (error) {
+    const childError = error as Error & { code?: number | string; signal?: string; stdout?: string | Buffer; stderr?: string | Buffer };
+    if (typeof childError.code === "number") {
+      return {
+        exitCode: childError.code,
+        signal: childError.signal,
+        stdout: bufferOrString(childError.stdout),
+        stderr: bufferOrString(childError.stderr)
+      };
+    }
+    throw error;
+  }
+}
+
+function bufferOrString(value: string | Buffer | undefined): string {
+  if (Buffer.isBuffer(value)) return value.toString("utf8");
+  return value ?? "";
+}
+
+function shapeOpenCodeArgs(args: string[]): string[] {
+  return args.map((arg, index) => {
+    if (index > 0 && args[index - 1] === "--file") return "[ATTACHED_FILE]";
+    if (index > 0 && args[index - 1] === "--title") return "[TITLE]";
+    if (index === args.length - 1 && !arg.startsWith("--")) return "[PROMPT]";
+    return arg;
+  });
 }
 
 async function validateModelRequestManifestFiles(

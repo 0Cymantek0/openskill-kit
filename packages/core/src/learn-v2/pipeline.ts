@@ -478,7 +478,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       "Output-facing analysis frames, episode stores, model requests, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
       "Raw vault refs are local-only and never exportable through compile, pack, or sync artifacts.",
       "Concept cards remain candidates until explicit review activates them.",
-      `Model execution policy is ${modelMode}: deterministic extraction and prompt-safe OpenCode request artifacts are supported; raw-evidence-to-model execution is rejected until implemented.`,
+      `Model execution policy is ${modelMode}: deterministic extraction and prompt-safe OpenCode request artifacts are supported; explicit sanitized execution is available through the model-request executor, while raw-evidence-to-model execution is rejected until implemented.`,
       "Model outputs are untrusted until schema and evidence validation pass."
     ],
     nextActions,

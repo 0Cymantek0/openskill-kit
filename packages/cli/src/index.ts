@@ -82,6 +82,7 @@ import {
   runRawLocalLearning,
   applyLearnV2ConceptReview,
   applyLearnV2ModelProposalOutputs,
+  executeLearnV2ModelRequests,
   activateLearnV2Concepts,
   recordLearnV2ConceptOutcome,
   reconstructPersistedLearnV2Episodes,
@@ -344,6 +345,11 @@ osk.command("learn")
   .option("--extract-concepts", "Extract deterministic Learn-v2 concepts from the persisted episode store")
   .option("--run-learn-v2-eval", "Run Learn-v2 eval from persisted episode and concept stores")
   .option("--prepare-model-requests", "Write prompt-safe Learn-v2 model request artifacts from the stored episode store")
+  .option("--execute-model-requests", "Run sanitized Learn-v2 model requests through OpenCode and write validated response.json files")
+  .option("--model-request <path>", "Learn-v2 request directory or request-manifest.json to execute; defaults to every prepared request", collectOption, [])
+  .option("--opencode-command <command>", "OpenCode executable for --execute-model-requests; defaults to OSK_OPENCODE_COMMAND, OPENCODE_COMMAND, or opencode")
+  .option("--opencode-attach <url>", "Attach --execute-model-requests to a running OpenCode server")
+  .option("--model-request-timeout-ms <number>", "Per-request OpenCode execution timeout", parseIntegerOption, 300_000)
   .option("--model-output <path>", "Learn-v2 model JSON output file or request-manifest.json to validate and merge", collectOption, [])
   .option("--activation-query <text>", "Score reviewed Learn-v2 concepts for a task query")
   .option("--activation-path <path>", "Path hint for --activation-query", collectOption, [])
@@ -356,7 +362,7 @@ osk.command("learn")
   .option("--concept-outcome-reason <text>", "Short safe reason for --record-concept-outcome")
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--learn-v2-goldens <path>", "Learn-v2 extraction golden scenario JSON file")
-  .option("--model-mode <mode>", `Learn v2 execution policy: ${RawLearningPublicModelModes.join("|")}; legacy aliases normalize to these names; raw-to-model dispatch is not implemented`, parseRawLearningModelMode)
+  .option("--model-mode <mode>", `Learn v2 execution policy: ${RawLearningPublicModelModes.join("|")}; sanitized OpenCode execution uses --execute-model-requests; raw-to-model dispatch remains rejected`, parseRawLearningModelMode)
   .option("--all-detected", "Select all safe detected sources")
   .option("--apply", "Apply selected sources after preview approval")
   .option("--max-events <number>", "Maximum events", parseIntegerOption, 250)
@@ -397,6 +403,16 @@ osk.command("learn")
     if (options.prepareModelRequests === true) {
       const result = await writeLearnV2ModelRequests(process.cwd());
       output(options.json, result, renderLearnV2ModelRequests(result));
+      return;
+    }
+    if (options.executeModelRequests === true) {
+      const result = await executeLearnV2ModelRequests(process.cwd(), {
+        requestManifests: options.modelRequest,
+        opencodeCommand: options.opencodeCommand,
+        opencodeAttachUrl: options.opencodeAttach,
+        timeoutMs: options.modelRequestTimeoutMs
+      });
+      output(options.json, result, renderLearnV2ModelRequestExecution(result));
       return;
     }
     if (options.modelOutput.length > 0) {
@@ -2278,6 +2294,18 @@ function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersist
   ].join("\n");
 }
 
+function renderLearnV2ModelRequestExecution(result: Awaited<ReturnType<typeof executeLearnV2ModelRequests>>): string {
+  const lines = [
+    `Learn v2 model requests executed: ${result.writtenCount}/${result.attemptedCount}`,
+    `Failed: ${result.failedCount}; skipped: ${result.skippedCount}`,
+    `Execution report: ${result.executionReportPath}`
+  ];
+  for (const item of result.results.slice(0, 30)) {
+    lines.push(`${item.status.toUpperCase()} ${item.episodeId ?? "unknown"}: ${item.outputPath ?? item.manifestPath}${item.reason ? ` (${item.reason}${item.detail ? `: ${item.detail}` : ""})` : ""}`);
+  }
+  return lines.join("\n");
+}
+
 function renderLearnV2ModelProposalApply(result: Awaited<ReturnType<typeof applyLearnV2ModelProposalOutputs>>): string {
   const lines = [
     `Learn v2 model outputs applied: ${result.outputFiles.length}`,
@@ -2506,7 +2534,7 @@ function parseRawLearningModelMode(value: string): typeof RawLearningModelModes[
   if ((RawLearningPublicModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
   const alias = RawLearningLegacyModelModeAliases[value];
   if (alias) return alias as typeof RawLearningModelModes[number];
-  throw new Error(`Invalid Learn v2 execution policy: ${value}. Expected one of: ${RawLearningPublicModelModes.join(", ")}. Legacy aliases heuristic-only, remote-redacted, remote-explicit, and local-raw normalize to canonical policies; raw-to-model dispatch is not implemented.`);
+  throw new Error(`Invalid Learn v2 execution policy: ${value}. Expected one of: ${RawLearningPublicModelModes.join(", ")}. Legacy aliases heuristic-only, remote-redacted, remote-explicit, and local-raw normalize to canonical policies; sanitized OpenCode execution uses --execute-model-requests and raw-to-model dispatch remains rejected.`);
 }
 
 function parseConceptOutcome(value: string | undefined): Parameters<typeof recordLearnV2ConceptOutcome>[1]["outcome"] {

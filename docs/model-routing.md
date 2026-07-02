@@ -140,9 +140,18 @@ agents: `mode: subagent`, selected model route fields, and singular
 manifests reference the exact agent id/file. The execution boundary remains
 sanitized: request bundles and prompts are declassified, `rawRefsIncluded` is
 false, and OSK treats model output as untrusted proposal JSON until schema,
-evidence-id, path, and leak checks pass. Preparing these requests does not
-invoke OpenCode or any provider; OSK only writes artifacts for the operator or
-harness to run through the named OpenCode agent.
+evidence-id, path, and leak checks pass.
+
+`openskill-kit osk learn --prepare-model-requests` only writes request
+artifacts. `openskill-kit osk learn --execute-model-requests` runs those
+prepared sanitized requests through `opencode run` with the configured agent id,
+attached prompt/bundle files, project-local `--dir`, and an inline permission
+profile that denies shell/edit/write/network/task access. OSK validates the
+request manifest and prompt/bundle hashes before execution, validates stdout as
+strict Learn v2 proposal JSON before writing `response.json`, and records only
+byte counts and hashes for stdout/stderr in the execution report. Raw-to-model
+execution remains rejected; `opencode-host-raw-allowed` is reserved for a future
+policy.
 
 ## Validation
 
