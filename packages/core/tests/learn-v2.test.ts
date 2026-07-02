@@ -1725,6 +1725,58 @@ describe("learn-v2 substrate", () => {
     expect(matches[0]!.score).toBeGreaterThan(matches[1]!.score);
   });
 
+  it("activates concepts through deterministic semantic aliases and fingerprints", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:08:00Z");
+    const [concept] = mergeLearnV2ConceptCards([{
+      schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
+      id: "atom_semantic_parser_fixture",
+      kind: "workflow",
+      statement: "Prefer focused parser regression fixtures before broad parser rewrites.",
+      polarity: "positive",
+      scope: {
+        level: "path",
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: []
+      },
+      confidence: 0.82,
+      confidenceCap: 0.9,
+      sourceReliability: 0.85,
+      evidenceIds: ["ev_semantic_parser_fixture"],
+      rawRefs: ["raw_semantic_parser_fixture"],
+      rationale: "Explicit preference or correction language in episode.",
+      risk: "low"
+    }], now);
+    await writeLearnV2ConceptStore(root, [{ ...concept!, status: "active" }], now);
+    const activationIndex = await readText(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"));
+    expect(activationIndex).toContain("semanticAliases");
+    expect(activationIndex).toContain("keywordFingerprint");
+
+    const result = await activateLearnV2Concepts(root, {
+      query: "grammar spec needed for syntax bug",
+      limit: 5
+    }, new Date("2026-06-30T00:09:00Z"));
+
+    expect(result.matches[0]?.conceptId).toBe(concept!.id);
+    expect(result.matches[0]?.reasons.join(",")).toContain("semantic-fingerprint:");
+
+    const broadFamilyOnly = scoreLearnV2ActivationEntries([{
+      conceptId: "concept_broad_test",
+      status: "active",
+      title: "Generic test note",
+      phrases: [],
+      pathGlobs: [],
+      commands: [],
+      taskTypes: [],
+      negativeTriggers: [],
+      semanticAliases: [],
+      keywordFingerprint: ["family:test"],
+      confidence: 0.95,
+      risk: "low"
+    }], { query: "spec" });
+    expect(broadFamilyOnly[0]!.score).toBe(0);
+  });
+
   it("applies guarded auto-stage auto-apply-safe and assistant-only supersession policies", async () => {
     const root = await tempProject();
     const configPath = path.join(root, ".openskill-kit", "config.json");

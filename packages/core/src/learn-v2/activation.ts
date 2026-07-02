@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { readProjectConfig } from "../events/store.js";
+import { deriveActivationSignalsFromText } from "./activation-signals.js";
 import { readLearnV2ConceptStore, writeLearnV2ActivationIndex, type LearnV2ActivationIndex } from "./store.js";
 import { learnV2Hash, learnV2ShortHash } from "./utils.js";
 
@@ -271,6 +272,12 @@ function scoreActivationEntries(
 ): LearnV2ConceptActivationMatch[] {
   const queryText = normalizeText(query.query ?? "");
   const queryTokens = tokenSet(queryText);
+  const querySignals = deriveActivationSignalsFromText([
+    query.query ?? "",
+    ...(query.paths ?? []),
+    ...(query.commands ?? []),
+    ...(query.taskTypes ?? [])
+  ].join(" "));
   const paths = (query.paths ?? []).map(normalizePath);
   const commands = (query.commands ?? []).map(normalizeText);
   const taskTypes = new Set((query.taskTypes ?? []).map(normalizeText));
@@ -278,7 +285,7 @@ function scoreActivationEntries(
   const visibleEntries = entries.filter((entry) => query.includeCandidates === true || entry.status === "active" || entry.status === "locked");
   const bm25 = buildActivationBm25Index(visibleEntries);
   return visibleEntries
-    .map((entry) => scoreEntry(entry, { queryText, queryTokens, paths, commands, taskTypes, negativeSignals, bm25, outcomeFeedback }))
+    .map((entry) => scoreEntry(entry, { queryText, queryTokens, querySignals, paths, commands, taskTypes, negativeSignals, bm25, outcomeFeedback }))
     .sort((a, b) => Number(a.suppressed) - Number(b.suppressed) || b.score - a.score || a.title.localeCompare(b.title));
 }
 
@@ -287,6 +294,7 @@ function scoreEntry(
   query: {
     queryText: string;
     queryTokens: Set<string>;
+    querySignals: ReturnType<typeof deriveActivationSignalsFromText>;
     paths: string[];
     commands: string[];
     taskTypes: Set<string>;
@@ -346,6 +354,20 @@ function scoreEntry(
   if (bm25Score > 0) {
     score += Math.min(0.24, bm25Score * 0.08);
     reasons.push(`bm25:${bm25Score.toFixed(2)}`);
+  }
+
+  const semanticAliasHits = (entry.semanticAliases ?? [])
+    .map(normalizeText)
+    .filter((alias) => alias && (query.queryText.includes(alias) || tokenOverlap(tokenSet(alias), query.queryTokens) >= Math.min(2, tokenSet(alias).size)));
+  if (semanticAliasHits.length) {
+    score += Math.min(0.22, semanticAliasHits.length * 0.07);
+    reasons.push(`semantic-alias:${semanticAliasHits.slice(0, 3).join(",")}`);
+  }
+
+  const fingerprintOverlap = keywordFingerprintOverlap(entry.keywordFingerprint ?? [], query.querySignals.keywordFingerprint);
+  if (fingerprintOverlap.score >= 2) {
+    score += Math.min(0.18, fingerprintOverlap.score * 0.06);
+    reasons.push(`semantic-fingerprint:${fingerprintOverlap.hits.slice(0, 5).join(",")}`);
   }
 
   if (feedback) {
@@ -479,9 +501,20 @@ function activationDocumentTokens(entry: LearnV2ActivationIndex["entries"][numbe
     ...entry.phrases,
     ...entry.taskTypes,
     ...entry.commands,
+    ...(entry.semanticAliases ?? []),
+    ...(entry.keywordFingerprint ?? []),
     ...entry.pathGlobs.flatMap(pathTokens)
   ];
   return textParts.flatMap((part) => [...tokenSet(part)]);
+}
+
+function keywordFingerprintOverlap(entryFingerprint: string[], queryFingerprint: string[]): { score: number; hits: string[] } {
+  const query = new Set(queryFingerprint);
+  const hits = [...new Set(entryFingerprint.filter((item) => query.has(item)))];
+  const familyHits = hits.filter((item) => item.startsWith("family:")).length;
+  const keywordHits = hits.length - familyHits;
+  const score = familyHits * 1.4 + keywordHits * 0.7;
+  return { score: Number(score.toFixed(2)), hits };
 }
 
 function pathTokens(value: string): string[] {

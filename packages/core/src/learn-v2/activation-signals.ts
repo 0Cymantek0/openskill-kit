@@ -1,0 +1,99 @@
+import type { LearnV2ConceptCard } from "./schemas.js";
+
+export interface LearnV2ActivationSignals {
+  semanticAliases: string[];
+  keywordFingerprint: string[];
+}
+
+const semanticFamilies: Array<{ id: string; terms: string[] }> = [
+  { id: "test", terms: ["test", "tests", "spec", "specs", "fixture", "fixtures", "regression", "coverage", "assert", "assertion"] },
+  { id: "parser", terms: ["parser", "parse", "parsing", "syntax", "grammar", "ast", "token", "lexer"] },
+  { id: "security", terms: ["security", "secret", "secrets", "credential", "credentials", "token", "key", "keys", "auth"] },
+  { id: "docs", terms: ["docs", "documentation", "readme", "guide", "markdown", "changelog"] },
+  { id: "scope", terms: ["scope", "narrow", "focused", "targeted", "specific", "local", "minimal"] },
+  { id: "rewrite", terms: ["rewrite", "rewrites", "refactor", "refactors", "broad", "global", "sweeping", "overhaul"] },
+  { id: "validation", terms: ["validate", "validation", "verify", "verification", "check", "ci", "build"] },
+  { id: "privacy", terms: ["privacy", "redact", "redaction", "declassify", "declassified", "raw", "vault", "leak"] },
+  { id: "mcp", terms: ["mcp", "tool", "tools", "resource", "resources", "server"] },
+  { id: "opencode", terms: ["opencode", "agent", "subagent", "model", "routing", "permission"] }
+];
+
+const familiesByTerm = new Map<string, Set<string>>();
+for (const family of semanticFamilies) {
+  for (const term of family.terms) {
+    const current = familiesByTerm.get(term) ?? new Set<string>();
+    current.add(family.id);
+    familiesByTerm.set(term, current);
+  }
+}
+
+export function deriveLearnV2ActivationSignals(card: LearnV2ConceptCard): LearnV2ActivationSignals {
+  const sources = [
+    card.title,
+    card.canonicalBehavior,
+    card.behaviorDelta,
+    ...card.activation.phrases,
+    ...card.scope.taskTypes,
+    ...card.activation.commands,
+    ...card.activation.pathGlobs.flatMap(pathTokens)
+  ];
+  return deriveActivationSignalsFromText(sources.join(" "));
+}
+
+export function deriveActivationSignalsFromText(text: string): LearnV2ActivationSignals {
+  const tokens = normalizedTokens(text);
+  const families = new Set<string>();
+  for (const token of tokens) {
+    for (const family of familiesByTerm.get(token) ?? []) families.add(family);
+  }
+  const semanticAliases = buildSemanticAliases(tokens, families);
+  const keywordFingerprint = [
+    ...new Set([
+      ...tokens.filter((token) => token.length > 3).slice(0, 48),
+      ...[...families].map((family) => `family:${family}`)
+    ])
+  ].sort();
+  return { semanticAliases, keywordFingerprint };
+}
+
+function normalizedTokens(text: string): string[] {
+  return text
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/[^a-z0-9_./:-]+/g, " ")
+    .split(/[\s/._:-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2 && token !== "**");
+}
+
+function buildSemanticAliases(tokens: string[], families: Set<string>): string[] {
+  const aliases = new Set<string>();
+  for (const phrase of familyPairAliases(families)) aliases.add(phrase);
+  for (const token of tokens) {
+    for (const family of familiesByTerm.get(token) ?? []) {
+      aliases.add(`${family} work`);
+      aliases.add(`${family} context`);
+    }
+  }
+  return [...aliases]
+    .filter((alias) => alias.length >= 5)
+    .sort()
+    .slice(0, 24);
+}
+
+function familyPairAliases(families: Set<string>): string[] {
+  const out: string[] = [];
+  if (families.has("parser") && families.has("test")) out.push("parser tests", "syntax regression", "grammar fixture");
+  if (families.has("scope") && families.has("rewrite")) out.push("focused change", "avoid broad rewrite", "narrow refactor");
+  if (families.has("security") && families.has("privacy")) out.push("secret redaction", "credential privacy", "raw evidence leak");
+  if (families.has("validation") && families.has("test")) out.push("verification command", "ci test", "test validation");
+  if (families.has("mcp") && families.has("opencode")) out.push("opencode mcp", "agent tool routing", "mcp agent handoff");
+  return out;
+}
+
+function pathTokens(value: string): string[] {
+  return value
+    .replace(/\\/g, "/")
+    .split(/[/.\\_-]+/)
+    .filter((item) => item.length > 2 && item !== "**");
+}
