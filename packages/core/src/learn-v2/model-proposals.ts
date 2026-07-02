@@ -13,6 +13,7 @@ import {
   renderLearnV2ConceptExtractionPrompt,
   validateLearnV2LlmConceptExtractionOutput
 } from "./extract.js";
+import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { type LearnV2BehaviorAtom, type LearnV2TaskEpisode } from "./schemas.js";
@@ -30,6 +31,8 @@ export interface LearnV2ModelRequest {
   manifestPath: string;
   expectedOutputPath: string;
   outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1";
+  opencodeAgentId: string;
+  agentFile: string;
   routing: LearnV2ModelRequestRoutingDecision & { decision: "request" };
 }
 
@@ -40,6 +43,8 @@ export interface LearnV2ModelRequestResult {
   requests: LearnV2ModelRequest[];
   skippedEpisodes: Array<LearnV2ModelRequestRoutingDecision & { episodeId: string; decision: "skip" }>;
   routingManifestPath: string;
+  modelRoutingArtifactPath: string;
+  opencodeAgentIndexPath: string;
   instructions: string[];
 }
 
@@ -71,6 +76,11 @@ interface LearnV2ModelRequestManifest {
   bundlePath: string;
   expectedOutputPath: string;
   outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1";
+  opencodeAgentId: string;
+  agentFile: string;
+  modelRoutingArtifactPath: string;
+  opencodeAgentIndexPath: string;
+  executionBoundary: "opencode-host-sanitized-only";
   evidenceIds: string[];
   rawRefsIncluded: false;
 }
@@ -106,6 +116,8 @@ export async function readLearnV2EpisodeStore(rootInput: string): Promise<LearnV
 export async function writeLearnV2ModelRequests(rootInput: string, episodes?: LearnV2TaskEpisode[], now = new Date()): Promise<LearnV2ModelRequestResult> {
   const root = path.resolve(rootInput);
   const sourceEpisodes = episodes ?? (await readLearnV2EpisodeStore(root)).episodes;
+  const modelRouting = await ensureLearnV2ModelRoutingArtifacts(root, now);
+  const conceptExtractorAgent = modelRouting.agents["concept-extractor"];
   await pruneStaleModelRequestDirs(root, new Set(sourceEpisodes.map((episode) => episode.id)));
   const requests: LearnV2ModelRequest[] = [];
   const skippedEpisodes: LearnV2ModelRequestResult["skippedEpisodes"] = [];
@@ -136,10 +148,16 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
       bundlePath: learnV2ProjectRelativePath(root, bundlePath),
       expectedOutputPath: learnV2ProjectRelativePath(root, expectedOutputPath),
       outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      opencodeAgentId: conceptExtractorAgent.opencodeAgentId,
+      agentFile: conceptExtractorAgent.agentFile,
+      modelRoutingArtifactPath: modelRouting.artifacts.routingJson,
+      opencodeAgentIndexPath: modelRouting.artifacts.opencodeAgentIndex,
+      executionBoundary: "opencode-host-sanitized-only",
       evidenceIds: episode.evidenceIds,
       rawRefsIncluded: false,
       instructions: [
-        "Send concept-extraction-prompt.md to an OpenCode-configured concept-extractor agent.",
+        `Send concept-extraction-prompt.md to the OpenCode agent ${conceptExtractorAgent.opencodeAgentId}.`,
+        `Agent definition: ${conceptExtractorAgent.agentFile}.`,
         "Save strict JSON output to response.json in this directory.",
         "Do not include raw vault refs, raw paths, secrets, or raw transcript text in the response."
       ]
@@ -151,6 +169,8 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
       manifestPath,
       expectedOutputPath,
       outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      opencodeAgentId: conceptExtractorAgent.opencodeAgentId,
+      agentFile: conceptExtractorAgent.agentFile,
       routing
     });
   }
@@ -159,14 +179,20 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
     schemaVersion: "openskill-kit.learn-v2.model-request-routing-manifest.v1",
     generatedAt: now.toISOString(),
     routingPolicy: "learn-v2-roi-v1",
+    modelRoutingArtifactPath: modelRouting.artifacts.routingJson,
+    opencodeAgentIndexPath: modelRouting.artifacts.opencodeAgentIndex,
+    opencodeAgentId: conceptExtractorAgent.opencodeAgentId,
+    agentFile: conceptExtractorAgent.agentFile,
     requestedEpisodeCount: requests.length,
     skippedEpisodeCount: skippedEpisodes.length,
     requests: requests.map((request) => ({
       episodeId: request.episodeId,
-      priority: request.routing.priority,
-      reasons: request.routing.reasons,
-      manifestPath: learnV2ProjectRelativePath(root, request.manifestPath)
-    })),
+        priority: request.routing.priority,
+        reasons: request.routing.reasons,
+        opencodeAgentId: request.opencodeAgentId,
+        agentFile: request.agentFile,
+        manifestPath: learnV2ProjectRelativePath(root, request.manifestPath)
+      })),
     skippedEpisodes
   });
   return {
@@ -176,8 +202,11 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
     requests,
     skippedEpisodes,
     routingManifestPath,
+    modelRoutingArtifactPath: path.join(root, modelRouting.artifacts.routingJson),
+    opencodeAgentIndexPath: path.join(root, modelRouting.artifacts.opencodeAgentIndex),
     instructions: [
-      "Give each prompt to an OpenCode-configured concept-extractor agent.",
+      `Give each prompt to OpenCode agent ${conceptExtractorAgent.opencodeAgentId}.`,
+      `Use generated agent definition ${conceptExtractorAgent.agentFile}.`,
       "Save the agent's strict JSON response to a local file.",
       "Apply responses with the Learn v2 model proposal ingestion command/tool.",
       "Do not paste raw vault content into prompts or responses."

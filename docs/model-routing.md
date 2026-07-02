@@ -121,6 +121,27 @@ instead of becoming broad shell access. OpenCode applies the last matching
 permission pattern, so generated catch-all denies appear before specific
 `openskill-kit`, `git`, test, or docs patterns.
 
+## Learn v2 Model Agents
+
+Raw-local learning also writes Learn v2-specific OpenCode subagent definitions
+under `.openskill-kit/model-routing/opencode-agents/`:
+
+- `osk-learn-v2-evidence-summarizer.md`
+- `osk-learn-v2-concept-extractor.md`
+- `osk-learn-v2-contradiction-reviewer.md`
+- `osk-learn-v2-scope-inferencer.md`
+- `osk-learn-v2-declassification-reviewer.md`
+- `osk-learn-v2-eval-planner.md`
+- `osk-learn-v2-publish-export-auditor.md`
+
+These files use the same OpenCode frontmatter contract as compiled plugin
+agents: `mode: subagent`, selected model route fields, and singular
+`permission:` maps from the configured permission profile. Learn v2 request
+manifests reference the exact agent id/file. The execution boundary remains
+sanitized: request bundles and prompts are declassified, `rawRefsIncluded` is
+false, and OSK treats model output as untrusted proposal JSON until schema,
+evidence-id, path, and leak checks pass.
+
 ## Validation
 
 Run `doctor --full` before setup or compile when editing this file by hand:

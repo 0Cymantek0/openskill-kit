@@ -1245,15 +1245,24 @@ describe("learn-v2 substrate", () => {
     const requests = await writeLearnV2ModelRequests(root, undefined, now);
     expect(requests.requestCount).toBe(1);
     expect(requests.requests[0]!.episodeId).toBe(valuable.id);
+    expect(requests.requests[0]!.opencodeAgentId).toBe("osk-learn-v2-concept-extractor");
+    expect(requests.requests[0]!.agentFile).toContain("osk-learn-v2-concept-extractor.md");
     expect(requests.requests[0]!.routing.reasons).toContain("durable-language-signal");
     expect(requests.skippedEpisodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ episodeId: weak.id, decision: "skip", reasons: ["no-semantic-roi-trigger"] })
     ]));
     const routingManifest = await readText(requests.routingManifestPath);
     expect(routingManifest).toContain("learn-v2-roi-v1");
+    expect(routingManifest).toContain("osk-learn-v2-concept-extractor");
+    expect(routingManifest).toContain("opencodeAgentIndexPath");
     expect(routingManifest).toContain(valuable.id);
     expect(routingManifest).toContain(weak.id);
     expect(routingManifest).not.toContain("raw_");
+    const manifest = JSON.parse(await readText(requests.requests[0]!.manifestPath));
+    expect(manifest.executionBoundary).toBe("opencode-host-sanitized-only");
+    expect(manifest.rawRefsIncluded).toBe(false);
+    expect(manifest.opencodeAgentId).toBe("osk-learn-v2-concept-extractor");
+    expect(await readText(path.join(root, manifest.agentFile))).toContain("mode: subagent");
   });
 
   it("projects existing routing into learn-v2 OpenCode agent artifacts without owning a provider", async () => {
@@ -1273,9 +1282,23 @@ describe("learn-v2 substrate", () => {
     const routeJson = await readText(path.join(root, artifact.artifacts.routingJson));
     expect(routeJson).toContain("deterministicFallback");
     expect(routeJson).toContain("behavior pack publish audit scanners");
+    expect(routeJson).toContain("opencodeAgentIndex");
     expect(routeJson).not.toContain("ollama");
+    const agentIndex = await readText(path.join(root, artifact.artifacts.opencodeAgentIndex));
+    expect(agentIndex).toContain("openskill-kit.learn-v2.opencode-agent-index.v1");
+    expect(agentIndex).toContain("rawEvidenceToRemoteModels");
     const publishAuditor = await readText(path.join(root, artifact.agents["publish-export-auditor"].agentFile));
+    expect(publishAuditor).toContain("---");
+    expect(publishAuditor).toContain("mode: subagent");
+    expect(publishAuditor).toContain("permission:");
+    expect(publishAuditor).toContain("edit: deny");
+    expect(publishAuditor).toContain("webfetch: deny");
     expect(publishAuditor).toContain("share-boundary privacy risks");
+    const conceptExtractor = await readText(path.join(root, artifact.agents["concept-extractor"].agentFile));
+    expect(conceptExtractor).toContain("model: default");
+    expect(conceptExtractor).toContain("steps: 24");
+    expect(conceptExtractor).toContain("question: allow");
+    expect(conceptExtractor.indexOf("\"*\": deny")).toBeLessThan(conceptExtractor.indexOf("\"openskill-kit *\": ask"));
   });
 
   it("reports raw vault budget and compacts unpinned records during GC", async () => {
