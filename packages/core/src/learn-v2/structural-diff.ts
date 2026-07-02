@@ -9,13 +9,19 @@ interface DiffFile {
   path: string;
   added: string[];
   removed: string[];
+  hunks: DiffHunk[];
+}
+
+interface DiffHunk {
+  header: string;
+  lines: Array<{ kind: "context" | "added" | "removed"; text: string }>;
 }
 
 export function analyzeLearnV2StructuralDiff(text: string, fallbackPaths: string[] = []): LearnV2PatchComparison["structuralSummary"] {
   const diffFiles = parseUnifiedDiff(text);
   const files = diffFiles.length
     ? diffFiles
-    : fallbackPaths.map((file) => ({ path: file, added: addedLinesFromText(text), removed: removedLinesFromText(text) }));
+    : fallbackPaths.map((file) => ({ path: file, added: addedLinesFromText(text), removed: removedLinesFromText(text), hunks: [] }));
   const ignoredFiles = files.filter((file) => learnV2IsGeneratedPath(file.path)).map((file) => file.path);
   const considered = files.filter((file) => !learnV2IsGeneratedPath(file.path));
   const fileSummaries = considered.map(summarizeFile);
@@ -48,10 +54,12 @@ export function structuralClassesFromSummary(summary: LearnV2PatchComparison["st
 function parseUnifiedDiff(text: string): DiffFile[] {
   const files: DiffFile[] = [];
   let current: DiffFile | undefined;
+  let currentHunk: DiffHunk | undefined;
   for (const line of text.split(/\r?\n/)) {
     const header = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
     if (header) {
-      current = { path: header[2]!, added: [], removed: [] };
+      current = { path: header[2]!, added: [], removed: [], hunks: [] };
+      currentHunk = undefined;
       files.push(current);
       continue;
     }
@@ -61,8 +69,22 @@ function parseUnifiedDiff(text: string): DiffFile[] {
       continue;
     }
     if (!current) continue;
-    if (line.startsWith("+") && !line.startsWith("+++")) current.added.push(line.slice(1));
-    if (line.startsWith("-") && !line.startsWith("---")) current.removed.push(line.slice(1));
+    if (line.startsWith("@@")) {
+      currentHunk = { header: line, lines: [] };
+      current.hunks.push(currentHunk);
+      continue;
+    }
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      const textLine = line.slice(1);
+      current.added.push(textLine);
+      currentHunk?.lines.push({ kind: "added", text: textLine });
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      const textLine = line.slice(1);
+      current.removed.push(textLine);
+      currentHunk?.lines.push({ kind: "removed", text: textLine });
+    } else if (line.startsWith(" ")) {
+      currentHunk?.lines.push({ kind: "context", text: line.slice(1) });
+    }
   }
   return files;
 }
@@ -70,7 +92,10 @@ function parseUnifiedDiff(text: string): DiffFile[] {
 function summarizeFile(file: DiffFile): FileSummary {
   const language = languageForPath(file.path);
   const allChanged = [...file.added, ...file.removed];
-  const changedSymbols = [...new Set(allChanged.flatMap((line) => symbolsForLine(language, line)))].sort().slice(0, 20);
+  const changedSymbols = [...new Set([
+    ...allChanged.flatMap((line) => symbolsForLine(language, line)),
+    ...symbolsFromHunks(language, file.hunks)
+  ])].sort().slice(0, 20);
   const changedImports = [...new Set(allChanged.flatMap((line) => importsForLine(language, line)))].sort().slice(0, 20);
   const classes = classesForFile(file.path, language, allChanged, changedSymbols, changedImports);
   const formattingOnly = file.added.length > 0 && file.removed.length > 0 && normalizedCode(file.added.join("\n")) === normalizedCode(file.removed.join("\n"));
@@ -86,6 +111,23 @@ function summarizeFile(file: DiffFile): FileSummary {
     removedLines: file.removed.length,
     semanticChange
   };
+}
+
+function symbolsFromHunks(language: StructuralLanguage, hunks: DiffHunk[]): string[] {
+  const out: string[] = [];
+  for (const hunk of hunks) {
+    const headerContext = /^@@[^@]*@@\s*(.*)$/.exec(hunk.header)?.[1] ?? "";
+    out.push(...symbolsForLine(language, headerContext));
+    let nearestContextSymbols: string[] = [];
+    for (const line of hunk.lines) {
+      const symbols = symbolsForLine(language, line.text);
+      if (symbols.length) nearestContextSymbols = symbols;
+      if ((line.kind === "added" || line.kind === "removed") && !symbols.length && nearestContextSymbols.length) {
+        out.push(...nearestContextSymbols);
+      }
+    }
+  }
+  return out;
 }
 
 function languageForPath(file: string): StructuralLanguage {

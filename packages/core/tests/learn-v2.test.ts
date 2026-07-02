@@ -624,6 +624,46 @@ describe("learn-v2 substrate", () => {
     expect(summary.semanticChange).toBe(true);
   });
 
+  it("recovers enclosing symbols from hunk headers and context for body-only edits", async () => {
+    const diff = [
+      "diff --git a/packages/core/src/parser.ts b/packages/core/src/parser.ts",
+      "--- a/packages/core/src/parser.ts",
+      "+++ b/packages/core/src/parser.ts",
+      "@@ -10,7 +10,7 @@ export function parseSkill(input: string) {",
+      "   const parsed = tokenize(input);",
+      "-  return oldParse(parsed);",
+      "+  return parseWithRegression(parsed);",
+      " }",
+      "diff --git a/python/openskillkit_evolution/cli.py b/python/openskillkit_evolution/cli.py",
+      "--- a/python/openskillkit_evolution/cli.py",
+      "+++ b/python/openskillkit_evolution/cli.py",
+      "@@ -20,7 +20,7 @@ def build_report(value):",
+      "     parsed = parse_skill(value)",
+      "-    return old_report(parsed)",
+      "+    return regression_report(parsed)",
+      "diff --git a/src/server.go b/src/server.go",
+      "--- a/src/server.go",
+      "+++ b/src/server.go",
+      "@@ -30,7 +30,7 @@ func ServeHTTP(w http.ResponseWriter, r *http.Request) {",
+      "-\twriteOldResponse(w)",
+      "+\twriteNewResponse(w)",
+      "}",
+      "diff --git a/src/lib.rs b/src/lib.rs",
+      "--- a/src/lib.rs",
+      "+++ b/src/lib.rs",
+      "@@ -40,7 +40,7 @@ pub fn compile_skill() {",
+      "-    compile_old();",
+      "+    compile_checked();",
+      "}"
+    ].join("\n");
+
+    const summary = analyzeLearnV2StructuralDiff(diff);
+    expect(summary.changedSymbols).toEqual(expect.arrayContaining(["parseSkill", "build_report", "ServeHTTP", "compile_skill"]));
+    expect(summary.languages).toEqual(["go", "python", "rust", "typescript"]);
+    expect(summary.semanticChange).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.semanticChange)).toBe(true);
+  });
+
   it("rejects LLM atom proposals without valid evidence or with raw secrets", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_llm");
