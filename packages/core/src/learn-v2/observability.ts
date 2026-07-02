@@ -22,6 +22,8 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     totalBytes: z.number().int().min(0),
     redactedSources: z.number().int().min(0),
     adapterCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    adapterMatchedByCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    adapterDetectionConfidenceCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     contentKindCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     sensitivityCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     modelBoundaryCounts: z.record(z.string(), z.number().int().min(0)).default({}),
@@ -118,6 +120,10 @@ export interface LearnV2PipelineObservabilityInput {
     turnCount: number;
     learnV2?: {
       adapterId?: string;
+      adapterDetection?: {
+        matchedBy?: string;
+        confidence?: string;
+      };
       contentKind?: string;
       surfacePolicy?: {
         selection?: string;
@@ -199,6 +205,8 @@ export async function writeLearnV2PipelineObservabilityReport(
       totalBytes: input.sources.reduce((sum, source) => sum + source.byteCount, 0),
       redactedSources: input.sources.filter((source) => source.deidentification.redacted).length,
       adapterCounts: countBy(input.sources.map((source) => source.learnV2?.adapterId ?? "unknown")),
+      adapterMatchedByCounts: countBy(input.sources.map((source) => source.learnV2?.adapterDetection?.matchedBy ?? "unknown")),
+      adapterDetectionConfidenceCounts: countBy(input.sources.map((source) => source.learnV2?.adapterDetection?.confidence ?? "unknown")),
       contentKindCounts: countBy(input.sources.map((source) => source.learnV2?.contentKind ?? "unknown")),
       sensitivityCounts: countBy(input.sources.map((source) => source.learnV2?.surfacePolicy?.sensitivity ?? "unknown")),
       modelBoundaryCounts: countBy(input.sources.map((source) => source.learnV2?.surfacePolicy?.modelBoundary ?? "unknown")),
@@ -295,6 +303,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Total bytes: ${report.sources.totalBytes}`,
     `- Redacted sources: ${report.sources.redactedSources}`,
     `- Adapters: ${renderCounts(report.sources.adapterCounts)}`,
+    `- Adapter detection: by=${renderCounts(report.sources.adapterMatchedByCounts)}, confidence=${renderCounts(report.sources.adapterDetectionConfidenceCounts)}`,
     `- Content kinds: ${renderCounts(report.sources.contentKindCounts)}`,
     `- Source policy: explicit-only=${report.sources.explicitOnlySources}, raw-local-file=${report.sources.rawLocalFileSources}, declassified-only-model=${report.sources.declassifiedOnlyModelSources}`,
     `- Sensitivity: ${renderCounts(report.sources.sensitivityCounts)}`,

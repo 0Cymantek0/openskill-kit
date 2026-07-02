@@ -54,8 +54,12 @@ describe("raw local learning", () => {
       currentRun: preview.digest.currentRunConceptCards,
       mergedForArtifacts: preview.digest.mergedConceptCards
     });
-    expect(preview.sources[0]!.learnV2.adapterId).toMatch(/^(opencode|codex)$/);
-    expect(preview.sources[0]!.learnV2.adapterLabel).toMatch(/OpenCode|Codex/);
+    expect(preview.sources[0]!.learnV2.adapterId).toBe("codex");
+    expect(preview.sources[0]!.learnV2.adapterLabel).toBe("Codex transcript");
+    expect(preview.sources[0]!.learnV2.adapterDetection).toMatchObject({
+      matchedBy: "filename",
+      confidence: "high"
+    });
     expect(preview.sources[0]!.learnV2.surfacePolicy).toMatchObject({
       selection: "explicit-only",
       read: "raw-local-file",
@@ -103,6 +107,8 @@ describe("raw local learning", () => {
     expect(previewObservability).toContain("\"driftHealthScore\"");
     expect(previewObservability).toContain("\"qualityTierCounts\"");
     expect(previewObservability).toContain("\"adapterCounts\"");
+    expect(previewObservability).toContain("\"adapterMatchedByCounts\"");
+    expect(previewObservability).toContain("\"adapterDetectionConfidenceCounts\"");
     expect(previewObservability).toContain("\"sensitivityCounts\"");
     expect(previewObservability).toContain("\"modelBoundaryCounts\"");
     expect(previewObservability).toContain("\"declassifiedOnlyModelSources\"");

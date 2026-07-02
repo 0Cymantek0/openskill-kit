@@ -58,6 +58,7 @@ describe("osk CLI facade", () => {
     const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--observability"], { cwd: root, windowsHide: true });
     expect(textResult.stdout).toContain("Learn v2 observability");
     expect(textResult.stdout).toContain("Source adapters: opencode=1, content transcript=1");
+    expect(textResult.stdout).toContain("Adapter detection: filename=1, confidence high=1");
     expect(textResult.stdout).toContain("Source policy: explicit-only 1, raw-local-file 1, declassified-only model 1, sensitivity high=1");
     expect(textResult.stdout).toContain("Patches: 1 behavior-eligible, 1 audit-only / 2");
     expect(textResult.stdout).toContain("Review focus: 1 focus, 2 appendix");
@@ -122,6 +123,7 @@ describe("osk CLI facade", () => {
     expect(result.stdout).toContain("Raw sources considered: 1");
     expect(result.stdout).toContain("Source adapters:");
     expect(result.stdout).toContain("content transcript=1");
+    expect(result.stdout).toContain("Adapter detection: filename=1");
     expect(result.stdout).toContain("Source policy: explicit-only 1, raw-local-file 1, declassified-only model 1");
   });
 
@@ -602,6 +604,8 @@ function sampleLearnV2ObservabilityReport() {
       totalBytes: 120,
       redactedSources: 0,
       adapterCounts: { opencode: 1 },
+      adapterMatchedByCounts: { filename: 1 },
+      adapterDetectionConfidenceCounts: { high: 1 },
       contentKindCounts: { transcript: 1 },
       sensitivityCounts: { high: 1 },
       modelBoundaryCounts: { "declassified-only": 1 },

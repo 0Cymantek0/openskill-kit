@@ -111,6 +111,35 @@ describe("learn-v2 substrate", () => {
     expect(plainEvidence[0]!.commands).toContain("npm test -- parser before final summary");
   });
 
+  it("detects raw surface adapters from file identity without parent-path false positives", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-parent-should-not-win-"));
+    const codex = path.join(root, "codex-transcript.md");
+    const claude = path.join(root, "claude-transcript.md");
+    const cursor = path.join(root, "cursor-chat.md");
+    const diff = path.join(root, "session.diff");
+    const generic = path.join(root, "session.md");
+    await writeFile(codex, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(claude, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(cursor, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(diff, "diff --git a/src/parser.ts b/src/parser.ts\n+test", "utf8");
+    await writeFile(generic, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+
+    const codexSurface = await readLearnV2Surface(codex);
+    const claudeSurface = await readLearnV2Surface(claude);
+    const cursorSurface = await readLearnV2Surface(cursor);
+    const diffSurface = await readLearnV2Surface(diff);
+    const genericSurface = await readLearnV2Surface(generic);
+
+    expect(codexSurface.adapterId).toBe("codex");
+    expect(codexSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
+    expect(claudeSurface.adapterId).toBe("claude-code");
+    expect(cursorSurface.adapterId).toBe("cursor");
+    expect(diffSurface.adapterId).toBe("git");
+    expect(diffSurface.contentKind).toBe("diff");
+    expect(genericSurface.adapterId).toBe("generic-transcript");
+    expect(genericSurface.adapterDetection).toMatchObject({ matchedBy: "fallback", confidence: "low" });
+  });
+
   it("normalizes terminal review ci docs and agent-summary adapters with domain-specific actors and kinds", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_adapters");

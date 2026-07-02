@@ -5,6 +5,11 @@ import { z } from "zod";
 export const LearnV2SurfaceReadSchema = z.object({
   adapterId: z.string().min(1),
   adapterLabel: z.string().min(1).optional(),
+  adapterDetection: z.object({
+    matchedBy: z.enum(["explicit", "filename", "content", "fallback"]),
+    confidence: z.enum(["high", "medium", "low"]),
+    reasons: z.array(z.string()).default([])
+  }).optional(),
   sourcePath: z.string().min(1),
   contentKind: z.enum(["transcript", "tool-trace", "diff", "log", "document", "summary", "unknown"]),
   rawText: z.string(),
@@ -22,49 +27,71 @@ export const LearnV2SurfaceReadSchema = z.object({
 });
 export type LearnV2SurfaceRead = z.infer<typeof LearnV2SurfaceReadSchema>;
 export type LearnV2SurfaceAdapterPolicy = NonNullable<LearnV2SurfaceRead["policy"]>;
+export type LearnV2SurfaceAdapterDetection = NonNullable<LearnV2SurfaceRead["adapterDetection"]>;
 
 export interface LearnV2SurfaceAdapter {
   id: string;
   label: string;
   policy: LearnV2SurfaceAdapterPolicy;
-  canRead(sourcePath: string, rawText: string): boolean;
-  read(sourcePath: string, rawText: string): LearnV2SurfaceRead;
+  detect(sourcePath: string, rawText: string): LearnV2SurfaceAdapterDetection | undefined;
+  read(sourcePath: string, rawText: string, detection?: LearnV2SurfaceAdapterDetection): LearnV2SurfaceRead;
 }
 
 export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
-  makeAdapter("opencode", "OpenCode session or trace", /opencode|osk|session|trace/i, undefined, "high", ["Conversation/tool traces may include prompts, paths, commands, and outputs."]),
-  makeAdapter("codex", "Codex transcript", /codex|conversation|transcript|chat/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("claude-code", "Claude Code transcript", /claude|conversation|transcript|chat/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("cursor", "Cursor transcript", /cursor|conversation|transcript|chat/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("opencode", "OpenCode session or trace", /opencode|opencode-events|opencode-session|opencode-trace|tool\.execute|provider:\s*opencode/i, undefined, "high", ["Conversation/tool traces may include prompts, paths, commands, and outputs."]),
+  makeAdapter("codex", "Codex transcript", /codex/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("claude-code", "Claude Code transcript", /claude/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("cursor", "Cursor transcript", /cursor/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("git", "Git diff or metadata", /(?:\.diff|\.patch|^git[-_.]?|diff --git)/i, "diff", "high", ["Raw diffs are local-only learner input; output artifacts receive declassified summaries."]),
   makeAdapter("terminal", "Terminal transcript", /(?:terminal|shell|console|history|commands?)/i, "log", "high", ["Shell history and output can contain secrets or machine-local paths."]),
-  makeAdapter("review-local", "Local review notes", /(?:review|comments?|pr|pull-request)/i, "document", "medium", ["Review notes are explicit local evidence and remain declassified before output."]),
-  makeAdapter("ci-log", "CI or test log", /(?:ci|junit|test|vitest|pytest|build|log)/i, "log", "medium", ["Logs can be large and may include environment-specific paths or outputs."]),
+  makeAdapter("review-local", "Local review notes", /\b(?:review|comments?|pr|pull-request)\b/i, "document", "medium", ["Review notes are explicit local evidence and remain declassified before output."]),
+  makeAdapter("ci-log", "CI or test log", /\b(?:ci|junit|vitest|pytest|build|log|PASS|FAIL|ERROR|WARN)\b/i, "log", "medium", ["Logs can be large and may include environment-specific paths or outputs."]),
   makeAdapter("project-docs", "Project documentation", /(?:README|docs?|notes?|plan)/i, "document", "low", ["Project documentation is still treated as explicit local raw evidence when supplied."]),
   makeAdapter("agent-summaries", "Agent summary", /(?:summary|handoff|finish)/i, "summary", "medium", ["Summaries are explicit local evidence and may still contain private project details."]),
   {
     id: "generic-transcript",
     label: "Generic transcript",
     policy: rawSurfacePolicy("high", ["Fallback raw surface adapter; explicit user selection required."]),
-    canRead: () => true,
-    read: (sourcePath, rawText) => LearnV2SurfaceReadSchema.parse({
+    detect: () => ({
+      matchedBy: "fallback",
+      confidence: "low",
+      reasons: ["no-specific-surface-adapter-match"]
+    }),
+    read: (sourcePath, rawText, detection) => LearnV2SurfaceReadSchema.parse({
       adapterId: "generic-transcript",
       adapterLabel: "Generic transcript",
+      adapterDetection: detection ?? {
+        matchedBy: "fallback",
+        confidence: "low",
+        reasons: ["no-specific-surface-adapter-match"]
+      },
       sourcePath,
       contentKind: inferContentKind(sourcePath, rawText),
       rawText,
       detectedFormat: detectSurfaceFormat(sourcePath, rawText),
       policy: rawSurfacePolicy("high", ["Fallback raw surface adapter; explicit user selection required."])
     })
-  },
-  makeAdapter("git", "Git diff or metadata", /(?:\.diff|\.patch|git)/i, "diff", "high", ["Raw diffs are local-only learner input; output artifacts receive declassified summaries."])
+  }
 ];
 
 export async function readLearnV2Surface(sourcePathInput: string, adapterId?: string): Promise<LearnV2SurfaceRead> {
   const sourcePath = path.resolve(sourcePathInput);
   const rawText = await fs.readFile(sourcePath, "utf8");
   const explicit = adapterId ? learnV2SurfaceAdapters.find((adapter) => adapter.id === adapterId) : undefined;
-  const adapter = explicit ?? learnV2SurfaceAdapters.find((item) => item.canRead(sourcePath, rawText)) ?? learnV2SurfaceAdapters.find((item) => item.id === "generic-transcript")!;
-  return adapter.read(sourcePath, rawText);
+  if (adapterId && !explicit) throw new Error(`Unknown Learn v2 surface adapter: ${adapterId}`);
+  if (explicit) {
+    return explicit.read(sourcePath, rawText, {
+      matchedBy: "explicit",
+      confidence: "high",
+      reasons: [`explicit-adapter:${adapterId}`]
+    });
+  }
+  for (const adapter of learnV2SurfaceAdapters) {
+    const detection = adapter.detect(sourcePath, rawText);
+    if (detection) return adapter.read(sourcePath, rawText, detection);
+  }
+  const fallback = learnV2SurfaceAdapters.find((item) => item.id === "generic-transcript")!;
+  return fallback.read(sourcePath, rawText, fallback.detect(sourcePath, rawText));
 }
 
 function makeAdapter(
@@ -80,10 +107,28 @@ function makeAdapter(
     id,
     label,
     policy,
-    canRead: (sourcePath, rawText) => pathPattern.test(sourcePath) || pathPattern.test(rawText.slice(0, 1000)),
-    read: (sourcePath, rawText) => LearnV2SurfaceReadSchema.parse({
+    detect: (sourcePath, rawText) => {
+      const filename = path.basename(sourcePath);
+      if (pathPattern.test(filename)) {
+        return {
+          matchedBy: "filename",
+          confidence: "high",
+          reasons: [`filename:${filename}`]
+        };
+      }
+      if (pathPattern.test(rawText.slice(0, 1000))) {
+        return {
+          matchedBy: "content",
+          confidence: "medium",
+          reasons: ["content-prefix"]
+        };
+      }
+      return undefined;
+    },
+    read: (sourcePath, rawText, detection) => LearnV2SurfaceReadSchema.parse({
       adapterId: id,
       adapterLabel: label,
+      adapterDetection: detection,
       sourcePath,
       contentKind: contentKind ?? inferContentKind(sourcePath, rawText),
       rawText,

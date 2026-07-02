@@ -2131,6 +2131,7 @@ function renderRawLearnSourcePolicySummary(result: RawLocalLearningResult): stri
   const learnSources = result.sources.flatMap((source) => source.learnV2 ? [source.learnV2] : []);
   if (!learnSources.length) return [];
   const adapters = countValues(learnSources.map((source) => source.adapterId));
+  const matchedBy = countValues(learnSources.map((source) => source.adapterDetection?.matchedBy ?? "unknown"));
   const contentKinds = countValues(learnSources.map((source) => source.contentKind));
   const sensitivities = countValues(learnSources.map((source) => source.surfacePolicy?.sensitivity ?? "unknown"));
   const explicitOnly = learnSources.filter((source) => source.surfacePolicy?.selection === "explicit-only").length;
@@ -2138,6 +2139,7 @@ function renderRawLearnSourcePolicySummary(result: RawLocalLearningResult): stri
   const declassifiedOnly = learnSources.filter((source) => source.surfacePolicy?.modelBoundary === "declassified-only").length;
   return [
     `Source adapters: ${renderLearnV2CountLine(adapters)}, content ${renderLearnV2CountLine(contentKinds)}`,
+    `Adapter detection: ${renderLearnV2CountLine(matchedBy)}`,
     `Source policy: explicit-only ${explicitOnly}, raw-local-file ${rawLocalFile}, declassified-only model ${declassifiedOnly}, sensitivity ${renderLearnV2CountLine(sensitivities)}`
   ];
 }
@@ -2149,6 +2151,7 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     `Mode: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
     `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
     `Source adapters: ${renderLearnV2CountLine(report.sources.adapterCounts)}, content ${renderLearnV2CountLine(report.sources.contentKindCounts)}`,
+    `Adapter detection: ${renderLearnV2CountLine(report.sources.adapterMatchedByCounts)}, confidence ${renderLearnV2CountLine(report.sources.adapterDetectionConfidenceCounts)}`,
     `Source policy: explicit-only ${report.sources.explicitOnlySources}, raw-local-file ${report.sources.rawLocalFileSources}, declassified-only model ${report.sources.declassifiedOnlyModelSources}, sensitivity ${renderLearnV2CountLine(report.sources.sensitivityCounts)}`,
     `Evidence: ${report.evidence.normalizedEvidence} records, ${report.evidence.episodes} episodes, confidence high/medium/low ${report.evidence.confidenceBuckets.high}/${report.evidence.confidenceBuckets.medium}/${report.evidence.confidenceBuckets.low}`,
     `Evidence quality: ${renderLearnV2CountLine(report.evidence.qualityTierCounts)}, actions ${renderLearnV2CountLine(report.evidence.qualityActionCounts)}`,
@@ -2175,6 +2178,7 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
     `Run: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
     `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
     `Adapters: ${renderLearnV2CountLine(report.sources.adapterCounts)}`,
+    `Adapter detection: ${renderLearnV2CountLine(report.sources.adapterMatchedByCounts)} (${renderLearnV2CountLine(report.sources.adapterDetectionConfidenceCounts)})`,
     `Source policy: explicit-only ${report.sources.explicitOnlySources}, raw-local-file ${report.sources.rawLocalFileSources}, declassified-only model ${report.sources.declassifiedOnlyModelSources}`,
     `Sensitivity: ${renderLearnV2CountLine(report.sources.sensitivityCounts)}`,
     `Quality gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}`,
