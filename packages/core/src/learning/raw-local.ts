@@ -125,6 +125,7 @@ export interface RawLocalLearningResult {
     conceptCards: number;
     eventsAppended: number;
     reviewCandidates: number;
+    learningInputBoundary: "minimal-secret-path-placeholdering";
   };
   quality: {
     relevanceScore: number;
@@ -139,6 +140,7 @@ export interface RawLocalLearningResult {
   nextActions: string[];
   learnV2?: {
     schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1";
+    learningInputBoundary: "minimal-secret-path-placeholdering";
     episodes: unknown[];
     concepts: unknown[];
     rejectedAtoms: unknown[];

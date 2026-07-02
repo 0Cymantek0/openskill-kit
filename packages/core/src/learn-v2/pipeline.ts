@@ -129,12 +129,14 @@ interface LearnV2RawLocalLearningRunCompat {
     conceptCards: number;
     eventsAppended: number;
     reviewCandidates: number;
+    learningInputBoundary: "minimal-secret-path-placeholdering";
   };
   quality: ReturnType<typeof buildV2Quality>;
   privacy: string[];
   nextActions: string[];
   learnV2: {
     schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1";
+    learningInputBoundary: "minimal-secret-path-placeholdering";
     episodes: ReturnType<typeof reconstructLearnV2Episodes>;
     concepts: LearnV2ConceptCard[];
     rejectedAtoms: ReturnType<typeof extractLearnV2BehaviorAtoms>["rejected"];
@@ -154,6 +156,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const config = await readProjectConfig(root);
   const now = options.now ?? new Date();
   const generatedAt = now.toISOString();
+  const learningInputBoundary = "minimal-secret-path-placeholdering" as const;
   const previewOnly = options.previewOnly !== false;
   const modelMode = resolveLearnV2RawLearningModelMode(options.modelMode);
   if (modelMode === "opencode-host-raw-allowed") {
@@ -243,7 +246,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       sourcePath: learnV2SafeLocalPath(sourcePath, root),
       projectRelevance: relevance,
       modelMode,
-      promptSafe: modelMode !== "opencode-host-raw-allowed",
+      learningInputBoundary,
+      promptSafe: true,
       normalizedEvidence: normalized
     };
     await writeJsonAtomic(analysisFramePath, analysisPayload);
@@ -420,14 +424,16 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       behaviorAtoms: extracted.atoms.length,
       conceptCards: concepts.length,
       eventsAppended,
-      reviewCandidates: lifecycle?.graph.candidateCount ?? review?.candidates.length ?? 0
+      reviewCandidates: lifecycle?.graph.candidateCount ?? review?.candidates.length ?? 0,
+      learningInputBoundary
     },
     quality: buildV2Quality(sourceDigests, conceptCardsForArtifacts, extracted.rejected.length, previewOnly, evalReport.status),
     privacy: [
       ...(previewOnly
         ? ["Preview writes generated/private analysis, review, eval, model-request, digest, and observability artifacts for inspection, but does not persist canonical concept state, activation index, raw vault records, events, or lifecycle graph changes."]
         : []),
-      "Learn v2 reads full supplied raw local evidence and stores it only in the project-local v2 raw vault when --apply is used.",
+      "Learn v2 reads full supplied raw local evidence; deterministic extraction currently normalizes minimally declassified learner text where secrets and machine-local paths are replaced with typed placeholders.",
+      "Full raw evidence is stored only in the project-local v2 raw vault when --apply is used.",
       "Output-facing analysis frames, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
       "Raw vault refs are local-only and never exportable through compile, pack, or sync artifacts.",
       "Concept cards remain candidates until explicit review activates them.",
@@ -437,6 +443,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     nextActions,
     learnV2: {
       schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1",
+      learningInputBoundary,
       episodes,
       concepts: conceptCardsForArtifacts,
       conceptStorePath,
@@ -649,6 +656,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Sources included: ${result.digest.sourcesIncluded}`,
     `- Preview writes local generated artifacts: ${result.digest.previewWritesLocalArtifacts}`,
     `- Canonical concept state written: ${result.digest.canonicalConceptStateWritten}`,
+    `- Learning input boundary: ${result.digest.learningInputBoundary}`,
     `- Task episodes: ${result.digest.learningWindows}`,
     `- Behavior atoms: ${result.digest.behaviorAtoms}`,
     `- Concept cards: ${result.digest.conceptCards}`,

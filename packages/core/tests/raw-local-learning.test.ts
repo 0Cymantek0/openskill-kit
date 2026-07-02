@@ -44,6 +44,8 @@ describe("raw local learning", () => {
     expect(preview.digest.rawVaultRecordsWritten).toBe(0);
     expect(preview.digest.previewWritesLocalArtifacts).toBe(true);
     expect(preview.digest.canonicalConceptStateWritten).toBe(false);
+    expect(preview.digest.learningInputBoundary).toBe("minimal-secret-path-placeholdering");
+    expect(preview.learnV2.learningInputBoundary).toBe("minimal-secret-path-placeholdering");
     expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
@@ -52,6 +54,7 @@ describe("raw local learning", () => {
     expect(preview.quality.strengths.join(" ")).toContain("reviewable concept");
     expect(preview.concepts.some((concept) => /regression fixture|broad rewrite/i.test(concept.canonicalBehavior))).toBe(true);
     expect(await readFile(preview.artifacts.reviewMarkdownPath, "utf8")).not.toContain("sk-live-secret");
+    expect(await readFile(preview.artifacts.reviewMarkdownPath, "utf8")).toContain("Learning input boundary: minimal-secret-path-placeholdering");
     const evidenceQuality = await readFile(preview.artifacts.learnV2EvidenceQualityPath!, "utf8");
     expect(evidenceQuality).toContain("openskill-kit.learn-v2.evidence-quality-artifact.v1");
     expect(evidenceQuality).toContain("\"dropsEvidence\": false");

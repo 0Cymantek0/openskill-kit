@@ -8,13 +8,13 @@ import {
   learnV2StatusFromText
 } from "./utils.js";
 
-export function normalizeLearnV2Evidence(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, declassifiedText: string): LearnV2NormalizedEvidence[] {
-  const objects = parseStructuredObjects(declassifiedText);
+export function normalizeLearnV2Evidence(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, learnerText: string): LearnV2NormalizedEvidence[] {
+  const objects = parseStructuredObjects(learnerText);
   const values = objects.length ? flattenStructuredObjects(objects) : [];
   const normalized = values.length
     ? values.flatMap((value, index) => normalizedFromObject(value, index, rawRecord))
-    : normalizedFromText(surface, rawRecord, declassifiedText);
-  return normalized.length ? normalized : [fallbackEvidence(surface, rawRecord, declassifiedText)];
+    : normalizedFromText(surface, rawRecord, learnerText);
+  return normalized.length ? normalized : [fallbackEvidence(surface, rawRecord, learnerText)];
 }
 
 function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2RawEvidenceRecord): LearnV2NormalizedEvidence[] {
