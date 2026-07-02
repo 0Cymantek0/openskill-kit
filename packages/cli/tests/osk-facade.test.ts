@@ -59,6 +59,8 @@ describe("osk CLI facade", () => {
     expect(textResult.stdout).toContain("Learn v2 observability");
     expect(textResult.stdout).toContain("Patches: 1 behavior-eligible, 1 audit-only / 2");
     expect(textResult.stdout).toContain("Review focus: 1 focus, 2 appendix");
+    expect(textResult.stdout).toContain("Health: warn (0.84), blockers 0, warnings 2");
+    expect(textResult.stdout).toContain("Health focus: Resolve concept conflicts before activation.");
     expect(textResult.stdout).not.toContain(root);
     expect(textResult.stdout).not.toContain("raw_");
   });
@@ -616,6 +618,13 @@ function sampleLearnV2ObservabilityReport() {
       leakStatus: "pass",
       reviewCards: 1,
       safeBulkActions: ["accept-low-risk"]
+    },
+    health: {
+      status: "warn",
+      score: 0.84,
+      blockers: [],
+      warnings: ["1 unresolved concept conflict(s).", "1 stale drift candidate(s); drift health 0.50."],
+      reviewFocus: ["Resolve concept conflicts before activation.", "Review stale or negatively reinforced concepts."]
     },
     artifacts: {
       review: "[PROJECT_ROOT]/.openskill-kit/learn-v2/review/concept-review-queue.md"

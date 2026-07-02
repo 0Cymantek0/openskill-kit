@@ -72,6 +72,19 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     reviewCards: z.number().int().min(0),
     safeBulkActions: z.array(z.string()).default([])
   }),
+  health: z.object({
+    status: z.enum(["pass", "warn", "fail"]),
+    score: z.number().min(0).max(1),
+    blockers: z.array(z.string()).default([]),
+    warnings: z.array(z.string()).default([]),
+    reviewFocus: z.array(z.string()).default([])
+  }).default({
+    status: "pass",
+    score: 1,
+    blockers: [],
+    warnings: [],
+    reviewFocus: []
+  }),
   artifacts: z.record(z.string(), z.string()).default({}),
   privacy: z.object({
     rawRefsExported: z.literal(false),
@@ -146,6 +159,12 @@ export async function writeLearnV2PipelineObservabilityReport(
   const conflictLedger = input.conflictLedger;
   const conceptDrift = input.conceptDrift;
   const declassifiedSnippets = input.declassifiedSnippets;
+  const health = buildPipelineHealth(input, {
+    auditOnlyPatches,
+    conflictLedger,
+    conceptDrift,
+    declassifiedSnippets
+  });
   const report = LearnV2PipelineObservabilityReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.pipeline-observability.v1",
     generatedAt: input.generatedAt,
@@ -213,6 +232,7 @@ export async function writeLearnV2PipelineObservabilityReport(
       reviewCards: input.reviewQueue.cards.length,
       safeBulkActions: input.reviewQueue.safeBulkActions
     },
+    health,
     artifacts: Object.fromEntries(Object.entries(input.artifacts)
       .filter((entry): entry is [string, string] => Boolean(entry[1]))
       .map(([key, value]) => [key, learnV2SafeLocalPath(value, root)])),
@@ -284,6 +304,14 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Eval: ${report.qualityGates.evalStatus}`,
     `- Leak check: ${report.qualityGates.leakStatus}`,
     "",
+    "## Health",
+    "",
+    `- Status: ${report.health.status}`,
+    `- Score: ${report.health.score.toFixed(2)}`,
+    `- Blockers: ${report.health.blockers.length ? report.health.blockers.join("; ") : "none"}`,
+    `- Warnings: ${report.health.warnings.length ? report.health.warnings.join("; ") : "none"}`,
+    `- Review focus: ${report.health.reviewFocus.length ? report.health.reviewFocus.join("; ") : "none"}`,
+    "",
     "## Artifacts",
     "",
     ...Object.entries(report.artifacts).map(([key, value]) => `- ${key}: ${value}`),
@@ -296,6 +324,49 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     "",
     ...report.nextActions.map((action) => `- ${action}`)
   ].join("\n") + "\n";
+}
+
+function buildPipelineHealth(
+  input: LearnV2PipelineObservabilityInput,
+  context: {
+    auditOnlyPatches: LearnV2TaskEpisode["patchComparisons"];
+    conflictLedger?: LearnV2ConflictLedger;
+    conceptDrift?: LearnV2ConceptDriftReport;
+    declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
+  }
+): LearnV2PipelineObservabilityReport["health"] {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  const reviewFocus: string[] = [];
+  if (input.evalReport.status === "fail") blockers.push("Learn v2 eval failed.");
+  if (input.evalReport.leakCheck.status === "fail") blockers.push("Leak check failed.");
+  const blockedSnippets = context.declassifiedSnippets?.counts.blockedFromCompile ?? input.reviewQueue.evidenceSnippetSummary.blockedFromCompileCount;
+  if (blockedSnippets > 0) blockers.push(`${blockedSnippets} declassified snippet(s) are compile-blocked.`);
+  const unresolvedConflicts = context.conflictLedger?.unresolvedCount ?? input.reviewQueue.conflictSummary.unresolvedCount;
+  if (unresolvedConflicts > 0) {
+    warnings.push(`${unresolvedConflicts} unresolved concept conflict(s).`);
+    reviewFocus.push("Resolve concept conflicts before activation.");
+  }
+  const staleCandidates = context.conceptDrift?.staleCandidates.length ?? input.reviewQueue.driftSummary.staleCandidateCount;
+  const driftHealth = context.conceptDrift?.healthScore ?? input.reviewQueue.driftSummary.healthScore;
+  if (staleCandidates > 0 || driftHealth < 0.75) {
+    warnings.push(`${staleCandidates} stale drift candidate(s); drift health ${driftHealth.toFixed(2)}.`);
+    reviewFocus.push("Review stale or negatively reinforced concepts.");
+  }
+  const lowConfidenceEpisodes = input.episodes.filter((episode) => episode.episodeConfidence < 0.5).length;
+  if (lowConfidenceEpisodes > 0) warnings.push(`${lowConfidenceEpisodes} low-confidence reconstructed episode(s).`);
+  if (input.reviewQueue.reviewFocus.focusCardIds.length > 0) reviewFocus.push(`Review ${input.reviewQueue.reviewFocus.focusCardIds.length} focus card(s).`);
+  if (input.sources.some((source) => source.projectRelevance.decision === "ask")) warnings.push("Some sources need relevance review.");
+  if (context.auditOnlyPatches.length > 0) warnings.push(`${context.auditOnlyPatches.length} audit-only patch summary item(s).`);
+  const penalty = Math.min(1, blockers.length * 0.35 + warnings.length * 0.08);
+  const score = Number(Math.max(0, 1 - penalty).toFixed(2));
+  return {
+    status: blockers.length ? "fail" : warnings.length ? "warn" : "pass",
+    score,
+    blockers,
+    warnings,
+    reviewFocus: [...new Set(reviewFocus)].slice(0, 8)
+  };
 }
 
 function countBy(values: string[]): Record<string, number> {

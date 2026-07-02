@@ -2143,6 +2143,8 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     `Conflicts: ${report.concepts.unresolvedConflicts} unresolved, types ${renderLearnV2CountLine(report.concepts.conflictTypeCounts)}`,
     `Drift: health ${report.concepts.driftHealthScore.toFixed(2)}, stale ${report.concepts.staleDriftCandidates}, reasons ${renderLearnV2CountLine(report.concepts.driftReasonCounts)}`,
     `Gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}, review cards ${report.qualityGates.reviewCards}`,
+    `Health: ${report.health.status} (${report.health.score.toFixed(2)}), blockers ${report.health.blockers.length}, warnings ${report.health.warnings.length}`,
+    `Health focus: ${report.health.reviewFocus.join(" | ") || "none"}`,
     `Artifacts: ${Object.keys(report.artifacts).length ? Object.entries(report.artifacts).map(([key, value]) => `${key}=${value}`).join("; ") : "none"}`,
     `Next: ${report.nextActions.join(" | ") || "none"}`
   ].join("\n");
@@ -2154,7 +2156,8 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
     `Generated: ${report.generatedAt}`,
     `Run: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
     `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
-    `Quality gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}`
+    `Quality gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}`,
+    `Health: ${report.health.status} (${report.health.score.toFixed(2)})`
   ].join("\n"), "Pipeline");
   clackNote([
     `Evidence: ${report.evidence.normalizedEvidence} records -> ${report.evidence.episodes} episodes`,
@@ -2182,6 +2185,15 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
     `Drift: health ${report.concepts.driftHealthScore.toFixed(2)}, stale ${report.concepts.staleDriftCandidates}`,
     `Safe bulk: ${report.qualityGates.safeBulkActions.join(", ") || "none"}`
   ].join("\n"), "Concepts");
+  if (report.health.blockers.length || report.health.warnings.length || report.health.reviewFocus.length) {
+    clackNote([
+      `Status: ${report.health.status}`,
+      `Score: ${report.health.score.toFixed(2)}`,
+      `Blockers: ${report.health.blockers.join("; ") || "none"}`,
+      `Warnings: ${report.health.warnings.join("; ") || "none"}`,
+      `Focus: ${report.health.reviewFocus.join("; ") || "none"}`
+    ].join("\n"), "Health");
+  }
   if (Object.keys(report.artifacts).length) {
     clackNote(Object.entries(report.artifacts).map(([key, value]) => `${key}: ${value}`).join("\n"), "Artifacts");
   }

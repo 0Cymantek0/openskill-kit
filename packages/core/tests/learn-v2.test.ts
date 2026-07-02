@@ -457,15 +457,20 @@ describe("learn-v2 substrate", () => {
     expect(report.compression.behaviorEligiblePatches).toBe(1);
     expect(report.compression.auditOnlyPatches).toBe(1);
     expect(report.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
+    expect(report.health.status).toBe("warn");
+    expect(report.health.warnings).toEqual(expect.arrayContaining(["1 audit-only patch summary item(s)."]));
+    expect(report.health.blockers).toEqual([]);
     expect(report.privacy.rawRefsExported).toBe(false);
     const reportPath = path.join(root, report.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, ""));
     const reportText = await readText(reportPath);
+    expect(reportText).toContain("\"health\"");
     expect(reportText).not.toContain(root);
     expect(reportText).not.toContain("raw_ev_observable");
 
     const latest = await readLearnV2PipelineObservabilityReport(root);
     expect(latest.generatedAt).toBe(report.generatedAt);
     expect(latest.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
+    expect(latest.health.status).toBe("warn");
   });
 
   it("writes a review-linked conflict ledger for contradictory concepts", async () => {
