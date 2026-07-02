@@ -792,7 +792,11 @@ describe("learn-v2 substrate", () => {
       "--- a/python/openskillkit_evolution/cli.py",
       "+++ b/python/openskillkit_evolution/cli.py",
       "@@",
+      "+import os, sys as system",
       "+from osk.parser import parse_skill",
+      "+class ReportBuilder:",
+      "+    async def build_async(self, value):",
+      "+        return parse_skill(value)",
       "+def build_report(value):",
       "+    return parse_skill(value)",
       "diff --git a/src/server.go b/src/server.go",
@@ -800,19 +804,45 @@ describe("learn-v2 substrate", () => {
       "+++ b/src/server.go",
       "@@",
       "+import \"net/http\"",
+      "+import router \"github.com/acme/router\"",
+      "+type Handler[T any] struct{}",
+      "+func (h *Handler[T]) Route(r router.Router) {}",
       "+func ServeHTTP(w http.ResponseWriter, r *http.Request) {}",
       "diff --git a/src/lib.rs b/src/lib.rs",
       "--- a/src/lib.rs",
       "+++ b/src/lib.rs",
       "@@",
-      "+use crate::parser::parse_skill;",
+      "+use crate::parser::{parse_skill, Parser};",
+      "+pub(crate) struct CompilePlan;",
+      "+impl CompilePlan {",
+      "+  pub async fn run_checked(&self) {}",
+      "+}",
       "+pub fn compile_skill() {}"
     ].join("\n");
     const summary = analyzeLearnV2StructuralDiff(diff);
     expect(summary.languages).toEqual(["go", "python", "rust"]);
-    expect(summary.changedSymbols).toEqual(expect.arrayContaining(["ServeHTTP", "build_report", "compile_skill"]));
-    expect(summary.changedImports).toEqual(expect.arrayContaining(["net/http", "osk.parser", "crate::parser::parse_skill"]));
+    expect(summary.changedSymbols).toEqual(expect.arrayContaining([
+      "CompilePlan",
+      "Handler",
+      "ReportBuilder",
+      "Route",
+      "ServeHTTP",
+      "build_async",
+      "build_report",
+      "compile_skill",
+      "run_checked"
+    ]));
+    expect(summary.changedImports).toEqual(expect.arrayContaining([
+      "github.com/acme/router",
+      "net/http",
+      "os",
+      "osk.parser",
+      "sys",
+      "crate::parser::Parser",
+      "crate::parser::parse_skill"
+    ]));
     expect(summary.semanticChange).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.classes.includes("api"))).toBe(true);
   });
 
   it("recovers enclosing symbols from hunk headers and context for body-only edits", async () => {

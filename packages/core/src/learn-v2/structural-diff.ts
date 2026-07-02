@@ -281,19 +281,24 @@ function symbolsForLine(language: StructuralLanguage, line: string): string[] {
   if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("#")) return [];
   const patterns: RegExp[] = language === "typescript" || language === "javascript"
     ? [
-        /\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
-        /\b(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g,
+        /\b(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
+        /\b(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)/g,
         /\b(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)/g,
         /\b(?:export\s+)?type\s+([A-Za-z_$][\w$]*)/g,
         /\b(?:export\s+)?enum\s+([A-Za-z_$][\w$]*)/g,
-        /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g
+        /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g,
+        /\b([A-Za-z_$][\w$]*)\s*[:=]\s*(?:async\s*)?\([^)]*\)\s*=>/g
       ]
     : language === "python"
-      ? [/\bdef\s+([A-Za-z_]\w*)\s*\(/g, /\bclass\s+([A-Za-z_]\w*)\s*[:(]/g]
+      ? [/\b(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/g, /\bclass\s+([A-Za-z_]\w*)\s*[:(]/g]
       : language === "go"
-        ? [/\bfunc\s+(?:\([^)]+\)\s*)?([A-Za-z_]\w*)\s*\(/g, /\btype\s+([A-Za-z_]\w*)\s+(?:struct|interface|func|\w+)/g]
+        ? [/\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*(?:\[.*?\])?\s*\(/g, /\btype\s+([A-Za-z_]\w*)\s*(?:\[.*?\])?\s+(?:struct|interface|func|\w+)/g]
         : language === "rust"
-          ? [/\b(?:pub\s+)?fn\s+([A-Za-z_]\w*)\s*\(/g, /\b(?:pub\s+)?(?:struct|enum|trait|mod)\s+([A-Za-z_]\w*)/g, /\bimpl(?:<[^>]+>)?\s+([A-Za-z_]\w*)/g]
+          ? [
+              /\b(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)\s*(?:<[^>]+>)?\s*\(/g,
+              /\b(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|mod|type)\s+([A-Za-z_]\w*)/g,
+              /\bimpl(?:<[^>]+>)?\s+(?:[A-Za-z_]\w*::)*([A-Za-z_]\w*)/g
+            ]
           : [];
   const out: string[] = [];
   for (const pattern of patterns) {
@@ -304,20 +309,56 @@ function symbolsForLine(language: StructuralLanguage, line: string): string[] {
 
 function importsForLine(language: StructuralLanguage, line: string): string[] {
   const trimmed = line.trim();
+  if (!trimmed) return [];
+  if (language === "python") return pythonImportsForLine(trimmed);
+  if (language === "go") return goImportsForLine(trimmed);
+  if (language === "rust") return rustImportsForLine(trimmed);
   const out: string[] = [];
   const patterns: RegExp[] = language === "typescript" || language === "javascript"
     ? [/^import(?:\s+type)?[\s\S]*?\s+from\s+["']([^"']+)["']/g, /^export[\s\S]*?\s+from\s+["']([^"']+)["']/g, /^import\s*\(\s*["']([^"']+)["']\s*\)/g]
-    : language === "python"
-      ? [/^import\s+([A-Za-z0-9_., ]+)/g, /^from\s+([A-Za-z0-9_.]+)\s+import\s+/g]
-      : language === "go"
-        ? [/^\s*"([^"]+)"/g, /^import\s+"([^"]+)"/g]
-        : language === "rust"
-          ? [/^use\s+([^;]+);/g, /^extern\s+crate\s+([^;]+);/g]
-          : [];
+    : [];
   for (const pattern of patterns) {
     for (const match of trimmed.matchAll(pattern)) out.push(match[1]!.replace(/\s+/g, " ").trim());
   }
   return out;
+}
+
+function pythonImportsForLine(trimmed: string): string[] {
+  const direct = /^import\s+(.+)$/.exec(trimmed);
+  if (direct) {
+    return direct[1]!
+      .split(",")
+      .map((item) => item.trim().replace(/\s+as\s+\w+$/i, ""))
+      .filter(Boolean);
+  }
+  const fromImport = /^from\s+([A-Za-z0-9_.]+)\s+import\s+/.exec(trimmed);
+  return fromImport ? [fromImport[1]!] : [];
+}
+
+function goImportsForLine(trimmed: string): string[] {
+  const single = /^import\s+(?:\w+\s+)?"([^"]+)"/.exec(trimmed);
+  if (single) return [single[1]!];
+  const block = /^(?:\w+\s+)?"([^"]+)"$/.exec(trimmed);
+  return block ? [block[1]!] : [];
+}
+
+function rustImportsForLine(trimmed: string): string[] {
+  const use = /^use\s+([^;]+);/.exec(trimmed);
+  if (use) return expandRustUse(use[1]!);
+  const crateRef = /^extern\s+crate\s+([A-Za-z_]\w*)/.exec(trimmed);
+  return crateRef ? [crateRef[1]!] : [];
+}
+
+function expandRustUse(value: string): string[] {
+  const compact = value.replace(/\s+/g, "");
+  const grouped = /^(.+)::\{(.+)\}$/.exec(compact);
+  if (!grouped) return [compact];
+  const prefix = grouped[1]!;
+  return grouped[2]!
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => `${prefix}::${item}`);
 }
 
 function classesForFile(file: string, language: StructuralLanguage, lines: string[], symbols: string[], imports: string[]): StructuralClass[] {
@@ -327,7 +368,7 @@ function classesForFile(file: string, language: StructuralLanguage, lines: strin
   if (/(?:test|spec|fixture)/i.test(file) || /\b(?:test|fixture|regression|describe|it\(|pytest|unittest)\b/i.test(text)) classes.add("test");
   if (language === "markdown") classes.add("docs");
   if (language === "json" || /(?:package\.json|tsconfig|vite|vitest|eslint|config)/i.test(file)) classes.add("config");
-  if (symbols.length && (/\bexport\b/.test(text) || language === "go" || language === "rust")) classes.add("api");
+  if (symbols.length && (/\bexport\b/.test(text) || language === "python" || language === "go" || language === "rust")) classes.add("api");
   if (imports.length) classes.add("api");
   if (!classes.size && language === "unknown") classes.add("unknown");
   return [...classes];
