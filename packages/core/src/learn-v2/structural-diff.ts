@@ -1,3 +1,4 @@
+import ts from "typescript";
 import type { LearnV2PatchComparison } from "./schemas.js";
 import { learnV2IsGeneratedPath } from "./utils.js";
 
@@ -15,6 +16,11 @@ interface DiffFile {
 interface DiffHunk {
   header: string;
   lines: Array<{ kind: "context" | "added" | "removed"; text: string }>;
+}
+
+interface TypeScriptStructuralSignal {
+  symbols: string[];
+  imports: string[];
 }
 
 export function analyzeLearnV2StructuralDiff(text: string, fallbackPaths: string[] = []): LearnV2PatchComparison["structuralSummary"] {
@@ -92,11 +98,16 @@ function parseUnifiedDiff(text: string): DiffFile[] {
 function summarizeFile(file: DiffFile): FileSummary {
   const language = languageForPath(file.path);
   const allChanged = [...file.added, ...file.removed];
+  const typeScriptSignal = typeScriptStructuralSignal(file, language);
   const changedSymbols = [...new Set([
+    ...typeScriptSignal.symbols,
     ...allChanged.flatMap((line) => symbolsForLine(language, line)),
     ...symbolsFromHunks(language, file.hunks)
   ])].sort().slice(0, 20);
-  const changedImports = [...new Set(allChanged.flatMap((line) => importsForLine(language, line)))].sort().slice(0, 20);
+  const changedImports = [...new Set([
+    ...typeScriptSignal.imports,
+    ...allChanged.flatMap((line) => importsForLine(language, line))
+  ])].sort().slice(0, 20);
   const classes = classesForFile(file.path, language, allChanged, changedSymbols, changedImports);
   const formattingOnly = file.added.length > 0 && file.removed.length > 0 && normalizedCode(file.added.join("\n")) === normalizedCode(file.removed.join("\n"));
   if (formattingOnly && !classes.includes("formatting")) classes.push("formatting");
@@ -111,6 +122,130 @@ function summarizeFile(file: DiffFile): FileSummary {
     removedLines: file.removed.length,
     semanticChange
   };
+}
+
+function typeScriptStructuralSignal(file: DiffFile, language: StructuralLanguage): TypeScriptStructuralSignal {
+  if (language !== "typescript" && language !== "javascript") return { symbols: [], imports: [] };
+  const signals: TypeScriptStructuralSignal[] = [];
+  for (const hunk of file.hunks) {
+    signals.push(typeScriptSignalFromHunk(file.path, language, hunk, "after"));
+    signals.push(typeScriptSignalFromHunk(file.path, language, hunk, "before"));
+  }
+  if (!file.hunks.length) {
+    signals.push(typeScriptSignalFromSource(file.path, language, file.added.join("\n"), new Set(file.added.map((_, index) => index + 1))));
+    signals.push(typeScriptSignalFromSource(file.path, language, file.removed.join("\n"), new Set(file.removed.map((_, index) => index + 1))));
+  }
+  return {
+    symbols: [...new Set(signals.flatMap((signal) => signal.symbols))].sort(),
+    imports: [...new Set(signals.flatMap((signal) => signal.imports))].sort()
+  };
+}
+
+function typeScriptSignalFromHunk(file: string, language: StructuralLanguage, hunk: DiffHunk, side: "after" | "before"): TypeScriptStructuralSignal {
+  const lines: string[] = [];
+  const changedLines = new Set<number>();
+  const headerContext = /^@@[^@]*@@\s*(.*)$/.exec(hunk.header)?.[1]?.trim();
+  if (headerContext) lines.push(headerContext);
+  for (const line of hunk.lines) {
+    if (line.kind === "context" || (side === "after" && line.kind === "added") || (side === "before" && line.kind === "removed")) {
+      lines.push(line.text);
+      if ((side === "after" && line.kind === "added") || (side === "before" && line.kind === "removed")) changedLines.add(lines.length);
+    }
+  }
+  return typeScriptSignalFromSource(file, language, lines.join("\n"), changedLines);
+}
+
+function typeScriptSignalFromSource(file: string, language: StructuralLanguage, sourceText: string, changedLines: Set<number>): TypeScriptStructuralSignal {
+  if (!sourceText.trim()) return { symbols: [], imports: [] };
+  const sourceFile = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true, scriptKindForLanguage(language, file));
+  const declarations: Array<{ name: string; start: number; end: number; topLevel: boolean }> = [];
+  const imports: string[] = [];
+  const visit = (node: ts.Node): void => {
+    const name = declarationName(node);
+    if (name) {
+      declarations.push({
+        name,
+        start: node.getStart(sourceFile),
+        end: node.getEnd(),
+        topLevel: node.parent === sourceFile || hasExportModifier(node)
+      });
+    }
+    const importRef = importReference(node);
+    if (importRef) imports.push(importRef);
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  const changedPositions = [...changedLines]
+    .filter((line) => line > 0 && line <= sourceFile.getLineAndCharacterOfPosition(sourceFile.end).line + 1)
+    .map((line) => sourceFile.getPositionOfLineAndCharacter(line - 1, 0));
+  const changedSymbols = declarations
+    .filter((decl) => changedPositions.some((pos) => pos >= decl.start && pos <= decl.end) || decl.topLevel)
+    .map((decl) => decl.name);
+  return {
+    symbols: [...new Set(changedSymbols)].sort(),
+    imports: [...new Set(imports)].sort()
+  };
+}
+
+function scriptKindForLanguage(language: StructuralLanguage, file: string): ts.ScriptKind {
+  if (/\.tsx$/i.test(file)) return ts.ScriptKind.TSX;
+  if (/\.jsx$/i.test(file)) return ts.ScriptKind.JSX;
+  if (language === "typescript") return ts.ScriptKind.TS;
+  if (language === "javascript") return ts.ScriptKind.JS;
+  return ts.ScriptKind.Unknown;
+}
+
+function declarationName(node: ts.Node): string | undefined {
+  if (
+    ts.isFunctionDeclaration(node) ||
+    ts.isClassDeclaration(node) ||
+    ts.isInterfaceDeclaration(node) ||
+    ts.isTypeAliasDeclaration(node) ||
+    ts.isEnumDeclaration(node) ||
+    ts.isModuleDeclaration(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isPropertyDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node)
+  ) {
+    return readableNodeName(node.name);
+  }
+  if (ts.isVariableDeclaration(node) && (node.parent.parent.parent === node.getSourceFile() || hasExportModifier(node.parent.parent))) {
+    return readableBindingName(node.name);
+  }
+  return undefined;
+}
+
+function readableNodeName(name: ts.Node | undefined): string | undefined {
+  if (!name) return undefined;
+  if (ts.isIdentifier(name) || ts.isPrivateIdentifier(name)) return name.text;
+  if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return undefined;
+}
+
+function readableBindingName(name: ts.BindingName): string | undefined {
+  if (ts.isIdentifier(name)) return name.text;
+  const names: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) names.push(node.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(name);
+  return names.length ? names.join(",") : undefined;
+}
+
+function importReference(node: ts.Node): string | undefined {
+  if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) return node.moduleSpecifier.text;
+  if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) return node.moduleSpecifier.text;
+  if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments.length === 1) {
+    const [arg] = node.arguments;
+    if (arg && ts.isStringLiteral(arg)) return arg.text;
+  }
+  return undefined;
+}
+
+function hasExportModifier(node: ts.Node): boolean {
+  return ts.canHaveModifiers(node) && Boolean(ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword));
 }
 
 function symbolsFromHunks(language: StructuralLanguage, hunks: DiffHunk[]): string[] {

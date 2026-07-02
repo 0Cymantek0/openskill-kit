@@ -299,6 +299,47 @@ describe("learn-v2 substrate", () => {
     expect(patches[0]!.filterReasons).toEqual([]);
   });
 
+  it("uses TypeScript AST signals for multiline imports default exports arrows and class methods", async () => {
+    const diff = [
+      "diff --git a/packages/core/src/parser-service.ts b/packages/core/src/parser-service.ts",
+      "--- a/packages/core/src/parser-service.ts",
+      "+++ b/packages/core/src/parser-service.ts",
+      "@@",
+      "+import {",
+      "+  parseSkill as parse",
+      "+} from \"./parser.js\";",
+      "+export const makeParser = (input: string) => parse(input);",
+      "+export default function loadSkill(source: string) {",
+      "+  return makeParser(source);",
+      "+}",
+      "+export class SkillService {",
+      "+  apply(source: string) {",
+      "+    return loadSkill(source);",
+      "+  }",
+      "+}",
+      "diff --git a/packages/core/src/plugin-loader.js b/packages/core/src/plugin-loader.js",
+      "--- a/packages/core/src/plugin-loader.js",
+      "+++ b/packages/core/src/plugin-loader.js",
+      "@@",
+      "+export const loadPlugin = async (name) => import(`./plugins/${name}.js`);",
+      "+export { loadPlugin as pluginLoader };"
+    ].join("\n");
+
+    const summary = analyzeLearnV2StructuralDiff(diff);
+
+    expect(summary.languages).toEqual(["javascript", "typescript"]);
+    expect(summary.changedSymbols).toEqual(expect.arrayContaining([
+      "SkillService",
+      "apply",
+      "loadSkill",
+      "makeParser",
+      "loadPlugin"
+    ]));
+    expect(summary.changedImports).toEqual(expect.arrayContaining(["./parser.js"]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("parser-service.ts"))?.classes).toContain("api");
+    expect(summary.semanticChange).toBe(true);
+  });
+
   it("marks non-semantic generated lockfile formatting and rename-only patches as audit-only", async () => {
     const generatedOnly = [
       "diff --git a/packages/core/src/generated/client.ts b/packages/core/src/generated/client.ts",
