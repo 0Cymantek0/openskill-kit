@@ -2139,6 +2139,7 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     `Tools: ${report.compression.tools} summaries, ${report.compression.totalToolOmittedBytes} omitted bytes, strategies ${renderLearnV2CountLine(report.compression.toolCompressionStrategyCounts)}`,
     `Patches: ${report.compression.behaviorEligiblePatches} behavior-eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches}; filters ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`,
     `Concepts: ${report.concepts.cards} cards, ${report.concepts.reviewReadyCards} review-ready, status ${renderLearnV2CountLine(report.concepts.statusCounts)}, risk ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
+    `Review focus: ${report.concepts.reviewFocusCards} focus, ${report.concepts.reviewAppendixCards} appendix`,
     `Conflicts: ${report.concepts.unresolvedConflicts} unresolved, types ${renderLearnV2CountLine(report.concepts.conflictTypeCounts)}`,
     `Drift: health ${report.concepts.driftHealthScore.toFixed(2)}, stale ${report.concepts.staleDriftCandidates}, reasons ${renderLearnV2CountLine(report.concepts.driftReasonCounts)}`,
     `Gates: eval ${report.qualityGates.evalStatus}, leak ${report.qualityGates.leakStatus}, review cards ${report.qualityGates.reviewCards}`,
@@ -2174,6 +2175,7 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
   clackNote([
     `Cards: ${report.concepts.cards}`,
     `Review-ready: ${report.concepts.reviewReadyCards}`,
+    `Review focus: ${report.concepts.reviewFocusCards} focus, ${report.concepts.reviewAppendixCards} appendix`,
     `Status: ${renderLearnV2CountLine(report.concepts.statusCounts)}`,
     `Risk: ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
     `Conflicts: ${report.concepts.unresolvedConflicts} unresolved (${renderLearnV2CountLine(report.concepts.conflictTypeCounts)})`,
