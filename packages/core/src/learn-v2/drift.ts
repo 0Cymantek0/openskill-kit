@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { LearnV2ConceptDriftReportSchema } from "./schemas.js";
+import { readLearnV2ConceptActivationRuns, type LearnV2ConceptActivationRun } from "./activation.js";
 
 /**
  * Concept drift detection (Plan §22.8 Stale concepts + §14.5 supersession).
@@ -34,6 +35,7 @@ export interface LearnV2ConceptDriftOptions {
     recordedAt: string;
   }>;
   activationCounts?: Map<string, number>;
+  activationRunRecords?: LearnV2ConceptActivationRun[];
 }
 
 export interface LearnV2ConceptDriftResult {
@@ -59,7 +61,8 @@ export async function detectLearnV2ConceptDrift(
   const activeCards = cards.filter((card) => card.status === "active" || card.status === "locked");
   const outcomeRecords = options.outcomeRecords ?? await readStoredOutcomeRecords(root);
   const outcomeByConcept = groupOutcomesByConcept(outcomeRecords);
-  const activationCounts = options.activationCounts ?? activationCountsFromOutcomes(outcomeRecords);
+  const activationRunRecords = options.activationRunRecords ?? await readLearnV2ConceptActivationRuns(root);
+  const activationCounts = options.activationCounts ?? activationCountsFromTelemetry(outcomeRecords, activationRunRecords);
 
   const staleCandidates: LearnV2ConceptDriftReport["staleCandidates"][number][] = [];
 
@@ -165,9 +168,13 @@ function groupOutcomesByConcept(
   return map;
 }
 
-function activationCountsFromOutcomes(records: Array<{ conceptId: string }>): Map<string, number> {
+function activationCountsFromTelemetry(records: Array<{ conceptId: string }>, activationRuns: LearnV2ConceptActivationRun[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const record of records) counts.set(record.conceptId, (counts.get(record.conceptId) ?? 0) + 1);
+  for (const run of activationRuns) {
+    const seen = new Set(run.matches.filter((match) => !match.suppressed && match.score > 0).map((match) => match.conceptId));
+    for (const conceptId of seen) counts.set(conceptId, (counts.get(conceptId) ?? 0) + 1);
+  }
   return counts;
 }
 

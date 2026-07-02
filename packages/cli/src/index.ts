@@ -2242,7 +2242,8 @@ function renderLearnV2Activation(result: Awaited<ReturnType<typeof activateLearn
     `Suppressed: ${result.suppressed.length}`,
     `Index entries: ${result.diagnostics.indexEntryCount} total (${result.diagnostics.activeEntryCount} active, ${result.diagnostics.lockedEntryCount} locked, ${result.diagnostics.candidateEntryCount} candidate/staged/conflict)`,
     `Scored: ${result.diagnostics.scoredEntryCount}; positive matches before limit: ${result.diagnostics.visiblePositiveMatchCount}; suppressed before limit: ${result.diagnostics.suppressedMatchCount}`,
-    `Activation index: ${result.activationIndexPath}`
+    `Activation index: ${formatProjectLocalPath(result.activationIndexPath)}`,
+    `Activation telemetry: ${formatProjectLocalPath(result.activationRunPath)}`
   ];
   if (result.matches.length === 0) {
     if (result.diagnostics.activeEntryCount + result.diagnostics.lockedEntryCount === 0) {
@@ -2261,6 +2262,11 @@ function renderLearnV2Activation(result: Awaited<ReturnType<typeof activateLearn
     lines.push(`  SUPPRESSED ${match.conceptId} (${match.reasons.join(", ")})`);
   }
   return lines.join("\n");
+}
+
+function formatProjectLocalPath(file: string): string {
+  const rel = path.relative(process.cwd(), file).replace(/\\/g, "/");
+  return rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? `[PROJECT_ROOT]/${rel}` : file;
 }
 
 function renderRawVaultMaintenance(result: Awaited<ReturnType<typeof runLearnV2RawVaultMaintenance>>): string {

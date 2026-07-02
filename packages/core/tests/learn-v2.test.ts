@@ -45,6 +45,7 @@ import {
   scoreLearnV2ProjectRelevance,
   scoreLearnV2ActivationEntries,
   validateLearnV2LlmExtractionProposal,
+  readLearnV2ConceptActivationRuns,
   type LearnV2BehaviorAtom,
   type LearnV2RawEvidenceRecord
 } from "../src/index.js";
@@ -1149,6 +1150,29 @@ describe("learn-v2 substrate", () => {
     expect(activated.matches[0]?.score).toBeGreaterThan(0.4);
     expect(activated.diagnostics.activeEntryCount + activated.diagnostics.lockedEntryCount).toBeGreaterThanOrEqual(1);
     expect(activated.diagnostics.visiblePositiveMatchCount).toBeGreaterThanOrEqual(1);
+    expect(activated.activationRunPath).toContain("activation-runs");
+    const activationRunText = await readText(activated.activationRunPath);
+    expect(activationRunText).toContain("openskill-kit.learn-v2.activation-run.v1");
+    expect(activationRunText).toContain(concept.id);
+    expect(activationRunText).toContain("queryHash");
+    expect(activationRunText).not.toContain("parser change needs focused test");
+    expect(activationRunText).not.toContain(root);
+    const driftFromActivationRuns = await detectLearnV2ConceptDrift(root, [{
+      ...concept,
+      status: "active",
+      lifecycle: {
+        ...concept.lifecycle,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z"
+      }
+    }], {
+      now: new Date("2026-06-30T00:05:00Z"),
+      staleAfterDays: 60,
+      lowActivationThreshold: 0
+    });
+    expect(driftFromActivationRuns.report.staleCandidates.some((item) => item.conceptId === concept.id)).toBe(false);
+    const activationRuns = await readLearnV2ConceptActivationRuns(root);
+    expect(activationRuns.some((run) => run.matches.some((match) => match.conceptId === concept.id))).toBe(true);
 
     const outcome = await recordLearnV2ConceptOutcome(root, {
       conceptId: concept.id,

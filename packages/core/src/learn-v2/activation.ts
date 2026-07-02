@@ -21,6 +21,29 @@ export const LearnV2ConceptOutcomeSchema = z.object({
 });
 export type LearnV2ConceptOutcome = z.infer<typeof LearnV2ConceptOutcomeSchema>;
 
+export const LearnV2ConceptActivationRunSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.activation-run.v1"),
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  recordedAt: z.string().datetime(),
+  queryHash: z.string().optional(),
+  pathHashes: z.array(z.string()).default([]),
+  commandHashes: z.array(z.string()).default([]),
+  taskTypes: z.array(z.string()).default([]),
+  includeCandidates: z.boolean(),
+  negativeSignalHashes: z.array(z.string()).default([]),
+  indexEntryCount: z.number().int().min(0),
+  matchCount: z.number().int().min(0),
+  suppressedCount: z.number().int().min(0),
+  matches: z.array(z.object({
+    conceptId: z.string().min(1),
+    status: z.string().min(1),
+    score: z.number().min(0).max(1),
+    suppressed: z.boolean()
+  })).default([])
+});
+export type LearnV2ConceptActivationRun = z.infer<typeof LearnV2ConceptActivationRunSchema>;
+
 export interface LearnV2ConceptActivationQuery {
   query?: string;
   paths?: string[];
@@ -66,6 +89,7 @@ export interface LearnV2ConceptActivationResult {
     suppressedMatchCount: number;
   };
   activationIndexPath: string;
+  activationRunPath: string;
 }
 
 export interface LearnV2ConceptOutcomeResult {
@@ -97,7 +121,7 @@ export async function activateLearnV2Concepts(
   const suppressedAll = scored.filter((match) => match.suppressed);
   const visible = positive.slice(0, limit);
   const suppressed = suppressedAll.slice(0, limit);
-  return {
+  const result: LearnV2ConceptActivationResult = {
     schemaVersion: "openskill-kit.learn-v2.activation-result.v1",
     generatedAt: now.toISOString(),
     query: {
@@ -119,8 +143,11 @@ export async function activateLearnV2Concepts(
       visiblePositiveMatchCount: positive.length,
       suppressedMatchCount: suppressedAll.length
     },
-    activationIndexPath: learnV2ActivationIndexPath(root)
+    activationIndexPath: learnV2ActivationIndexPath(root),
+    activationRunPath: learnV2ConceptActivationRunPath(root, now)
   };
+  await recordLearnV2ConceptActivationRun(root, result, query, now);
+  return result;
 }
 
 export function scoreLearnV2ActivationEntries(
@@ -172,6 +199,69 @@ export async function recordLearnV2ConceptOutcome(
 
 export function learnV2ConceptOutcomePath(root: string, now = new Date()): string {
   return path.join(root, ".openskill-kit", "learn-v2", "outcomes", `${now.toISOString().slice(0, 7)}.jsonl`);
+}
+
+export function learnV2ConceptActivationRunPath(root: string, now = new Date()): string {
+  return path.join(root, ".openskill-kit", "learn-v2", "activation-runs", `${now.toISOString().slice(0, 7)}.jsonl`);
+}
+
+export async function readLearnV2ConceptActivationRuns(rootInput: string): Promise<LearnV2ConceptActivationRun[]> {
+  const root = path.resolve(rootInput);
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "activation-runs");
+  const files = (await fs.readdir(dir, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => path.join(dir, entry.name))
+    .sort();
+  const records: LearnV2ConceptActivationRun[] = [];
+  for (const file of files) {
+    const lines = (await fs.readFile(file, "utf8").catch(() => "")).split(/\r?\n/).filter(Boolean);
+    for (const line of lines) {
+      try {
+        records.push(LearnV2ConceptActivationRunSchema.parse(JSON.parse(line)));
+      } catch {
+        // Ignore malformed local telemetry; drift should remain usable.
+      }
+    }
+  }
+  return records;
+}
+
+async function recordLearnV2ConceptActivationRun(
+  root: string,
+  result: LearnV2ConceptActivationResult,
+  query: LearnV2ConceptActivationQuery,
+  now: Date
+): Promise<void> {
+  const config = await readProjectConfig(root);
+  const queryHash = query.query ? learnV2Hash(normalizeText(query.query)) : undefined;
+  const pathHashes = (query.paths ?? []).map((item) => learnV2Hash(normalizePath(item))).sort();
+  const commandHashes = (query.commands ?? []).map((item) => learnV2Hash(normalizeText(item))).sort();
+  const negativeSignalHashes = (query.negativeSignals ?? []).map((item) => learnV2Hash(normalizeText(item))).sort();
+  const matched = [...result.matches, ...result.suppressed];
+  const record = LearnV2ConceptActivationRunSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.activation-run.v1",
+    id: `activation_${learnV2ShortHash(`${queryHash ?? ""}:${pathHashes.join(",")}:${commandHashes.join(",")}:${now.toISOString()}`)}`,
+    projectId: config.projectId,
+    recordedAt: now.toISOString(),
+    queryHash,
+    pathHashes,
+    commandHashes,
+    taskTypes: query.taskTypes ?? [],
+    includeCandidates: query.includeCandidates === true,
+    negativeSignalHashes,
+    indexEntryCount: result.diagnostics.indexEntryCount,
+    matchCount: result.diagnostics.visiblePositiveMatchCount,
+    suppressedCount: result.diagnostics.suppressedMatchCount,
+    matches: matched.map((match) => ({
+      conceptId: match.conceptId,
+      status: match.status,
+      score: match.score,
+      suppressed: match.suppressed
+    }))
+  });
+  const runPath = learnV2ConceptActivationRunPath(root, now);
+  await fs.mkdir(path.dirname(runPath), { recursive: true });
+  await fs.appendFile(runPath, `${JSON.stringify(record)}\n`, "utf8");
 }
 
 function scoreActivationEntries(

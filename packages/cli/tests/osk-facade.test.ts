@@ -64,6 +64,7 @@ describe("osk CLI facade", () => {
 
   it("renders Learn v2 activation diagnostics without a browser UI", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-activation-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
     const dir = path.join(root, ".openskill-kit", "learn-v2");
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "activation-index.json"), JSON.stringify({
@@ -88,6 +89,7 @@ describe("osk CLI facade", () => {
     expect(result.stdout).toContain("Index entries: 1 total (0 active, 0 locked, 1 candidate/staged/conflict)");
     expect(result.stdout).toContain("No active or locked concepts are available");
     expect(result.stdout).toContain("--include-candidate-concepts");
+    expect(result.stdout).toContain("Activation telemetry: [PROJECT_ROOT]/.openskill-kit/learn-v2/activation-runs/");
     expect(result.stdout).not.toContain(root);
   });
 

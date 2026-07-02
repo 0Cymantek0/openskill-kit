@@ -22,6 +22,7 @@ export const LEARN_V2_GENERATED_DIRS = [
   ".openskill-kit/learn-v2/review/",
   ".openskill-kit/learn-v2/evals/",
   ".openskill-kit/learn-v2/outcomes/",
+  ".openskill-kit/learn-v2/activation-runs/",
 
   // Generated model request/response artifacts
   ".openskill-kit/learn-v2/model-requests/",
