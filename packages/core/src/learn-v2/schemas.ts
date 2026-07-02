@@ -522,6 +522,7 @@ export const LearnV2EvalReportSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.eval-report.v1"),
   status: z.enum(["pass", "fail"]),
   extractionGoldenCount: z.number().int().min(0),
+  behaviorDeltaGoldenCount: z.number().int().min(0).default(0),
   counterfactualTraceCaseCount: z.number().int().min(0).default(0),
   replayEpisodeCount: z.number().int().min(0),
   leakCheck: z.object({
@@ -545,7 +546,8 @@ export const LearnV2EvalReportSchema = z.object({
   artifacts: z.object({
     json: z.string(),
     markdown: z.string(),
-    counterfactualCases: z.string().optional()
+    counterfactualCases: z.string().optional(),
+    behaviorDeltaCases: z.string().optional()
   })
 });
 export type LearnV2EvalReport = z.infer<typeof LearnV2EvalReportSchema>;

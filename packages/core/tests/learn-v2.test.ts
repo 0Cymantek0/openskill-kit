@@ -1096,6 +1096,22 @@ describe("learn-v2 substrate", () => {
         expectedTaskHints: ["parser-change", "testing"],
         expectedPathText: ["packages/core/src/parser.ts"],
         forbiddenText: ["sk-live-secret"]
+      }],
+      behaviorDeltaScenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.behavior-delta-golden.v1",
+        id: "parser-plan-delta",
+        title: "Parser behavior plan delta",
+        task: {
+          prompt: "Fix quoted grammar handling without rewriting the parser.",
+          paths: ["packages/core/src/parser.ts"],
+          commands: [],
+          taskTypes: ["parser-change"]
+        },
+        expectedConceptText: ["parser regression tests"],
+        expectedKinds: ["verification"],
+        expectedPlanIncludes: ["parser regression tests"],
+        expectedPlanExcludes: ["broad parser rewrite"],
+        minActivatedConcepts: 1
       }]
     }), "utf8");
     const report = await runLearnV2Eval(root, episodes, concepts, new Date("2026-06-30T00:01:00Z"), {
@@ -1103,13 +1119,20 @@ describe("learn-v2 substrate", () => {
     });
     expect(report.status).toBe("pass");
     expect(report.extractionGoldenCount).toBe(1);
+    expect(report.behaviorDeltaGoldenCount).toBe(1);
     expect(report.counterfactualTraceCaseCount).toBeGreaterThanOrEqual(1);
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
+    expect(report.results.some((result) => result.id === "behavior-delta:parser-plan-delta" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
     const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
     expect(counterfactualCases).toContain("openskill-kit.counterfactual-trace-eval-case.v1");
     expect(counterfactualCases).not.toContain("raw_");
     expect(counterfactualCases).not.toContain(root);
+    const behaviorDeltaCases = await readText(report.artifacts.behaviorDeltaCases!);
+    expect(behaviorDeltaCases).toContain("openskill-kit.behavior-delta-eval-case.v1");
+    expect(behaviorDeltaCases).toContain("parser regression tests");
+    expect(behaviorDeltaCases).not.toContain("raw_");
+    expect(behaviorDeltaCases).not.toContain(root);
   });
 
   it("uses runtime semantic activation entries during eval replay", async () => {

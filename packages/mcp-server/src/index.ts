@@ -732,7 +732,7 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     "osk_run_learn_v2_eval",
     {
       title: "OpenSkillKit Learn v2 Eval",
-      description: "Run Learn v2 eval from persisted episode and concept stores, optionally with extraction golden scenarios.",
+      description: "Run Learn v2 eval from persisted episode and concept stores, optionally with extraction and behavior-delta golden scenarios.",
       inputSchema: z.object({
         projectRoot: projectRootSchema,
         goldensPath: z.string().min(1).optional()

@@ -20,6 +20,25 @@ export const LearnV2ExtractionGoldenScenarioSchema = z.object({
 });
 export type LearnV2ExtractionGoldenScenario = z.infer<typeof LearnV2ExtractionGoldenScenarioSchema>;
 
+export const LearnV2BehaviorDeltaGoldenScenarioSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.behavior-delta-golden.v1"),
+  id: z.string().min(1),
+  title: z.string().min(1),
+  task: z.object({
+    prompt: z.string().min(1),
+    paths: z.array(z.string()).default([]),
+    commands: z.array(z.string()).default([]),
+    taskTypes: z.array(z.string()).default([]),
+    negativeSignals: z.array(z.string()).default([])
+  }),
+  expectedConceptText: z.array(z.string().min(1)).default([]),
+  expectedKinds: z.array(z.enum(["preference", "workflow", "security", "verification", "dependency-policy", "review-policy", "command-policy", "scope-boundary"])).default([]),
+  expectedPlanIncludes: z.array(z.string().min(1)).default([]),
+  expectedPlanExcludes: z.array(z.string().min(1)).default([]),
+  minActivatedConcepts: z.number().int().min(0).default(1)
+});
+export type LearnV2BehaviorDeltaGoldenScenario = z.infer<typeof LearnV2BehaviorDeltaGoldenScenarioSchema>;
+
 export interface LearnV2EvalOptions {
   goldensPath?: string;
 }
@@ -37,6 +56,26 @@ export interface LearnV2CounterfactualTraceEvalCase {
   negativeSignals: string[];
 }
 
+export interface LearnV2BehaviorDeltaEvalCase {
+  schemaVersion: "openskill-kit.behavior-delta-eval-case.v1";
+  id: string;
+  title: string;
+  taskPrompt: string;
+  paths: string[];
+  commands: string[];
+  taskTypes: string[];
+  activatedConceptIds: string[];
+  activatedConceptText: string[];
+  activatedKinds: LearnV2ConceptCard["atoms"][number]["kind"][];
+  expectedConceptText: string[];
+  expectedKinds: LearnV2ConceptCard["atoms"][number]["kind"][];
+  baselinePlan: string[];
+  withConceptPlan: string[];
+  expectedPlanIncludes: string[];
+  expectedPlanExcludes: string[];
+  minActivatedConcepts: number;
+}
+
 export async function runLearnV2Eval(
   rootInput: string,
   episodes: LearnV2TaskEpisode[],
@@ -49,9 +88,13 @@ export async function runLearnV2Eval(
   const json = path.join(runDir, "learn-v2-eval.json");
   const markdown = path.join(runDir, "learn-v2-eval.md");
   const counterfactualCasesPath = path.join(runDir, "counterfactual-trace-cases.json");
+  const behaviorDeltaCasesPath = path.join(runDir, "behavior-delta-cases.json");
   const leakIssues = leakIssuesForConcepts(concepts);
-  const goldens = options.goldensPath ? await loadLearnV2ExtractionGoldens(root, options.goldensPath) : [];
+  const goldenFile = options.goldensPath ? await loadLearnV2EvalGoldens(root, options.goldensPath) : { extraction: [], behaviorDelta: [] };
+  const goldens = goldenFile.extraction;
+  const behaviorDeltaGoldens = goldenFile.behaviorDelta;
   const counterfactualCases = buildCounterfactualTraceCases(episodes, concepts);
+  const behaviorDeltaCases = buildBehaviorDeltaEvalCases(concepts, behaviorDeltaGoldens);
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
   const results = [
@@ -85,12 +128,14 @@ export async function runLearnV2Eval(
     evaluateLearnV2ConceptQualityGates(concepts),
     evaluateActivationReplay(episodes, concepts),
     evaluateCounterfactualTraceCases(concepts, counterfactualCases),
+    ...behaviorDeltaCases.map((item) => evaluateBehaviorDeltaCase(item)),
     ...goldens.map((golden) => evaluateGolden(golden, episodes, concepts))
   ];
   const report = LearnV2EvalReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.eval-report.v1",
     status: results.every((result) => result.status === "pass") ? "pass" : "fail",
     extractionGoldenCount: goldens.length,
+    behaviorDeltaGoldenCount: behaviorDeltaGoldens.length,
     counterfactualTraceCaseCount: counterfactualCases.length,
     replayEpisodeCount: episodes.length,
     leakCheck: {
@@ -103,12 +148,17 @@ export async function runLearnV2Eval(
       compressionRatio: rawChars ? Number(Math.min(1, compressedChars / rawChars).toFixed(3)) : 1
     },
     results,
-    artifacts: { json, markdown, counterfactualCases: counterfactualCasesPath }
+    artifacts: { json, markdown, counterfactualCases: counterfactualCasesPath, behaviorDeltaCases: behaviorDeltaCasesPath }
   });
   await writeJsonAtomic(counterfactualCasesPath, {
     schemaVersion: "openskill-kit.counterfactual-trace-eval-cases.v1",
     generatedAt: now.toISOString(),
     cases: counterfactualCases
+  });
+  await writeJsonAtomic(behaviorDeltaCasesPath, {
+    schemaVersion: "openskill-kit.behavior-delta-eval-cases.v1",
+    generatedAt: now.toISOString(),
+    cases: behaviorDeltaCases.map((item) => declassifyBehaviorDeltaCase(root, item))
   });
   await writeJsonAtomic(json, report);
   await fs.writeFile(markdown, renderLearnV2Eval(report), "utf8");
@@ -116,11 +166,30 @@ export async function runLearnV2Eval(
 }
 
 export async function loadLearnV2ExtractionGoldens(rootInput: string, goldensPathInput: string): Promise<LearnV2ExtractionGoldenScenario[]> {
+  return (await loadLearnV2EvalGoldens(rootInput, goldensPathInput)).extraction;
+}
+
+export async function loadLearnV2EvalGoldens(rootInput: string, goldensPathInput: string): Promise<{
+  extraction: LearnV2ExtractionGoldenScenario[];
+  behaviorDelta: LearnV2BehaviorDeltaGoldenScenario[];
+}> {
   const root = path.resolve(rootInput);
   const file = path.resolve(root, goldensPathInput);
   const parsed = JSON.parse(await fs.readFile(file, "utf8"));
-  const values = Array.isArray(parsed) ? parsed : parsed.scenarios;
-  return (values ?? []).map((item: unknown) => LearnV2ExtractionGoldenScenarioSchema.parse(item));
+  const topLevelValues = Array.isArray(parsed) ? parsed : [];
+  const scenarioValues = Array.isArray(parsed?.scenarios) ? parsed.scenarios : [];
+  const behaviorValues = [
+    ...(Array.isArray(parsed?.behaviorDeltaScenarios) ? parsed.behaviorDeltaScenarios : []),
+    ...(Array.isArray(parsed?.behaviorScenarios) ? parsed.behaviorScenarios : [])
+  ];
+  const allValues = [...topLevelValues, ...scenarioValues, ...behaviorValues];
+  const extraction = allValues
+    .filter((item: unknown) => !isBehaviorDeltaGoldenLike(item))
+    .map((item: unknown) => LearnV2ExtractionGoldenScenarioSchema.parse(item));
+  const behaviorDelta = allValues
+    .filter(isBehaviorDeltaGoldenLike)
+    .map((item: unknown) => LearnV2BehaviorDeltaGoldenScenarioSchema.parse(item));
+  return { extraction, behaviorDelta };
 }
 
 function evaluateGolden(golden: LearnV2ExtractionGoldenScenario, episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2EvalReport["results"][number] {
@@ -255,6 +324,101 @@ function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases:
   };
 }
 
+function buildBehaviorDeltaEvalCases(
+  concepts: LearnV2ConceptCard[],
+  scenarios: LearnV2BehaviorDeltaGoldenScenario[]
+): LearnV2BehaviorDeltaEvalCase[] {
+  const entries = concepts
+    .filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded")
+    .map(buildLearnV2ActivationIndexEntry);
+  return scenarios.map((scenario) => {
+    const ranked = scoreLearnV2ActivationEntries(entries, {
+      includeCandidates: true,
+      query: scenario.task.prompt,
+      paths: scenario.task.paths,
+      commands: scenario.task.commands,
+      taskTypes: scenario.task.taskTypes,
+      negativeSignals: scenario.task.negativeSignals
+    });
+    const activatedConceptIds = ranked
+      .filter((match) => match.score > 0 && !match.suppressed)
+      .slice(0, 5)
+      .map((match) => match.conceptId);
+    const activatedConcepts = concepts.filter((concept) => activatedConceptIds.includes(concept.id));
+    return {
+      schemaVersion: "openskill-kit.behavior-delta-eval-case.v1",
+      id: scenario.id,
+      title: scenario.title,
+      taskPrompt: scenario.task.prompt,
+      paths: scenario.task.paths,
+      commands: scenario.task.commands,
+      taskTypes: scenario.task.taskTypes,
+      activatedConceptIds,
+      activatedConceptText: activatedConcepts.map((concept) => concept.canonicalBehavior),
+      activatedKinds: [...new Set(activatedConcepts.flatMap((concept) => concept.atoms.map((atom) => atom.kind)))],
+      expectedConceptText: scenario.expectedConceptText,
+      expectedKinds: scenario.expectedKinds,
+      baselinePlan: renderBaselineEvalPlan(scenario),
+      withConceptPlan: renderWithConceptEvalPlan(scenario, activatedConcepts),
+      expectedPlanIncludes: scenario.expectedPlanIncludes,
+      expectedPlanExcludes: scenario.expectedPlanExcludes,
+      minActivatedConcepts: scenario.minActivatedConcepts
+    };
+  });
+}
+
+function evaluateBehaviorDeltaCase(item: LearnV2BehaviorDeltaEvalCase): LearnV2EvalReport["results"][number] {
+  const withPlan = item.withConceptPlan.join("\n").toLowerCase();
+  const baselinePlan = item.baselinePlan.join("\n").toLowerCase();
+  const activatedConceptText = item.activatedConceptText.join("\n").toLowerCase();
+  const expectedIncludes = item.expectedPlanIncludes.map((value) => value.toLowerCase());
+  const expectedExcludes = item.expectedPlanExcludes.map((value) => value.toLowerCase());
+  const expectedConceptText = item.expectedConceptText.map((value) => value.toLowerCase());
+  const activated = item.activatedConceptIds.length >= item.minActivatedConcepts;
+  const withPlanIncludes = expectedIncludes.filter((value) => withPlan.includes(value));
+  const baselineAlreadyIncludes = expectedIncludes.filter((value) => baselinePlan.includes(value));
+  const forbiddenPresent = expectedExcludes.filter((value) => withPlan.includes(value));
+  const activatedTextMatches = expectedConceptText.filter((value) => activatedConceptText.includes(value));
+  const kindMatches = item.expectedKinds.filter((kind) => item.activatedKinds.includes(kind));
+  const checks = [
+    check(
+      "activated-learned-context",
+      activated,
+      activated ? `activated concepts: ${item.activatedConceptIds.join(", ")}` : `${item.activatedConceptIds.length}/${item.minActivatedConcepts} matching learned concept(s) activated`
+    ),
+    check(
+      "activated-concept-text",
+      activatedTextMatches.length === expectedConceptText.length,
+      expectedConceptText.length ? `${activatedTextMatches.length}/${expectedConceptText.length} expected concept text phrase(s) present in activated concepts` : "no expected concept text configured"
+    ),
+    check(
+      "activated-concept-kinds",
+      kindMatches.length === item.expectedKinds.length,
+      item.expectedKinds.length ? `${kindMatches.length}/${item.expectedKinds.length} expected concept kind(s) activated` : "no expected concept kinds configured"
+    ),
+    check(
+      "with-concept-plan-includes-expected-deltas",
+      withPlanIncludes.length === expectedIncludes.length,
+      expectedIncludes.length ? `${withPlanIncludes.length}/${expectedIncludes.length} expected learned plan phrase(s) present` : "no expected plan includes configured"
+    ),
+    check(
+      "baseline-plan-does-not-already-satisfy-deltas",
+      baselineAlreadyIncludes.length === 0,
+      baselineAlreadyIncludes.length ? `baseline already contained: ${baselineAlreadyIncludes.slice(0, 6).join(", ")}` : "expected learned phrases are absent without concept context"
+    ),
+    check(
+      "with-concept-plan-excludes-forbidden-text",
+      forbiddenPresent.length === 0,
+      forbiddenPresent.length ? `forbidden plan text present: ${forbiddenPresent.slice(0, 6).join(", ")}` : "no forbidden plan text present"
+    )
+  ];
+  return {
+    id: `behavior-delta:${item.id}`,
+    status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
+    checks
+  };
+}
+
 function evaluateActivationReplay(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2EvalReport["results"][number] {
   const replayable = concepts.filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded");
   const entries = replayable.map(buildLearnV2ActivationIndexEntry);
@@ -293,6 +457,65 @@ function check(name: string, passed: boolean, details: string): LearnV2EvalRepor
   return { name, status: passed ? "pass" : "fail", details };
 }
 
+function isBehaviorDeltaGoldenLike(item: unknown): item is { schemaVersion: string } {
+  return typeof item === "object"
+    && item !== null
+    && "schemaVersion" in item
+    && (item as { schemaVersion?: unknown }).schemaVersion === "openskill-kit.learn-v2.behavior-delta-golden.v1";
+}
+
+function renderBaselineEvalPlan(scenario: LearnV2BehaviorDeltaGoldenScenario): string[] {
+  return [
+    `Task: ${scenario.title}`,
+    scenario.task.paths.length ? `Inspect scoped paths: ${scenario.task.paths.join(", ")}` : "Inspect files relevant to the task.",
+    "Make the smallest coherent implementation change.",
+    scenario.task.commands.length ? `Run supplied verification command shape(s): ${scenario.task.commands.join(", ")}` : "Run appropriate verification for the changed code.",
+    "Summarize changed behavior and verification status."
+  ];
+}
+
+function renderWithConceptEvalPlan(scenario: LearnV2BehaviorDeltaGoldenScenario, concepts: LearnV2ConceptCard[]): string[] {
+  const lines = [...renderBaselineEvalPlan(scenario)];
+  for (const concept of concepts) {
+    lines.push(`Apply learned behavior: ${concept.canonicalBehavior}`);
+    if (concept.conditions?.appliesWhen.length) lines.push(`Applies when: ${concept.conditions.appliesWhen.join("; ")}`);
+    if (concept.conditions?.doesNotApplyWhen.length) lines.push(`Do not apply when: ${concept.conditions.doesNotApplyWhen.join("; ")}`);
+    if (concept.activation.commands.length) lines.push(`Preferred commands: ${concept.activation.commands.join("; ")}`);
+  }
+  return lines;
+}
+
+function declassifyBehaviorDeltaCase(root: string, item: LearnV2BehaviorDeltaEvalCase): LearnV2BehaviorDeltaEvalCase {
+  const scrub = (value: string) => scrubEvalText(root, value);
+  return {
+    ...item,
+    taskPrompt: scrub(item.taskPrompt),
+    paths: item.paths.map(scrub),
+    commands: item.commands.map(scrub),
+    taskTypes: item.taskTypes.map(scrub),
+    activatedConceptText: item.activatedConceptText.map(scrub),
+    expectedConceptText: item.expectedConceptText.map(scrub),
+    baselinePlan: item.baselinePlan.map(scrub),
+    withConceptPlan: item.withConceptPlan.map(scrub),
+    expectedPlanIncludes: item.expectedPlanIncludes.map(scrub),
+    expectedPlanExcludes: item.expectedPlanExcludes.map(scrub)
+  };
+}
+
+function scrubEvalText(root: string, value: string): string {
+  const escapedRoot = escapeRegExp(root.replace(/\\/g, "/"));
+  const normalized = value.replace(/\\/g, "/");
+  return normalized
+    .replace(new RegExp(escapedRoot, "gi"), "[PROJECT_ROOT]")
+    .replace(/\b[A-Z]:\/Users\/[^/\s"'`]+/gi, "[USER_HOME]")
+    .replace(/\/(?:Users|home)\/[^/\s"'`]+/gi, "[USER_HOME]")
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/g, "[SECRET]");
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function tokenOverlapRatio(expected: string, actual: string): number {
   const expectedTokens = semanticTokens(expected);
   if (!expectedTokens.size) return 1;
@@ -328,6 +551,7 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     `Status: ${report.status}`,
     `Episodes replayed: ${report.replayEpisodeCount}`,
     `Extraction goldens: ${report.extractionGoldenCount}`,
+    `Behavior delta goldens: ${report.behaviorDeltaGoldenCount}`,
     `Counterfactual trace cases: ${report.counterfactualTraceCaseCount}`,
     `Leak check: ${report.leakCheck.status}`,
     `Compression ratio: ${report.tokenBudget.compressionRatio}`,
