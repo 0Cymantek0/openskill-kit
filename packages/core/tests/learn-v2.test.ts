@@ -610,6 +610,18 @@ describe("learn-v2 substrate", () => {
     ], "project", newerTime);
     expect(strongLedger.ledger.conflicts.map((conflict) => conflict.conflictType)).toContain("newer-supersedes-older");
 
+    const justBelowThreshold = await writeLearnV2ConflictLedger(root, [
+      { ...older!, status: "active", confidence: 0.73 },
+      { ...strongNewer!, confidence: 0.87 }
+    ], "project", newerTime);
+    expect(justBelowThreshold.ledger.conflicts.map((conflict) => conflict.conflictType)).not.toContain("newer-supersedes-older");
+
+    const atThreshold = await writeLearnV2ConflictLedger(root, [
+      { ...older!, status: "active", confidence: 0.72 },
+      { ...strongNewer!, confidence: 0.87 }
+    ], "project", newerTime);
+    expect(atThreshold.ledger.conflicts.map((conflict) => conflict.conflictType)).toContain("newer-supersedes-older");
+
     const protectedLedger = await writeLearnV2ConflictLedger(root, [
       { ...older!, status: "locked", confidence: 0.72 },
       { ...strongNewer!, confidence: 0.95 }
@@ -896,6 +908,63 @@ describe("learn-v2 substrate", () => {
     expect(counterfactualCases).toContain("openskill-kit.counterfactual-trace-eval-case.v1");
     expect(counterfactualCases).not.toContain("raw_");
     expect(counterfactualCases).not.toContain(root);
+  });
+
+  it("uses runtime semantic activation entries during eval replay", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:01:30Z");
+    const [episode] = reconstructLearnV2Episodes([
+      normalizedMessage("ev_semantic_eval", "Grammar spec needed for syntax bug.", "user")
+    ]);
+    const [card] = mergeLearnV2ConceptCards([{
+      schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
+      id: "atom_semantic_eval",
+      kind: "verification",
+      statement: "Prefer focused parser regression fixtures before broad parser rewrites.",
+      polarity: "positive",
+      scope: {
+        level: "project",
+        paths: [],
+        taskTypes: []
+      },
+      confidence: 0.82,
+      confidenceCap: 0.9,
+      sourceReliability: 0.82,
+      evidenceIds: ["ev_semantic_eval"],
+      rawRefs: ["raw_semantic_eval"],
+      rationale: "Explicit preference or correction language in episode.",
+      risk: "low"
+    }], now);
+    const concept = {
+      ...card!,
+      activation: {
+        phrases: [],
+        pathGlobs: [],
+        commands: []
+      }
+    };
+
+    const oldThinEntryMatches = scoreLearnV2ActivationEntries([{
+      conceptId: concept.id,
+      status: concept.status,
+      title: concept.title,
+      phrases: concept.activation.phrases,
+      pathGlobs: concept.activation.pathGlobs,
+      commands: concept.activation.commands,
+      taskTypes: concept.scope.taskTypes,
+      negativeTriggers: concept.scope.negativeTriggers,
+      confidence: concept.confidence,
+      risk: concept.risk
+    }], {
+      includeCandidates: true,
+      query: episode!.messages.map((message) => message.text).join(" ")
+    });
+    expect(oldThinEntryMatches.some((match) => match.conceptId === concept.id && match.score > 0)).toBe(false);
+
+    const report = await runLearnV2Eval(root, [episode!], [concept], now);
+    const replay = report.results.find((result) => result.id === "activation-replay")!;
+    expect(replay.status).toBe("pass");
+    expect(replay.checks[0]!.details).toContain("1/1 concept(s) retrieved");
   });
 
   it("fails eval for overbroad or underspecified concept quality", async () => {

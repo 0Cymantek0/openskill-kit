@@ -4,6 +4,7 @@ import { z } from "zod";
 import { LearnV2EvalReportSchema, type LearnV2ConceptCard, type LearnV2EvalReport, type LearnV2TaskEpisode } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { scoreLearnV2ActivationEntries } from "./activation.js";
+import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
 import { evaluateLearnV2ConceptQualityGates } from "./concept-quality-gates.js";
 
 export const LearnV2ExtractionGoldenScenarioSchema = z.object({
@@ -203,18 +204,7 @@ function buildCounterfactualTraceCases(episodes: LearnV2TaskEpisode[], concepts:
 function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases: LearnV2CounterfactualTraceEvalCase[]): LearnV2EvalReport["results"][number] {
   const entries = concepts
     .filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded")
-    .map((concept) => ({
-      conceptId: concept.id,
-      status: concept.status,
-      title: concept.title,
-      phrases: concept.activation.phrases,
-      pathGlobs: concept.activation.pathGlobs,
-      commands: concept.activation.commands,
-      taskTypes: concept.scope.taskTypes,
-      negativeTriggers: concept.scope.negativeTriggers,
-      confidence: concept.confidence,
-      risk: concept.risk
-    }));
+    .map(buildLearnV2ActivationIndexEntry);
   const misses: string[] = [];
   const suppressionMisses: string[] = [];
   const behaviorMismatches: string[] = [];
@@ -267,18 +257,7 @@ function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases:
 
 function evaluateActivationReplay(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2EvalReport["results"][number] {
   const replayable = concepts.filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded");
-  const entries = replayable.map((concept) => ({
-    conceptId: concept.id,
-    status: concept.status,
-    title: concept.title,
-    phrases: concept.activation.phrases,
-    pathGlobs: concept.activation.pathGlobs,
-    commands: concept.activation.commands,
-    taskTypes: concept.scope.taskTypes,
-    negativeTriggers: concept.scope.negativeTriggers,
-    confidence: concept.confidence,
-    risk: concept.risk
-  }));
+  const entries = replayable.map(buildLearnV2ActivationIndexEntry);
   const misses: string[] = [];
   for (const concept of replayable) {
     const episode = episodes.find((item) => item.evidenceIds.some((id) => concept.evidenceIds.includes(id)));

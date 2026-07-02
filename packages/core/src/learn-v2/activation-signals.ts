@@ -5,6 +5,21 @@ export interface LearnV2ActivationSignals {
   keywordFingerprint: string[];
 }
 
+export interface LearnV2ActivationIndexEntry {
+  conceptId: string;
+  status: LearnV2ConceptCard["status"];
+  title: string;
+  phrases: string[];
+  pathGlobs: string[];
+  commands: string[];
+  taskTypes: string[];
+  negativeTriggers: string[];
+  semanticAliases: string[];
+  keywordFingerprint: string[];
+  confidence: number;
+  risk: LearnV2ConceptCard["risk"];
+}
+
 const semanticFamilies: Array<{ id: string; terms: string[] }> = [
   { id: "test", terms: ["test", "tests", "spec", "specs", "fixture", "fixtures", "regression", "coverage", "assert", "assertion"] },
   { id: "parser", terms: ["parser", "parse", "parsing", "syntax", "grammar", "ast", "token", "lexer"] },
@@ -38,6 +53,24 @@ export function deriveLearnV2ActivationSignals(card: LearnV2ConceptCard): LearnV
     ...card.activation.pathGlobs.flatMap(pathTokens)
   ];
   return deriveActivationSignalsFromText(sources.join(" "));
+}
+
+export function buildLearnV2ActivationIndexEntry(card: LearnV2ConceptCard): LearnV2ActivationIndexEntry {
+  const activationSignals = deriveLearnV2ActivationSignals(card);
+  return {
+    conceptId: card.id,
+    status: card.status,
+    title: card.title,
+    phrases: card.activation.phrases,
+    pathGlobs: card.activation.pathGlobs,
+    commands: card.activation.commands,
+    taskTypes: card.scope.taskTypes,
+    negativeTriggers: card.scope.negativeTriggers,
+    semanticAliases: activationSignals.semanticAliases,
+    keywordFingerprint: activationSignals.keywordFingerprint,
+    confidence: card.confidence,
+    risk: card.risk
+  };
 }
 
 export function deriveActivationSignalsFromText(text: string): LearnV2ActivationSignals {

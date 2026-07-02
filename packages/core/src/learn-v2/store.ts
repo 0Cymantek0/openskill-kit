@@ -7,7 +7,7 @@ import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowNode } from "../w
 import { readWorkflowGraph, writeWorkflowGraph } from "../workflows/store.js";
 import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
-import { deriveLearnV2ActivationSignals } from "./activation-signals.js";
+import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
 import { findLearnV2ActivationGateFailures } from "./concept-quality-gates.js";
 import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring } from "./scoring.js";
 import { LearnV2ConceptCardSchema, type LearnV2ConceptCard } from "./schemas.js";
@@ -258,23 +258,7 @@ export async function writeLearnV2ActivationIndex(rootInput: string, store: Lear
     updatedAt: now.toISOString(),
     entries: store.cards
       .filter((card) => card.status !== "rejected" && card.status !== "one-off" && card.status !== "superseded")
-      .map((card) => {
-        const activationSignals = deriveLearnV2ActivationSignals(card);
-        return {
-          conceptId: card.id,
-          status: card.status,
-          title: card.title,
-          phrases: card.activation.phrases,
-          pathGlobs: card.activation.pathGlobs,
-          commands: card.activation.commands,
-          taskTypes: card.scope.taskTypes,
-          negativeTriggers: card.scope.negativeTriggers,
-          semanticAliases: activationSignals.semanticAliases,
-          keywordFingerprint: activationSignals.keywordFingerprint,
-          confidence: card.confidence,
-          risk: card.risk
-        };
-      })
+      .map(buildLearnV2ActivationIndexEntry)
       .sort((a, b) => b.confidence - a.confidence || a.title.localeCompare(b.title))
   };
   await writeJsonAtomic(learnV2ActivationIndexPath(root), index);
