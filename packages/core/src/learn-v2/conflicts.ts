@@ -87,14 +87,14 @@ function detectPairConflict(a: LearnV2ConceptCard, b: LearnV2ConceptCard, projec
   const tokenOverlap = tokenOverlapCount(a.canonicalBehavior, b.canonicalBehavior);
   const oppositePolarity = a.atoms.some((left) => b.atoms.some((right) => left.polarity !== right.polarity && left.kind === right.kind));
 
-  // newer-supersedes-older: same intent, one is clearly newer + higher confidence
+  // newer-supersedes-older: same intent, newer is clearly stronger and older is not protected.
   const sameIntent = tokenOverlap >= 4 && a.atoms[0]?.kind === b.atoms[0]?.kind && !oppositePolarity;
   if (sameIntent) {
     const newer = new Date(a.lifecycle.updatedAt).getTime() > new Date(b.lifecycle.updatedAt).getTime() ? a : b;
     const older = newer === a ? b : a;
-    if (Math.abs(a.confidence - b.confidence) >= 0.15) {
+    if (newer.confidence >= older.confidence + 0.15 && hasSupersessionAuthority(newer) && !isSupersessionProtected(older)) {
       return makeConflict(projectId, [newer.id, older.id], "newer-supersedes-older",
-        `${newer.title} appears to supersede ${older.title}: same intent with higher confidence.`,
+        `${newer.title} appears to supersede ${older.title}: same intent with newer higher-confidence reviewer-authoritative evidence.`,
         [...newer.evidenceIds, ...older.evidenceIds].slice(0, 12),
         "prefer-newer-explicit-user-correction", now, "auto-supersede");
     }
@@ -189,6 +189,19 @@ function tokenOverlapCount(a: string, b: string): number {
   let count = 0;
   for (const word of aWords) if (bWords.has(word)) count++;
   return count;
+}
+
+function hasSupersessionAuthority(card: LearnV2ConceptCard): boolean {
+  if (card.status === "locked" || card.status === "active") return true;
+  return card.atoms.some((atom) =>
+    atom.rationale.toLowerCase().includes("explicit preference")
+    || atom.rationale.toLowerCase().includes("correction")
+    || atom.evidenceIds.some((id) => /user|review|correction|manual|edit/i.test(id))
+  );
+}
+
+function isSupersessionProtected(card: LearnV2ConceptCard): boolean {
+  return card.status === "locked" || card.risk === "high" || card.atoms.some((atom) => atom.kind === "security");
 }
 
 export function renderConflictLedgerMarkdown(ledger: LearnV2ConflictLedger): string {

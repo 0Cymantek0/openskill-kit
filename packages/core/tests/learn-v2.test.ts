@@ -449,6 +449,71 @@ describe("learn-v2 substrate", () => {
     expect(ledgerText).not.toContain("raw_");
   });
 
+  it("does not promote one-off passing commands into command-policy atoms", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_single_command");
+    const surface = { adapterId: "codex", sourcePath: "a", contentKind: "transcript" as const, rawText: "", detectedFormat: "plain" };
+    const oneOffEvidence = normalizeLearnV2Evidence(surface, record, [
+      "user: Check packages/core/src/parser.ts.",
+      "tool: npm test -- parser",
+      "PASS"
+    ].join("\n"));
+    const repeatedEvidence = normalizeLearnV2Evidence(surface, record, [
+      "user: Check packages/core/src/parser.ts.",
+      "tool: npm test -- parser",
+      "PASS",
+      "tool: npm test -- parser",
+      "PASS"
+    ].join("\n"));
+
+    const oneOffAtoms = extractLearnV2BehaviorAtoms(reconstructLearnV2Episodes(oneOffEvidence)).atoms;
+    const repeatedAtoms = extractLearnV2BehaviorAtoms(reconstructLearnV2Episodes(repeatedEvidence)).atoms;
+
+    expect(oneOffAtoms.some((atom) => atom.kind === "command-policy")).toBe(false);
+    expect(repeatedAtoms.filter((atom) => atom.kind === "command-policy")).toHaveLength(1);
+    expect(repeatedAtoms.find((atom) => atom.kind === "command-policy")?.rationale).toContain("more than once");
+  });
+
+  it("only labels supersession when newer concept has higher confidence and protected older concepts stay manual", async () => {
+    const root = await tempProject();
+    const olderTime = new Date("2026-06-30T00:20:00.000Z");
+    const newerTime = new Date("2026-06-30T00:40:00.000Z");
+    const [older] = mergeLearnV2ConceptCards([
+      { ...behaviorAtom("older_parser_tests", "Prefer focused parser tests for parser changes.", "positive"), confidence: 0.9 }
+    ], olderTime);
+    const [weakerNewer] = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("newer_weak_parser_tests", "Prefer focused parser tests for parser changes.", "positive"),
+        confidence: 0.6,
+        rationale: "Explicit preference or correction language in episode."
+      }
+    ], newerTime);
+    const weakLedger = await writeLearnV2ConflictLedger(root, [
+      { ...older!, status: "active", confidence: 0.9 },
+      { ...weakerNewer!, confidence: 0.6 }
+    ], "project", newerTime);
+    expect(weakLedger.ledger.conflicts.map((conflict) => conflict.conflictType)).not.toContain("newer-supersedes-older");
+
+    const [strongNewer] = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("newer_strong_parser_tests", "Prefer focused parser tests for parser changes.", "positive"),
+        confidence: 0.95,
+        rationale: "Explicit preference or correction language in episode."
+      }
+    ], newerTime);
+    const strongLedger = await writeLearnV2ConflictLedger(root, [
+      { ...older!, status: "active", confidence: 0.72 },
+      { ...strongNewer!, confidence: 0.95 }
+    ], "project", newerTime);
+    expect(strongLedger.ledger.conflicts.map((conflict) => conflict.conflictType)).toContain("newer-supersedes-older");
+
+    const protectedLedger = await writeLearnV2ConflictLedger(root, [
+      { ...older!, status: "locked", confidence: 0.72 },
+      { ...strongNewer!, confidence: 0.95 }
+    ], "project", newerTime);
+    expect(protectedLedger.ledger.conflicts.map((conflict) => conflict.conflictType)).not.toContain("newer-supersedes-older");
+  });
+
   it("writes declassified evidence snippets and attaches them to review cards", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:25:00.000Z");
@@ -777,7 +842,7 @@ describe("learn-v2 substrate", () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:00:00Z");
     const [existing] = mergeLearnV2ConceptCards([
-      behaviorAtom("canonical_existing_parser_tests", "Prefer focused parser tests for parser changes.", "positive")
+      { ...behaviorAtom("canonical_existing_parser_tests", "Prefer focused parser tests for parser changes.", "positive"), kind: "workflow" }
     ], now);
     await writeLearnV2ConceptStore(root, [{
       ...existing!,

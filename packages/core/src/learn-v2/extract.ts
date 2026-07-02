@@ -101,7 +101,7 @@ function extractEpisodeAtoms(episode: LearnV2TaskEpisode): LearnV2BehaviorAtom[]
       kind: "command-policy",
       statement: `When task scope matches ${scopeLabel(episode)}, prefer running \`${command}\` as a focused verification command before broader suites.`,
       polarity: "positive",
-      rationale: "Command passed in episode; scoped as conditional command policy, not unconditional global rule.",
+      rationale: "Command passed more than once in one reconstructed episode; scoped as conditional command policy, not unconditional global rule.",
       confidenceCap: 0.82,
       risk: "low"
     }));
@@ -296,8 +296,10 @@ function extractPreferenceStatements(text: string): string[] {
 function repeatedCommands(commands: string[]): string[] {
   const counts = new Map<string, number>();
   for (const command of commands) counts.set(command, (counts.get(command) ?? 0) + 1);
-  const repeated = [...counts.entries()].filter(([, count]) => count > 1).map(([command]) => command);
-  return repeated.length ? repeated : [...counts.keys()].slice(0, 2);
+  return [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([command]) => command)
+    .slice(0, 4);
 }
 
 function scopeLabel(episode: LearnV2TaskEpisode): string {
