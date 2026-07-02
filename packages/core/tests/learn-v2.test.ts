@@ -37,6 +37,7 @@ import {
   runRawLocalLearning,
   runLearnV2RawVaultMaintenance,
   writeLearnV2ModelRequests,
+  writeLearnV2EpisodeStore,
   writeLearnV2ConflictLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
   detectLearnV2ConceptDrift,
@@ -729,7 +730,8 @@ describe("learn-v2 substrate", () => {
       now: new Date("2026-06-30T00:00:00Z")
     });
     const requests = await writeLearnV2ModelRequests(root, undefined, new Date("2026-06-30T00:01:00Z"));
-    expect(requests.requestCount).toBe(learned.learnV2.episodes.length);
+    expect(requests.requestCount).toBeGreaterThanOrEqual(1);
+    expect(requests.requestCount + requests.skippedEpisodes.length).toBe(learned.learnV2.episodes.length);
     const request = requests.requests[0]!;
     const prompt = await readText(request.promptPath);
     const bundle = await readText(request.bundlePath);
@@ -739,12 +741,17 @@ describe("learn-v2 substrate", () => {
     expect(bundle).not.toContain("raw_");
     expect(manifest.schemaVersion).toBe("openskill-kit.learn-v2.model-request-manifest.v1");
     expect(manifest.episodeId).toBe(request.episodeId);
+    expect(manifest.modelRole).toBe("concept-extractor");
+    expect(manifest.routingPolicy).toBe("learn-v2-roi-v1");
+    expect(manifest.routingReasons.length).toBeGreaterThan(0);
+    expect(manifest.priority).toBeGreaterThan(0);
     expect(path.resolve(root, manifest.expectedOutputPath)).toBe(request.expectedOutputPath);
     expect(manifest.rawRefsIncluded).toBe(false);
     expect(JSON.stringify(manifest)).not.toContain("raw_");
     expect(JSON.stringify(manifest)).not.toContain(root);
 
-    const [evidenceId] = learned.learnV2.episodes[0]!.evidenceIds;
+    const requestEpisode = learned.learnV2.episodes.find((episode) => episode.id === request.episodeId)!;
+    const [evidenceId] = requestEpisode.evidenceIds;
     const outputPath = request.expectedOutputPath;
     await writeFile(outputPath, JSON.stringify({
       schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
@@ -777,6 +784,10 @@ describe("learn-v2 substrate", () => {
       schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
       generatedAt: "2026-06-30T00:01:00.000Z",
       episodeId: "episode_missing",
+      modelRole: "concept-extractor",
+      routingPolicy: "learn-v2-roi-v1",
+      routingReasons: ["durable-language-signal"],
+      priority: 0.7,
       promptPath: path.join(staleDir, "concept-extraction-prompt.md"),
       bundlePath: path.join(staleDir, "episode-learning-bundle.json"),
       expectedOutputPath: staleOutputPath,
@@ -805,6 +816,31 @@ describe("learn-v2 substrate", () => {
     expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining(["unexpected-output-path", "stale-request-manifest", "invalid-json-or-schema"]));
     expect(store.cards.some((card) => /parser regression tests/i.test(card.canonicalBehavior))).toBe(true);
     expect(JSON.stringify(store)).not.toContain("sk-12345678901234567890");
+  });
+
+  it("routes OpenCode model requests by ROI instead of prompting every episode", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:04:00Z");
+    const valuable = reconstructLearnV2Episodes([
+      normalizedMessage("ev_roi_prefer", "Wrong approach. Prefer focused parser regression fixtures before broad parser rewrites.", "user")
+    ])[0]!;
+    const weak = reconstructLearnV2Episodes([
+      normalizedMessage("ev_roi_noise", "assistant: looked around and said ok", "assistant")
+    ])[0]!;
+    await writeLearnV2EpisodeStore(root, [valuable, weak], now);
+
+    const requests = await writeLearnV2ModelRequests(root, undefined, now);
+    expect(requests.requestCount).toBe(1);
+    expect(requests.requests[0]!.episodeId).toBe(valuable.id);
+    expect(requests.requests[0]!.routing.reasons).toContain("durable-language-signal");
+    expect(requests.skippedEpisodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ episodeId: weak.id, decision: "skip", reasons: ["no-semantic-roi-trigger"] })
+    ]));
+    const routingManifest = await readText(requests.routingManifestPath);
+    expect(routingManifest).toContain("learn-v2-roi-v1");
+    expect(routingManifest).toContain(valuable.id);
+    expect(routingManifest).toContain(weak.id);
+    expect(routingManifest).not.toContain("raw_");
   });
 
   it("projects existing routing into learn-v2 OpenCode agent artifacts without owning a provider", async () => {

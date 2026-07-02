@@ -2179,6 +2179,8 @@ function renderLearnV2CountLine(counts: Record<string, number>): string {
 function renderLearnV2ModelRequests(result: Awaited<ReturnType<typeof writeLearnV2ModelRequests>>): string {
   const lines = [
     `Learn v2 model requests: ${result.requestCount}`,
+    `Skipped episodes: ${result.skippedEpisodes.length}`,
+    `Routing manifest: ${result.routingManifestPath}`,
     ...result.requests.map((request) => `  ${request.episodeId}: ${request.promptPath} -> ${request.expectedOutputPath}`),
     ...result.requests.map((request) => `  manifest: ${request.manifestPath}`)
   ];

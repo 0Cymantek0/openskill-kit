@@ -24,6 +24,7 @@ export interface LearnV2ModelRequest {
   manifestPath: string;
   expectedOutputPath: string;
   outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1";
+  routing: LearnV2ModelRequestRoutingDecision & { decision: "request" };
 }
 
 export interface LearnV2ModelRequestResult {
@@ -31,6 +32,8 @@ export interface LearnV2ModelRequestResult {
   generatedAt: string;
   requestCount: number;
   requests: LearnV2ModelRequest[];
+  skippedEpisodes: Array<LearnV2ModelRequestRoutingDecision & { episodeId: string; decision: "skip" }>;
+  routingManifestPath: string;
   instructions: string[];
 }
 
@@ -48,6 +51,10 @@ interface LearnV2ModelRequestManifest {
   schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1";
   generatedAt: string;
   episodeId: string;
+  modelRole: "concept-extractor";
+  routingPolicy: "learn-v2-roi-v1";
+  routingReasons: string[];
+  priority: number;
   promptPath: string;
   bundlePath: string;
   expectedOutputPath: string;
@@ -55,6 +62,16 @@ interface LearnV2ModelRequestManifest {
   evidenceIds: string[];
   rawRefsIncluded: false;
 }
+
+type LearnV2ModelRequestRoutingDecision = {
+  decision: "request";
+  priority: number;
+  reasons: string[];
+} | {
+  decision: "skip";
+  priority: number;
+  reasons: string[];
+};
 
 export async function writeLearnV2EpisodeStore(rootInput: string, episodes: LearnV2TaskEpisode[], now = new Date()): Promise<string> {
   const root = path.resolve(rootInput);
@@ -79,7 +96,13 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
   const sourceEpisodes = episodes ?? (await readLearnV2EpisodeStore(root)).episodes;
   await pruneStaleModelRequestDirs(root, new Set(sourceEpisodes.map((episode) => episode.id)));
   const requests: LearnV2ModelRequest[] = [];
+  const skippedEpisodes: LearnV2ModelRequestResult["skippedEpisodes"] = [];
   for (const episode of sourceEpisodes) {
+    const routing = routeLearnV2EpisodeForModelRequest(episode);
+    if (routing.decision === "skip") {
+      skippedEpisodes.push({ episodeId: episode.id, ...routing });
+      continue;
+    }
     const bundle = buildLearnV2EpisodeLearningBundle(episode);
     const prompt = renderLearnV2ConceptExtractionPrompt(bundle);
     const dir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", episode.id);
@@ -93,6 +116,10 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
       schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
       generatedAt: now.toISOString(),
       episodeId: episode.id,
+      modelRole: "concept-extractor",
+      routingPolicy: "learn-v2-roi-v1",
+      routingReasons: routing.reasons,
+      priority: routing.priority,
       promptPath: learnV2ProjectRelativePath(root, promptPath),
       bundlePath: learnV2ProjectRelativePath(root, bundlePath),
       expectedOutputPath: learnV2ProjectRelativePath(root, expectedOutputPath),
@@ -111,14 +138,32 @@ export async function writeLearnV2ModelRequests(rootInput: string, episodes?: Le
       promptPath,
       manifestPath,
       expectedOutputPath,
-      outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1"
+      outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      routing
     });
   }
+  const routingManifestPath = path.join(learnV2ModelRequestsRoot(root), "routing-manifest.json");
+  await writeJsonAtomic(routingManifestPath, {
+    schemaVersion: "openskill-kit.learn-v2.model-request-routing-manifest.v1",
+    generatedAt: now.toISOString(),
+    routingPolicy: "learn-v2-roi-v1",
+    requestedEpisodeCount: requests.length,
+    skippedEpisodeCount: skippedEpisodes.length,
+    requests: requests.map((request) => ({
+      episodeId: request.episodeId,
+      priority: request.routing.priority,
+      reasons: request.routing.reasons,
+      manifestPath: learnV2ProjectRelativePath(root, request.manifestPath)
+    })),
+    skippedEpisodes
+  });
   return {
     schemaVersion: "openskill-kit.learn-v2.model-request-result.v1",
     generatedAt: now.toISOString(),
     requestCount: requests.length,
     requests,
+    skippedEpisodes,
+    routingManifestPath,
     instructions: [
       "Give each prompt to an OpenCode-configured concept-extractor agent.",
       "Save the agent's strict JSON response to a local file.",
@@ -287,6 +332,11 @@ function parseModelRequestManifest(text: string, manifestPath: string): LearnV2M
     value.schemaVersion !== "openskill-kit.learn-v2.model-request-manifest.v1" ||
     typeof value.generatedAt !== "string" ||
     typeof value.episodeId !== "string" ||
+    value.modelRole !== "concept-extractor" ||
+    value.routingPolicy !== "learn-v2-roi-v1" ||
+    !Array.isArray(value.routingReasons) ||
+    value.routingReasons.some((item) => typeof item !== "string") ||
+    typeof value.priority !== "number" ||
     typeof value.promptPath !== "string" ||
     typeof value.bundlePath !== "string" ||
     typeof value.expectedOutputPath !== "string" ||
@@ -298,6 +348,36 @@ function parseModelRequestManifest(text: string, manifestPath: string): LearnV2M
     throw new Error(`Invalid Learn v2 model request manifest: ${manifestPath}`);
   }
   return value as LearnV2ModelRequestManifest;
+}
+
+function routeLearnV2EpisodeForModelRequest(episode: LearnV2TaskEpisode): LearnV2ModelRequestRoutingDecision {
+  const reasons = new Set<string>();
+  const text = [
+    ...episode.messages.map((message) => message.text),
+    ...episode.phases.map((phase) => phase.summary),
+    ...episode.patchComparisons.map((patch) => patch.summary)
+  ].join("\n");
+  if (episode.outcome === "edited" || episode.outcome === "rejected") reasons.add("user-correction-or-rejection");
+  if (episode.outcome === "failed") reasons.add("failed-attempt");
+  if (episode.phases.some((phase) => phase.phase === "review/correction")) reasons.add("review-correction-phase");
+  if (/\b(?:wrong|instead|avoid|never|prefer|must|should not|reject|manual edit|review|blocker|security|secret|credential|regression|fixture)\b/i.test(text)) reasons.add("durable-language-signal");
+  if (episode.patchComparisons.some((patch) => patch.behaviorEligible !== false && (patch.kind === "manual-edit" || patch.addedLines + patch.removedLines >= 8))) reasons.add("semantic-patch-signal");
+  if (episode.taskHints.some((hint) => ["security", "refactor-boundary", "parser-change", "testing", "dependency"].includes(hint))) reasons.add("high-value-task-hint");
+  if ((episode.episodeConfidenceBreakdown?.linkage.outcomeLink ?? 0) > 0.8) reasons.add("strong-outcome-link");
+  if (episode.episodeConfidence >= 0.65 && reasons.size) reasons.add("sufficient-stitching-confidence");
+
+  const priority = Math.min(1, Number((
+    Math.min(0.45, reasons.size * 0.09)
+    + (episode.outcome === "edited" || episode.outcome === "rejected" ? 0.22 : 0)
+    + (episode.outcome === "failed" ? 0.12 : 0)
+    + (episode.episodeConfidence * 0.25)
+    + Math.min(0.08, episode.tokenBudget.compressedChars / 20_000)
+  ).toFixed(2)));
+
+  if (!reasons.size) return { decision: "skip", priority, reasons: ["no-semantic-roi-trigger"] };
+  if (episode.episodeConfidence < 0.35 && !reasons.has("user-correction-or-rejection") && !reasons.has("durable-language-signal")) return { decision: "skip", priority, reasons: [...reasons, "weak-stitching-confidence"] };
+  if (priority < 0.3 && !reasons.has("durable-language-signal")) return { decision: "skip", priority, reasons: [...reasons, "low-routing-priority"] };
+  return { decision: "request", priority, reasons: [...reasons].sort() };
 }
 
 function inferEpisodeIdForOutput(outputPath: string, episodesById: Map<string, LearnV2TaskEpisode>): string {
