@@ -30,8 +30,9 @@ activation review-gated.
 5. Run lifecycle learning and stage candidates.
 6. For raw local learning, run the Learn v2 project relevance hard gate, persist the relevance calibration artifact, reconstruct task episodes, compress tool/diff/log evidence, extract deterministic behavior atoms, merge concept cards, write a behavior-delta-first review queue, compile preview, and learn-v2 eval report.
 7. For activation, write a deterministic Concept Activation Index and replay originating episodes to check that concepts are retrievable from similar task context.
-8. For model-assisted extraction, write prompt-safe episode bundles, request manifests, expected `response.json` paths, and concept-extraction prompts under `.openskill-kit/learn-v2/model-requests/`; OpenCode-configured agents may fill JSON responses, and OSK validates schema, evidence ids, and leak rules before merging atoms.
-9. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
+8. For model-assisted extraction, choose a Learn v2 execution policy: `deterministic-only`, `opencode-host-sanitized-only`, or `opencode-host-raw-allowed`. The current implementation supports deterministic extraction plus prompt-safe sanitized OpenCode request artifacts; `opencode-host-raw-allowed` is rejected until raw OpenCode dispatch is implemented.
+9. For supported sanitized model assistance, write prompt-safe episode bundles, request manifests, expected `response.json` paths, and concept-extraction prompts under `.openskill-kit/learn-v2/model-requests/`; OpenCode-configured agents may fill JSON responses, and OSK validates schema, evidence ids, and leak rules before merging atoms.
+10. For repeated OpenCode command/path hashes, create label candidates. Human-readable labels require `/osk review` approval and are never invented from raw telemetry.
 
 ## CLI Examples
 
@@ -41,7 +42,7 @@ openskill-kit osk learn --all-detected
 openskill-kit osk learn --source opencode-ambient --apply
 openskill-kit osk learn --source current-session --source git-local --apply
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl
-openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --model-mode remote-redacted --apply
+openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --model-mode opencode-host-sanitized-only --apply
 openskill-kit osk learn --raw --surface-file codex-transcript.jsonl --learn-v2-goldens learn-v2-goldens.json
 openskill-kit osk learn --reconstruct-episodes
 openskill-kit osk learn --extract-concepts
@@ -78,6 +79,7 @@ openskill-kit osk review --write
 - Behavior pack export/verify runs a publish-boundary audit over shareable payload files; raw learning stays permissive, but packs fail if compiled artifacts contain secrets, raw refs, local paths, private Learn v2 artifact references, inactive/stale Learn v2 resources, unsupported concepts, weak evidence counts, overbroad low-support scope, weak source reliability, or unsafe command activation.
 - Learn v2 writes a concept drift report from stored concept/outcome telemetry and links stale or negatively reinforced active concepts into the review queue.
 - Learn v2 model request generation uses deterministic ROI routing: high-value correction/security/scope/semantic-patch episodes get prompt-safe OpenCode requests, weak/no-signal episodes are skipped with reasons in a routing manifest.
+- Learn v2 raw learning model modes are `deterministic-only`, `opencode-host-sanitized-only`, and `opencode-host-raw-allowed`. Legacy aliases `heuristic-only`, `remote-redacted`, `remote-explicit`, and `local-raw` normalize to those policy names; raw-to-model execution still hard-fails until implemented.
 - Learn v2 model routing artifacts include specialized OpenCode agent definitions for evidence summarization, concept extraction, contradiction review, scope inference, declassification review, eval planning, and publish/export auditing. OSK writes schemas/prompts/routes only; OpenCode remains the model executor.
 - Applying OpenCode model proposal outputs refreshes the concept review queue, conflict ledger, declassified snippet index, drift report, and eval report so model-derived atoms remain visible proposal data instead of hidden store mutations.
 - Learn v2 eval includes concept-quality gates for activation surface, broad-scope evidence strength, confidence caps, command-policy extraction, active reliability/durability, counterevidence, risky suppression, and privacy boundaries.

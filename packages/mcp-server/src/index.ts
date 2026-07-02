@@ -410,7 +410,7 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
         maxRawBytes: z.number().int().min(1).max(50_000_000).default(5_000_000),
         maxTurns: z.number().int().min(1).max(1000).default(500),
         allowDuplicateImports: z.boolean().default(false),
-        modelMode: z.enum(["local-raw", "remote-redacted", "remote-explicit", "heuristic-only"]).default("heuristic-only"),
+        modelMode: z.enum(["deterministic-only", "opencode-host-sanitized-only", "opencode-host-raw-allowed"]).default("deterministic-only"),
         learnV2GoldensPath: z.string().min(1).optional()
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }

@@ -3,7 +3,8 @@ import type { LifecycleRunnerResult } from "../lifecycle/runner.js";
 import {
   LearnV2RawLearningModelModes,
   runLearnV2RawLocalLearning,
-  type LearnV2RawLearningModelMode
+  type LearnV2RawLearningModelMode,
+  type LearnV2RawLearningModelModeInput
 } from "../learn-v2/pipeline.js";
 
 export const RawLearningModelModes = LearnV2RawLearningModelModes;
@@ -43,7 +44,7 @@ export interface RawLocalLearningOptions {
   maxRawBytes?: number;
   maxTurns?: number;
   allowDuplicateImports?: boolean;
-  modelMode?: RawLearningModelMode;
+  modelMode?: LearnV2RawLearningModelModeInput;
   learnV2GoldensPath?: string;
   now?: Date;
 }
@@ -115,7 +116,9 @@ export interface RawLocalLearningResult {
     sourcesIncluded: number;
     sourcesAsk: number;
     sourcesExcluded: number;
+    previewWritesLocalArtifacts: boolean;
     rawVaultRecordsWritten: number;
+    canonicalConceptStateWritten: boolean;
     analysisFramesWritten: number;
     learningWindows: number;
     behaviorAtoms: number;

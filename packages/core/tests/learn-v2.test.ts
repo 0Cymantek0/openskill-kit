@@ -390,7 +390,7 @@ describe("learn-v2 substrate", () => {
     const report = await writeLearnV2PipelineObservabilityReport(root, {
       generatedAt: now.toISOString(),
       previewOnly: true,
-      modelMode: "heuristic-only",
+      modelMode: "deterministic-only",
       sources: [{
         byteCount: generatedOnly.length + semantic.length,
         projectRelevance: { decision: "include" },
@@ -836,6 +836,36 @@ describe("learn-v2 substrate", () => {
     expect(result.learnV2.modelRequestCount).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(result.concepts)).not.toContain(root);
     expect(result.learnV2).toBeTruthy();
+  });
+
+  it("normalizes legacy model-mode aliases and rejects unimplemented raw model execution", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "model-mode-session.md");
+    await writeFile(transcript, `user: ${root} prefer focused parser tests in packages/core/src/parser.ts.`, "utf8");
+
+    const aliased = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      modelMode: "heuristic-only",
+      now: new Date("2026-06-30T00:00:00Z")
+    });
+    expect(aliased.modelMode).toBe("deterministic-only");
+    expect(aliased.privacy.join("\n")).toContain("Model execution policy is deterministic-only");
+
+    const sanitized = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      modelMode: "remote-redacted",
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+    expect(sanitized.modelMode).toBe("opencode-host-sanitized-only");
+
+    await expect(runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      modelMode: "opencode-host-raw-allowed",
+      now: new Date("2026-06-30T00:02:00Z")
+    })).rejects.toThrow(/opencode-host-raw-allowed is not implemented yet/);
   });
 
   it("builds raw-learning review artifacts from canonical merged concept store", async () => {

@@ -558,7 +558,7 @@ function sampleLearnV2ObservabilityReport() {
     generatedAt: "2026-06-30T00:10:00.000Z",
     run: {
       previewOnly: true,
-      modelMode: "heuristic-only",
+      modelMode: "deterministic-only",
       eventsAppended: 0,
       modelRequestCount: 0
     },

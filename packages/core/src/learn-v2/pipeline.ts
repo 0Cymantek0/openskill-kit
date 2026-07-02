@@ -31,8 +31,20 @@ import {
   learnV2ShortHash
 } from "./utils.js";
 
-export const LearnV2RawLearningModelModes = ["local-raw", "remote-redacted", "remote-explicit", "heuristic-only"] as const;
+export const LearnV2RawLearningModelModes = [
+  "deterministic-only",
+  "opencode-host-sanitized-only",
+  "opencode-host-raw-allowed"
+] as const;
 export type LearnV2RawLearningModelMode = typeof LearnV2RawLearningModelModes[number];
+export const LearnV2RawLearningModelModeAliases = {
+  "heuristic-only": "deterministic-only",
+  "remote-redacted": "opencode-host-sanitized-only",
+  "remote-explicit": "opencode-host-sanitized-only",
+  "local-raw": "opencode-host-raw-allowed"
+} as const;
+export type LearnV2RawLearningLegacyModelMode = keyof typeof LearnV2RawLearningModelModeAliases;
+export type LearnV2RawLearningModelModeInput = LearnV2RawLearningModelMode | LearnV2RawLearningLegacyModelMode;
 
 export interface LearnV2RawLocalLearningOptions {
   sourceFiles: string[];
@@ -41,7 +53,7 @@ export interface LearnV2RawLocalLearningOptions {
   maxRawBytes?: number;
   maxTurns?: number;
   allowDuplicateImports?: boolean;
-  modelMode?: LearnV2RawLearningModelMode;
+  modelMode?: LearnV2RawLearningModelModeInput;
   learnV2GoldensPath?: string;
   now?: Date;
 }
@@ -143,7 +155,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const now = options.now ?? new Date();
   const generatedAt = now.toISOString();
   const previewOnly = options.previewOnly !== false;
-  const modelMode = options.modelMode ?? "heuristic-only";
+  const modelMode = resolveLearnV2RawLearningModelMode(options.modelMode);
+  if (modelMode === "opencode-host-raw-allowed") {
+    throw new Error("Learn v2 model mode opencode-host-raw-allowed is not implemented yet; use deterministic-only or opencode-host-sanitized-only.");
+  }
   const legacyRawVaultDir = path.join(root, ".openskill-kit", "raw-vault");
   const legacyAnalysisFramesDir = path.join(root, ".openskill-kit", "learning", "analysis-frames");
   const v2AnalysisDir = path.join(root, ".openskill-kit", "learn-v2", "analysis");
@@ -228,7 +243,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       sourcePath: learnV2SafeLocalPath(sourcePath, root),
       projectRelevance: relevance,
       modelMode,
-      promptSafe: modelMode !== "local-raw",
+      promptSafe: modelMode !== "opencode-host-raw-allowed",
       normalizedEvidence: normalized
     };
     await writeJsonAtomic(analysisFramePath, analysisPayload);
@@ -327,7 +342,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       ]
     : [
         "Inspect the learn-v2 review queue; accept, edit, narrow, or reject concept cards before compile.",
-        "Optionally run an OpenCode-configured concept extractor on generated learn-v2 model request prompts, then ingest validated JSON outputs.",
+        "Optionally run an OpenCode-configured concept extractor on generated prompt-safe learn-v2 model request artifacts, then ingest validated JSON outputs.",
         "Run /osk review and /osk compile after activation; candidate concepts do not compile."
       ];
   const observability = await writeLearnV2PipelineObservabilityReport(root, {
@@ -416,7 +431,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       "Output-facing analysis frames, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
       "Raw vault refs are local-only and never exportable through compile, pack, or sync artifacts.",
       "Concept cards remain candidates until explicit review activates them.",
-      "Model-assisted extraction uses prompt-safe Learn v2 request artifacts for OpenCode-configured agents; model outputs are untrusted until schema and evidence validation pass."
+      `Model execution policy is ${modelMode}: deterministic extraction and prompt-safe OpenCode request artifacts are supported; raw-evidence-to-model execution is rejected until implemented.`,
+      "Model outputs are untrusted until schema and evidence validation pass."
     ],
     nextActions,
     learnV2: {
@@ -436,6 +452,14 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   await writeJsonAtomic(digestPath, result);
   await fs.writeFile(reviewMarkdownPath, renderRawLearningDigest(result), "utf8");
   return result;
+}
+
+export function resolveLearnV2RawLearningModelMode(mode: LearnV2RawLearningModelModeInput | undefined): LearnV2RawLearningModelMode {
+  if (!mode) return "deterministic-only";
+  if ((LearnV2RawLearningModelModes as readonly string[]).includes(mode)) return mode as LearnV2RawLearningModelMode;
+  const mapped = LearnV2RawLearningModelModeAliases[mode as LearnV2RawLearningLegacyModelMode];
+  if (mapped) return mapped;
+  throw new Error(`Invalid Learn v2 raw learning model mode: ${mode}`);
 }
 
 async function writePreviewLearnV2ConceptStore(root: string, projectId: string, concepts: LearnV2ConceptCard[], now: Date): Promise<LearnV2ConceptStore> {

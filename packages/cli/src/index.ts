@@ -127,6 +127,18 @@ import {
 
 const program = new Command();
 
+const RawLearningPublicModelModes = [
+  "deterministic-only",
+  "opencode-host-sanitized-only",
+  "opencode-host-raw-allowed"
+] as const;
+const RawLearningLegacyModelModeAliases: Record<string, typeof RawLearningPublicModelModes[number]> = {
+  "heuristic-only": "deterministic-only",
+  "remote-redacted": "opencode-host-sanitized-only",
+  "remote-explicit": "opencode-host-sanitized-only",
+  "local-raw": "opencode-host-raw-allowed"
+};
+
 program
   .name("openskill-kit")
   .description("OpenSkillKit adaptive project behavior layer")
@@ -342,7 +354,7 @@ osk.command("learn")
   .option("--concept-outcome-reason <text>", "Short safe reason for --record-concept-outcome")
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--learn-v2-goldens <path>", "Learn-v2 extraction golden scenario JSON file")
-  .option("--model-mode <mode>", `Raw learning model mode: ${RawLearningModelModes.join("|")}`, parseRawLearningModelMode, "heuristic-only")
+  .option("--model-mode <mode>", `Raw learning model mode: ${RawLearningPublicModelModes.join("|")}`, parseRawLearningModelMode, "deterministic-only")
   .option("--all-detected", "Select all safe detected sources")
   .option("--apply", "Apply selected sources after preview approval")
   .option("--max-events <number>", "Maximum events", parseIntegerOption, 250)
@@ -2438,8 +2450,10 @@ function parseCompileTarget(value: string): CompileTarget {
 }
 
 function parseRawLearningModelMode(value: string): typeof RawLearningModelModes[number] {
-  if ((RawLearningModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
-  throw new Error(`Invalid raw learning model mode: ${value}. Expected one of: ${RawLearningModelModes.join(", ")}`);
+  if ((RawLearningPublicModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
+  const alias = RawLearningLegacyModelModeAliases[value];
+  if (alias) return alias as typeof RawLearningModelModes[number];
+  throw new Error(`Invalid raw learning model mode: ${value}. Expected one of: ${RawLearningPublicModelModes.join(", ")}`);
 }
 
 function parseConceptOutcome(value: string | undefined): Parameters<typeof recordLearnV2ConceptOutcome>[1]["outcome"] {
