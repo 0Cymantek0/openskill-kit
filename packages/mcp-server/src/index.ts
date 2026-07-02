@@ -61,6 +61,7 @@ import {
   runPersistedLearnV2Eval,
   writeLearnV2ModelRequests,
   runLearnV2RawVaultMaintenance,
+  readLearnV2PipelineObservabilityReport,
   explainInteractionImport,
   installSkill,
   listInteractionAdapters,
@@ -615,6 +616,23 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     async ({ projectRoot, gc, maxHotBytes }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await runLearnV2RawVaultMaintenance(root, { gc, maxHotBytes }), root);
+    }
+  );
+
+  registerTool(
+    "osk_get_learn_v2_observability",
+    {
+      title: "OpenSkillKit Learn v2 Observability",
+      description: "Return the latest declassified Learn v2 pipeline observability report, or a specific report path. Raw refs, source paths, raw prompts, and raw diffs are not included.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        reportPath: z.string().min(1).optional()
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, reportPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "status", () => readLearnV2PipelineObservabilityReport(root, reportPath)), root);
     }
   );
 

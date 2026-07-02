@@ -53,6 +53,7 @@ openskill-kit osk learn --prepare-model-requests
 openskill-kit osk learn --model-output .openskill-kit/learn-v2/model-requests/episode_.../request-manifest.json
 openskill-kit osk learn --activation-query "parser change" --activation-path packages/core/src/parser.ts --activation-task-type parser-change
 openskill-kit osk learn --record-concept-outcome concept_... --concept-outcome helpful --activation-query "parser change"
+openskill-kit osk learn --observability
 openskill-kit osk learn --raw-vault-status
 openskill-kit osk learn --gc-raw-vault --max-raw-vault-bytes 50000000
 openskill-kit osk review --concept-accept concept_...
@@ -75,7 +76,9 @@ openskill-kit osk review --write
 - Candidate preferences and workflows.
 - Learn v2 task episode, concept review, compile preview, and eval artifacts when `--raw` is used.
 - Learn v2 raw-learning result includes `learningInputBoundary: "raw-local-in-memory-declassified-artifacts"` so callers can distinguish local raw deterministic extraction from declassified persisted/model-request artifacts and future raw-to-model execution.
+- Raw-learning top-level `concepts` remains the legacy current-run projection. The nested `learnV2.concepts` array is the merged concept set used for review, conflict, compile preview, eval, and observability; `digest.currentRunConceptCards`, `digest.mergedConceptCards`, and `learnV2.conceptCounts` make that scope explicit.
 - Learn v2 writes a declassified pipeline observability report with source intake counts, episode confidence/stitching counts, tool compression strategies, patch filter reasons, concept status/risk counts, quality gates, artifact pointers, and next actions.
+- MCP advanced profile exposes the same declassified report through `osk_get_learn_v2_observability`, using the latest report by default or an explicit report path when supplied.
 - Learn v2 writes declassified evidence-quality artifacts that score normalized records for prioritization and model-routing ROI without dropping raw-local learning evidence.
 - Learn v2 writes a concept conflict ledger and links it from the review queue so contradictory, superseding, or overlapping concepts stay reviewable instead of hidden in scoring side effects.
 - Learn v2 writes declassified evidence snippets and links them from review cards so reviewers see safe, bounded support text instead of only opaque evidence IDs.

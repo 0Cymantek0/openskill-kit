@@ -124,6 +124,9 @@ export interface RawLocalLearningResult {
     learningWindows: number;
     behaviorAtoms: number;
     conceptCards: number;
+    currentRunConceptCards?: number;
+    mergedConceptCards?: number;
+    topLevelConceptsScope?: "current-run-legacy-projection";
     eventsAppended: number;
     reviewCandidates: number;
     learningInputBoundary: LearnV2LearningInputBoundary;
@@ -143,7 +146,12 @@ export interface RawLocalLearningResult {
     schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1";
     learningInputBoundary: LearnV2LearningInputBoundary;
     episodes: unknown[];
+    currentRunConcepts?: unknown[];
     concepts: unknown[];
+    conceptCounts?: {
+      currentRun: number;
+      mergedForArtifacts: number;
+    };
     rejectedAtoms: unknown[];
     conceptStorePath: string;
     reviewQueuePath: string;

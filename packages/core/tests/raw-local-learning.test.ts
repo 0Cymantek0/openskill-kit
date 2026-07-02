@@ -45,7 +45,15 @@ describe("raw local learning", () => {
     expect(preview.digest.previewWritesLocalArtifacts).toBe(true);
     expect(preview.digest.canonicalConceptStateWritten).toBe(false);
     expect(preview.digest.learningInputBoundary).toBe("raw-local-in-memory-declassified-artifacts");
+    expect(preview.digest.currentRunConceptCards).toBe(preview.digest.conceptCards);
+    expect(preview.digest.mergedConceptCards).toBe(preview.learnV2.concepts.length);
+    expect(preview.digest.topLevelConceptsScope).toBe("current-run-legacy-projection");
     expect(preview.learnV2.learningInputBoundary).toBe("raw-local-in-memory-declassified-artifacts");
+    expect(preview.learnV2.currentRunConcepts).toHaveLength(preview.digest.currentRunConceptCards);
+    expect(preview.learnV2.conceptCounts).toEqual({
+      currentRun: preview.digest.currentRunConceptCards,
+      mergedForArtifacts: preview.digest.mergedConceptCards
+    });
     expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
@@ -199,6 +207,12 @@ describe("raw local learning", () => {
     expect(await readFile(activationPath, "utf8")).toBe(activationBefore);
     expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
     expect(preview.learnV2.concepts.some((card) => card.id === existing!.id)).toBe(true);
+    expect(preview.digest.mergedConceptCards).toBeGreaterThan(preview.digest.currentRunConceptCards);
+    expect(preview.learnV2.conceptCounts).toEqual({
+      currentRun: preview.digest.currentRunConceptCards,
+      mergedForArtifacts: preview.digest.mergedConceptCards
+    });
+    expect(preview.concepts).toHaveLength(preview.digest.currentRunConceptCards);
     const conflictLedger = await readFile(preview.artifacts.learnV2ConflictLedgerPath, "utf8");
     expect(conflictLedger).toContain(existing!.id);
     expect(conflictLedger).toContain("Unresolved: 1");

@@ -2100,7 +2100,7 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     `Sources included: ${result.digest.sourcesIncluded}`,
     `Learning windows: ${result.digest.learningWindows}`,
     `Behavior atoms: ${result.digest.behaviorAtoms}`,
-    `Concept cards: ${result.digest.conceptCards}`,
+    `Concept cards: ${result.digest.currentRunConceptCards ?? result.digest.conceptCards} current-run, ${result.digest.mergedConceptCards ?? result.digest.conceptCards} merged for review/artifacts`,
     `Events appended: ${result.digest.eventsAppended}`,
     `Raw vault records written: ${result.digest.rawVaultRecordsWritten}`,
     `Overall quality: ${result.quality.overallScore.toFixed(2)} (relevance ${result.quality.relevanceScore.toFixed(2)}, yield ${result.quality.conceptYieldScore.toFixed(2)}, safety ${result.quality.propagationSafetyScore.toFixed(2)})`,
@@ -2114,7 +2114,7 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
   ].filter((line): line is string => Boolean(line));
   if (result.concepts.length > 0) {
     lines.push("");
-    lines.push("Candidate concepts:");
+    lines.push("Candidate concepts (current-run legacy projection):");
     for (const concept of result.concepts.slice(0, 12)) {
       lines.push(`  [${concept.confidence.toFixed(2)}] ${concept.canonicalBehavior}`);
     }

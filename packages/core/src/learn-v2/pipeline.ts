@@ -129,6 +129,9 @@ interface LearnV2RawLocalLearningRunCompat {
     learningWindows: number;
     behaviorAtoms: number;
     conceptCards: number;
+    currentRunConceptCards: number;
+    mergedConceptCards: number;
+    topLevelConceptsScope: "current-run-legacy-projection";
     eventsAppended: number;
     reviewCandidates: number;
     learningInputBoundary: LearnV2LearningInputBoundary;
@@ -140,7 +143,12 @@ interface LearnV2RawLocalLearningRunCompat {
     schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1";
     learningInputBoundary: LearnV2LearningInputBoundary;
     episodes: ReturnType<typeof reconstructLearnV2Episodes>;
+    currentRunConcepts: LearnV2ConceptCard[];
     concepts: LearnV2ConceptCard[];
+    conceptCounts: {
+      currentRun: number;
+      mergedForArtifacts: number;
+    };
     rejectedAtoms: ReturnType<typeof extractLearnV2BehaviorAtoms>["rejected"];
     conceptStorePath: string;
     reviewQueuePath: string;
@@ -430,6 +438,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learningWindows: episodes.length,
       behaviorAtoms: extracted.atoms.length,
       conceptCards: concepts.length,
+      currentRunConceptCards: concepts.length,
+      mergedConceptCards: conceptCardsForArtifacts.length,
+      topLevelConceptsScope: "current-run-legacy-projection",
       eventsAppended,
       reviewCandidates: lifecycle?.graph.candidateCount ?? review?.candidates.length ?? 0,
       learningInputBoundary
@@ -453,7 +464,12 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1",
       learningInputBoundary,
       episodes,
+      currentRunConcepts: concepts,
       concepts: conceptCardsForArtifacts,
+      conceptCounts: {
+        currentRun: concepts.length,
+        mergedForArtifacts: conceptCardsForArtifacts.length
+      },
       conceptStorePath,
       rejectedAtoms: extracted.rejected,
       reviewQueuePath: reviewQueue.artifacts.markdown,

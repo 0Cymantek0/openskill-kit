@@ -63,6 +63,68 @@ describe("openskill-kit MCP server", () => {
     }
   });
 
+  it("exposes declassified Learn v2 observability through advanced MCP", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-learn-v2-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-learn-v2-fixture" }), "utf8");
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, [
+      `user: In ${path.join(root, "packages/core/src/parser.ts")}, prefer focused parser tests before parser rewrites. API_KEY=sk-live-secret`,
+      "assistant: noted"
+    ].join("\n"), "utf8");
+
+    const client = new Client({ name: "openskill-kit-learn-v2-test", version: "0.1.0" }, { capabilities: {} });
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"), path.join(repoRoot, "packages", "mcp-server", "src", "index.ts")],
+      cwd: root,
+      env: { ...inheritedEnv(), OPENSKILLKIT_MCP_PROFILE: "advanced" },
+      stderr: "pipe"
+    });
+
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      const names = listed.tools.map((tool) => tool.name);
+      expect(names).toContain("osk_ingest_raw_evidence");
+      expect(names).toContain("osk_get_learn_v2_observability");
+
+      await client.callTool({
+        name: "osk_get_status",
+        arguments: { projectRoot: root, init: true }
+      });
+      const raw = await client.callTool({
+        name: "osk_ingest_raw_evidence",
+        arguments: {
+          projectRoot: root,
+          sourceFiles: [transcript],
+          previewOnly: true,
+          modelMode: "deterministic-only"
+        }
+      });
+      const rawText = raw.content.find((item) => item.type === "text")?.text ?? "{}";
+      const rawParsed = JSON.parse(rawText);
+      expect(rawParsed.digest.topLevelConceptsScope).toBe("current-run-legacy-projection");
+      expect(rawParsed.digest.mergedConceptCards).toBeGreaterThanOrEqual(rawParsed.digest.currentRunConceptCards);
+      expect(rawText).not.toContain(root);
+      expect(rawText).not.toContain("sk-live-secret");
+
+      const observability = await client.callTool({
+        name: "osk_get_learn_v2_observability",
+        arguments: { projectRoot: root }
+      });
+      const observabilityText = observability.content.find((item) => item.type === "text")?.text ?? "{}";
+      const observabilityParsed = JSON.parse(observabilityText);
+      expect(observabilityParsed.schemaVersion).toBe("openskill-kit.learn-v2.pipeline-observability.v1");
+      expect(observabilityParsed.privacy.rawRefsExported).toBe(false);
+      expect(observabilityParsed.privacy.rawSourcePathsExported).toBe(false);
+      expect(observabilityParsed.health.status).toMatch(/pass|warn|fail/);
+      expect(observabilityText).not.toContain(root);
+      expect(observabilityText).not.toContain("sk-live-secret");
+    } finally {
+      await client.close();
+    }
+  }, 45_000);
+
   it("lists advanced tools and drafts a skill through stdio transport", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-fixture" }), "utf8");
@@ -115,6 +177,7 @@ describe("openskill-kit MCP server", () => {
           "osk_list_interaction_imports",
           "osk_explain_interaction_import",
           "osk_get_interaction_pool",
+          "osk_get_learn_v2_observability",
           "osk_run_lifecycle_once",
           "osk_openworld_retrieval_adapters",
           "osk_openworld_execute_source_plan",
