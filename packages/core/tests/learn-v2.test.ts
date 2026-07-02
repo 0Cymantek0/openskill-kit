@@ -937,11 +937,15 @@ describe("learn-v2 substrate", () => {
       "contradiction-reviewer",
       "scope-inferencer",
       "declassification-reviewer",
-      "eval-planner"
+      "eval-planner",
+      "publish-export-auditor"
     ]);
     const routeJson = await readText(path.join(root, artifact.artifacts.routingJson));
     expect(routeJson).toContain("deterministicFallback");
+    expect(routeJson).toContain("behavior pack publish audit scanners");
     expect(routeJson).not.toContain("ollama");
+    const publishAuditor = await readText(path.join(root, artifact.agents["publish-export-auditor"].agentFile));
+    expect(publishAuditor).toContain("share-boundary privacy risks");
   });
 
   it("reports raw vault budget and compacts unpinned records during GC", async () => {

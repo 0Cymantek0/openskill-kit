@@ -9,7 +9,8 @@ export const LearnV2ModelAgentRoles = [
   "contradiction-reviewer",
   "scope-inferencer",
   "declassification-reviewer",
-  "eval-planner"
+  "eval-planner",
+  "publish-export-auditor"
 ] as const;
 export type LearnV2ModelAgentRole = typeof LearnV2ModelAgentRoles[number];
 
@@ -39,7 +40,8 @@ const roleToRoute: Record<LearnV2ModelAgentRole, ModelRouteName> = {
   "contradiction-reviewer": "reviewer",
   "scope-inferencer": "reviewer",
   "declassification-reviewer": "reviewer",
-  "eval-planner": "evaluator"
+  "eval-planner": "evaluator",
+  "publish-export-auditor": "reviewer"
 };
 
 const rolePurpose: Record<LearnV2ModelAgentRole, string> = {
@@ -48,7 +50,8 @@ const rolePurpose: Record<LearnV2ModelAgentRole, string> = {
   "contradiction-reviewer": "Find conflicts, counterevidence, supersession candidates, and scope mismatches across concept cards.",
   "scope-inferencer": "Infer narrow path/task scopes and negative triggers for concept activation.",
   "declassification-reviewer": "Check proposed review/compile/eval artifacts for raw refs, local paths, secrets, and private identifiers.",
-  "eval-planner": "Generate replay and extraction-golden checks for reviewed learn-v2 concepts."
+  "eval-planner": "Generate replay and extraction-golden checks for reviewed learn-v2 concepts.",
+  "publish-export-auditor": "Review compiled/exportable behavior artifacts for unsupported rules, stale concepts, unsafe command policies, raw evidence leaks, local identity leaks, and share-boundary privacy risks."
 };
 
 export async function ensureLearnV2ModelRoutingArtifacts(projectRoot: string, now = new Date()): Promise<LearnV2ModelRoutingArtifact> {
@@ -120,6 +123,6 @@ function deterministicFallback(role: LearnV2ModelAgentRole): string {
   if (role === "contradiction-reviewer") return "Use polarity, scope, canonical-key overlap, and counterevidence ledger checks.";
   if (role === "scope-inferencer") return "Use path clusters, structural classes, task hints, and commands.";
   if (role === "declassification-reviewer") return "Use regex placeholder, raw-ref, secret, and local-path leak checks.";
+  if (role === "publish-export-auditor") return "Use behavior pack publish audit scanners, compiled-output hygiene checks, concept quality gates, and manifest privacy checks.";
   return "Use replay eval, extraction golden checks, leak checks, and token budget reports.";
 }
-
