@@ -773,6 +773,39 @@ describe("learn-v2 substrate", () => {
     expect(result.learnV2).toBeTruthy();
   });
 
+  it("builds raw-learning review artifacts from canonical merged concept store", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [existing] = mergeLearnV2ConceptCards([
+      behaviorAtom("canonical_existing_parser_tests", "Prefer focused parser tests for parser changes.", "positive")
+    ], now);
+    await writeLearnV2ConceptStore(root, [{
+      ...existing!,
+      status: "active",
+      scope: { ...existing!.scope, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] },
+      activation: { ...existing!.activation, pathGlobs: ["packages/core/src/**"] }
+    }], now);
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, [
+      `user: ${root} Avoid focused parser tests for packages/core/src/parser.ts parser changes.`,
+      "assistant: ok"
+    ].join("\n"), "utf8");
+
+    const result = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+
+    const conflictLedger = await readText(result.artifacts.learnV2ConflictLedgerPath);
+    expect(conflictLedger).toContain(existing!.id);
+    expect(conflictLedger).toContain("Unresolved: 1");
+    const reviewQueue = await readText(result.artifacts.learnV2ReviewQueuePath);
+    expect(reviewQueue).toContain("Unresolved conflicts:");
+    expect(result.learnV2.concepts.some((card) => card.id === existing!.id)).toBe(true);
+  });
+
   it("reconstructs extracts and evaluates from persisted learn-v2 artifacts without raw source reread", async () => {
     const root = await tempProject();
     const transcript = path.join(root, "session.md");

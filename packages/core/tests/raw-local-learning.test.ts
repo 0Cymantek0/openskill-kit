@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -40,6 +40,9 @@ describe("raw local learning", () => {
     });
     expect(preview.digest.sourcesIncluded).toBe(1);
     expect(preview.digest.rawVaultRecordsWritten).toBe(0);
+    expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
+    await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
+    await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
     expect(preview.digest.learningWindows).toBeGreaterThanOrEqual(1);
     expect(preview.quality.overallScore).toBeGreaterThan(0.6);
     expect(preview.quality.strengths.join(" ")).toContain("reviewable concept");
@@ -98,6 +101,29 @@ describe("raw local learning", () => {
     const events = await readEvents(root);
     expect(JSON.stringify(events)).not.toContain(root);
     expect(JSON.stringify(events)).not.toContain("sk-live-secret");
+  });
+
+  it("keeps raw preview isolated even when auto-apply-safe is configured", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.learning.mode = "auto-apply-safe";
+    config.learning.minConfidenceToApply = 0.7;
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, `user: ${root} prefer focused parser tests in packages/core/src/parser.ts.`, "utf8");
+
+    const preview = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      now: new Date("2026-06-30T01:20:00.000Z")
+    });
+
+    expect(preview.previewOnly).toBe(true);
+    expect(preview.digest.rawVaultRecordsWritten).toBe(0);
+    expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
+    await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
+    await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
   });
 
   it("keeps raw learning vault and prompt frames out of behavior packs", async () => {

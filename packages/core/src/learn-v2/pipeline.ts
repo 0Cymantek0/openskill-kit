@@ -19,7 +19,7 @@ import { compileLearnV2ConceptPreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
 import { writeLearnV2PipelineObservabilityReport } from "./observability.js";
 import { learnV2EvidenceQualityArtifactPath, writeLearnV2EvidenceQualityArtifact } from "./quality.js";
-import { writeLearnV2ConceptStore } from "./store.js";
+import { mergeLearnV2ConceptStoreCards, readLearnV2ConceptStore, writeLearnV2ConceptStore, type LearnV2ConceptStore } from "./store.js";
 import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
 import { detectLearnV2ConceptDrift } from "./drift.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
@@ -287,9 +287,15 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const modelRequests = await writeLearnV2ModelRequests(root, episodes, now);
   const extracted = extractLearnV2BehaviorAtoms(episodes);
   const concepts = mergeLearnV2ConceptCards(extracted.atoms, now);
-  const conceptStore = await writeLearnV2ConceptStore(root, concepts, now);
-  const conceptDrift = await detectLearnV2ConceptDrift(root, conceptStore.cards, { now });
-  const conflictLedger = await writeLearnV2ConflictLedger(root, concepts, config.projectId, now);
+  const conceptStore = previewOnly
+    ? await writePreviewLearnV2ConceptStore(root, config.projectId, concepts, now)
+    : await writeLearnV2ConceptStore(root, concepts, now);
+  const conceptCardsForArtifacts = conceptStore.cards;
+  const conceptStorePath = previewOnly
+    ? previewLearnV2ConceptStorePath(root, generatedAt)
+    : path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
+  const conceptDrift = await detectLearnV2ConceptDrift(root, conceptCardsForArtifacts, { now });
+  const conflictLedger = await writeLearnV2ConflictLedger(root, conceptCardsForArtifacts, config.projectId, now);
   const modelRouting = await ensureLearnV2ModelRoutingArtifacts(root, now);
   for (const source of sourceDigests) {
     const rawRef = source.learnV2.rawRef;
@@ -297,14 +303,14 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     source.atomCount = extracted.atoms.filter((atom) => atom.rawRefs.includes(rawRef)).length;
     source.conceptCount = concepts.filter((concept) => concept.rawRefs.includes(rawRef)).length;
   }
-  const reviewQueue = await writeLearnV2ReviewQueue(root, concepts, now, {
+  const reviewQueue = await writeLearnV2ReviewQueue(root, conceptCardsForArtifacts, now, {
     ledger: conflictLedger.ledger,
     markdownPath: conflictLedger.artifactPaths.markdown,
     declassifiedSnippets,
     conceptDrift
   });
-  const compilePreview = await compileLearnV2ConceptPreview(root, config, concepts, now);
-  const evalReport = await runLearnV2Eval(root, episodes, concepts, now, { goldensPath: options.learnV2GoldensPath });
+  const compilePreview = await compileLearnV2ConceptPreview(root, config, conceptCardsForArtifacts, now);
+  const evalReport = await runLearnV2Eval(root, episodes, conceptCardsForArtifacts, now, { goldensPath: options.learnV2GoldensPath });
   const lifecycle: LifecycleRunnerResult | undefined = !previewOnly && importRuns.some((run) => run.appendedEventCount > 0)
     ? await runLifecycleOnce({ projectRoot: root, maxEvents: options.maxTurns ?? 500, compileSafe: false, now: options.now })
     : undefined;
@@ -328,7 +334,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     modelMode,
     sources: sourceDigests,
     episodes,
-    concepts,
+    concepts: conceptCardsForArtifacts,
     reviewQueue,
     evalReport,
     eventsAppended,
@@ -339,7 +345,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ReviewQueuePath: reviewQueue.artifacts.markdown,
       learnV2CompilePreviewPath: compilePreview.artifacts.markdown,
       learnV2EvalReportPath: evalReport.artifacts.markdown,
-      learnV2ConceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
+      learnV2ConceptStorePath: conceptStorePath,
       learnV2RelevanceCalibrationPath: relevanceCalibration.path,
       learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
       learnV2EpisodeStorePath: episodeStorePath,
@@ -372,7 +378,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ReviewQueuePath: reviewQueue.artifacts.markdown,
       learnV2CompilePreviewPath: compilePreview.artifacts.markdown,
       learnV2EvalReportPath: evalReport.artifacts.markdown,
-      learnV2ConceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
+      learnV2ConceptStorePath: conceptStorePath,
       learnV2RelevanceCalibrationPath: relevanceCalibration.path,
       learnV2ModelRoutingPath: modelRouting.artifacts.routingJson,
       learnV2EpisodeStorePath: episodeStorePath,
@@ -397,7 +403,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       eventsAppended,
       reviewCandidates: lifecycle?.graph.candidateCount ?? review?.candidates.length ?? 0
     },
-    quality: buildV2Quality(sourceDigests, concepts, extracted.rejected.length, previewOnly, evalReport.status),
+    quality: buildV2Quality(sourceDigests, conceptCardsForArtifacts, extracted.rejected.length, previewOnly, evalReport.status),
     privacy: [
       "Learn v2 reads full supplied raw local evidence and stores it only in the project-local v2 raw vault when --apply is used.",
       "Output-facing analysis frames, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
@@ -409,8 +415,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     learnV2: {
       schemaVersion: "openskill-kit.learn-v2.pipeline-run.v1",
       episodes,
-      concepts,
-      conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
+      concepts: conceptCardsForArtifacts,
+      conceptStorePath,
       rejectedAtoms: extracted.rejected,
       reviewQueuePath: reviewQueue.artifacts.markdown,
       compilePreviewPath: compilePreview.artifacts.markdown,
@@ -423,6 +429,22 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   await writeJsonAtomic(digestPath, result);
   await fs.writeFile(reviewMarkdownPath, renderRawLearningDigest(result), "utf8");
   return result;
+}
+
+async function writePreviewLearnV2ConceptStore(root: string, projectId: string, concepts: LearnV2ConceptCard[], now: Date): Promise<LearnV2ConceptStore> {
+  const existing = await readLearnV2ConceptStore(root, now);
+  const store: LearnV2ConceptStore = {
+    schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
+    projectId,
+    updatedAt: now.toISOString(),
+    cards: mergeLearnV2ConceptStoreCards(existing.cards, concepts, now)
+  };
+  await writeJsonAtomic(previewLearnV2ConceptStorePath(root, now.toISOString()), store);
+  return store;
+}
+
+function previewLearnV2ConceptStorePath(root: string, generatedAt: string): string {
+  return path.join(root, ".openskill-kit", "learn-v2", "compiled-preview", `concept-store-preview-${timestampSlug(generatedAt)}.json`);
 }
 
 function makePreviewRawRecord(

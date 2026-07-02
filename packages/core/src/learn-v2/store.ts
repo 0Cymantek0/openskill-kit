@@ -86,7 +86,7 @@ export async function writeLearnV2ConceptStore(projectRoot: string, cards: Learn
   const root = path.resolve(projectRoot);
   const config = await readProjectConfig(root);
   const existing = await readLearnV2ConceptStore(root, now);
-  const merged = mergeConceptCards(existing.cards, cards, now);
+  const merged = mergeLearnV2ConceptStoreCards(existing.cards, cards, now);
   const policyApplied = applyLearnV2AutoPolicies(merged, config, now);
   const store: LearnV2ConceptStore = {
     schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
@@ -97,6 +97,26 @@ export async function writeLearnV2ConceptStore(projectRoot: string, cards: Learn
   await writeJsonAtomic(learnV2ConceptStorePath(root), store);
   await writeLearnV2ActivationIndex(root, store, now);
   return store;
+}
+
+export function mergeLearnV2ConceptStoreCards(existing: LearnV2ConceptCard[], incoming: LearnV2ConceptCard[], now = new Date()): LearnV2ConceptCard[] {
+  const byId = new Map(existing.map((card) => [card.id, card]));
+  for (const card of incoming) {
+    const previous = byId.get(card.id);
+    byId.set(card.id, withLearnV2ConceptScoring(previous ? {
+      ...card,
+      status: previous.status,
+      counterevidence: previous.counterevidence.length ? previous.counterevidence : card.counterevidence,
+      lifecycle: {
+        ...card.lifecycle,
+        createdAt: previous.lifecycle.createdAt,
+        updatedAt: now.toISOString(),
+        supersedes: previous.lifecycle.supersedes,
+        supersededBy: previous.lifecycle.supersededBy
+      }
+    } : card));
+  }
+  return sortConceptCards([...byId.values()]);
 }
 
 export async function applyLearnV2ConceptReview(projectRoot: string, options: LearnV2ConceptReviewOptions): Promise<LearnV2ConceptReviewResult> {
@@ -265,26 +285,6 @@ export function learnV2ConceptStorePath(root: string): string {
 
 export function learnV2ActivationIndexPath(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "activation-index.json");
-}
-
-function mergeConceptCards(existing: LearnV2ConceptCard[], incoming: LearnV2ConceptCard[], now: Date): LearnV2ConceptCard[] {
-  const byId = new Map(existing.map((card) => [card.id, card]));
-  for (const card of incoming) {
-    const previous = byId.get(card.id);
-    byId.set(card.id, withLearnV2ConceptScoring(previous ? {
-      ...card,
-      status: previous.status,
-      counterevidence: previous.counterevidence.length ? previous.counterevidence : card.counterevidence,
-      lifecycle: {
-        ...card.lifecycle,
-        createdAt: previous.lifecycle.createdAt,
-        updatedAt: now.toISOString(),
-        supersedes: previous.lifecycle.supersedes,
-        supersededBy: previous.lifecycle.supersededBy
-      }
-    } : card));
-  }
-  return sortConceptCards([...byId.values()]);
 }
 
 function withStatus(card: LearnV2ConceptCard, status: LearnV2ConceptCard["status"], now: Date): LearnV2ConceptCard {
