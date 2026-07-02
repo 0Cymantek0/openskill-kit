@@ -995,6 +995,32 @@ describe("learn-v2 substrate", () => {
     })).rejects.toThrow(/opencode-host-raw-allowed is not implemented yet/);
   });
 
+  it("uses project raw-evidence execution policy when model mode is omitted", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = JSON.parse(await readText(configPath));
+    config.learning.rawEvidence.extractionExecution = "opencode-host-sanitized-only";
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const transcript = path.join(root, "model-mode-config-session.md");
+    await writeFile(transcript, `user: ${root} prefer focused parser tests in packages/core/src/parser.ts.`, "utf8");
+
+    const sanitized = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      now: new Date("2026-06-30T00:03:00Z")
+    });
+    expect(sanitized.modelMode).toBe("opencode-host-sanitized-only");
+    expect(sanitized.privacy.join("\n")).toContain("Model execution policy is opencode-host-sanitized-only");
+
+    config.learning.rawEvidence.extractionExecution = "opencode-host-raw-allowed";
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    await expect(runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      now: new Date("2026-06-30T00:04:00Z")
+    })).rejects.toThrow(/opencode-host-raw-allowed is not implemented yet/);
+  });
+
   it("builds raw-learning review artifacts from canonical merged concept store", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:00:00Z");

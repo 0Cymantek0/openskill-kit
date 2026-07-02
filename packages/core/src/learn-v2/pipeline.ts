@@ -158,7 +158,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const generatedAt = now.toISOString();
   const learningInputBoundary = "minimal-secret-path-placeholdering" as const;
   const previewOnly = options.previewOnly !== false;
-  const modelMode = resolveLearnV2RawLearningModelMode(options.modelMode);
+  const modelMode = resolveLearnV2RawLearningModelMode(options.modelMode ?? config.learning.rawEvidence.extractionExecution);
   if (modelMode === "opencode-host-raw-allowed") {
     throw new Error("Learn v2 model mode opencode-host-raw-allowed is not implemented yet; use deterministic-only or opencode-host-sanitized-only.");
   }
