@@ -51,6 +51,7 @@ import {
   runLearningPlan,
   runRawLocalLearning,
   readLearnV2ConceptStore,
+  readLearnV2ReviewQueue,
   applyLearnV2ConceptReview,
   applyLearnV2ModelProposalOutputs,
   activateLearnV2Concepts,
@@ -372,6 +373,43 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
   );
 
   registerTool(
+    "osk_plan_learning_sources_v2",
+    {
+      title: "OpenSkillKit Learn v2 Source Plan",
+      description: "Plan learning sources for Learn v2. Raw-local surfaces are explicit file inputs for osk_ingest_raw_evidence; this tool returns safe detected sources plus that raw-local policy boundary.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        sourceMode: z.enum(["ask", "all-detected", "selected"]).default("ask"),
+        selectedSourceIds: z.array(z.string().min(1)).default([])
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, sourceMode, selectedSourceIds }) => {
+      const root = resolveProjectRoot(projectRoot);
+      const plan = await withMcpCommandTelemetry(root, "learn", () => planLearningSources(root, { sourceMode, selectedSourceIds }));
+      return toolResult({
+        schemaVersion: "openskill-kit.learn-v2.source-plan.v1",
+        generatedAt: new Date().toISOString(),
+        legacySourcePlan: plan,
+        rawLocalSurfacePolicy: {
+          selection: "explicit-files-only",
+          ingestTool: "osk_ingest_raw_evidence",
+          previewDefault: true,
+          applyRequiresExplicitPreviewOnlyFalse: true,
+          learnerInputBoundary: "raw-local-in-memory-declassified-artifacts",
+          outputBoundary: "declassified-review-compile-eval-artifacts",
+          modelBoundary: "opencode-host-sanitized-only-or-deterministic"
+        },
+        nextActions: [
+          "Use osk_ingest_raw_evidence with explicit sourceFiles for raw-local Learn v2 ingestion.",
+          "Keep previewOnly=true until user approves apply.",
+          "Use osk_get_concept_review_queue after ingestion to inspect behavior-delta-first focus cards."
+        ]
+      }, root);
+    }
+  );
+
+  registerTool(
     "osk_run_learning_plan",
     {
       title: "OpenSkillKit Run Learning Plan",
@@ -435,13 +473,13 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     "osk_get_concept_review_queue",
     {
       title: "OpenSkillKit Learn v2 Concept Review Queue",
-      description: "Return persisted Learn v2 concept cards and activation metadata without raw evidence content.",
+      description: "Return the persisted Learn v2 behavior-delta-first concept review queue, including focus cards, appendix counts, conflict/drift summaries, and declassified snippets only.",
       inputSchema: z.object({ projectRoot: projectRootSchema }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
     },
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await readLearnV2ConceptStore(root), root);
+      return toolResult(stripLearnV2RawRefs(await readLearnV2ReviewQueue(root)), root);
     }
   );
 
@@ -2360,6 +2398,18 @@ function sanitizeForOutput(value: unknown, projectRoot: string): unknown {
   if (Array.isArray(value)) return value.map((item) => sanitizeForOutput(item, projectRoot));
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, sanitizeForOutput(nested, projectRoot)]));
+  }
+  return value;
+}
+
+function stripLearnV2RawRefs(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripLearnV2RawRefs);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== "rawRef" && key !== "rawRefs")
+        .map(([key, nested]) => [key, stripLearnV2RawRefs(nested)])
+    );
   }
   return value;
 }

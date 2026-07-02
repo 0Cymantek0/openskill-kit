@@ -85,13 +85,27 @@ describe("openskill-kit MCP server", () => {
       await client.connect(transport);
       const listed = await client.listTools();
       const names = listed.tools.map((tool) => tool.name);
+      expect(names).toContain("osk_plan_learning_sources_v2");
       expect(names).toContain("osk_ingest_raw_evidence");
+      expect(names).toContain("osk_get_concept_review_queue");
       expect(names).toContain("osk_get_learn_v2_observability");
 
       await client.callTool({
         name: "osk_get_status",
         arguments: { projectRoot: root, init: true }
       });
+      const planV2 = await client.callTool({
+        name: "osk_plan_learning_sources_v2",
+        arguments: { projectRoot: root }
+      });
+      const planV2Text = planV2.content.find((item) => item.type === "text")?.text ?? "{}";
+      const planV2Parsed = JSON.parse(planV2Text);
+      expect(planV2Parsed.schemaVersion).toBe("openskill-kit.learn-v2.source-plan.v1");
+      expect(planV2Parsed.legacySourcePlan.schemaVersion).toBe("openskill-kit.learn-source-plan.v1");
+      expect(planV2Parsed.rawLocalSurfacePolicy.ingestTool).toBe("osk_ingest_raw_evidence");
+      expect(planV2Parsed.rawLocalSurfacePolicy.previewDefault).toBe(true);
+      expect(planV2Text).not.toContain(root);
+
       const raw = await client.callTool({
         name: "osk_ingest_raw_evidence",
         arguments: {
@@ -107,6 +121,20 @@ describe("openskill-kit MCP server", () => {
       expect(rawParsed.digest.mergedConceptCards).toBeGreaterThanOrEqual(rawParsed.digest.currentRunConceptCards);
       expect(rawText).not.toContain(root);
       expect(rawText).not.toContain("sk-live-secret");
+
+      const queue = await client.callTool({
+        name: "osk_get_concept_review_queue",
+        arguments: { projectRoot: root }
+      });
+      const queueText = queue.content.find((item) => item.type === "text")?.text ?? "{}";
+      const queueParsed = JSON.parse(queueText);
+      expect(queueParsed.schemaVersion).toBe("openskill-kit.learn-v2.review-queue.v1");
+      expect(queueParsed.behaviorDeltaFirst).toBe(true);
+      expect(queueParsed.reviewFocus.focusCardIds.length).toBeGreaterThan(0);
+      expect(queueParsed.evidenceSnippetSummary.snippetCount).toBeGreaterThan(0);
+      expect(queueText).not.toContain(root);
+      expect(queueText).not.toContain("sk-live-secret");
+      expect(queueText).not.toContain("raw_");
 
       const observability = await client.callTool({
         name: "osk_get_learn_v2_observability",
@@ -177,6 +205,14 @@ describe("openskill-kit MCP server", () => {
           "osk_list_interaction_imports",
           "osk_explain_interaction_import",
           "osk_get_interaction_pool",
+          "osk_plan_learning_sources_v2",
+          "osk_ingest_raw_evidence",
+          "osk_get_concept_review_queue",
+          "osk_review_concepts",
+          "osk_compile_concepts",
+          "osk_reconstruct_episodes",
+          "osk_extract_concepts",
+          "osk_run_learn_v2_eval",
           "osk_get_learn_v2_observability",
           "osk_run_lifecycle_once",
           "osk_openworld_retrieval_adapters",

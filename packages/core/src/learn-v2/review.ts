@@ -61,6 +61,16 @@ export async function writeLearnV2ReviewQueue(
   return queue;
 }
 
+export async function readLearnV2ReviewQueue(rootInput: string): Promise<LearnV2ReviewQueue> {
+  const root = path.resolve(rootInput);
+  const json = path.join(root, ".openskill-kit", "learn-v2", "review", "concept-review-queue.json");
+  const text = await fs.readFile(json, "utf8").catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Learn v2 review queue not found. Run raw learning, concept extraction, or model-output apply first: ${message}`);
+  });
+  return LearnV2ReviewQueueSchema.parse(JSON.parse(text));
+}
+
 export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
   const lines = [
     "# Learn v2 Concept Review Queue",
