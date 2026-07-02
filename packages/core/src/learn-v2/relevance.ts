@@ -152,8 +152,12 @@ export async function scoreLearnV2ProjectRelevance(
 
 export async function ensureLearnV2ProjectRelevanceCalibration(rootInput: string, now = new Date()): Promise<{ path: string; calibration: LearnV2ProjectRelevanceCalibration }> {
   const root = path.resolve(rootInput);
-  const calibration = buildDefaultLearnV2ProjectRelevanceCalibration(now);
   const file = learnV2ProjectRelevanceCalibrationPath(root);
+  const existing = await fs.readFile(file, "utf8")
+    .then((text) => LearnV2ProjectRelevanceCalibrationSchema.parse(JSON.parse(text)))
+    .catch(() => undefined);
+  if (existing) return { path: file, calibration: existing };
+  const calibration = buildDefaultLearnV2ProjectRelevanceCalibration(now);
   await writeJsonAtomic(file, calibration);
   return { path: file, calibration };
 }

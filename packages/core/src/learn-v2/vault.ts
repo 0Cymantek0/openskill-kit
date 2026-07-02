@@ -12,6 +12,8 @@ export interface LearnV2RawVaultOptions {
   config: ProjectConfig;
   now: Date;
   maxHotBytes?: number;
+  maxPinnedBytes?: number;
+  maxTotalBytes?: number;
   retentionDays?: number;
 }
 
@@ -146,8 +148,8 @@ export async function storeLearnV2RawEvidence(options: LearnV2RawVaultOptions, i
       blobHash: contentHash
     },
     retention: {
-      tier: input.relevance.decision === "accept" ? "pinned" : "hot-spool",
-      pinnedBy: input.relevance.decision === "accept" ? ["project-relevance"] : [],
+      tier: "hot-spool",
+      pinnedBy: [],
       expiresAt
     },
     privacy: {
@@ -160,7 +162,10 @@ export async function storeLearnV2RawEvidence(options: LearnV2RawVaultOptions, i
     trace: input.trace ?? {}
   });
   await writeJsonAtomic(recordPath, record);
-  const manifest = await rebuildLearnV2RawManifest(root, options.config.projectId, options.maxHotBytes ?? 50_000_000, options.now);
+  const manifest = await rebuildLearnV2RawManifest(root, options.config.projectId, options.maxHotBytes ?? 50_000_000, options.now, {
+    maxPinnedBytes: options.maxPinnedBytes,
+    maxTotalBytes: options.maxTotalBytes
+  });
   return {
     record,
     rawText: input.text,
@@ -172,7 +177,13 @@ export async function storeLearnV2RawEvidence(options: LearnV2RawVaultOptions, i
   };
 }
 
-export async function rebuildLearnV2RawManifest(rootInput: string, projectId: string, maxHotBytes: number, now: Date): Promise<LearnV2RawEvidenceManifest> {
+export async function rebuildLearnV2RawManifest(
+  rootInput: string,
+  projectId: string,
+  maxHotBytes: number,
+  now: Date,
+  options: { maxPinnedBytes?: number; maxTotalBytes?: number } = {}
+): Promise<LearnV2RawEvidenceManifest> {
   const root = path.resolve(rootInput);
   const recordsRoot = path.join(learnV2VaultRoot(root), "records");
   const records: LearnV2RawEvidenceRecord[] = [];
@@ -182,14 +193,19 @@ export async function rebuildLearnV2RawManifest(rootInput: string, projectId: st
     records.push(LearnV2RawEvidenceRecordSchema.parse(parsed));
   }
   const storage = await summarizeVaultStorage(root, records);
+  const totalBytes = storage.hotBytes + storage.pinnedBytes + storage.compactedBytes;
+  const maxPinnedBytes = options.maxPinnedBytes ?? Math.max(maxHotBytes * 2, maxHotBytes);
+  const maxTotalBytes = options.maxTotalBytes ?? Math.max(maxHotBytes * 4, maxHotBytes);
   const budget = {
     hotBytes: storage.hotBytes,
     pinnedBytes: storage.pinnedBytes,
     compactedBytes: storage.compactedBytes,
     expiredCount: records.filter((record) => record.retention.tier === "expired").length,
-    totalBytes: storage.hotBytes + storage.pinnedBytes + storage.compactedBytes,
+    totalBytes,
     maxHotBytes,
-    status: storage.hotBytes > maxHotBytes ? "over-budget" as const : "ok" as const
+    maxPinnedBytes,
+    maxTotalBytes,
+    status: storage.hotBytes > maxHotBytes || storage.pinnedBytes > maxPinnedBytes || totalBytes > maxTotalBytes ? "over-budget" as const : "ok" as const
   };
   const manifest = LearnV2RawEvidenceManifestSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.raw-evidence-manifest.v1",
@@ -211,7 +227,13 @@ export async function rebuildLearnV2RawManifest(rootInput: string, projectId: st
   return manifest;
 }
 
-export async function garbageCollectLearnV2RawVault(rootInput: string, config: ProjectConfig, now: Date, maxHotBytes = 50_000_000): Promise<{ manifest: LearnV2RawEvidenceManifest; expiredRecords: number; compactedRecords: number; removedBlobRefs: string[] }> {
+export async function garbageCollectLearnV2RawVault(
+  rootInput: string,
+  config: ProjectConfig,
+  now: Date,
+  maxHotBytes = 50_000_000,
+  options: { maxPinnedBytes?: number; maxTotalBytes?: number } = {}
+): Promise<{ manifest: LearnV2RawEvidenceManifest; expiredRecords: number; compactedRecords: number; removedBlobRefs: string[] }> {
   const root = path.resolve(rootInput);
   const recordsRoot = path.join(learnV2VaultRoot(root), "records");
   let expiredRecords = 0;
@@ -248,7 +270,7 @@ export async function garbageCollectLearnV2RawVault(rootInput: string, config: P
     if (removed) removedBlobRefs.push(record.content.blobRef);
   }
   return {
-    manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now),
+    manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now, options),
     expiredRecords,
     compactedRecords,
     removedBlobRefs
@@ -257,15 +279,26 @@ export async function garbageCollectLearnV2RawVault(rootInput: string, config: P
 
 export async function runLearnV2RawVaultMaintenance(
   projectRootInput: string,
-  options: { gc?: boolean; maxHotBytes?: number; previewRetentionDays?: number; keepPreviewRuns?: number; now?: Date } = {}
+  options: { gc?: boolean; maxHotBytes?: number; maxPinnedBytes?: number; maxTotalBytes?: number; previewRetentionDays?: number; keepPreviewRuns?: number; now?: Date } = {}
 ): Promise<LearnV2RawVaultMaintenanceResult> {
   const root = path.resolve(projectRootInput);
   const config = await readProjectConfig(root);
   const now = options.now ?? new Date();
   const maxHotBytes = options.maxHotBytes ?? 50_000_000;
   const gc = options.gc === true
-    ? await garbageCollectLearnV2RawVault(root, config, now, maxHotBytes)
-    : { manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now), expiredRecords: 0, compactedRecords: 0, removedBlobRefs: [] };
+    ? await garbageCollectLearnV2RawVault(root, config, now, maxHotBytes, {
+        maxPinnedBytes: options.maxPinnedBytes,
+        maxTotalBytes: options.maxTotalBytes
+      })
+    : {
+        manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now, {
+          maxPinnedBytes: options.maxPinnedBytes,
+          maxTotalBytes: options.maxTotalBytes
+        }),
+        expiredRecords: 0,
+        compactedRecords: 0,
+        removedBlobRefs: []
+      };
   const previewArtifacts = await summarizeLearnV2PreviewArtifacts(root, now, {
     gc: options.gc,
     previewRetentionDays: options.previewRetentionDays,
@@ -285,7 +318,7 @@ export async function runLearnV2RawVaultMaintenance(
     previewArtifacts,
     nextActions: [
       ...(gc.manifest.budget.status === "over-budget"
-        ? ["Review pinned evidence, compact low-value raw records, or rerun maintenance with garbage collection after retention expiry."]
+        ? ["Review hot, pinned, and total raw-vault budgets; compact low-value raw records, reject stale candidates, or rerun maintenance with garbage collection after retention expiry."]
         : ["Raw vault budget is within configured limits."]),
       ...(previewArtifacts.previewStoreCount > previewArtifacts.retention.keepLatest
         ? ["Prune old Learn v2 preview stores with --gc-raw-vault or increase preview retention settings."]

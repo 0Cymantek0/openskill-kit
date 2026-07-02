@@ -190,8 +190,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const relevanceCalibration = await ensureLearnV2ProjectRelevanceCalibration(root, now);
 
   const sourceDigests: LearnV2SourceDigestCompat[] = [];
-  const allRawEvidence: LearnV2NormalizedEvidence[] = [];
-  const allDeclassifiedEvidence: LearnV2NormalizedEvidence[] = [];
+  const acceptedRawEvidence: LearnV2NormalizedEvidence[] = [];
+  const acceptedDeclassifiedEvidence: LearnV2NormalizedEvidence[] = [];
   let eventsAppended = 0;
   const importRuns: InteractionImportRun[] = [];
 
@@ -208,14 +208,16 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       now
     });
     const declassified = learnV2DeclassifyText(surface.rawText, root, config);
-    const rawRecord = previewOnly
+    const sourceAcceptedForLearning = relevance.decision === "accept";
+    const shouldPersistRawRecord = !previewOnly && sourceAcceptedForLearning;
+    const rawRecord = !shouldPersistRawRecord
       ? makePreviewRawRecord(config.projectId, sourcePath, surface.adapterId, surface.rawText, surface.contentKind, relevance, generatedAt, root, declassified)
       : (await storeLearnV2RawEvidence({
           root,
           config,
           now,
           maxHotBytes: 50_000_000,
-          retentionDays: relevance.decision === "accept" ? 90 : 14
+          retentionDays: 30
         }, {
           adapterId: surface.adapterId,
           sourcePath,
@@ -226,10 +228,12 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     const learnerText = normalizeRawLearnerLocalPaths(surface.rawText, root);
     const normalizedRaw = normalizeLearnV2Evidence(surface, rawRecord, learnerText).slice(0, options.maxTurns ?? 500);
     const normalized = normalizedRaw.map((item) => declassifyLearnV2NormalizedEvidence(item, root, config));
-    allRawEvidence.push(...normalizedRaw);
-    allDeclassifiedEvidence.push(...normalized);
+    if (sourceAcceptedForLearning) {
+      acceptedRawEvidence.push(...normalizedRaw);
+      acceptedDeclassifiedEvidence.push(...normalized);
+    }
     const short = rawRecord.source.contentHash.replace(/^sha256:/, "").slice(0, 16);
-    const legacyRawVaultRecordPath = previewOnly ? undefined : path.join(legacyRawVaultDir, "records", `${short}.json`);
+    const legacyRawVaultRecordPath = shouldPersistRawRecord ? path.join(legacyRawVaultDir, "records", `${short}.json`) : undefined;
     if (legacyRawVaultRecordPath) {
       await writeJsonAtomic(legacyRawVaultRecordPath, {
         schemaVersion: "openskill-kit.raw-vault-record.v1",
@@ -279,7 +283,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     await writeJsonAtomic(v2AnalysisPath, analysisPayload);
 
     let importRun: InteractionImportRun | undefined;
-    if (!previewOnly && relevance.decision === "accept") {
+    if (!previewOnly && sourceAcceptedForLearning) {
       const stagedImportPath = path.join(stagedImportsDir, `${short}.txt`);
       await fs.writeFile(stagedImportPath, declassified.text, "utf8");
       importRun = await importInteractionSource(root, stagedImportPath, {
@@ -324,9 +328,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     });
   }
 
-  const rawEpisodes = reconstructLearnV2Episodes(allRawEvidence);
+  const rawEpisodes = reconstructLearnV2Episodes(acceptedRawEvidence);
   const episodes = rawEpisodes.map((episode) => declassifyLearnV2TaskEpisode(episode, root, config));
-  const evidenceQuality = await writeLearnV2EvidenceQualityArtifact(root, allDeclassifiedEvidence, now);
+  const evidenceQuality = await writeLearnV2EvidenceQualityArtifact(root, acceptedDeclassifiedEvidence, now);
   const evidenceQualityPath = learnV2EvidenceQualityArtifactPath(root, now);
   const declassifiedSnippets = await writeLearnV2DeclassifiedSnippetArtifact(root, episodes, now, {
     blockOnMediumRisk: true,
@@ -337,9 +341,12 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const modelRequests = await writeLearnV2ModelRequests(root, episodes, now);
   const extracted = extractLearnV2BehaviorAtoms(rawEpisodes);
   const concepts = declassifyLearnV2ConceptCards(mergeLearnV2ConceptCards(extracted.atoms, now), root, config);
+  const canonicalConceptStateWritten = !previewOnly && concepts.length > 0;
   const conceptStore = previewOnly
     ? await writePreviewLearnV2ConceptStore(root, config.projectId, concepts, now)
-    : await writeLearnV2ConceptStore(root, concepts, now);
+    : canonicalConceptStateWritten
+      ? await writeLearnV2ConceptStore(root, concepts, now)
+      : await readLearnV2ConceptStore(root, now);
   const conceptCardsForArtifacts = conceptStore.cards;
   const conceptStorePath = previewOnly
     ? previewLearnV2ConceptStorePath(root, generatedAt)
@@ -447,7 +454,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       sourcesExcluded: sourceDigests.filter((source) => source.projectRelevance.decision === "exclude").length,
       previewWritesLocalArtifacts: previewOnly,
       rawVaultRecordsWritten: sourceDigests.filter((source) => source.rawVaultRecordPath).length,
-      canonicalConceptStateWritten: !previewOnly,
+      canonicalConceptStateWritten,
       analysisFramesWritten: sourceDigests.length,
       learningWindows: episodes.length,
       behaviorAtoms: extracted.atoms.length,
@@ -465,8 +472,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         ? ["Preview writes generated/private analysis, review, eval, model-request, digest, and observability artifacts for inspection, but does not persist canonical concept state, activation index, raw vault records, events, or lifecycle graph changes."]
         : []),
       "Learn v2 reads and normalizes full supplied raw local evidence in memory for deterministic extraction.",
+      "Project relevance is a hard extraction gate: only accepted sources enter episode reconstruction, atom extraction, model requests, concept stores, activation indexes, and compile previews.",
       "Machine-local path prefixes are normalized in learner memory to avoid temp-directory or home-directory noise influencing concepts.",
-      "Full raw evidence is stored only in the project-local v2 raw vault when --apply is used.",
+      "Full raw evidence is stored only for accepted sources in the project-local v2 raw vault when --apply is used.",
       "Output-facing analysis frames, episode stores, model requests, digests, review cards, compile previews, eval reports, and staged imports are declassified.",
       "Raw vault refs are local-only and never exportable through compile, pack, or sync artifacts.",
       "Concept cards remain candidates until explicit review activates them.",

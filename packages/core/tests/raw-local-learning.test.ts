@@ -7,6 +7,7 @@ import {
   initAdaptiveProject,
   mergeLearnV2ConceptCards,
   readEvents,
+  runLearnV2RawVaultMaintenance,
   runRawLocalLearning,
   writeLearnV2ConceptStore,
   verifyProjectBehaviorPack
@@ -185,6 +186,69 @@ describe("raw local learning", () => {
     expect(preview.artifacts.learnV2ConceptStorePath).toContain("compiled-preview");
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
     await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
+  });
+
+  it("keeps review and rejected raw sources out of Learn v2 extraction and canonical state", async () => {
+    const root = await tempProject();
+    const reviewSource = path.join(os.tmpdir(), `osk-unanchored-terminal-${Date.now()}.log`);
+    const rejectedSource = path.join(os.tmpdir(), `osk-global-memory-${Date.now()}.txt`);
+    await writeFile(reviewSource, "$ npm test\nPASS parser suite\nuser: Prefer focused parser tests before broad rewrites.", "utf8");
+    await writeFile(rejectedSource, "global memory across repos: Prefer focused parser tests before broad rewrites.", "utf8");
+
+    const result = await runRawLocalLearning(root, {
+      sourceFiles: [reviewSource, rejectedSource],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T01:40:00.000Z")
+    });
+
+    expect(result.digest.sourcesIncluded).toBe(0);
+    expect(result.digest.sourcesAsk).toBe(1);
+    expect(result.digest.sourcesExcluded).toBe(1);
+    expect(result.digest.rawVaultRecordsWritten).toBe(0);
+    expect(result.digest.canonicalConceptStateWritten).toBe(false);
+    expect(result.digest.learningWindows).toBe(0);
+    expect(result.digest.behaviorAtoms).toBe(0);
+    expect(result.digest.currentRunConceptCards).toBe(0);
+    expect(result.learnV2.currentRunConcepts).toHaveLength(0);
+    expect(result.learnV2.modelRequestCount).toBe(0);
+    await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).rejects.toThrow();
+    await expect(stat(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"))).rejects.toThrow();
+    for (const source of result.sources) {
+      await expect(stat(path.join(result.artifacts.learnV2RawVaultDir, "records", `${source.learnV2.rawRef}.json`))).rejects.toThrow();
+    }
+  });
+
+  it("keeps accepted no-signal raw evidence unpinned so GC can compact it", async () => {
+    const root = await tempProject();
+    const source = path.join(root, "accepted-context-note.md");
+    await writeFile(source, `${root}\npackages/core/src/parser.ts\nThis file is project context only, with no durable behavior instruction.`, "utf8");
+
+    const result = await runRawLocalLearning(root, {
+      sourceFiles: [source],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T01:45:00.000Z")
+    });
+
+    expect(result.digest.sourcesIncluded).toBe(1);
+    expect(result.digest.rawVaultRecordsWritten).toBe(1);
+    expect(result.digest.currentRunConceptCards).toBe(0);
+    expect(result.digest.canonicalConceptStateWritten).toBe(false);
+    const rawRef = result.sources[0]!.learnV2.rawRef;
+    const rawRecordPath = path.join(result.artifacts.learnV2RawVaultDir, "records", `${rawRef}.json`);
+    const rawRecord = JSON.parse(await readFile(rawRecordPath, "utf8"));
+    expect(rawRecord.retention.tier).toBe("hot-spool");
+    expect(rawRecord.retention.pinnedBy).toEqual([]);
+
+    const gc = await runLearnV2RawVaultMaintenance(root, {
+      gc: true,
+      now: new Date("2026-08-01T00:00:00.000Z")
+    });
+
+    expect(gc.compactedRecords).toBe(1);
+    expect(gc.manifest.records.find((record) => record.id === rawRef)?.retentionTier).toBe("compacted");
+    expect(gc.removedBlobRefs).toContain(rawRecord.content.blobRef);
   });
 
   it("uses virtual merged preview state without mutating existing canonical store or activation index", async () => {

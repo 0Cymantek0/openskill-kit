@@ -27,6 +27,7 @@ import {
   recordLearnV2ConceptOutcome,
   readLearnV2ConceptStore,
   writeLearnV2ConceptStore,
+  readWorkflowGraph,
   writeLearnV2ReviewQueue,
   reconstructPersistedLearnV2Episodes,
   extractPersistedLearnV2Concepts,
@@ -1206,6 +1207,45 @@ describe("learn-v2 substrate", () => {
     expect(result.learnV2).toBeTruthy();
   });
 
+  it("preserves existing project relevance calibration across raw learning runs", async () => {
+    const root = await tempProject();
+    const calibrationPath = path.join(root, ".openskill-kit", "learn-v2", "relevance-calibration.json");
+    const customCalibration = {
+      schemaVersion: "openskill-kit.project-relevance-calibration.v1",
+      policyVersion: "custom-human-reviewed-v9",
+      features: ["sourceFileInsideProject", "projectRootMentioned", "repoRelativePathMentioned"],
+      weights: {
+        sourceFileInsideProject: 0.11,
+        projectRootMentioned: 0.22,
+        repoRelativePathMentioned: 0.33
+      },
+      thresholds: {
+        accept: 0.55,
+        review: 0.25,
+        reject: 0
+      },
+      trainedFrom: ["human-review"],
+      updatedAt: "2026-06-29T00:00:00.000Z",
+      notes: ["custom calibration must not be overwritten by ensure"]
+    };
+    await mkdir(path.dirname(calibrationPath), { recursive: true });
+    await writeFile(calibrationPath, `${JSON.stringify(customCalibration, null, 2)}\n`, "utf8");
+    const transcript = path.join(root, "calibrated-session.md");
+    await writeFile(transcript, `user: ${root} prefer focused parser tests in packages/core/src/parser.ts.`, "utf8");
+
+    const result = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: true,
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+
+    expect(result.sources[0]!.projectRelevance.score).toBeGreaterThanOrEqual(customCalibration.thresholds.accept);
+    const persisted = JSON.parse(await readText(calibrationPath));
+    expect(persisted.policyVersion).toBe("custom-human-reviewed-v9");
+    expect(persisted.weights.sourceFileInsideProject).toBe(0.11);
+    expect(persisted.notes).toEqual(customCalibration.notes);
+  });
+
   it("normalizes legacy model-mode aliases and rejects unimplemented raw model execution", async () => {
     const root = await tempProject();
     const transcript = path.join(root, "model-mode-session.md");
@@ -1781,6 +1821,32 @@ describe("learn-v2 substrate", () => {
     expect(conceptResources).not.toContain(root);
     const pack = await exportProjectBehaviorPack(root);
     expect(pack.files).toContain(".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json");
+  });
+
+  it("removes stale Learn v2 compatibility graph nodes after concepts are rejected", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [concept] = mergeLearnV2ConceptCards([
+      behaviorAtom("graph_cleanup_parser_tests", "Prefer focused parser tests for parser changes.", "positive")
+    ], now);
+    await writeLearnV2ConceptStore(root, [concept!], now);
+
+    await applyLearnV2ConceptReview(root, {
+      accept: [concept!.id],
+      narrowScopes: [{ id: concept!.id, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] }],
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+    const config = await readProjectConfig(root);
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${concept!.id}`)).toBe(true);
+    expect((await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:01:00Z"))).nodes.some((node) => node.id === `workflow_${concept!.id}`)).toBe(true);
+
+    await applyLearnV2ConceptReview(root, {
+      reject: [concept!.id],
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${concept!.id}`)).toBe(false);
+    expect((await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:02:00Z"))).nodes.some((node) => node.id === `workflow_${concept!.id}`)).toBe(false);
   });
 
   it("merges splits and supersedes concept cards with lifecycle-safe review operations", async () => {

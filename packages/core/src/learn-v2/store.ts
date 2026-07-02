@@ -270,7 +270,7 @@ export async function syncLearnV2ActiveConcepts(projectRoot: string, cards: Lear
   const config = await readProjectConfig(root);
   const preview = await compileLearnV2ConceptPreview(root, config, cards, now);
   const preferenceGraphPath = await mergePreferenceNodes(root, config.projectId, preview.preferenceNodes, now);
-  const workflowGraphPath = preview.workflowNodes.length ? await mergeWorkflowNodes(root, config.projectId, preview.workflowNodes, now) : undefined;
+  const workflowGraphPath = await mergeWorkflowNodes(root, config.projectId, preview.workflowNodes, now);
   return { preferenceGraphPath, workflowGraphPath };
 }
 
@@ -587,7 +587,7 @@ async function mergePreferenceNodes(root: string, projectId: string, nodes: Pref
       ...existing,
       projectId,
       nodes: [
-        ...existing.nodes.filter((node) => !incomingIds.has(node.id)),
+        ...existing.nodes.filter((node) => !incomingIds.has(node.id) && !isLearnV2GeneratedPreferenceNode(node)),
         ...nodes
       ].sort((a, b) => a.category.localeCompare(b.category) || b.confidence - a.confidence || a.title.localeCompare(b.title)),
       updatedAt: now.toISOString()
@@ -605,12 +605,22 @@ async function mergeWorkflowNodes(root: string, projectId: string, nodes: Workfl
     ...graph,
     projectId,
     nodes: [
-      ...graph.nodes.filter((node) => !incomingIds.has(node.id)),
+      ...graph.nodes.filter((node) => !incomingIds.has(node.id) && !isLearnV2GeneratedWorkflowNode(node)),
       ...nodes
     ].sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name)),
     updatedAt: now.toISOString()
   });
   return writeWorkflowGraph(root, next);
+}
+
+function isLearnV2GeneratedPreferenceNode(node: PreferenceNode): boolean {
+  return node.evidence.some((item) => item.signalId.startsWith("learn-v2:")) ||
+    (node.id.startsWith("pref_concept_") && /learn-v2 concept card/i.test(node.privacy?.rationale ?? ""));
+}
+
+function isLearnV2GeneratedWorkflowNode(node: WorkflowNode): boolean {
+  return node.sourceSignalIds.some((signalId) => signalId.startsWith("learn-v2:")) ||
+    (node.id.startsWith("workflow_concept_") && /learn-v2 concept card/i.test(node.privacy?.rationale ?? ""));
 }
 
 function pathToGlob(file: string): string {

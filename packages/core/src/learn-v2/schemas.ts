@@ -76,6 +76,8 @@ export const LearnV2RawEvidenceManifestSchema = z.object({
     expiredCount: z.number().int().min(0),
     totalBytes: z.number().int().min(0),
     maxHotBytes: z.number().int().min(0),
+    maxPinnedBytes: z.number().int().min(0).optional(),
+    maxTotalBytes: z.number().int().min(0).optional(),
     status: z.enum(["ok", "over-budget"])
   })
 });
