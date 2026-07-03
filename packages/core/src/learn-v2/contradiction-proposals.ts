@@ -7,6 +7,7 @@ import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
 import { detectLearnV2ConceptDrift } from "./drift.js";
 import { extractFirstJsonObject } from "./extract.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
+import { validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
 import {
   LearnV2LlmContradictionReviewOutputSchema,
@@ -14,7 +15,7 @@ import {
   type LearnV2LlmContradictionReviewOutput
 } from "./schemas.js";
 import { applyLearnV2ConceptReview, readLearnV2ConceptStore, type LearnV2ConceptReviewOptions } from "./store.js";
-import { learnV2DeclassifyText, learnV2Hash, learnV2IsInside, learnV2ShortHash } from "./utils.js";
+import { learnV2Hash, learnV2IsInside, learnV2ShortHash } from "./utils.js";
 
 export interface LearnV2ContradictionReviewRequest {
   reviewId: string;
@@ -334,8 +335,8 @@ export async function validateLearnV2ContradictionReviewForManifest(
   output: LearnV2LlmContradictionReviewOutput
 ): Promise<{ ok: true; output: LearnV2LlmContradictionReviewOutput } | { ok: false; reason: string; detail: string }> {
   if (output.reviewId !== (manifest.reviewId ?? manifest.episodeId)) return { ok: false, reason: "review-id-mismatch", detail: `Expected ${manifest.reviewId ?? manifest.episodeId}.` };
-  const declassified = learnV2DeclassifyText(JSON.stringify(output), root, config);
-  if (declassified.matches.length) return { ok: false, reason: "unsafe-output-content", detail: `Declassification would redact: ${declassified.matches.slice(0, 5).join(", ")}` };
+  const boundary = validateLearnV2ModelOutputBoundary(root, config, output);
+  if (!boundary.ok) return boundary;
   const store = await readLearnV2ConceptStore(root);
   const cardsById = new Map(store.cards.map((card) => [card.id, card]));
   const allowedConceptIds = new Set(manifest.conceptIds ?? []);

@@ -17,6 +17,7 @@ import {
   validateLearnV2LlmConceptExtractionOutput
 } from "./extract.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
+import { validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import {
@@ -302,6 +303,7 @@ export async function applyLearnV2ModelProposalOutputs(
 ): Promise<LearnV2ModelProposalApplyResult> {
   const root = path.resolve(rootInput);
   const episodeStore = await readLearnV2EpisodeStore(root);
+  const config = await readProjectConfig(root);
   const episodesById = new Map(episodeStore.episodes.map((episode) => [episode.id, episode]));
   const atoms: LearnV2BehaviorAtom[] = [];
   const rejected: LearnV2ModelProposalApplyResult["rejected"] = [];
@@ -315,6 +317,11 @@ export async function applyLearnV2ModelProposalOutputs(
     if (text === undefined) continue;
     const parsed = safeParseModelOutput(text, outputPath, rejected) as LearnV2LlmConceptExtractionOutput | undefined;
     if (!parsed) continue;
+    const boundary = validateLearnV2ModelOutputBoundary(root, config, parsed);
+    if (!boundary.ok) {
+      rejected.push({ outputPath, id: "file", reason: boundary.reason, detail: boundary.detail });
+      continue;
+    }
     const rejectedBeforeResolve = rejected.length;
     const episode = await resolveEpisodeForModelOutput(root, outputPath, episodesById, rejected);
     if (!episode) {
@@ -330,7 +337,6 @@ export async function applyLearnV2ModelProposalOutputs(
   const concepts = mergeLearnV2ConceptCards(atoms, now);
   const existing = await readLearnV2ConceptStore(root, now).catch(() => undefined);
   const store = await writeLearnV2ConceptStore(root, [...(existing?.cards ?? []), ...concepts], now);
-  const config = await readProjectConfig(root);
   const conflictLedger = await writeLearnV2ConflictLedger(root, store.cards, config.projectId, now);
   const declassifiedSnippets = await writeLearnV2DeclassifiedSnippetArtifact(root, episodeStore.episodes, now, {
     blockOnMediumRisk: true,
@@ -597,8 +603,8 @@ async function validateExecutedModelOutput(
   manifest: LearnV2ModelRequestManifest,
   parsed: LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput | LearnV2LlmContradictionReviewOutput
 ): Promise<{ ok: true } | { ok: false; reason: "missing-episode-store" | "missing-concept-store" | "stale-request-manifest" | "model-output-evidence-validation-failed"; detail: string }> {
+  const config = await readProjectConfig(root);
   if (manifest.modelRole === "contradiction-reviewer" && manifest.outputSchema === "openskill-kit.learn-v2.llm-contradiction-review-output.v1") {
-    const config = await readProjectConfig(root);
     const validation = await validateLearnV2ContradictionReviewForManifest(root, config, manifest as Parameters<typeof validateLearnV2ContradictionReviewForManifest>[2], parsed as LearnV2LlmContradictionReviewOutput);
     if (!validation.ok) {
       return { ok: false, reason: "model-output-evidence-validation-failed", detail: `${validation.reason}: ${validation.detail}` };
@@ -607,7 +613,6 @@ async function validateExecutedModelOutput(
   }
 
   if (manifest.modelRole === "scope-inferencer" && manifest.outputSchema === "openskill-kit.learn-v2.llm-scope-inference-output.v1") {
-    const config = await readProjectConfig(root);
     const store = await readLearnV2ConceptStore(root).catch((error: unknown) => ({
       schemaVersion: "openskill-kit.learn-v2.concept-store.v1" as const,
       projectId: "",
@@ -665,6 +670,14 @@ async function validateExecutedModelOutput(
       ok: false,
       reason: "stale-request-manifest",
       detail: `Evidence no longer belongs to episode: ${staleEvidence.slice(0, 5).join(", ")}`
+    };
+  }
+  const boundary = validateLearnV2ModelOutputBoundary(root, config, parsed);
+  if (!boundary.ok) {
+    return {
+      ok: false,
+      reason: "model-output-evidence-validation-failed",
+      detail: `${boundary.reason}: ${boundary.detail}`
     };
   }
   const validation = validateLearnV2LlmConceptExtractionOutput(episode, parsed as LearnV2LlmConceptExtractionOutput);

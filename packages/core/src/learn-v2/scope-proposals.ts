@@ -7,6 +7,7 @@ import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
 import { detectLearnV2ConceptDrift } from "./drift.js";
 import { extractFirstJsonObject } from "./extract.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
+import { validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
 import {
   LearnV2ConceptCardSchema,
@@ -15,7 +16,7 @@ import {
   type LearnV2LlmScopeInferenceOutput
 } from "./schemas.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
-import { learnV2DeclassifyText, learnV2Hash, learnV2IsInside, learnV2ShortHash } from "./utils.js";
+import { learnV2Hash, learnV2IsInside, learnV2ShortHash } from "./utils.js";
 
 export interface LearnV2ScopeInferenceRequest {
   conceptId: string;
@@ -279,8 +280,8 @@ export function validateLearnV2ScopeInferenceForCard(
   output: LearnV2LlmScopeInferenceOutput
 ): { ok: true; output: LearnV2LlmScopeInferenceOutput } | { ok: false; reason: string; detail: string } {
   if (output.conceptId !== card.id) return { ok: false, reason: "concept-id-mismatch", detail: `Expected ${card.id}.` };
-  const declassified = learnV2DeclassifyText(JSON.stringify(output), root, config);
-  if (declassified.matches.length) return { ok: false, reason: "unsafe-output-content", detail: `Declassification would redact: ${declassified.matches.slice(0, 5).join(", ")}` };
+  const boundary = validateLearnV2ModelOutputBoundary(root, config, output);
+  if (!boundary.ok) return boundary;
   const evidenceIds = new Set(card.evidenceIds);
   const badCounterevidence = output.counterevidence.find((item) => !evidenceIds.has(item.evidenceId));
   if (badCounterevidence) return { ok: false, reason: "invalid-counterevidence", detail: `Unknown evidence id ${badCounterevidence.evidenceId}` };

@@ -1826,6 +1826,42 @@ describe("learn-v2 substrate", () => {
       }],
       rejected: []
     }), "utf8");
+    const unsafeBoundaryDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_unsafe_boundary");
+    const unsafeBoundaryOutputPath = path.join(unsafeBoundaryDir, "response.json");
+    await mkdir(unsafeBoundaryDir, { recursive: true });
+    await writeFile(path.join(unsafeBoundaryDir, "concept-extraction-prompt.md"), prompt, "utf8");
+    await writeFile(path.join(unsafeBoundaryDir, "episode-learning-bundle.json"), bundle, "utf8");
+    await writeFile(path.join(unsafeBoundaryDir, "request-manifest.json"), JSON.stringify({
+      ...manifest,
+      episodeId: request.episodeId,
+      promptPath: projectRel(root, path.join(unsafeBoundaryDir, "concept-extraction-prompt.md")),
+      bundlePath: projectRel(root, path.join(unsafeBoundaryDir, "episode-learning-bundle.json")),
+      expectedOutputPath: projectRel(root, unsafeBoundaryOutputPath),
+      evidenceIds: [evidenceId]
+    }), "utf8");
+    await writeFile(unsafeBoundaryOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+      atoms: [{
+        statement: "Prefer parser fixtures after checking [PROJECT_ROOT]/secret and /home/user/.ssh/id_rsa.",
+        kind: "verification",
+        polarity: "positive",
+        evidenceIds: [evidenceId],
+        appliesWhen: ["Private user reviewer@example.com asked from raw_abc12345."],
+        activation: {
+          phrases: ["[PROJECT_ROOT] parser"],
+          pathGlobs: [requestPath],
+          commands: ["npm test -- parser"],
+          negativeTriggers: []
+        },
+        counterevidence: [{
+          evidenceId,
+          reason: "Unsafe raw_abc12345 marker must not enter concept state."
+        }],
+        confidence: 0.72,
+        rationale: "Model leaked reviewer@example.com, raw_abc12345, and [PROJECT_ROOT]."
+      }],
+      rejected: []
+    }), "utf8");
     const tamperedPromptDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_tampered_prompt");
     const tamperedPromptOutputPath = path.join(tamperedPromptDir, "response.json");
     await mkdir(tamperedPromptDir, { recursive: true });
@@ -1952,6 +1988,7 @@ describe("learn-v2 substrate", () => {
     const applied = await applyLearnV2ModelProposalOutputs(root, [
       request.manifestPath,
       badOutputPath,
+      unsafeBoundaryOutputPath,
       tamperedPromptOutputPath,
       tamperedMissingOutputPath,
       tamperedBundleOutputPath,
@@ -1964,6 +2001,7 @@ describe("learn-v2 substrate", () => {
     expect(applied.atomCount).toBe(1);
     expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining([
       "unexpected-request-file-path",
+      "unsafe-output-content",
       "missing-request-file",
       "request-file-hash-mismatch",
       "stale-request-manifest",
@@ -1985,6 +2023,10 @@ describe("learn-v2 substrate", () => {
     expect(richCard.activation.commands).toContain("npm test -- parser");
     expect(richCard.counterevidence.some((item) => item.reason === "Evidence supports parser scope only.")).toBe(true);
     expect(JSON.stringify(store)).not.toContain("sk-12345678901234567890");
+    expect(JSON.stringify(store)).not.toContain("[PROJECT_ROOT]");
+    expect(JSON.stringify(store)).not.toContain("raw_abc12345");
+    expect(JSON.stringify(store)).not.toContain("reviewer@example.com");
+    expect(JSON.stringify(store)).not.toContain("/home/user");
   });
 
   it("executes sanitized OpenCode model requests with hash binding and strict output validation", async () => {
@@ -2395,6 +2437,31 @@ describe("learn-v2 substrate", () => {
     expect(ungrounded.failedCount).toBe(1);
     expect(ungrounded.results[0]?.reason).toBe("model-output-evidence-validation-failed");
     expect(ungrounded.results[0]?.detail).toContain("missing-or-invalid-evidence-id");
+    await expect(stat(request.expectedOutputPath)).rejects.toThrow();
+
+    const unsafeOutput = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      runner: async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({
+          schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+          atoms: [{
+            statement: "Prefer parser fixtures after opening [PROJECT_ROOT]/secret and /home/user/.ssh/id_rsa.",
+            kind: "verification",
+            polarity: "positive",
+            evidenceIds: [episode!.evidenceIds[0]],
+            confidence: 0.72,
+            rationale: "Unsafe reviewer@example.com and raw_abc12345 markers must not be persisted."
+          }],
+          rejected: []
+        }),
+        stderr: ""
+      })
+    });
+    expect(unsafeOutput.writtenCount).toBe(0);
+    expect(unsafeOutput.failedCount).toBe(1);
+    expect(unsafeOutput.results[0]?.reason).toBe("model-output-evidence-validation-failed");
+    expect(unsafeOutput.results[0]?.detail).toContain("unsafe-output-content");
     await expect(stat(request.expectedOutputPath)).rejects.toThrow();
 
     const unsafeDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "unsafe-boundary");
