@@ -1537,3 +1537,25 @@ Suggested files:
 
 Verification:
 - `rtk npm test -- packages/core/tests/learn-v2.test.ts`
+
+## Task 85: Raw Surface Candidate Generated Descriptor Audit
+
+Context:
+- Learn v2 source planning now exposes adapter-aware `rawLocalSurfaceCandidates` using path-only discovery. These candidates include adapter id, normalization profile, content kind, sensitivity, detection confidence, and score, but remain blocked from normal plan execution.
+- Main implementation covers core/MCP behavior and docs. Generated plugin descriptors/help may need refresh.
+
+Acceptance:
+- Inspect generated MCP descriptors, command docs, and bundled plugin docs for `rawLocalSurfaceCandidates` or equivalent source-plan wording.
+- Ensure wording says planning does not open candidate files and raw ingestion still requires explicit `--raw --surface-file` or `osk_ingest_raw_evidence`.
+- If generated artifacts are stale, regenerate them with existing repo commands and keep diffs mechanical.
+- Do not change source-plan behavior.
+
+Suggested files:
+- `.openskill-kit/compiled/plugin/mcp/descriptors.json`
+- `packages/agent-plugin-bundle/mcp/descriptors.json`
+- `packages/agent-plugin-bundle/commands/osk.md`
+- `docs/mcp-profiles.md`
+- `docs/commands/learn.md`
+
+Verification:
+- `rtk rg -n "rawLocalSurfaceCandidates|adapter-aware|path-only" docs packages/agent-plugin-bundle .openskill-kit/compiled/plugin`

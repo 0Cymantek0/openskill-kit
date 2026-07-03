@@ -58,6 +58,23 @@ export const LearnV2SurfaceAdapterContractSchema = z.object({
 });
 export type LearnV2SurfaceAdapterContract = z.infer<typeof LearnV2SurfaceAdapterContractSchema>;
 
+export const LearnV2SurfaceCandidateSchema = z.object({
+  id: z.string().min(1),
+  adapterId: z.string().min(1),
+  adapterLabel: z.string().min(1),
+  relativePath: z.string().min(1),
+  path: z.string().min(1),
+  contentKind: LearnV2SurfaceReadSchema.shape.contentKind,
+  normalizationProfile: LearnV2SurfaceNormalizationProfileSchema,
+  sensitivity: z.enum(["low", "medium", "high"]),
+  detectedFormat: LearnV2SurfaceReadSchema.shape.detectedFormat.optional(),
+  detection: LearnV2SurfaceReadSchema.shape.adapterDetection.unwrap(),
+  policy: LearnV2SurfaceReadSchema.shape.policy.unwrap(),
+  score: z.number().min(0).max(1),
+  sortKey: z.string().min(1)
+});
+export type LearnV2SurfaceCandidate = z.infer<typeof LearnV2SurfaceCandidateSchema>;
+
 export interface LearnV2SurfaceAdapter {
   id: string;
   label: string;
@@ -67,6 +84,34 @@ export interface LearnV2SurfaceAdapter {
   detect(sourcePath: string, rawText: string): LearnV2SurfaceAdapterDetection | undefined;
   read(sourcePath: string, rawText: string, detection?: LearnV2SurfaceAdapterDetection): LearnV2SurfaceRead;
 }
+
+export interface LearnV2SurfaceDiscoveryOptions {
+  knownSurfacePaths?: Set<string>;
+  maxFiles?: number;
+  maxDepth?: number;
+  limit?: number;
+}
+
+const RAW_LOCAL_SOURCE_SCAN_MAX_FILES = 2500;
+const RAW_LOCAL_SOURCE_SCAN_MAX_DEPTH = 5;
+const RAW_LOCAL_SOURCE_CANDIDATE_LIMIT = 12;
+const RAW_LOCAL_SOURCE_EXTENSIONS = new Set([".jsonl", ".json", ".md", ".txt", ".log", ".patch", ".diff"]);
+const RAW_LOCAL_SOURCE_SKIP_DIRS = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  ".openskill-kit",
+  "node_modules",
+  "dist",
+  "build",
+  "coverage",
+  "tmp",
+  "temp",
+  ".next",
+  ".turbo",
+  ".cache",
+  ".vite"
+]);
 
 export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
   makeAdapter("opencode", "OpenCode session or trace", "structured-events", /opencode|opencode-events|opencode-session|opencode-trace|tool\.execute|provider:\s*opencode/i, undefined, "high", ["Conversation/tool traces may include prompts, paths, commands, and outputs."]),
@@ -169,6 +214,90 @@ export async function readLearnV2Surface(sourcePathInput: string, adapterId?: st
   return fallback.read(sourcePath, rawText, fallback.detect(sourcePath, rawText));
 }
 
+export async function discoverLearnV2SurfaceCandidates(
+  projectRootInput: string,
+  options: LearnV2SurfaceDiscoveryOptions = {}
+): Promise<LearnV2SurfaceCandidate[]> {
+  const projectRoot = path.resolve(projectRootInput);
+  const knownSurfacePaths = options.knownSurfacePaths ?? new Set<string>();
+  const candidates: LearnV2SurfaceCandidate[] = [];
+  const maxFiles = options.maxFiles ?? RAW_LOCAL_SOURCE_SCAN_MAX_FILES;
+  const maxDepth = options.maxDepth ?? RAW_LOCAL_SOURCE_SCAN_MAX_DEPTH;
+  const limit = options.limit ?? RAW_LOCAL_SOURCE_CANDIDATE_LIMIT;
+  let visitedFiles = 0;
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (visitedFiles >= maxFiles || depth > maxDepth) return;
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (shouldSkipRawLocalSourceDir(entry.name)) continue;
+        await walk(fullPath, depth + 1);
+        if (visitedFiles >= maxFiles) return;
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      visitedFiles += 1;
+      if (visitedFiles > maxFiles) return;
+      if (knownSurfacePaths.has(path.resolve(fullPath).toLowerCase())) continue;
+      const candidate = discoverLearnV2SurfaceCandidate(projectRoot, fullPath);
+      if (candidate) candidates.push(candidate);
+    }
+  }
+
+  await walk(projectRoot, 0);
+  return candidates
+    .sort((left, right) => right.score - left.score || left.relativePath.localeCompare(right.relativePath))
+    .slice(0, limit);
+}
+
+export function discoverLearnV2SurfaceCandidate(projectRootInput: string, sourcePathInput: string): LearnV2SurfaceCandidate | undefined {
+  const projectRoot = path.resolve(projectRootInput);
+  const sourcePath = path.resolve(sourcePathInput);
+  const relativePath = path.relative(projectRoot, sourcePath).replace(/\\/g, "/");
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) return undefined;
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (!RAW_LOCAL_SOURCE_EXTENSIONS.has(extension)) return undefined;
+  if (isLowValueRawLocalCandidate(relativePath)) return undefined;
+  const adapter = detectLearnV2SurfaceAdapterByPath(sourcePath);
+  if (!adapter) return undefined;
+  const detection = adapter.detect(sourcePath, "") ?? {
+    matchedBy: "filename" as const,
+    confidence: "low" as const,
+    reasons: [`extension:${extension || "none"}`]
+  };
+  const score = rawLocalSourceCandidateScore(relativePath, adapter, detection);
+  if (score <= 0) return undefined;
+  return LearnV2SurfaceCandidateSchema.parse({
+    id: rawLocalSourceCandidateId(relativePath),
+    adapterId: adapter.id,
+    adapterLabel: adapter.label,
+    relativePath,
+    path: sourcePath,
+    contentKind: adapter.contentKind ?? contentKindFromExtension(extension),
+    normalizationProfile: adapter.normalizationProfile,
+    sensitivity: adapter.policy.sensitivity,
+    detectedFormat: formatFromExtension(extension),
+    detection,
+    policy: adapter.policy,
+    score,
+    sortKey: `${String(Math.round((1 - score) * 1000)).padStart(4, "0")}:${relativePath}`
+  });
+}
+
+export function detectLearnV2SurfaceAdapterByPath(sourcePathInput: string): LearnV2SurfaceAdapter | undefined {
+  const sourcePath = path.resolve(sourcePathInput);
+  for (const adapter of learnV2SurfaceAdapters) {
+    const detection = adapter.detect(sourcePath, "");
+    if (detection && detection.matchedBy === "filename") return adapter;
+  }
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (RAW_LOCAL_SOURCE_EXTENSIONS.has(extension)) return learnV2SurfaceAdapters.find((adapter) => adapter.id === "generic-transcript");
+  return undefined;
+}
+
 function makeAdapter(
   id: string,
   label: string,
@@ -230,6 +359,57 @@ function rawSurfacePolicy(sensitivity: LearnV2SurfaceAdapterPolicy["sensitivity"
     sensitivity,
     notes
   };
+}
+
+function shouldSkipRawLocalSourceDir(name: string): boolean {
+  if (RAW_LOCAL_SOURCE_SKIP_DIRS.has(name) || name.startsWith(".pnpm")) return true;
+  return name.startsWith(".") && name !== ".codex-log";
+}
+
+function isLowValueRawLocalCandidate(relativePath: string): boolean {
+  const lower = relativePath.toLowerCase();
+  if (/(^|\/)(package-lock|pnpm-lock|yarn.lock|bun.lockb|cargo.lock|poetry.lock)$/.test(lower)) return true;
+  if (/(^|\/)(tsconfig|eslint|prettier|package)\.json$/.test(lower)) return true;
+  if (/(^|\/)(license|changelog|changes)\.md$/.test(lower)) return true;
+  return false;
+}
+
+function rawLocalSourceCandidateScore(
+  relativePath: string,
+  adapter: LearnV2SurfaceAdapter,
+  detection: LearnV2SurfaceAdapterDetection
+): number {
+  const lower = relativePath.toLowerCase();
+  let score = 0.18;
+  if (detection.matchedBy === "filename") score += 0.22;
+  if (detection.confidence === "high") score += 0.18;
+  if (adapter.id !== "generic-transcript") score += 0.14;
+  if (/(^|\/)(codex|claude|cursor|opencode|terminal|review|comments?|ci|logs?|plans?|docs?|handoff|summary)[^/]*\.(jsonl|json|md|txt|log|patch|diff)$/.test(lower)) score += 0.18;
+  if (/\.(patch|diff|jsonl|log)$/.test(lower)) score += 0.08;
+  if (/(^|\/)(logs?|traces?|sessions?|transcripts?|reviews?|plans?|docs?)\//.test(lower)) score += 0.08;
+  if (/(^|\/)(readme|notes?)\.md$/.test(lower)) score += 0.04;
+  return Math.min(1, Number(score.toFixed(2)));
+}
+
+function rawLocalSourceCandidateId(relativePath: string): string {
+  return relativePath.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "candidate";
+}
+
+function contentKindFromExtension(extension: string): LearnV2SurfaceRead["contentKind"] {
+  if (extension === ".diff" || extension === ".patch") return "diff";
+  if (extension === ".log") return "log";
+  if (extension === ".md") return "document";
+  return "transcript";
+}
+
+function formatFromExtension(extension: string): LearnV2SurfaceRead["detectedFormat"] | undefined {
+  if (extension === ".jsonl") return "jsonl";
+  if (extension === ".json") return "json";
+  if (extension === ".md") return "markdown";
+  if (extension === ".diff" || extension === ".patch") return "diff";
+  if (extension === ".log") return "log";
+  if (extension === ".txt") return "plain";
+  return undefined;
 }
 
 function detectSurfaceFormat(sourcePath: string, rawText: string): LearnV2SurfaceRead["detectedFormat"] {

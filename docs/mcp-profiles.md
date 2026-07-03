@@ -27,7 +27,7 @@ Public profile must stay at 12 tools or fewer.
 
 The advanced profile keeps detailed tools for scripts, debugging, and low-level workflows. It is opt-in with `OPENSKILLKIT_MCP_PROFILE=advanced` and can expose interaction import internals, OpenWorld subcommands, pack internals, maintenance commands, and legacy skill tooling.
 
-Learn v2 advanced tools expose the raw-local pipeline as an explicit staged workflow:
+Learn v2 advanced tools expose the raw-local pipeline as an explicit staged workflow. `osk_plan_learning_sources_v2` also returns `rawLocalSurfaceCandidates`: path-only, adapter-aware metadata for files that may be useful raw evidence. The server does not open those files during planning, and every candidate remains blocked from normal source-plan execution until explicitly passed to `osk_ingest_raw_evidence`.
 
 | Tool | Side effect level | Purpose |
 |---|---:|---|

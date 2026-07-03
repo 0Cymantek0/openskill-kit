@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -75,10 +75,12 @@ describe("openskill-kit MCP server", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-learn-v2-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-learn-v2-fixture" }), "utf8");
     const transcript = path.join(root, "session.md");
+    await mkdir(path.join(root, "logs"), { recursive: true });
     await writeFile(transcript, [
       `user: In ${path.join(root, "packages/core/src/parser.ts")}, prefer focused parser tests before parser rewrites. API_KEY=sk-live-secret`,
       "assistant: noted"
     ].join("\n"), "utf8");
+    await writeFile(path.join(root, "logs", "terminal-build.log"), "$ npm test -- parser\nPASS parser suite\n", "utf8");
 
     const client = new Client({ name: "openskill-kit-learn-v2-test", version: "0.1.0" }, { capabilities: {} });
     const transport = new StdioClientTransport({
@@ -116,6 +118,9 @@ describe("openskill-kit MCP server", () => {
       expect(planV2Parsed.legacySourcePlan.schemaVersion).toBe("openskill-kit.learn-source-plan.v1");
       expect(planV2Parsed.rawLocalSurfacePolicy.ingestTool).toBe("osk_ingest_raw_evidence");
       expect(planV2Parsed.rawLocalSurfacePolicy.previewDefault).toBe(true);
+      expect(planV2Parsed.rawLocalSurfaceCandidates.some((candidate: { adapter: { adapterId: string; normalizationProfile: string } }) =>
+        candidate.adapter.adapterId === "terminal" && candidate.adapter.normalizationProfile === "terminal"
+      )).toBe(true);
       expect(planV2Text).not.toContain(root);
 
       const raw = await client.callTool({

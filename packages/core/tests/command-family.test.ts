@@ -102,6 +102,22 @@ describe("OSK command family registry", () => {
     expect(rawPaths.some((item) => item.endsWith(`${path.sep}plans${path.sep}frontier-plan.md`))).toBe(true);
     expect(rawPaths.some((item) => item.includes(`${path.sep}dist${path.sep}`))).toBe(false);
     expect(rawPaths.some((item) => item.includes(`${path.sep}node_modules${path.sep}`))).toBe(false);
+    const terminalCandidate = rawOptions.find((option) => option.path?.endsWith(`${path.sep}logs${path.sep}terminal-build.log`))!;
+    const planCandidate = rawOptions.find((option) => option.path?.endsWith(`${path.sep}plans${path.sep}frontier-plan.md`))!;
+    expect(terminalCandidate.adapter).toBe("learn-v2:terminal");
+    expect(terminalCandidate.label).toContain("Terminal transcript");
+    expect(terminalCandidate.learnV2Surface).toMatchObject({
+      adapterId: "terminal",
+      normalizationProfile: "terminal",
+      contentKind: "log",
+      sensitivity: "high",
+      matchedBy: "filename",
+      confidence: "high"
+    });
+    expect(planCandidate.adapter).toBe("learn-v2:project-docs");
+    expect(planCandidate.learnV2Surface?.normalizationProfile).toBe("project-docs");
+    expect(terminalCandidate.privacy.notes.join(" ")).toContain("Adapter contract: terminal / terminal / log");
+    expect(terminalCandidate.privacy.notes.join(" ")).toContain("model=declassified-only");
     expect(plan.privacyPreview.join(" ")).toContain("path metadata only");
     expect(plan.nextActions.join(" ")).toContain("--raw --surface-file");
     expect(rawOptions[0]!.privacy.notes.join(" ")).toContain("did not read or copy");

@@ -405,6 +405,17 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
           outputBoundary: "declassified-review-compile-eval-artifacts",
           modelBoundary: "opencode-host-sanitized-only-or-deterministic"
         },
+        rawLocalSurfaceCandidates: plan.options
+          .filter((option) => option.id.startsWith("raw-local:") && option.learnV2Surface)
+          .map((option) => ({
+            id: option.id,
+            label: option.label,
+            path: option.path,
+            adapter: option.learnV2Surface,
+            blockedFromNormalPlanExecution: option.policy === "blocked",
+            reason: option.reason,
+            privacyNotes: option.privacy.notes
+          })),
         nextActions: [
           "Use osk_ingest_raw_evidence with explicit sourceFiles for raw-local Learn v2 ingestion.",
           "Keep previewOnly=true until user approves apply.",
