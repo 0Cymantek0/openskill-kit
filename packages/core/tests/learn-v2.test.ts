@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, stat, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -1541,6 +1541,55 @@ describe("learn-v2 substrate", () => {
     expect(sourceGate.entries.find((entry: { decision: string }) => entry.decision === "review")?.reviewSnippet).toContain("npm test");
     expect(sourceGate.entries.find((entry: { decision: string }) => entry.decision === "reject")?.reviewSnippet).toBeUndefined();
     expect(await readText(result.artifacts.learnV2SourceGateReviewPath)).toContain("Suppressed normalized evidence: 2");
+  });
+
+  it("preserves canonical Learn v2 artifacts when a later raw run has no accepted sources", async () => {
+    const root = await tempProject();
+    const accepted = path.join(root, "accepted-parser-session.md");
+    await writeFile(
+      accepted,
+      `${root}\npackages/core/src/parser.ts\nuser: Prefer focused parser regression fixtures before broad parser rewrites.`,
+      "utf8"
+    );
+    const seeded = await runRawLocalLearning(root, {
+      sourceFiles: [accepted],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:01:20Z")
+    });
+    expect(seeded.digest.sourcesIncluded).toBe(1);
+    expect(seeded.learnV2.modelRequestCount).toBeGreaterThanOrEqual(1);
+
+    const before = {
+      episodeStore: await readText(seeded.artifacts.learnV2EpisodeStorePath),
+      reviewQueue: await readText(seeded.artifacts.learnV2ReviewQueuePath),
+      compilePreview: await readText(seeded.artifacts.learnV2CompilePreviewPath),
+      evalReport: await readText(seeded.artifacts.learnV2EvalReportPath),
+      modelRequestDirs: await topLevelDirNames(seeded.artifacts.learnV2ModelRequestDir)
+    };
+
+    const reviewOnly = path.join(os.tmpdir(), `osk-review-only-${Date.now()}.log`);
+    const rejected = path.join(os.tmpdir(), `osk-rejected-memory-${Date.now()}.txt`);
+    await writeFile(reviewOnly, "$ npm test\nPASS parser suite", "utf8");
+    await writeFile(rejected, "global memory across repos: always use personal release token", "utf8");
+
+    const gated = await runRawLocalLearning(root, {
+      sourceFiles: [reviewOnly, rejected],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:01:30Z")
+    });
+
+    expect(gated.digest.sourcesIncluded).toBe(0);
+    expect(gated.digest.learningWindows).toBe(0);
+    expect(gated.digest.behaviorAtoms).toBe(0);
+    expect(gated.learnV2.modelRequestCount).toBe(0);
+    expect(gated.privacy.join("\n")).toContain("preserved canonical episode stores");
+    expect(await readText(seeded.artifacts.learnV2EpisodeStorePath)).toBe(before.episodeStore);
+    expect(await readText(seeded.artifacts.learnV2ReviewQueuePath)).toBe(before.reviewQueue);
+    expect(await readText(seeded.artifacts.learnV2CompilePreviewPath)).toBe(before.compilePreview);
+    expect(await readText(seeded.artifacts.learnV2EvalReportPath)).toBe(before.evalReport);
+    expect(await topLevelDirNames(seeded.artifacts.learnV2ModelRequestDir)).toEqual(before.modelRequestDirs);
   });
 
   it("preserves existing project relevance calibration across raw learning runs", async () => {
@@ -3372,6 +3421,11 @@ function episodeWithCommand(id: string, command: string, status: "pass" | "fail"
 
 async function readText(file: string): Promise<string> {
   return await import("node:fs/promises").then((fs) => fs.readFile(file, "utf8"));
+}
+
+async function topLevelDirNames(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
 }
 
 function projectRel(root: string, file: string): string {

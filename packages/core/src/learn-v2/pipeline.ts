@@ -9,14 +9,32 @@ import { writeJsonAtomic } from "../storage/atomic.js";
 import { ensureLearnV2ProjectRelevanceCalibration, scoreLearnV2ProjectRelevance } from "./relevance.js";
 import { readLearnV2Surface, type LearnV2SurfaceAdapterDetection, type LearnV2SurfaceAdapterPolicy } from "./surfaces.js";
 import { storeLearnV2RawEvidence, learnV2VaultRoot } from "./vault.js";
-import { LearnV2ConceptCardSchema, LearnV2RawEvidenceRecordSchema, type LearnV2BehaviorAtom, type LearnV2ConceptCard, type LearnV2NormalizedEvidence, type LearnV2RawEvidenceRecord, type LearnV2TaskEpisode } from "./schemas.js";
+import {
+  LearnV2ConceptCardSchema,
+  LearnV2ConceptDriftReportSchema,
+  LearnV2ConflictLedgerSchema,
+  LearnV2DeclassifiedEvidenceSnippetArtifactSchema,
+  LearnV2EvalReportSchema,
+  LearnV2RawEvidenceRecordSchema,
+  LearnV2ReviewQueueSchema,
+  type LearnV2BehaviorAtom,
+  type LearnV2ConceptCard,
+  type LearnV2ConceptDriftReport,
+  type LearnV2ConflictLedger,
+  type LearnV2DeclassifiedEvidenceSnippetArtifact,
+  type LearnV2EvalReport,
+  type LearnV2NormalizedEvidence,
+  type LearnV2RawEvidenceRecord,
+  type LearnV2ReviewQueue,
+  type LearnV2TaskEpisode
+} from "./schemas.js";
 import { normalizeLearnV2Evidence } from "./normalize.js";
 import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { writeLearnV2ConflictLedger } from "./conflicts.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
-import { compileLearnV2ConceptPreview } from "./compile.js";
+import { compileLearnV2ConceptPreview, type LearnV2CompilePreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
 import { writeLearnV2PipelineObservabilityReport } from "./observability.js";
 import { learnV2EvidenceQualityArtifactPath, writeLearnV2EvidenceQualityArtifact } from "./quality.js";
@@ -361,17 +379,35 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     source.learnV2.sourceGateReviewPath = sourceGateReview.paths.markdown;
   }
 
-  const rawEpisodes = reconstructLearnV2Episodes(acceptedRawEvidence);
+  const hasAcceptedEvidence = acceptedRawEvidence.length > 0;
+  const shouldWriteDerivedArtifacts = hasAcceptedEvidence;
+  const shouldWriteModelRequests = !previewOnly && hasAcceptedEvidence;
+  const rawEpisodes = hasAcceptedEvidence ? reconstructLearnV2Episodes(acceptedRawEvidence) : [];
   const episodes = rawEpisodes.map((episode) => declassifyLearnV2TaskEpisode(episode, root, config));
-  const evidenceQuality = await writeLearnV2EvidenceQualityArtifact(root, acceptedDeclassifiedEvidence, now);
+  const evidenceQuality = shouldWriteDerivedArtifacts
+    ? await writeLearnV2EvidenceQualityArtifact(root, acceptedDeclassifiedEvidence, now)
+    : { scores: [] };
   const evidenceQualityPath = learnV2EvidenceQualityArtifactPath(root, now);
-  const declassifiedSnippets = await writeLearnV2DeclassifiedSnippetArtifact(root, episodes, now, {
-    blockOnMediumRisk: true,
-    maxChars: 700,
-    maxSnippets: 200
-  });
-  const episodeStorePath = await writeLearnV2EpisodeStore(root, episodes, now);
-  const modelRequests = await writeLearnV2ModelRequests(root, episodes, now);
+  const declassifiedSnippets = shouldWriteDerivedArtifacts
+    ? await writeLearnV2DeclassifiedSnippetArtifact(root, episodes, now, {
+        blockOnMediumRisk: true,
+        maxChars: 700,
+        maxSnippets: 200
+      })
+    : emptyDeclassifiedSnippets(root, now);
+  const episodeStorePath = shouldWriteDerivedArtifacts
+    ? await writeLearnV2EpisodeStore(root, episodes, now)
+    : path.join(root, ".openskill-kit", "learn-v2", "episodes", "store.json");
+  const modelRequests = shouldWriteModelRequests
+    ? await writeLearnV2ModelRequests(root, episodes, now)
+    : {
+        schemaVersion: "openskill-kit.learn-v2.model-request-result.v1" as const,
+        generatedAt,
+        requestCount: 0,
+        requests: [],
+        skippedEpisodes: [],
+        routingManifestPath: path.join(root, ".openskill-kit", "learn-v2", "model-requests", "routing-manifest.json")
+      };
   const extracted = extractLearnV2BehaviorAtoms(rawEpisodes);
   const concepts = declassifyLearnV2ConceptCards(mergeLearnV2ConceptCards(extracted.atoms, now), root, config);
   const canonicalConceptStateWritten = !previewOnly && concepts.length > 0;
@@ -384,8 +420,21 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const conceptStorePath = previewOnly
     ? previewLearnV2ConceptStorePath(root, generatedAt)
     : path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
-  const conceptDrift = await detectLearnV2ConceptDrift(root, conceptCardsForArtifacts, { now });
-  const conflictLedger = await writeLearnV2ConflictLedger(root, conceptCardsForArtifacts, config.projectId, now);
+  const conceptDrift = shouldWriteDerivedArtifacts
+    ? await detectLearnV2ConceptDrift(root, conceptCardsForArtifacts, { now })
+    : {
+        report: emptyConceptDriftReport(now),
+        artifactPath: path.join(root, ".openskill-kit", "learn-v2", "drift", "concept-drift.json")
+      };
+  const conflictLedger = shouldWriteDerivedArtifacts
+    ? await writeLearnV2ConflictLedger(root, conceptCardsForArtifacts, config.projectId, now)
+    : {
+        ledger: emptyConflictLedger(config.projectId, now),
+        artifactPaths: {
+          json: path.join(root, ".openskill-kit", "learn-v2", "conflicts", "conflict-ledger.json"),
+          markdown: path.join(root, ".openskill-kit", "learn-v2", "conflicts", "conflict-ledger.md")
+        }
+      };
   const modelRouting = await ensureLearnV2ModelRoutingArtifacts(root, now);
   for (const source of sourceDigests) {
     const rawRef = source.learnV2.rawRef;
@@ -393,14 +442,20 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     source.atomCount = extracted.atoms.filter((atom) => atom.rawRefs.includes(rawRef)).length;
     source.conceptCount = concepts.filter((concept) => concept.rawRefs.includes(rawRef)).length;
   }
-  const reviewQueue = await writeLearnV2ReviewQueue(root, conceptCardsForArtifacts, now, {
-    ledger: conflictLedger.ledger,
-    markdownPath: conflictLedger.artifactPaths.markdown,
-    declassifiedSnippets,
-    conceptDrift
-  });
-  const compilePreview = await compileLearnV2ConceptPreview(root, config, conceptCardsForArtifacts, now);
-  const evalReport = await runLearnV2Eval(root, episodes, conceptCardsForArtifacts, now, { goldensPath: options.learnV2GoldensPath });
+  const reviewQueue = shouldWriteDerivedArtifacts
+    ? await writeLearnV2ReviewQueue(root, conceptCardsForArtifacts, now, {
+        ledger: conflictLedger.ledger,
+        markdownPath: conflictLedger.artifactPaths.markdown,
+        declassifiedSnippets,
+        conceptDrift
+      })
+    : emptyReviewQueue(root, now);
+  const compilePreview = shouldWriteDerivedArtifacts
+    ? await compileLearnV2ConceptPreview(root, config, conceptCardsForArtifacts, now)
+    : emptyCompilePreview(root, now);
+  const evalReport = shouldWriteDerivedArtifacts
+    ? await runLearnV2Eval(root, episodes, conceptCardsForArtifacts, now, { goldensPath: options.learnV2GoldensPath })
+    : emptyEvalReport(root);
   const lifecycle: LifecycleRunnerResult | undefined = !previewOnly && importRuns.some((run) => run.appendedEventCount > 0)
     ? await runLifecycleOnce({ projectRoot: root, maxEvents: options.maxTurns ?? 500, compileSafe: false, now: options.now })
     : undefined;
@@ -408,7 +463,12 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const legacyConcepts = concepts.map(toLegacyConceptCard);
   const digestPath = path.join(digestsDir, `raw-learning-${timestampSlug(generatedAt)}.json`);
   const reviewMarkdownPath = path.join(digestsDir, `raw-learning-${timestampSlug(generatedAt)}.md`);
-  const nextActions = previewOnly
+  const nextActions = !hasAcceptedEvidence
+    ? [
+        "Inspect the Learn v2 source-gate review artifact; no source was accepted for extraction.",
+        "Provide a project-anchored raw source or explicitly review/approve ambiguous source evidence before extraction."
+      ]
+    : previewOnly
     ? [
         "Inspect the raw learning digest and learn-v2 concept review queue, then rerun with --apply to persist raw vault records and staged review evidence.",
         "Review source relevance decisions marked ask/reject before applying."
@@ -508,6 +568,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       ...(previewOnly
         ? ["Preview writes generated/private analysis, review, eval, model-request, digest, and observability artifacts for inspection, but does not persist canonical concept state, activation index, raw vault records, events, or lifecycle graph changes."]
         : []),
+      ...(!hasAcceptedEvidence
+        ? ["No accepted source entered extraction; Learn v2 preserved canonical episode stores, model request directories, review queues, compile previews, eval reports, concept state, activation indexes, raw vault records, events, and lifecycle graph state."]
+        : []),
       "Learn v2 reads and normalizes full supplied raw local evidence in memory for deterministic extraction.",
       "Project relevance is a hard extraction gate: only accepted sources enter episode reconstruction, atom extraction, model requests, concept stores, activation indexes, and compile previews.",
       "Machine-local path prefixes are normalized in learner memory to avoid temp-directory or home-directory noise influencing concepts.",
@@ -542,6 +605,104 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   await writeJsonAtomic(digestPath, result);
   await fs.writeFile(reviewMarkdownPath, renderRawLearningDigest(result), "utf8");
   return result;
+}
+
+function emptyReviewQueue(root: string, now: Date): LearnV2ReviewQueue {
+  return LearnV2ReviewQueueSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.review-queue.v1",
+    generatedAt: now.toISOString(),
+    cards: [],
+    behaviorDeltaFirst: true,
+    safeBulkActions: ["accept-low-risk", "reject-one-off", "mark-superseded"],
+    artifacts: {
+      markdown: path.join(root, ".openskill-kit", "learn-v2", "review", "concept-review-queue.md")
+    }
+  });
+}
+
+function emptyEvalReport(root: string): LearnV2EvalReport {
+  return LearnV2EvalReportSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.eval-report.v1",
+    status: "pass",
+    extractionGoldenCount: 0,
+    behaviorDeltaGoldenCount: 0,
+    counterfactualTraceCaseCount: 0,
+    replayEpisodeCount: 0,
+    leakCheck: {
+      status: "pass",
+      issues: []
+    },
+    tokenBudget: {
+      rawChars: 0,
+      compressedChars: 0,
+      compressionRatio: 0
+    },
+    results: [],
+    artifacts: {
+      json: path.join(root, ".openskill-kit", "learn-v2", "evals", "source-gate-only", "learn-v2-eval.json"),
+      markdown: path.join(root, ".openskill-kit", "learn-v2", "evals", "source-gate-only", "learn-v2-eval.md")
+    }
+  });
+}
+
+function emptyCompilePreview(root: string, now: Date): LearnV2CompilePreview {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.compile-preview.v1",
+    generatedAt: now.toISOString(),
+    activeConceptCount: 0,
+    candidateConceptCount: 0,
+    preferenceNodes: [],
+    workflowNodes: [],
+    declassificationReport: {
+      rawRefsExported: false,
+      blockedPrivatePaths: [],
+      placeholders: [],
+      status: "pass",
+      issues: []
+    },
+    artifacts: {
+      json: path.join(root, ".openskill-kit", "learn-v2", "compiled-preview", "concept-compile-preview.json"),
+      markdown: path.join(root, ".openskill-kit", "learn-v2", "compiled-preview", "concept-compile-preview.md")
+    }
+  };
+}
+
+function emptyDeclassifiedSnippets(root: string, now: Date): LearnV2DeclassifiedEvidenceSnippetArtifact {
+  return LearnV2DeclassifiedEvidenceSnippetArtifactSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.declassified-snippet-artifact.v1",
+    generatedAt: now.toISOString(),
+    snippets: [],
+    counts: {
+      total: 0,
+      redacted: 0,
+      blockedFromCompile: 0,
+      residualRiskCounts: {}
+    },
+    artifacts: {
+      json: path.join(root, ".openskill-kit", "learn-v2", "declassified-snippets", "snippets.json"),
+      markdown: path.join(root, ".openskill-kit", "learn-v2", "declassified-snippets", "snippets.md")
+    }
+  });
+}
+
+function emptyConflictLedger(projectId: string, now: Date): LearnV2ConflictLedger {
+  return LearnV2ConflictLedgerSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.conflict-ledger.v1",
+    projectId,
+    updatedAt: now.toISOString(),
+    conflicts: [],
+    unresolvedCount: 0
+  });
+}
+
+function emptyConceptDriftReport(now: Date): LearnV2ConceptDriftReport {
+  return LearnV2ConceptDriftReportSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.concept-drift.v1",
+    generatedAt: now.toISOString(),
+    totalActiveConcepts: 0,
+    staleCandidates: [],
+    healthScore: 1
+  });
 }
 
 export function resolveLearnV2RawLearningModelMode(mode: LearnV2RawLearningModelModeInput | undefined): LearnV2RawLearningModelMode {
