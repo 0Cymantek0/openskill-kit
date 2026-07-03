@@ -343,6 +343,8 @@ osk.command("learn")
   .option("--observability", "Show latest Learn-v2 pipeline observability dashboard")
   .option("--observability-file <path>", "Specific Learn-v2 pipeline observability JSON report")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
+  .option("--max-pinned-raw-vault-bytes <number>", "Learn-v2 pinned raw vault byte budget", parseIntegerOption)
+  .option("--max-total-raw-vault-bytes <number>", "Learn-v2 total raw vault byte budget across hot, pinned, and compacted records", parseIntegerOption)
   .option("--preview-retention-days <number>", "Learn-v2 preview artifact retention window", parseIntegerOption, 14)
   .option("--keep-preview-runs <number>", "Minimum Learn-v2 preview concept-store files to retain", parseIntegerOption, 20)
   .option("--reconstruct-episodes", "Rebuild Learn-v2 episodes from persisted analysis frames")
@@ -384,6 +386,8 @@ osk.command("learn")
       const result = await runLearnV2RawVaultMaintenance(process.cwd(), {
         gc: options.gcRawVault === true,
         maxHotBytes: options.maxRawVaultBytes,
+        maxPinnedBytes: options.maxPinnedRawVaultBytes,
+        maxTotalBytes: options.maxTotalRawVaultBytes,
         previewRetentionDays: options.previewRetentionDays,
         keepPreviewRuns: options.keepPreviewRuns
       });
@@ -2465,8 +2469,9 @@ function renderRawVaultMaintenance(result: Awaited<ReturnType<typeof runLearnV2R
     `Learn v2 raw vault: ${result.status}`,
     `Records: ${result.manifest.records.length}`,
     `Hot bytes: ${result.manifest.budget.hotBytes}/${result.manifest.budget.maxHotBytes}`,
-    `Pinned bytes: ${result.manifest.budget.pinnedBytes}`,
+    `Pinned bytes: ${result.manifest.budget.pinnedBytes}/${result.manifest.budget.maxPinnedBytes}`,
     `Compacted bytes: ${result.manifest.budget.compactedBytes}`,
+    `Total bytes: ${result.manifest.budget.totalBytes}/${result.manifest.budget.maxTotalBytes}`,
     `Expired records: ${result.manifest.budget.expiredCount}`,
     `Preview stores: ${result.previewArtifacts.previewStoreCount}`,
     `Preview store bytes: ${result.previewArtifacts.previewStoreBytes}`,

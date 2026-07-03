@@ -148,6 +148,47 @@ describe("osk CLI facade", () => {
     expect(result.stdout).not.toContain(root);
   });
 
+  it("renders raw vault hot pinned and total budgets in terminal output", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-raw-vault-budget-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
+
+    const textResult = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "learn",
+      "--raw-vault-status",
+      "--max-raw-vault-bytes",
+      "11",
+      "--max-pinned-raw-vault-bytes",
+      "22",
+      "--max-total-raw-vault-bytes",
+      "33"
+    ], { cwd: root, windowsHide: true });
+
+    expect(textResult.stdout).toContain("Hot bytes: 0/11");
+    expect(textResult.stdout).toContain("Pinned bytes: 0/22");
+    expect(textResult.stdout).toContain("Total bytes: 0/33");
+    expect(textResult.stdout).toContain("Preview retention:");
+    expect(textResult.stdout).not.toContain(root);
+
+    const jsonResult = await execCliJson([
+      "osk",
+      "learn",
+      "--raw-vault-status",
+      "--max-raw-vault-bytes",
+      "11",
+      "--max-pinned-raw-vault-bytes",
+      "22",
+      "--max-total-raw-vault-bytes",
+      "33",
+      "--json"
+    ], root);
+    expect(jsonResult.manifest.budget.maxHotBytes).toBe(11);
+    expect(jsonResult.manifest.budget.maxPinnedBytes).toBe(22);
+    expect(jsonResult.manifest.budget.maxTotalBytes).toBe(33);
+  });
+
   it("renders raw learning source policy in terminal output", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-raw-source-policy-"));
     await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
