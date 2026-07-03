@@ -25,6 +25,7 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     adapterMatchedByCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     adapterDetectionConfidenceCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     contentKindCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    normalizationProfileCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     sensitivityCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     modelBoundaryCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     explicitOnlySources: z.number().int().min(0).default(0),
@@ -125,6 +126,7 @@ export interface LearnV2PipelineObservabilityInput {
         confidence?: string;
       };
       contentKind?: string;
+      normalizationProfile?: string;
       surfacePolicy?: {
         selection?: string;
         read?: string;
@@ -208,6 +210,7 @@ export async function writeLearnV2PipelineObservabilityReport(
       adapterMatchedByCounts: countBy(input.sources.map((source) => source.learnV2?.adapterDetection?.matchedBy ?? "unknown")),
       adapterDetectionConfidenceCounts: countBy(input.sources.map((source) => source.learnV2?.adapterDetection?.confidence ?? "unknown")),
       contentKindCounts: countBy(input.sources.map((source) => source.learnV2?.contentKind ?? "unknown")),
+      normalizationProfileCounts: countBy(input.sources.map((source) => source.learnV2?.normalizationProfile ?? "unknown")),
       sensitivityCounts: countBy(input.sources.map((source) => source.learnV2?.surfacePolicy?.sensitivity ?? "unknown")),
       modelBoundaryCounts: countBy(input.sources.map((source) => source.learnV2?.surfacePolicy?.modelBoundary ?? "unknown")),
       explicitOnlySources: input.sources.filter((source) => source.learnV2?.surfacePolicy?.selection === "explicit-only").length,
@@ -305,6 +308,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Adapters: ${renderCounts(report.sources.adapterCounts)}`,
     `- Adapter detection: by=${renderCounts(report.sources.adapterMatchedByCounts)}, confidence=${renderCounts(report.sources.adapterDetectionConfidenceCounts)}`,
     `- Content kinds: ${renderCounts(report.sources.contentKindCounts)}`,
+    `- Normalization profiles: ${renderCounts(report.sources.normalizationProfileCounts)}`,
     `- Source policy: explicit-only=${report.sources.explicitOnlySources}, raw-local-file=${report.sources.rawLocalFileSources}, declassified-only-model=${report.sources.declassifiedOnlyModelSources}`,
     `- Sensitivity: ${renderCounts(report.sources.sensitivityCounts)}`,
     `- Model boundary: ${renderCounts(report.sources.modelBoundaryCounts)}`,

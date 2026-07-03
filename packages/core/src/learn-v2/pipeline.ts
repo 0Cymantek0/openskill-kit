@@ -84,6 +84,7 @@ interface LearnV2SourceDigestCompat {
     adapterLabel?: string;
     adapterDetection?: LearnV2SurfaceAdapterDetection;
     detectedFormat: string;
+    normalizationProfile?: string;
     contentKind: string;
     surfacePolicy?: LearnV2SurfaceAdapterPolicy;
     v2AnalysisPath: string;
@@ -272,6 +273,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         detection: surface.adapterDetection,
         contentKind: surface.contentKind,
         detectedFormat: surface.detectedFormat,
+        normalizationProfile: surface.normalizationProfile,
         policy: surface.policy
       },
       modelMode,
@@ -320,6 +322,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         adapterLabel: surface.adapterLabel,
         adapterDetection: surface.adapterDetection,
         detectedFormat: surface.detectedFormat,
+        normalizationProfile: surface.normalizationProfile,
         contentKind: surface.contentKind,
         surfacePolicy: surface.policy,
         v2AnalysisPath,

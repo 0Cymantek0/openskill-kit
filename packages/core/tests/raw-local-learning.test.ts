@@ -57,6 +57,7 @@ describe("raw local learning", () => {
     });
     expect(preview.sources[0]!.learnV2.adapterId).toBe("codex");
     expect(preview.sources[0]!.learnV2.adapterLabel).toBe("Codex transcript");
+    expect(preview.sources[0]!.learnV2.normalizationProfile).toBe("structured-events");
     expect(preview.sources[0]!.learnV2.adapterDetection).toMatchObject({
       matchedBy: "filename",
       confidence: "high"
@@ -110,6 +111,8 @@ describe("raw local learning", () => {
     expect(previewObservability).toContain("\"adapterCounts\"");
     expect(previewObservability).toContain("\"adapterMatchedByCounts\"");
     expect(previewObservability).toContain("\"adapterDetectionConfidenceCounts\"");
+    expect(previewObservability).toContain("\"normalizationProfileCounts\"");
+    expect(previewObservability).toContain("\"structured-events\"");
     expect(previewObservability).toContain("\"sensitivityCounts\"");
     expect(previewObservability).toContain("\"modelBoundaryCounts\"");
     expect(previewObservability).toContain("\"declassifiedOnlyModelSources\"");
@@ -141,6 +144,7 @@ describe("raw local learning", () => {
     expect(analysisFrame).not.toContain(root);
     expect(analysisFrame).not.toContain("sk-live-secret");
     expect(analysisFrame).toContain("\"surfaceAdapter\"");
+    expect(analysisFrame).toContain("\"normalizationProfile\": \"structured-events\"");
     expect(analysisFrame).toContain("\"modelBoundary\": \"declassified-only\"");
     const episodeStore = await readFile(applied.artifacts.learnV2EpisodeStorePath, "utf8");
     expect(episodeStore).not.toContain(root);

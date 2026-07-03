@@ -34,6 +34,8 @@ import {
   runPersistedLearnV2Eval,
   readPreferenceGraph,
   readLearnV2Surface,
+  learnV2SurfaceAdapterContracts,
+  validateLearnV2SurfaceAdapterContracts,
   reconstructLearnV2Episodes,
   runRawLocalLearning,
   runLearnV2RawVaultMaintenance,
@@ -157,6 +159,41 @@ describe("learn-v2 substrate", () => {
     expect(docsSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
     expect(handoffSurface.adapterId).toBe("agent-summaries");
     expect(handoffSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
+    expect(diffSurface.normalizationProfile).toBe("diff");
+    expect(handoffSurface.normalizationProfile).toBe("agent-summaries");
+    expect(genericSurface.normalizationProfile).toBe("generic-transcript");
+  });
+
+  it("exposes a validated raw surface adapter contract with normalization profiles", async () => {
+    const contracts = validateLearnV2SurfaceAdapterContracts();
+    const descriptorContracts = learnV2SurfaceAdapterContracts();
+    const byId = new Map(contracts.map((contract) => [contract.id, contract]));
+
+    expect(contracts.map((contract) => contract.id)).toEqual([
+      "opencode",
+      "codex",
+      "claude-code",
+      "cursor",
+      "git",
+      "terminal",
+      "review-local",
+      "ci-log",
+      "project-docs",
+      "agent-summaries",
+      "generic-transcript"
+    ]);
+    expect(descriptorContracts).toEqual(contracts);
+    expect(byId.get("terminal")?.normalizationProfile).toBe("terminal");
+    expect(byId.get("git")?.normalizationProfile).toBe("diff");
+    expect(byId.get("project-docs")?.normalizationProfile).toBe("project-docs");
+    expect(byId.get("generic-transcript")?.capabilities).toEqual({
+      discover: true,
+      fetch: true,
+      relevance: true,
+      normalize: true
+    });
+    expect(contracts.every((contract) => contract.policy.selection === "explicit-only")).toBe(true);
+    expect(contracts.every((contract) => contract.policy.modelBoundary === "declassified-only")).toBe(true);
   });
 
   it("normalizes terminal review ci docs and agent-summary adapters with domain-specific actors and kinds", async () => {

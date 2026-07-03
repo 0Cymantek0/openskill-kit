@@ -25,19 +25,19 @@ review-gated.
 
 ## Raw Surface Adapter Detection
 
-| Adapter | Typical filename/content marker | Content kind | Sensitivity | Notes |
-|---|---|---:|---:|---|
-| `opencode` | `opencode-*`, `tool.execute`, `provider: opencode` | inferred | high | Conversation/tool traces may include prompts, paths, commands, and outputs. |
-| `codex` | `codex-*` or Codex marker in content prefix | inferred | high | Transcript source; explicit file selection still required. |
-| `claude-code` | `claude-*` or Claude marker in content prefix | inferred | high | Transcript source; explicit file selection still required. |
-| `cursor` | `cursor-*` or Cursor marker in content prefix | inferred | high | Transcript source; explicit file selection still required. |
-| `git` | `.diff`, `.patch`, `git-*`, or `diff --git` | diff | high | Raw diffs stay local; output artifacts receive summaries. |
-| `terminal` | `terminal-*`, `shell-*`, `console-*`, command/history marker | log | high | Shell output can contain local paths or secrets. |
-| `review-local` | `review-*`, `comments-*`, `pull-request-*`, or explicit `review comment:` prefix | document | medium | Review evidence is declassified before output. |
-| `ci-log` | `ci-*`, `junit-*`, `vitest-*`, `.log`, `PASS`, `FAIL`, `ERROR` | log | medium | Logs are compressed and diagnostics are retained. |
-| `project-docs` | `README*`, `docs*`, `notes*`, `plan*` filename only | document | low | Words like `plan` in ordinary transcript content do not force this adapter. |
-| `agent-summaries` | `summary*`, `handoff*`, `finish*` filename only | summary | medium | Words like `Summary:` in ordinary transcript content do not force this adapter. |
-| `generic-transcript` | fallback when no specific marker matches | inferred | high | Default for explicit raw files with no trusted adapter identity. |
+| Adapter | Typical filename/content marker | Content kind | Normalize profile | Sensitivity | Notes |
+|---|---|---:|---:|---:|---|
+| `opencode` | `opencode-*`, `tool.execute`, `provider: opencode` | inferred | `structured-events` | high | Conversation/tool traces may include prompts, paths, commands, and outputs. |
+| `codex` | `codex-*` or Codex marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `claude-code` | `claude-*` or Claude marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `cursor` | `cursor-*` or Cursor marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `git` | `.diff`, `.patch`, `git-*`, or `diff --git` | diff | `diff` | high | Raw diffs stay local; output artifacts receive summaries. |
+| `terminal` | `terminal-*`, `shell-*`, `console-*`, command/history marker | log | `terminal` | high | Shell output can contain local paths or secrets. |
+| `review-local` | `review-*`, `comments-*`, `pull-request-*`, or explicit `review comment:` prefix | document | `review-local` | medium | Review evidence is declassified before output. |
+| `ci-log` | `ci-*`, `junit-*`, `vitest-*`, `.log`, `PASS`, `FAIL`, `ERROR` | log | `ci-log` | medium | Logs are compressed and diagnostics are retained. |
+| `project-docs` | `README*`, `docs*`, `notes*`, `plan*` filename only | document | `project-docs` | low | Words like `plan` in ordinary transcript content do not force this adapter. |
+| `agent-summaries` | `summary*`, `handoff*`, `finish*` filename only | summary | `agent-summaries` | medium | Words like `Summary:` in ordinary transcript content do not force this adapter. |
+| `generic-transcript` | fallback when no specific marker matches | inferred | `generic-transcript` | high | Default for explicit raw files with no trusted adapter identity. |
 
 ## Workflow
 
@@ -95,7 +95,7 @@ openskill-kit osk review --write
 - Raw local source entries include adapter label, adapter-detection reason/confidence, detected format/content kind, explicit-only raw-local read policy, sensitivity, persistence boundary, and `modelBoundary: "declassified-only"` so raw-run output and CLI/TUI status views can show why a source is safe to inspect without implying raw-to-model dispatch.
 - Learn v2 raw-learning result includes `learningInputBoundary: "raw-local-in-memory-declassified-artifacts"` so callers can distinguish local raw deterministic extraction from declassified persisted/model-request artifacts and future raw-to-model execution.
 - Raw-learning top-level `concepts` remains the legacy current-run projection. The nested `learnV2.concepts` array is the merged concept set used for review, conflict, compile preview, eval, and observability; `digest.currentRunConceptCards`, `digest.mergedConceptCards`, and `learnV2.conceptCounts` make that scope explicit.
-- Learn v2 writes a declassified pipeline observability report with source intake counts, source adapter/detection/policy/sensitivity/model-boundary counts, episode confidence/stitching counts, tool compression strategies, patch filter reasons, concept status/risk counts, quality gates, artifact pointers, and next actions.
+- Learn v2 writes a declassified pipeline observability report with source intake counts, source adapter/detection/normalization-profile/policy/sensitivity/model-boundary counts, episode confidence/stitching counts, tool compression strategies, patch filter reasons, concept status/risk counts, quality gates, artifact pointers, and next actions.
 - MCP advanced profile exposes the staged Learn v2 workflow through `osk_plan_learning_sources_v2`, `osk_ingest_raw_evidence`, `osk_reconstruct_episodes`, `osk_extract_concepts`, `osk_get_concept_review_queue`, `osk_review_concepts`, `osk_compile_concepts`, and `osk_run_learn_v2_eval`. `osk_get_concept_review_queue` returns the persisted behavior-delta-first focus queue, not the raw concept store.
 - MCP advanced profile exposes the declassified observability report through `osk_get_learn_v2_observability`, using the latest report by default or an explicit report path when supplied.
 - Learn v2 writes declassified evidence-quality artifacts that score normalized records for prioritization and model-routing ROI without dropping raw-local learning evidence.

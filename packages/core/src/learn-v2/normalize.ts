@@ -1,5 +1,5 @@
 import type { LearnV2RawEvidenceRecord, LearnV2NormalizedEvidence } from "./schemas.js";
-import type { LearnV2SurfaceRead } from "./surfaces.js";
+import type { LearnV2SurfaceNormalizationProfile, LearnV2SurfaceRead } from "./surfaces.js";
 import {
   learnV2CommandLinesFromText,
   learnV2FilePathsFromText,
@@ -55,7 +55,8 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
 }
 
 function normalizedFromText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
-  if (surface.detectedFormat === "diff") {
+  const profile = normalizationProfileForSurface(surface);
+  if (profile === "diff") {
     return [makeEvidence(rawRecord, 0, {
       kind: "file-change",
       actor: "assistant",
@@ -66,11 +67,11 @@ function normalizedFromText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEv
       metadata: { detectedFormat: "diff" }
     })];
   }
-  if (surface.adapterId === "terminal") return normalizeTerminalText(surface, rawRecord, text);
-  if (surface.adapterId === "ci-log") return normalizeCiLogText(surface, rawRecord, text);
-  if (surface.adapterId === "review-local") return normalizeReviewText(surface, rawRecord, text);
-  if (surface.adapterId === "project-docs") return normalizeProjectDocText(surface, rawRecord, text);
-  if (surface.adapterId === "agent-summaries") return normalizeAgentSummaryText(surface, rawRecord, text);
+  if (profile === "terminal") return normalizeTerminalText(surface, rawRecord, text);
+  if (profile === "ci-log") return normalizeCiLogText(surface, rawRecord, text);
+  if (profile === "review-local") return normalizeReviewText(surface, rawRecord, text);
+  if (profile === "project-docs") return normalizeProjectDocText(surface, rawRecord, text);
+  if (profile === "agent-summaries") return normalizeAgentSummaryText(surface, rawRecord, text);
   const roleBlocks = text.split(/\n(?=(?:user|assistant|system|developer|tool|reviewer|ci)\s*:)/i);
   if (roleBlocks.length > 1) {
     return roleBlocks.flatMap((block, index) => {
@@ -229,6 +230,18 @@ function fallbackEvidence(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvid
     commands: learnV2CommandLinesFromText(text),
     metadata: { detectedFormat: surface.detectedFormat, fallback: true }
   });
+}
+
+function normalizationProfileForSurface(surface: LearnV2SurfaceRead): LearnV2SurfaceNormalizationProfile {
+  if (surface.normalizationProfile) return surface.normalizationProfile;
+  if (surface.detectedFormat === "diff") return "diff";
+  if (surface.adapterId === "terminal") return "terminal";
+  if (surface.adapterId === "ci-log") return "ci-log";
+  if (surface.adapterId === "review-local") return "review-local";
+  if (surface.adapterId === "project-docs") return "project-docs";
+  if (surface.adapterId === "agent-summaries") return "agent-summaries";
+  if (surface.detectedFormat === "json" || surface.detectedFormat === "jsonl") return "structured-events";
+  return "generic-transcript";
 }
 
 function makeEvidence(rawRecord: LearnV2RawEvidenceRecord, index: number, input: Omit<LearnV2NormalizedEvidence, "schemaVersion" | "id" | "rawRef" | "sourceHash">): LearnV2NormalizedEvidence {
