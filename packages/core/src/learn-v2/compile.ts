@@ -37,7 +37,7 @@ export async function compileLearnV2ConceptPreview(rootInput: string, config: Pr
   const preferenceNodes = active.map((card) => conceptToPreference(config.projectId, card, now));
   const workflowNodes = active.filter((card) => card.atoms.some((atom) => atom.kind === "workflow" || atom.kind === "command-policy" || atom.kind === "verification"))
     .map((card) => conceptToWorkflow(card, now));
-  const report = declassificationReport(cards);
+  const report = declassificationReport(cards, preferenceNodes, workflowNodes);
   const dir = path.join(root, ".openskill-kit", "learn-v2", "compiled-preview");
   const json = path.join(dir, "concept-compile-preview.json");
   const markdown = path.join(dir, "concept-compile-preview.md");
@@ -144,15 +144,36 @@ function categoryFor(card: LearnV2ConceptCard): PreferenceNode["category"] {
   return "workflow";
 }
 
-export function declassificationReport(cards: LearnV2ConceptCard[]): LearnV2CompilePreview["declassificationReport"] {
-  const text = JSON.stringify(cards.map((card) => ({
-    id: card.id,
-    title: card.title,
-    canonicalBehavior: card.canonicalBehavior,
-    behaviorDelta: card.behaviorDelta,
-    activation: card.activation,
-    evidenceIds: card.evidenceIds
-  })));
+export function declassificationReport(
+  cards: LearnV2ConceptCard[],
+  preferenceNodes: PreferenceNode[] = [],
+  workflowNodes: WorkflowNode[] = []
+): LearnV2CompilePreview["declassificationReport"] {
+  const text = JSON.stringify({
+    concepts: cards.map((card) => ({
+      id: card.id,
+      title: card.title,
+      canonicalBehavior: card.canonicalBehavior,
+      behaviorDelta: card.behaviorDelta,
+      activation: card.activation,
+      scope: card.scope,
+      conditions: card.conditions,
+      counterevidence: card.counterevidence,
+      evidenceIds: card.evidenceIds,
+      atoms: card.atoms.map((atom) => ({
+        id: atom.id,
+        kind: atom.kind,
+        statement: atom.statement,
+        scope: atom.scope,
+        rationale: atom.rationale,
+        counterevidence: atom.counterevidence
+      }))
+    })),
+    compiledOutputs: {
+      preferenceNodes,
+      workflowNodes
+    }
+  });
   const issues: string[] = [];
   if (/raw_[A-Za-z0-9_-]{8,}/i.test(text)) issues.push("raw-ref-like-token-in-output");
 

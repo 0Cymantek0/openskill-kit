@@ -183,6 +183,22 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
     }
   });
 
+  it("scans compiled preference and workflow node fields for declassification leaks", async () => {
+    const root = await tempProject();
+    const config = (await initAdaptiveProject({ projectRoot: root })).config;
+    const card = createBadCard("scope_path_leak", "Prefer focused parser regressions before parser rewrites.");
+    card.atoms[0]!.kind = "workflow";
+    card.scope.paths = ["C:\\Users\\john\\private\\parser.ts"];
+    card.atoms[0]!.scope.paths = ["C:\\Users\\john\\private\\parser.ts"];
+
+    const preview = await compileLearnV2ConceptPreview(root, config, [card], new Date());
+
+    expect(preview.preferenceNodes[0]?.scope.paths).toContain("C:\\Users\\john\\private\\parser.ts");
+    expect(preview.workflowNodes[0]?.trigger.paths).toContain("C:\\Users\\john\\private\\parser.ts");
+    expect(preview.declassificationReport.status).toBe("fail");
+    expect(preview.declassificationReport.issues).toContain("absolute-user-path-in-output");
+  });
+
   it("proves dot-lock file patterns are present in gitignore", async () => {
     const root = await tempProject();
     const gitignorePath = path.join(root, ".openskill-kit", ".gitignore");
