@@ -182,7 +182,7 @@ function blockSignalFromHunk(language: StructuralLanguage, hunk: DiffHunk, side:
 
 function blockSignalFromSource(language: StructuralLanguage, lines: string[], changedLines: Set<number>): BlockStructuralSignal {
   if (language === "python") return mergeBlockSignals(pythonBlockSignal(lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
-  if (language === "go") return mergeBlockSignals(braceBlockSignal(language, lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
+  if (language === "go") return mergeBlockSignals(braceBlockSignal(language, lines, changedLines), goDeclarationBlockSignal(lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
   if (language === "rust") return mergeBlockSignals(braceBlockSignal(language, lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
   return { symbols: [], imports: [] };
 }
@@ -207,6 +207,10 @@ function pythonBlockSignal(lines: string[], changedLines: Set<number>): BlockStr
     for (const name of symbolsForLine("python", line)) {
       if (/^(?:async\s+)?def\s+|^class\s+/.test(trimmed)) stack.push({ indent, name });
       symbols.add(name);
+    }
+    if (indent === 0) {
+      const topLevelAssignment = /^([A-Za-z_]\w*)\s*(?::[^=]+)?=/.exec(trimmed);
+      if (topLevelAssignment) symbols.add(topLevelAssignment[1]!);
     }
     if (changedLines.has(index + 1)) {
       for (const item of stack) symbols.add(item.name);
@@ -241,8 +245,37 @@ function braceLineSymbols(language: "go" | "rust", line: string): string[] {
     const receiverType = receiver ? goReceiverTypeName(receiver[1]!) : undefined;
     if (receiverType) symbols.add(receiverType);
     if (receiver?.[2]) symbols.add(receiver[2]);
+  } else {
+    for (const symbol of rustImplSymbols(line)) symbols.add(symbol);
   }
   return [...symbols];
+}
+
+function goDeclarationBlockSignal(lines: string[], changedLines: Set<number>): BlockStructuralSignal {
+  const symbols = new Set<string>();
+  const imports = new Set<string>();
+  let block: "const" | "var" | "type" | "import" | undefined;
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    const blockStart = /^(const|var|type|import)\s*\($/.exec(trimmed);
+    if (blockStart) {
+      block = blockStart[1] as typeof block;
+      return;
+    }
+    if (block && trimmed === ")") {
+      block = undefined;
+      return;
+    }
+    if (!block) return;
+    if (block === "import") {
+      for (const item of goImportsForLine(trimmed)) imports.add(item);
+      return;
+    }
+    if (!changedLines.has(index + 1)) return;
+    const symbol = /^([A-Za-z_]\w*)\b/.exec(trimmed)?.[1];
+    if (symbol) symbols.add(symbol);
+  });
+  return { symbols: [...symbols].sort(), imports: [...imports].sort() };
 }
 
 function adjacentDeclarationSignal(language: "python" | "go" | "rust", lines: string[], changedLines: Set<number>): BlockStructuralSignal {
@@ -444,11 +477,17 @@ function symbolsForLine(language: StructuralLanguage, line: string): string[] {
     : language === "python"
       ? [/\b(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/g, /\bclass\s+([A-Za-z_]\w*)\s*[:(]/g]
       : language === "go"
-        ? [/\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*(?:\[.*?\])?\s*\(/g, /\btype\s+([A-Za-z_]\w*)\s*(?:\[.*?\])?\s+(?:struct|interface|func|\w+)/g]
+        ? [
+            /\bfunc\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*(?:\[.*?\])?\s*\(/g,
+            /\btype\s+([A-Za-z_]\w*)\s*(?:\[.*?\])?\s+(?:struct|interface|func|map|\w+)/g,
+            /\b(?:const|var)\s+([A-Za-z_]\w*)\b/g
+          ]
         : language === "rust"
           ? [
               /\b(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)\s*(?:<[^>]+>)?\s*\(/g,
               /\b(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|mod|type)\s+([A-Za-z_]\w*)/g,
+              /\b(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+([A-Za-z_]\w*)\s*:/g,
+              /\bmacro_rules!\s+([A-Za-z_]\w*)/g,
               /\bimpl(?:<[^>]+>)?\s+(?:[A-Za-z_]\w*::)*([A-Za-z_]\w*)/g
             ]
           : [];
@@ -504,13 +543,17 @@ function rustImportsForLine(trimmed: string): string[] {
 function expandRustUse(value: string): string[] {
   const compact = value.replace(/\s+/g, "");
   const grouped = /^(.+)::\{(.+)\}$/.exec(compact);
-  if (!grouped) return [compact];
+  if (!grouped) return [stripRustImportAlias(compact)];
   const prefix = grouped[1]!;
   return grouped[2]!
     .split(",")
-    .map((item) => item.trim())
+    .map((item) => stripRustImportAlias(item.trim()))
     .filter(Boolean)
-    .map((item) => `${prefix}::${item}`);
+    .map((item) => item === "self" ? prefix : `${prefix}::${item}`);
+}
+
+function stripRustImportAlias(value: string): string {
+  return value.replace(/\sas\s[A-Za-z_]\w*$/i, "").replace(/as[A-Za-z_]\w*$/i, "");
 }
 
 function leadingIndentWidth(line: string): number {
@@ -540,6 +583,20 @@ function goReceiverTypeName(receiver: string): string | undefined {
   const rawType = tokens.at(-1)?.replace(/^\*/, "").replace(/\[.*\]$/, "");
   const match = rawType ? /([A-Za-z_]\w*)$/.exec(rawType) : undefined;
   return match?.[1];
+}
+
+function rustImplSymbols(line: string): string[] {
+  const trimmed = line.trim();
+  const impl = /\bimpl(?:<[^>]+>)?\s+(.+?)\s*\{?$/.exec(trimmed);
+  if (!impl) return [];
+  const signature = impl[1]!.replace(/\s+where\s+.*$/, "").trim();
+  const traitImpl = /^(.+?)\s+for\s+(.+)$/.exec(signature);
+  const candidates = traitImpl ? [traitImpl[1]!, traitImpl[2]!] : [signature];
+  return candidates
+    .flatMap((item) => item.split(/::|<|>|,|\s+/))
+    .map((item) => item.replace(/[^\w]/g, ""))
+    .filter((item) => /^[A-Za-z_]\w*$/.test(item) && !/^(pub|crate|self|super|dyn|where)$/.test(item))
+    .slice(0, 6);
 }
 
 function classesForFile(file: string, language: StructuralLanguage, lines: string[], symbols: string[], imports: string[]): StructuralClass[] {

@@ -1151,6 +1151,77 @@ describe("learn-v2 substrate", () => {
     expect(summary.fileSummaries.find((file) => file.path.endsWith("lib.rs"))?.changedSymbols).toEqual(expect.arrayContaining(["CompilePlan", "run_checked"]));
   });
 
+  it("extracts Python Go and Rust API symbols from constants import blocks macros and trait impls", async () => {
+    const diff = [
+      "diff --git a/python/openskillkit_evolution/settings.py b/python/openskillkit_evolution/settings.py",
+      "--- a/python/openskillkit_evolution/settings.py",
+      "+++ b/python/openskillkit_evolution/settings.py",
+      "@@",
+      "+from osk.parser import (",
+      "+    parse_skill,",
+      "+    ParserConfig,",
+      "+)",
+      "+DEFAULT_TIMEOUT: int = 30",
+      "+class SettingsBuilder:",
+      "+    def build(self):",
+      "+        return ParserConfig(timeout=DEFAULT_TIMEOUT)",
+      "diff --git a/src/server.go b/src/server.go",
+      "--- a/src/server.go",
+      "+++ b/src/server.go",
+      "@@",
+      "+import (",
+      "+\t\"context\"",
+      "+\trouter \"github.com/acme/router\"",
+      "+)",
+      "+const (",
+      "+\tDefaultTimeout = 30",
+      "+)",
+      "+var (",
+      "+\tErrPlan = errors.New(\"plan failed\")",
+      "+)",
+      "+type RouteMap map[string]Handler",
+      "diff --git a/src/lib.rs b/src/lib.rs",
+      "--- a/src/lib.rs",
+      "+++ b/src/lib.rs",
+      "@@",
+      "+use crate::parser::{self, Parser as PlanParser};",
+      "+pub const DEFAULT_TIMEOUT: u64 = 30;",
+      "+pub static FEATURE_FLAG: bool = true;",
+      "+macro_rules! compile_plan { () => {}; }",
+      "+impl Parser for CompilePlan {",
+      "+  fn parse(&self) {}",
+      "+}"
+    ].join("\n");
+
+    const summary = analyzeLearnV2StructuralDiff(diff);
+
+    expect(summary.changedSymbols).toEqual(expect.arrayContaining([
+      "CompilePlan",
+      "DEFAULT_TIMEOUT",
+      "DEFAULT_TIMEOUT",
+      "DefaultTimeout",
+      "ErrPlan",
+      "FEATURE_FLAG",
+      "Parser",
+      "RouteMap",
+      "SettingsBuilder",
+      "build",
+      "compile_plan",
+      "parse"
+    ]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("settings.py"))?.changedSymbols).toEqual(expect.arrayContaining(["DEFAULT_TIMEOUT", "SettingsBuilder", "build"]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("server.go"))?.changedSymbols).toEqual(expect.arrayContaining(["DefaultTimeout", "ErrPlan", "RouteMap"]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("lib.rs"))?.changedSymbols).toEqual(expect.arrayContaining(["CompilePlan", "DEFAULT_TIMEOUT", "FEATURE_FLAG", "Parser", "compile_plan", "parse"]));
+    expect(summary.changedImports).toEqual(expect.arrayContaining([
+      "context",
+      "github.com/acme/router",
+      "osk.parser",
+      "crate::parser",
+      "crate::parser::Parser"
+    ]));
+    expect(summary.semanticChange).toBe(true);
+  });
+
   it("rejects LLM atom proposals without valid evidence or with raw secrets", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_llm");
