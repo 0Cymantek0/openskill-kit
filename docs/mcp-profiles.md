@@ -39,8 +39,10 @@ Learn v2 advanced tools expose the raw-local pipeline as an explicit staged work
 | `osk_review_concepts` | writes reviewed concept state | Accept, reject, lock, demote, narrow, edit, merge, split, supersede, or bulk-review concepts. |
 | `osk_compile_concepts` | writes compile preview artifacts | Preview active concept compilation into declassified behavior artifacts. |
 | `osk_prepare_learn_v2_model_requests` | writes sanitized request artifacts | Generate ROI-routed OpenCode concept-extraction prompt/bundle manifests. |
+| `osk_prepare_learn_v2_scope_requests` | writes sanitized request artifacts | Generate ROI-routed OpenCode scope-inference concept prompt/bundle manifests. |
 | `osk_execute_learn_v2_model_requests` | writes validated model response files | Execute prepared sanitized manifests through OpenCode; raw-evidence requests are rejected. |
 | `osk_apply_learn_v2_model_outputs` | writes candidate concepts/review artifacts | Validate strict model proposal JSON and merge scoped atoms, activation hints, conditions, and counterevidence. |
+| `osk_apply_learn_v2_scope_outputs` | writes concept/review artifacts | Validate strict scope proposal JSON and merge narrowed scope, conditions, activation hints, negative triggers, and counterevidence. |
 | `osk_run_learn_v2_eval` | writes eval artifacts | Run Learn v2 replay/golden/activation checks from persisted state. |
 
 ## Files

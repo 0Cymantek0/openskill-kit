@@ -1395,12 +1395,12 @@ Verification:
 
 Context:
 - CLI can prepare and apply scope-inferencer responses.
-- MCP still likely exposes concept model execution/apply separately and may not expose scope-specific prepare/apply tools.
+- MCP now exposes scope-specific prepare/apply tools. Remaining cheap work is descriptor/help polish if generated descriptors lag.
 
 Acceptance:
-- Inspect `packages/mcp-server/src/index.ts` for Learn v2 model tools.
-- Either add MCP tools/options for preparing scope requests and applying scope outputs, or write a design note if MCP should keep this CLI-only until review UX stabilizes.
-- If adding tools, include tests for schema, returned paths, and rejection of broader paths.
+- Inspect generated MCP descriptor docs/tests for `osk_prepare_learn_v2_scope_requests` and `osk_apply_learn_v2_scope_outputs`.
+- If descriptor snapshots or generated docs omit them, refresh those artifacts through existing repo commands.
+- Do not alter core Learn v2 behavior.
 
 Suggested files:
 - `packages/mcp-server/src/index.ts`
@@ -1409,6 +1409,25 @@ Suggested files:
 
 Verification:
 - `rtk rg -n "scope-inference|prepare-scope|scope-output|osk_.*learn_v2" packages/mcp-server/src packages/mcp-server/tests`
+
+## Task 81: MCP Scope Tool Help Copy Audit
+
+Context:
+- Advanced MCP now exposes `osk_prepare_learn_v2_scope_requests` and `osk_apply_learn_v2_scope_outputs`.
+- Cheap work can improve wording and descriptor visibility without touching core behavior.
+
+Acceptance:
+- Inspect `docs/mcp-profiles.md`, generated MCP descriptors, and any docs export for the two scope tools.
+- Ensure descriptions mention sanitized concept scope bundles, strict JSON validation, and no raw evidence dispatch.
+- Keep wording concise.
+
+Suggested files:
+- `docs/mcp-profiles.md`
+- `.openskill-kit/compiled/plugin/mcp/descriptors.json`
+- `.openskill-kit/compiled/plugin/mcp/profiles.json`
+
+Verification:
+- `rtk rg -n "scope_requests|scope_outputs|scope-inference|scope inference" docs .openskill-kit/compiled/plugin/mcp packages/mcp-server/src`
 
 ## Task 78: Scope Inference Review Queue Copy Audit
 

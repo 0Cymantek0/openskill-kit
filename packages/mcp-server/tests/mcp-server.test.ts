@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { initOpenWorldTask, PUBLIC_MCP_PROFILE_TOOLS } from "@openskill-kit/core";
+import {
+  initAdaptiveProject,
+  initOpenWorldTask,
+  mergeLearnV2ConceptCards,
+  PUBLIC_MCP_PROFILE_TOOLS,
+  readLearnV2ConceptStore,
+  type LearnV2BehaviorAtom,
+  writeLearnV2ConceptStore
+} from "@openskill-kit/core";
 
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 
@@ -89,6 +97,8 @@ describe("openskill-kit MCP server", () => {
       expect(names).toContain("osk_ingest_raw_evidence");
       expect(names).toContain("osk_get_concept_review_queue");
       expect(names).toContain("osk_get_learn_v2_observability");
+      expect(names).toContain("osk_prepare_learn_v2_scope_requests");
+      expect(names).toContain("osk_apply_learn_v2_scope_outputs");
 
       await client.callTool({
         name: "osk_get_status",
@@ -153,6 +163,93 @@ describe("openskill-kit MCP server", () => {
     }
   }, 45_000);
 
+  it("prepares and applies Learn v2 scope-inferencer outputs through advanced MCP", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-scope-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-scope-fixture" }), "utf8");
+    await initAdaptiveProject({ projectRoot: root, now: new Date("2026-06-30T00:00:00Z") });
+    const now = new Date("2026-06-30T00:01:00Z");
+    const [card] = mergeLearnV2ConceptCards([
+      learnV2McpBehaviorAtom("mcp_scope_parser", "Prefer focused parser regression tests for parser changes.", "positive")
+    ], now);
+    await writeLearnV2ConceptStore(root, [card!], now);
+
+    const client = new Client({ name: "openskill-kit-scope-test", version: "0.1.0" }, { capabilities: {} });
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"), path.join(repoRoot, "packages", "mcp-server", "src", "index.ts")],
+      cwd: root,
+      env: { ...inheritedEnv(), OPENSKILLKIT_MCP_PROFILE: "advanced" },
+      stderr: "pipe"
+    });
+
+    try {
+      await client.connect(transport);
+      const prepared = await client.callTool({
+        name: "osk_prepare_learn_v2_scope_requests",
+        arguments: { projectRoot: root, conceptIds: [card!.id] }
+      });
+      const preparedText = prepared.content.find((item) => item.type === "text")?.text ?? "{}";
+      const preparedParsed = JSON.parse(preparedText);
+      expect(preparedParsed.schemaVersion).toBe("openskill-kit.learn-v2.scope-inference-request-result.v1");
+      expect(preparedParsed.requestCount).toBe(1);
+      expect(preparedText).not.toContain(root);
+      expect(preparedText).not.toContain("raw_mcp_scope");
+
+      const requestRoot = path.join(root, ".openskill-kit", "learn-v2", "model-requests");
+      const scopeDirs = (await readdir(requestRoot, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith("scope_"))
+        .map((entry) => path.join(requestRoot, entry.name));
+      expect(scopeDirs).toHaveLength(1);
+      const manifestPath = path.join(scopeDirs[0]!, "request-manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const outputPath = path.resolve(root, manifest.expectedOutputPath);
+      await writeFile(outputPath, JSON.stringify({
+        schemaVersion: "openskill-kit.learn-v2.llm-scope-inference-output.v1",
+        conceptId: card!.id,
+        appliesWhen: ["Parser behavior changes need focused regression coverage."],
+        doesNotApplyWhen: ["Docs-only changes do not need parser regression scope."],
+        scope: {
+          level: "path",
+          paths: ["packages/core/src/parser.ts"],
+          taskTypes: ["parser-change"]
+        },
+        activation: {
+          phrases: ["parser regression coverage"],
+          pathGlobs: ["packages/core/src/parser.ts"],
+          commands: ["npm test -- parser"],
+          negativeTriggers: ["docs-only changes"]
+        },
+        counterevidence: [{
+          evidenceId: card!.evidenceIds[0],
+          reason: "Evidence is scoped to parser behavior."
+        }],
+        confidence: 0.72,
+        rationale: "The concept cites parser-specific evidence.",
+        rejected: []
+      }), "utf8");
+
+      const applied = await client.callTool({
+        name: "osk_apply_learn_v2_scope_outputs",
+        arguments: { projectRoot: root, outputPaths: [manifestPath] }
+      });
+      const appliedText = applied.content.find((item) => item.type === "text")?.text ?? "{}";
+      const appliedParsed = JSON.parse(appliedText);
+      expect(appliedParsed.schemaVersion).toBe("openskill-kit.learn-v2.scope-inference-apply-result.v1");
+      expect(appliedParsed.updatedConceptIds).toEqual([card!.id]);
+      expect(appliedParsed.rejected).toEqual([]);
+      expect(appliedText).not.toContain(root);
+      expect(appliedText).not.toContain("raw_mcp_scope");
+
+      const store = await readLearnV2ConceptStore(root);
+      const updated = store.cards.find((item) => item.id === card!.id)!;
+      expect(updated.conditions?.appliesWhen).toContain("Parser behavior changes need focused regression coverage.");
+      expect(updated.scope.negativeTriggers).toContain("docs-only changes");
+      expect(updated.activation.commands).toContain("npm test -- parser");
+    } finally {
+      await client.close();
+    }
+  }, 45_000);
+
   it("lists advanced tools and drafts a skill through stdio transport", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-fixture" }), "utf8");
@@ -210,6 +307,8 @@ describe("openskill-kit MCP server", () => {
           "osk_get_concept_review_queue",
           "osk_review_concepts",
           "osk_compile_concepts",
+          "osk_prepare_learn_v2_scope_requests",
+          "osk_apply_learn_v2_scope_outputs",
           "osk_reconstruct_episodes",
           "osk_extract_concepts",
           "osk_run_learn_v2_eval",
@@ -495,6 +594,28 @@ describe("openskill-kit MCP server", () => {
     }
   }, 45_000);
 });
+
+function learnV2McpBehaviorAtom(id: string, statement: string, polarity: LearnV2BehaviorAtom["polarity"]): LearnV2BehaviorAtom {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
+    id,
+    kind: "verification",
+    statement,
+    polarity,
+    scope: {
+      level: "path",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    },
+    confidence: 0.82,
+    confidenceCap: 0.9,
+    sourceReliability: 0.8,
+    evidenceIds: [`ev_${id}`],
+    rawRefs: [`raw_${id}`],
+    rationale: "test fixture atom",
+    risk: "medium"
+  };
+}
 
 function inheritedEnv(): Record<string, string> {
   return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
