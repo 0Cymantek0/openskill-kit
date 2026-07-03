@@ -638,6 +638,16 @@ interface OpenCodeAmbientParseResult {
   events: OpenSkillEvent[];
 }
 
+interface OpenCodeAmbientTraceContext {
+  schemaVersion?: string;
+  oskSessionId?: string;
+  oskEpisodeId?: string;
+  oskTraceId?: string;
+  opencodeSessionId?: string;
+  source?: string;
+  createdAt?: string;
+}
+
 function parseOpenCodeAmbientEvents(projectRoot: string, lines: string[], options: { maxEvents: number; now?: Date }): OpenCodeAmbientParseResult {
   const root = path.resolve(projectRoot);
   const file = path.join(root, OPENCODE_AMBIENT_LOG_RELATIVE_PATH);
@@ -662,14 +672,15 @@ function parseOpenCodeAmbientEvents(projectRoot: string, lines: string[], option
       continue;
     }
     const ts = timestampOrUndefined(record.metadata.timestamp) ?? record.capturedAt ?? options.now?.toISOString() ?? new Date().toISOString();
-    const eventId = `evt_preview_${createHash("sha256").update(`${projectId}:osk-learn-opencode-ambient:${record.eventType}:${ts}:${index}`).digest("hex").slice(0, 16)}`;
+    const sessionId = record.traceContext?.oskSessionId ?? record.traceContext?.opencodeSessionId ?? "osk-learn-opencode-ambient";
+    const eventId = `evt_preview_${createHash("sha256").update(`${projectId}:${sessionId}:${record.traceContext?.oskTraceId ?? "no-trace"}:${record.eventType}:${ts}:${index}`).digest("hex").slice(0, 16)}`;
     const commands = derivedCommandsFromOpenCodeMetadata(record.metadata);
     const files = derivedFilesFromOpenCodeMetadata(record.metadata);
     const event = EventSchema.parse({
       schemaVersion: "openskill-kit.event.v1",
       id: eventId,
       projectId,
-      sessionId: "osk-learn-opencode-ambient",
+      sessionId,
       timestamp: ts,
       eventType: mapOpenCodeAmbientEventType(record.eventType, record.metadata),
       source: { adapter: "opencode-ambient", host: "opencode" },
@@ -679,6 +690,10 @@ function parseOpenCodeAmbientEvents(projectRoot: string, lines: string[], option
         source: "opencode-plugin",
         eventType: record.eventType,
         traceMode: record.traceMode ?? "safe",
+        traceContext: record.traceContext,
+        oskTraceId: record.traceContext?.oskTraceId,
+        oskEpisodeId: record.traceContext?.oskEpisodeId,
+        opencodeSessionId: record.traceContext?.opencodeSessionId,
         containsRawFields: false,
         rawPromptIncluded: false,
         rawDiffIncluded: false,
@@ -717,7 +732,7 @@ async function appendOpenCodeAmbientEvents(projectRoot: string, options: { maxEv
   return { path: file, readCount: parsed.readCount, appendedCount: eventIds.length, skippedCount: parsed.skippedCount, eventIds, labelCandidates: labels.candidates };
 }
 
-function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; traceMode?: string; containsRawFields: boolean; rawKeyPaths: string[]; metadata: Record<string, unknown> } | undefined {
+function parseOpenCodeAmbientRecord(line: string): { eventType: string; capturedAt?: string; traceMode?: string; containsRawFields: boolean; rawKeyPaths: string[]; traceContext?: OpenCodeAmbientTraceContext; metadata: Record<string, unknown> } | undefined {
   try {
     const parsed = JSON.parse(line) as Record<string, unknown>;
     const eventType = typeof parsed.eventType === "string" ? parsed.eventType : undefined;
@@ -732,11 +747,38 @@ function parseOpenCodeAmbientRecord(line: string): { eventType: string; captured
       traceMode: typeof parsed.traceMode === "string" ? parsed.traceMode : undefined,
       containsRawFields: parsed.containsRawFields === true,
       rawKeyPaths,
+      traceContext: sanitizeOpenCodeTraceContext(parsed.traceContext),
       metadata
     };
   } catch {
     return undefined;
   }
+}
+
+function sanitizeOpenCodeTraceContext(value: unknown): OpenCodeAmbientTraceContext | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const out: OpenCodeAmbientTraceContext = {};
+  const schemaVersion = stringValue(record.schemaVersion);
+  if (schemaVersion === "openskill-kit.learn-v2.trace-context.v1") out.schemaVersion = schemaVersion;
+  const oskSessionId = safeTraceId(record.oskSessionId, "osk_session");
+  const oskEpisodeId = safeTraceId(record.oskEpisodeId, "osk_episode");
+  const oskTraceId = safeTraceId(record.oskTraceId, "osk_trace");
+  const opencodeSessionId = safeTraceId(record.opencodeSessionId, "opencode_session");
+  if (oskSessionId) out.oskSessionId = oskSessionId;
+  if (oskEpisodeId) out.oskEpisodeId = oskEpisodeId;
+  if (oskTraceId) out.oskTraceId = oskTraceId;
+  if (opencodeSessionId) out.opencodeSessionId = opencodeSessionId;
+  const source = stringValue(record.source);
+  if (source === "env" || source === "generated") out.source = source;
+  const createdAt = timestampOrUndefined(record.createdAt);
+  if (createdAt) out.createdAt = createdAt;
+  return Object.keys(out).length ? out : undefined;
+}
+
+function safeTraceId(value: unknown, prefix: string): string | undefined {
+  if (typeof value !== "string" || value.length > 128 || !/^[A-Za-z0-9:_-]+$/.test(value)) return undefined;
+  return value.startsWith(`${prefix}_`) || value.startsWith(`${prefix}:`) ? value : undefined;
 }
 
 function sanitizeOpenCodeMetadata(metadata: Record<string, unknown>): Record<string, unknown> {

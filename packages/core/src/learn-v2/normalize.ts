@@ -19,6 +19,8 @@ export function normalizeLearnV2Evidence(surface: LearnV2SurfaceRead, rawRecord:
 
 function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2RawEvidenceRecord): LearnV2NormalizedEvidence[] {
   if (!isObject(value)) return [];
+  const traceContext = objectValue(value.traceContext);
+  const metadataObject = objectValue(value.metadata);
   const text = stringValue(value.content)
     ?? stringValue(value.text)
     ?? stringValue(value.message)
@@ -37,10 +39,10 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
     kind: inferKind(value, fullText, toolName, commands),
     actor: normalizeActor(stringValue(value.role) ?? stringValue(value.type) ?? stringValue(value.actor)),
     timestamp: normalizeTimestamp(stringValue(value.timestamp) ?? stringValue(value.createdAt) ?? stringValue(value.created_at)),
-    sessionId: stringValue(value.sessionId) ?? stringValue(value.session_id) ?? rawRecord.trace.sessionIds[0],
-    traceId: stringValue(value.traceId) ?? stringValue(value.trace_id) ?? rawRecord.trace.oskTraceId,
-    episodeId: stringValue(value.episodeId) ?? stringValue(value.episode_id) ?? rawRecord.trace.oskEpisodeId,
-    branch: stringValue(value.branch) ?? rawRecord.trace.branch,
+    sessionId: stringValue(value.sessionId) ?? stringValue(value.session_id) ?? safeTraceId(traceContext?.oskSessionId, "osk_session") ?? safeTraceId(traceContext?.sessionId, "osk_session") ?? safeTraceId(metadataObject?.oskSessionId, "osk_session") ?? rawRecord.trace.sessionIds[0],
+    traceId: stringValue(value.traceId) ?? stringValue(value.trace_id) ?? safeTraceId(traceContext?.oskTraceId, "osk_trace") ?? safeTraceId(traceContext?.traceId, "osk_trace") ?? safeTraceId(metadataObject?.oskTraceId, "osk_trace") ?? rawRecord.trace.oskTraceId,
+    episodeId: stringValue(value.episodeId) ?? stringValue(value.episode_id) ?? safeTraceId(traceContext?.oskEpisodeId, "osk_episode") ?? safeTraceId(traceContext?.episodeId, "osk_episode") ?? safeTraceId(metadataObject?.oskEpisodeId, "osk_episode") ?? rawRecord.trace.oskEpisodeId,
+    branch: stringValue(value.branch) ?? stringValue(traceContext?.gitBranch) ?? rawRecord.trace.branch,
     cwdHint: stringValue(value.cwd),
     text: fullText,
     toolName,
@@ -49,7 +51,9 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
     commands,
     metadata: {
       sourceIndex: index,
-      rawKeys: Object.keys(value).slice(0, 40)
+      rawKeys: Object.keys(value).slice(0, 40),
+      traceContext: safeTraceMetadata(traceContext),
+      opencodeSessionId: safeTraceId(traceContext?.opencodeSessionId, "opencode_session")
     }
   })];
 }
@@ -342,6 +346,31 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return isObject(value) ? value : undefined;
+}
+
+function safeTraceId(value: unknown, prefix: string): string | undefined {
+  if (typeof value !== "string" || value.length > 128 || !/^[A-Za-z0-9:_-]+$/.test(value)) return undefined;
+  return value.startsWith(`${prefix}_`) || value.startsWith(`${prefix}:`) ? value : undefined;
+}
+
+function safeTraceMetadata(value: Record<string, unknown> | undefined): Record<string, string> | undefined {
+  if (!value) return undefined;
+  const out: Record<string, string> = {};
+  const schemaVersion = stringValue(value.schemaVersion);
+  if (schemaVersion === "openskill-kit.learn-v2.trace-context.v1") out.schemaVersion = schemaVersion;
+  const oskSessionId = safeTraceId(value.oskSessionId, "osk_session");
+  const oskEpisodeId = safeTraceId(value.oskEpisodeId, "osk_episode");
+  const oskTraceId = safeTraceId(value.oskTraceId, "osk_trace");
+  const opencodeSessionId = safeTraceId(value.opencodeSessionId, "opencode_session");
+  if (oskSessionId) out.oskSessionId = oskSessionId;
+  if (oskEpisodeId) out.oskEpisodeId = oskEpisodeId;
+  if (oskTraceId) out.oskTraceId = oskTraceId;
+  if (opencodeSessionId) out.opencodeSessionId = opencodeSessionId;
+  return Object.keys(out).length ? out : undefined;
 }
 
 function arrayStrings(value: unknown): string[] {

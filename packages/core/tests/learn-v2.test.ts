@@ -117,6 +117,56 @@ describe("learn-v2 substrate", () => {
     expect(plainEvidence[0]!.commands).toContain("npm test -- parser before final summary");
   });
 
+  it("lifts OpenCode trace context from raw JSONL surfaces into episode stitching ids", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_opencode_trace");
+    const jsonl = path.join(root, "opencode-events.jsonl");
+    const traceContext = {
+      schemaVersion: "openskill-kit.learn-v2.trace-context.v1",
+      oskSessionId: "osk_session_trace_test",
+      oskEpisodeId: "osk_episode_trace_test",
+      oskTraceId: "osk_trace_trace_test",
+      opencodeSessionId: "opencode_session_trace_test",
+      projectRootHash: "sha256:root",
+      createdAt: "2026-06-30T00:00:00.000Z"
+    };
+    await writeFile(jsonl, [
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        eventType: "post-tool-use",
+        capturedAt: "2026-06-30T00:01:00.000Z",
+        traceContext,
+        metadata: { "input.tool": "bash", "input.commandKind": "package-manager" },
+        text: "Prefer focused parser tests in packages/core/src/parser.ts"
+      }),
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        eventType: "post-tool-use",
+        capturedAt: "2026-06-30T00:02:00.000Z",
+        traceContext,
+        text: "Run npm test -- parser before final summary"
+      })
+    ].join("\n") + "\n", "utf8");
+
+    const evidence = normalizeLearnV2Evidence(await readLearnV2Surface(jsonl), record, await readText(jsonl));
+    const episodes = reconstructLearnV2Episodes(evidence);
+
+    expect(evidence).toHaveLength(2);
+    expect(evidence.every((item) => item.sessionId === "osk_session_trace_test")).toBe(true);
+    expect(evidence.every((item) => item.traceId === "osk_trace_trace_test")).toBe(true);
+    expect(evidence.every((item) => item.episodeId === "osk_episode_trace_test")).toBe(true);
+    expect(evidence[0]!.metadata.traceContext).toMatchObject({
+      oskSessionId: "osk_session_trace_test",
+      oskEpisodeId: "osk_episode_trace_test",
+      oskTraceId: "osk_trace_trace_test",
+      opencodeSessionId: "opencode_session_trace_test"
+    });
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0]!.stitching.method).toBe("explicit-id");
+    expect(episodes[0]!.traceIds).toEqual(["osk_trace_trace_test"]);
+    expect(episodes[0]!.sessionIds).toEqual(["osk_session_trace_test"]);
+  });
+
   it("detects raw surface adapters from file identity without parent-path false positives", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-parent-should-not-win-"));
     const codex = path.join(root, "codex-transcript.md");

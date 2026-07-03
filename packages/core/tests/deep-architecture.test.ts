@@ -237,6 +237,7 @@ describe("deep architecture hardening", () => {
     await hooks.event({ event: { type: "session.created", sessionID: "s1" } });
     await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", rawPrompt: "do not store me" }, { status: "success", output: "do not store output" });
     const ambient = await readFile(path.join(root, ".openskill-kit", "ambient", "opencode-events.jsonl"), "utf8");
+    const ambientRecords = ambient.trim().split(/\r?\n/).map((line) => JSON.parse(line));
     expect(ambient).toContain("\"eventType\":\"session-start\"");
     expect(ambient).toContain("\"eventType\":\"post-tool-use\"");
     expect(ambient).toContain("\"input.tool\":\"bash\"");
@@ -245,6 +246,12 @@ describe("deep architecture hardening", () => {
     expect(ambient).toContain("\"input.commandHash\":\"sha256:");
     expect(ambient).toContain("\"input.commandLengthBucket\":\"short\"");
     expect(ambient).toContain("\"input.commandRiskFlags\":[]");
+    expect(ambientRecords[0].traceContext.schemaVersion).toBe("openskill-kit.learn-v2.trace-context.v1");
+    expect(ambientRecords[0].traceContext.oskSessionId).toMatch(/^osk_session_/);
+    expect(ambientRecords[0].traceContext.oskEpisodeId).toMatch(/^osk_episode_/);
+    expect(ambientRecords[0].traceContext.oskTraceId).toMatch(/^osk_trace_/);
+    expect(ambientRecords[0].traceContext.opencodeSessionId).toMatch(/^opencode_session_/);
+    expect(ambientRecords[0].traceContext).not.toHaveProperty("projectRoot");
     // Commands are projected into derived fields; the raw command string never lands in ambient JSON.
     expect(ambient).not.toContain("npm test");
     expect(ambient).not.toContain("do not store me");

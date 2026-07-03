@@ -37,6 +37,13 @@ describe("OpenCode ambient telemetry privacy", () => {
     // The record is privacy-safe by default.
     expect(record.traceMode).toBe("safe");
     expect(record.containsRawFields).toBe(false);
+    expect(record.traceContext.schemaVersion).toBe("openskill-kit.learn-v2.trace-context.v1");
+    expect(record.traceContext.oskSessionId).toMatch(/^osk_session_/);
+    expect(record.traceContext.oskEpisodeId).toMatch(/^osk_episode_/);
+    expect(record.traceContext.oskTraceId).toMatch(/^osk_trace_/);
+    expect(record.traceContext.opencodeSessionId).toMatch(/^opencode_session_/);
+    expect(record.traceContext.projectRootHash).toMatch(/^sha256:/);
+    expect(record.traceContext).not.toHaveProperty("projectRoot");
 
     // Derived command metadata is present and useful for learning.
     expect(record.metadata["input.commandKind"]).toBe("package-manager");
@@ -160,6 +167,10 @@ describe("OpenCode ambient telemetry privacy", () => {
     expect(applied.digest.signalsExtracted).toBeGreaterThan(0);
     const stored = JSON.stringify(await readEvents(root));
     expect(stored).toContain("opencode-derived:package-manager:sha256:");
+    const appliedEvents = await readEvents(root);
+    expect(appliedEvents.every((event) => event.sessionId.startsWith("osk_session_"))).toBe(true);
+    expect(appliedEvents.every((event) => event.normalized.oskTraceId && event.normalized.oskEpisodeId && event.normalized.opencodeSessionId)).toBe(true);
+    expect(appliedEvents.every((event) => event.normalized.traceContext?.schemaVersion === "openskill-kit.learn-v2.trace-context.v1")).toBe(true);
     expect(stored).not.toContain("npm test");
 
     const commandLedger = await readAmbientLabelLedger(root, "command");
