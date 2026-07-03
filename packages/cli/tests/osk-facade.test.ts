@@ -53,6 +53,8 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--model-request <path>");
     expect(stdout).toContain("--prepare-contradiction-requests");
     expect(stdout).toContain("--contradiction-output <path>");
+    expect(stdout).toContain("--prepare-eval-requests");
+    expect(stdout).toContain("--eval-output <path>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
   });
@@ -165,6 +167,51 @@ describe("osk CLI facade", () => {
     const scopedStore = await readFile(conceptStorePath, "utf8");
     expect(scopedStore).toContain("Parser behavior changes need focused regression fixtures.");
     expect(scopedStore).not.toContain(root);
+  }, 80_000);
+
+  it("routes executed Learn v2 eval-planner responses to proposed goldens", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-eval-exec-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "learn-eval-exec" }), "utf8");
+    await execCliJson(["init", "--json"], root);
+    const transcript = path.join(root, "session.md");
+    await writeFile(
+      transcript,
+      "user: Prefer focused parser regression fixtures for parser changes in packages/core/src/parser.ts.",
+      "utf8"
+    );
+
+    await execCliJson(["osk", "learn", "--raw", "--surface-file", transcript, "--apply", "--json"], root);
+    const conceptStore = JSON.parse(await readFile(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"), "utf8"));
+    const conceptId = conceptStore.cards[0]?.id;
+    expect(conceptId).toMatch(/^concept_/);
+
+    const prepared = await execCliJson(["osk", "learn", "--prepare-eval-requests", "--eval-concept", conceptId, "--json"], root);
+    expect(prepared.schemaVersion).toBe("openskill-kit.learn-v2.eval-planner-request-result.v1");
+    expect(prepared.requestCount).toBe(1);
+
+    const fakeOpenCode = await writeFakeOpenCodeCommand(root);
+    const executed = await execCliJson([
+      "osk",
+      "learn",
+      "--execute-model-requests",
+      "--model-request",
+      prepared.requests[0].manifestPath,
+      "--apply-model-responses",
+      "--opencode-command",
+      fakeOpenCode,
+      "--json"
+    ], root);
+
+    expect(executed.schemaVersion).toBe("openskill-kit.learn-v2.model-request-execute-apply-result.v1");
+    expect(executed.execution.results[0].modelRole).toBe("eval-planner");
+    expect(executed.apply.schemaVersion).toBe("openskill-kit.learn-v2.eval-planner-apply-result.v1");
+    expect(executed.apply.extractionScenarioCount).toBe(1);
+    expect(executed.apply.behaviorDeltaScenarioCount).toBe(1);
+    expect(executed.apply.rejected).toEqual([]);
+    const proposal = JSON.parse(await readFile(path.resolve(root, executed.apply.proposalPath), "utf8"));
+    expect(proposal.schemaVersion).toBe("openskill-kit.learn-v2.eval-golden-proposal.v1");
+    expect(proposal.reviewRequired).toBe(true);
+    expect(JSON.stringify(proposal)).not.toContain(root);
   }, 80_000);
 
   it("renders the Learn v2 observability dashboard from latest report", async () => {
@@ -886,6 +933,36 @@ async function writeFakeOpenCodeCommand(root: string): Promise<string> {
     "    counterevidence: [],",
     "    confidence: 0.72,",
     "    rationale: 'Fake OpenCode scope runner keeps the existing bounded concept scope.',",
+    "    rejected: []",
+    "  }));",
+    "  process.exit(0);",
+    "}",
+    "if (bundle.schemaVersion === 'openskill-kit.learn-v2.eval-planner-bundle.v1') {",
+    "  const concept = bundle.concepts[0] || {};",
+    "  process.stdout.write(JSON.stringify({",
+    "    schemaVersion: 'openskill-kit.learn-v2.llm-eval-plan-output.v1',",
+    "    extractionScenarios: [{",
+    "      schemaVersion: 'openskill-kit.learn-v2.extraction-golden.v1',",
+    "      id: 'golden_cli_parser_regression',",
+    "      title: 'CLI parser regression extraction',",
+    "      episodeIdIncludes: 'episode_',",
+    "      expectedConceptText: ['focused parser regression'],",
+    "      expectedKinds: ['verification'],",
+    "      expectedTaskHints: ['parser'],",
+    "      expectedPathText: ['packages/core/src/parser.ts'],",
+    "      forbiddenText: ['broad rewrite only']",
+    "    }],",
+    "    behaviorDeltaScenarios: [{",
+    "      schemaVersion: 'openskill-kit.learn-v2.behavior-delta-golden.v1',",
+    "      id: 'delta_cli_parser_regression',",
+    "      title: 'CLI parser regression activation',",
+    "      task: { prompt: 'Change parser behavior', paths: ['packages/core/src/parser.ts'], commands: ['npm test -- parser'], taskTypes: ['parser-change'], negativeSignals: [] },",
+    "      expectedConceptText: [concept.canonicalBehavior || 'focused parser regression'],",
+    "      expectedKinds: ['verification'],",
+    "      expectedPlanIncludes: ['focused parser regression'],",
+    "      expectedPlanExcludes: ['broad rewrite only'],",
+    "      minActivatedConcepts: 1",
+    "    }],",
     "    rejected: []",
     "  }));",
     "  process.exit(0);",

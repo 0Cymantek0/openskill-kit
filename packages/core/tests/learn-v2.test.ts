@@ -45,6 +45,8 @@ import {
   applyLearnV2ScopeInferenceOutputs,
   writeLearnV2ContradictionReviewRequests,
   applyLearnV2ContradictionReviewOutputs,
+  writeLearnV2EvalPlannerRequests,
+  applyLearnV2EvalPlannerOutputs,
   writeLearnV2EpisodeStore,
   writeLearnV2ConflictLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
@@ -2445,6 +2447,103 @@ describe("learn-v2 substrate", () => {
     const unsafeSupersession = await applyLearnV2ContradictionReviewOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:28Z"));
     expect(unsafeSupersession.appliedSupersessions).toBe(0);
     expect(unsafeSupersession.rejected[0]?.reason).toBe("unsafe-supersession");
+  });
+
+  it("prepares executes and applies eval-planner outputs as review-required golden proposals", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:29Z");
+    const [baseCard] = mergeLearnV2ConceptCards([
+      behaviorAtom("eval_parser", "Prefer focused parser regression tests for parser changes.", "positive")
+    ], now);
+    const card = { ...baseCard!, status: "active" as const, risk: "medium" as const };
+    await writeLearnV2ConceptStore(root, [card], now);
+    await writeLearnV2EpisodeStore(root, reconstructLearnV2Episodes([
+      { ...normalizedMessage("ev_eval_parser", "User corrected parser work: prefer focused parser regression tests before broad rewrites."), paths: ["packages/core/src/parser.ts"] }
+    ]), now);
+
+    const prepared = await writeLearnV2EvalPlannerRequests(root, [card.id], now);
+    expect(prepared.schemaVersion).toBe("openskill-kit.learn-v2.eval-planner-request-result.v1");
+    expect(prepared.requestCount).toBe(1);
+    const request = prepared.requests[0]!;
+    const manifest = JSON.parse(await readText(request.manifestPath));
+    expect(manifest.modelRole).toBe("eval-planner");
+    expect(manifest.outputSchema).toBe("openskill-kit.learn-v2.llm-eval-plan-output.v1");
+    expect(manifest.opencodeAgentId).toBe("osk-learn-v2-eval-planner");
+    expect(manifest.rawRefsIncluded).toBe(false);
+    expect(JSON.stringify(manifest)).not.toContain(root);
+    expect(await readText(request.promptPath)).toContain("Learn v2 eval planner");
+
+    const evalProposal = {
+      schemaVersion: "openskill-kit.learn-v2.llm-eval-plan-output.v1",
+      extractionScenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.extraction-golden.v1",
+        id: "golden_parser_regression_tests",
+        title: "Parser regression preference extraction",
+        episodeIdIncludes: "episode_",
+        expectedConceptText: ["focused parser regression"],
+        expectedKinds: ["verification"],
+        expectedTaskHints: ["parser"],
+        expectedPathText: ["packages/core/src/parser.ts"],
+        forbiddenText: ["broad rewrite only"]
+      }],
+      behaviorDeltaScenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.behavior-delta-golden.v1",
+        id: "delta_parser_regression_tests",
+        title: "Parser task activates regression guidance",
+        task: {
+          prompt: "Change parser behavior in packages/core/src/parser.ts",
+          paths: ["packages/core/src/parser.ts"],
+          commands: ["npm test -- parser"],
+          taskTypes: ["parser-change"],
+          negativeSignals: []
+        },
+        expectedConceptText: ["focused parser regression"],
+        expectedKinds: ["verification"],
+        expectedPlanIncludes: ["focused parser regression"],
+        expectedPlanExcludes: ["broad rewrite only"],
+        minActivatedConcepts: 1
+      }],
+      rejected: []
+    };
+
+    const executed = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      opencodeCommand: "opencode-test",
+      runner: async (invocation) => {
+        const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}");
+        expect(invocation.args).toContain("osk-learn-v2-eval-planner");
+        expect(invocation.cwd).not.toBe(root);
+        expect(invocation.args[invocation.args.indexOf("--dir") + 1]).toBe(invocation.cwd);
+        expect(path.basename(invocation.args[invocation.args.indexOf("--file") + 1])).toBe("eval-planner-prompt.md");
+        expect(path.basename(invocation.args[invocation.args.lastIndexOf("--file") + 1])).toBe("eval-planner-bundle.json");
+        expect(config.agent["osk-learn-v2-eval-planner"].permission.bash).toBe("deny");
+        expect(JSON.stringify(invocation.args)).not.toContain(root);
+        return { exitCode: 0, stdout: JSON.stringify(evalProposal), stderr: "eval planner diagnostic must be hashed only" };
+      }
+    });
+    expect(executed.writtenCount).toBe(1);
+    expect(executed.results[0]?.modelRole).toBe("eval-planner");
+    expect(await readText(executed.executionReportPath)).not.toContain("eval planner diagnostic must be hashed only");
+
+    const applied = await applyLearnV2EvalPlannerOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:30Z"));
+    expect(applied.rejected).toEqual([]);
+    expect(applied.extractionScenarioCount).toBe(1);
+    expect(applied.behaviorDeltaScenarioCount).toBe(1);
+    expect(applied.proposalPath).toContain(".openskill-kit");
+    const proposal = JSON.parse(await readText(applied.proposalPath!));
+    expect(proposal.schemaVersion).toBe("openskill-kit.learn-v2.eval-golden-proposal.v1");
+    expect(proposal.reviewRequired).toBe(true);
+    expect(proposal.scenarios[0].id).toBe("golden_parser_regression_tests");
+    expect(proposal.behaviorDeltaScenarios[0].id).toBe("delta_parser_regression_tests");
+    expect(await readText(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"))).toContain(card.id);
+
+    const badDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "eval_bad_manifest");
+    await mkdir(badDir, { recursive: true });
+    const badManifestPath = path.join(badDir, "request-manifest.json");
+    await writeFile(badManifestPath, "{not-json", "utf8");
+    const rejected = await applyLearnV2EvalPlannerOutputs(root, [badManifestPath], new Date("2026-06-30T00:03:31Z"));
+    expect(rejected.proposalPath).toBeUndefined();
+    expect(rejected.rejected[0]?.reason).toBe("invalid-request-manifest");
   });
 
   it("rejects unsafe or malformed OpenCode execution outputs before writing response files", async () => {

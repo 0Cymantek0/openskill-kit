@@ -86,6 +86,7 @@ import {
   executeLearnV2ModelRequests,
   applyLearnV2ScopeInferenceOutputs,
   applyLearnV2ContradictionReviewOutputs,
+  applyLearnV2EvalPlannerOutputs,
   activateLearnV2Concepts,
   recordLearnV2ConceptOutcome,
   reconstructPersistedLearnV2Episodes,
@@ -94,6 +95,7 @@ import {
   writeLearnV2ModelRequests,
   writeLearnV2ScopeInferenceRequests,
   writeLearnV2ContradictionReviewRequests,
+  writeLearnV2EvalPlannerRequests,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
   RawLearningModelModes,
@@ -356,6 +358,8 @@ osk.command("learn")
   .option("--scope-concept <conceptId>", "Concept id to prepare for --prepare-scope-requests", collectOption, [])
   .option("--prepare-contradiction-requests", "Write prompt-safe Learn-v2 contradiction-reviewer request artifacts from the concept conflict ledger")
   .option("--contradiction-concept <conceptId>", "Concept id to include for --prepare-contradiction-requests", collectOption, [])
+  .option("--prepare-eval-requests", "Write prompt-safe Learn-v2 eval-planner request artifacts from reviewed concept cards")
+  .option("--eval-concept <conceptId>", "Concept id to prepare for --prepare-eval-requests", collectOption, [])
   .option("--execute-model-requests", "Run sanitized Learn-v2 model requests through OpenCode and write validated response.json files")
   .option("--apply-model-responses", "After --execute-model-requests, validate and merge written response.json files into the Learn-v2 concept store")
   .option("--model-request <path>", "Learn-v2 request directory or request-manifest.json to execute; defaults to every prepared request", collectOption, [])
@@ -365,6 +369,7 @@ osk.command("learn")
   .option("--model-output <path>", "Learn-v2 model JSON output file or request-manifest.json to validate and merge", collectOption, [])
   .option("--scope-output <path>", "Learn-v2 scope-inference response.json or request-manifest.json to validate and merge", collectOption, [])
   .option("--contradiction-output <path>", "Learn-v2 contradiction-review response.json or request-manifest.json to validate and merge", collectOption, [])
+  .option("--eval-output <path>", "Learn-v2 eval-planner response.json or request-manifest.json to validate into proposed eval goldens", collectOption, [])
   .option("--activation-query <text>", "Score reviewed Learn-v2 concepts for a task query; appends local hashed activation-run telemetry under .openskill-kit/learn-v2/activation-runs (query/path/command hashes only, never raw values)")
   .option("--activation-path <path>", "Path hint for --activation-query (stored as a hash in activation-run telemetry)", collectOption, [])
   .option("--activation-command <command>", "Command hint for --activation-query (stored as a hash in activation-run telemetry)", collectOption, [])
@@ -431,6 +436,11 @@ osk.command("learn")
       output(options.json, result, renderLearnV2ContradictionReviewRequests(result));
       return;
     }
+    if (options.prepareEvalRequests === true) {
+      const result = await writeLearnV2EvalPlannerRequests(process.cwd(), options.evalConcept);
+      output(options.json, result, renderLearnV2EvalPlannerRequests(result));
+      return;
+    }
     if (options.executeModelRequests === true) {
       const result = await executeLearnV2ModelRequests(process.cwd(), {
         requestManifests: options.modelRequest,
@@ -466,6 +476,11 @@ osk.command("learn")
     if (options.contradictionOutput.length > 0) {
       const result = await applyLearnV2ContradictionReviewOutputs(process.cwd(), options.contradictionOutput);
       output(options.json, result, renderLearnV2ContradictionReviewApply(result));
+      return;
+    }
+    if (options.evalOutput.length > 0) {
+      const result = await applyLearnV2EvalPlannerOutputs(process.cwd(), options.evalOutput);
+      output(options.json, result, renderLearnV2EvalPlannerApply(result));
       return;
     }
     if (options.recordConceptOutcome) {
@@ -2337,6 +2352,18 @@ function renderLearnV2ContradictionReviewRequests(result: Awaited<ReturnType<typ
   return lines.join("\n");
 }
 
+function renderLearnV2EvalPlannerRequests(result: Awaited<ReturnType<typeof writeLearnV2EvalPlannerRequests>>): string {
+  const lines = [
+    `Learn v2 eval planner requests: ${result.requestCount}`,
+    `Skipped concepts: ${result.skippedConcepts.length}`,
+    `Routing manifest: ${result.routingManifestPath}`,
+    ...result.requests.map((request) => `  ${request.planId}: ${request.conceptIds.join(", ")} -> ${request.expectedOutputPath}`),
+    ...result.requests.map((request) => `  manifest: ${request.manifestPath}`)
+  ];
+  lines.push(...result.instructions);
+  return lines.join("\n");
+}
+
 function renderLearnV2Reconstruct(result: Awaited<ReturnType<typeof reconstructPersistedLearnV2Episodes>>): string {
   return [
     `Learn v2 analysis frames: ${result.analysisFrameCount}`,
@@ -2383,6 +2410,7 @@ type LearnV2ExecutedModelApplyByRole = {
   conceptExtractor?: Awaited<ReturnType<typeof applyLearnV2ModelProposalOutputs>>;
   scopeInferencer?: Awaited<ReturnType<typeof applyLearnV2ScopeInferenceOutputs>>;
   contradictionReviewer?: Awaited<ReturnType<typeof applyLearnV2ContradictionReviewOutputs>>;
+  evalPlanner?: Awaited<ReturnType<typeof applyLearnV2EvalPlannerOutputs>>;
   skipped: Array<{ outputPath: string; manifestPath: string; reason: string }>;
 };
 
@@ -2393,6 +2421,7 @@ async function applyExecutedLearnV2ModelResponses(
   const conceptOutputs: string[] = [];
   const scopeOutputs: string[] = [];
   const contradictionOutputs: string[] = [];
+  const evalOutputs: string[] = [];
   const skipped: LearnV2ExecutedModelApplyByRole["skipped"] = [];
 
   for (const item of execution.results) {
@@ -2400,6 +2429,7 @@ async function applyExecutedLearnV2ModelResponses(
     if (item.modelRole === "concept-extractor") conceptOutputs.push(item.outputPath);
     else if (item.modelRole === "scope-inferencer") scopeOutputs.push(item.outputPath);
     else if (item.modelRole === "contradiction-reviewer") contradictionOutputs.push(item.outputPath);
+    else if (item.modelRole === "eval-planner") evalOutputs.push(item.outputPath);
     else skipped.push({ outputPath: item.outputPath, manifestPath: item.manifestPath, reason: "missing-model-role" });
   }
 
@@ -2407,11 +2437,12 @@ async function applyExecutedLearnV2ModelResponses(
   if (conceptOutputs.length > 0) byRole.conceptExtractor = await applyLearnV2ModelProposalOutputs(root, conceptOutputs);
   if (scopeOutputs.length > 0) byRole.scopeInferencer = await applyLearnV2ScopeInferenceOutputs(root, scopeOutputs);
   if (contradictionOutputs.length > 0) byRole.contradictionReviewer = await applyLearnV2ContradictionReviewOutputs(root, contradictionOutputs);
+  if (evalOutputs.length > 0) byRole.evalPlanner = await applyLearnV2EvalPlannerOutputs(root, evalOutputs);
   return byRole;
 }
 
 function selectPrimaryExecutedLearnV2ApplyResult(applied: LearnV2ExecutedModelApplyByRole) {
-  return applied.conceptExtractor ?? applied.scopeInferencer ?? applied.contradictionReviewer ?? null;
+  return applied.conceptExtractor ?? applied.scopeInferencer ?? applied.contradictionReviewer ?? applied.evalPlanner ?? null;
 }
 
 function renderLearnV2ModelRequestExecutionApply(
@@ -2422,6 +2453,7 @@ function renderLearnV2ModelRequestExecutionApply(
   if (applied.conceptExtractor) sections.push(renderLearnV2ModelProposalApply(applied.conceptExtractor));
   if (applied.scopeInferencer) sections.push(renderLearnV2ScopeInferenceApply(applied.scopeInferencer));
   if (applied.contradictionReviewer) sections.push(renderLearnV2ContradictionReviewApply(applied.contradictionReviewer));
+  if (applied.evalPlanner) sections.push(renderLearnV2EvalPlannerApply(applied.evalPlanner));
   if (applied.skipped.length > 0) {
     const lines = ["Skipped model response apply:"];
     for (const item of applied.skipped.slice(0, 20)) lines.push(`SKIPPED ${item.outputPath}: ${item.reason}`);
@@ -2481,6 +2513,19 @@ function renderLearnV2ContradictionReviewApply(result: Awaited<ReturnType<typeof
     `Concept drift: ${result.conceptDriftPath}`
   ];
   for (const item of result.rejected.slice(0, 20)) lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
+  return lines.join("\n");
+}
+
+function renderLearnV2EvalPlannerApply(result: Awaited<ReturnType<typeof applyLearnV2EvalPlannerOutputs>>): string {
+  const lines = [
+    `Learn v2 eval planner outputs applied: ${result.outputFiles.length}`,
+    `Extraction scenarios: ${result.extractionScenarioCount}`,
+    `Behavior-delta scenarios: ${result.behaviorDeltaScenarioCount}`,
+    `Rejected outputs: ${result.rejected.length}`,
+    `Golden proposal: ${result.proposalPath ?? "not written"}`
+  ];
+  for (const item of result.rejected.slice(0, 20)) lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
+  lines.push(...result.instructions);
   return lines.join("\n");
 }
 

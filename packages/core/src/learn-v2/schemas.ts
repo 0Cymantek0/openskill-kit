@@ -457,6 +457,46 @@ export const LearnV2LlmContradictionReviewOutputSchema = z.object({
 });
 export type LearnV2LlmContradictionReviewOutput = z.infer<typeof LearnV2LlmContradictionReviewOutputSchema>;
 
+const LearnV2EvalAtomKindSchema = z.enum(["preference", "workflow", "security", "verification", "dependency-policy", "review-policy", "command-policy", "scope-boundary"]);
+
+export const LearnV2LlmEvalPlannerOutputSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.llm-eval-plan-output.v1"),
+  extractionScenarios: z.array(z.object({
+    schemaVersion: z.literal("openskill-kit.learn-v2.extraction-golden.v1"),
+    id: z.string().min(1).max(120),
+    title: z.string().min(1).max(200),
+    episodeIdIncludes: z.string().min(1).max(160).optional(),
+    expectedConceptText: z.array(z.string().min(1).max(240)).default([]),
+    expectedKinds: z.array(LearnV2EvalAtomKindSchema).default([]),
+    expectedTaskHints: z.array(z.string().min(1).max(160)).default([]),
+    expectedPathText: z.array(z.string().min(1).max(200)).default([]),
+    forbiddenText: z.array(z.string().min(1).max(240)).default([])
+  })).default([]),
+  behaviorDeltaScenarios: z.array(z.object({
+    schemaVersion: z.literal("openskill-kit.learn-v2.behavior-delta-golden.v1"),
+    id: z.string().min(1).max(120),
+    title: z.string().min(1).max(200),
+    task: z.object({
+      prompt: z.string().min(1).max(500),
+      paths: z.array(z.string().max(200)).default([]),
+      commands: z.array(z.string().max(200)).default([]),
+      taskTypes: z.array(z.string().max(80)).default([]),
+      negativeSignals: z.array(z.string().max(160)).default([])
+    }),
+    expectedConceptText: z.array(z.string().min(1).max(240)).default([]),
+    expectedKinds: z.array(LearnV2EvalAtomKindSchema).default([]),
+    expectedPlanIncludes: z.array(z.string().min(1).max(240)).default([]),
+    expectedPlanExcludes: z.array(z.string().min(1).max(240)).default([]),
+    minActivatedConcepts: z.number().int().min(0).max(20).default(1)
+  })).default([]),
+  rejected: z.array(z.object({
+    reason: z.string().min(1).max(300),
+    conceptIds: z.array(z.string().min(1)).default([]),
+    evidenceIds: z.array(z.string().min(1)).default([])
+  })).default([])
+});
+export type LearnV2LlmEvalPlannerOutput = z.infer<typeof LearnV2LlmEvalPlannerOutputSchema>;
+
 export const LearnV2ConceptCardSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.concept-card.v1"),
   id: z.string().min(1),

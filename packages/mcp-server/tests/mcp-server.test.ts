@@ -103,6 +103,8 @@ describe("openskill-kit MCP server", () => {
       expect(names).toContain("osk_apply_learn_v2_scope_outputs");
       expect(names).toContain("osk_prepare_learn_v2_contradiction_requests");
       expect(names).toContain("osk_apply_learn_v2_contradiction_outputs");
+      expect(names).toContain("osk_prepare_learn_v2_eval_requests");
+      expect(names).toContain("osk_apply_learn_v2_eval_outputs");
 
       await client.callTool({
         name: "osk_get_status",
@@ -341,6 +343,99 @@ describe("openskill-kit MCP server", () => {
     }
   }, 45_000);
 
+  it("prepares and applies Learn v2 eval-planner outputs through advanced MCP", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-eval-planner-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-eval-planner-fixture" }), "utf8");
+    await initAdaptiveProject({ projectRoot: root, now: new Date("2026-06-30T00:00:00Z") });
+    const now = new Date("2026-06-30T00:01:00Z");
+    const [card] = mergeLearnV2ConceptCards([
+      learnV2McpBehaviorAtom("mcp_eval_parser", "Prefer focused parser regression tests for parser changes.", "positive")
+    ], now);
+    const activeCard = { ...card!, status: "active" as const };
+    await writeLearnV2ConceptStore(root, [activeCard], now);
+
+    const client = new Client({ name: "openskill-kit-eval-planner-test", version: "0.1.0" }, { capabilities: {} });
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"), path.join(repoRoot, "packages", "mcp-server", "src", "index.ts")],
+      cwd: root,
+      env: { ...inheritedEnv(), OPENSKILLKIT_MCP_PROFILE: "advanced" },
+      stderr: "pipe"
+    });
+
+    try {
+      await client.connect(transport);
+      const prepared = await client.callTool({
+        name: "osk_prepare_learn_v2_eval_requests",
+        arguments: { projectRoot: root, conceptIds: [activeCard.id] }
+      });
+      const preparedText = prepared.content.find((item) => item.type === "text")?.text ?? "{}";
+      const preparedParsed = JSON.parse(preparedText);
+      expect(preparedParsed.schemaVersion).toBe("openskill-kit.learn-v2.eval-planner-request-result.v1");
+      expect(preparedParsed.requestCount).toBe(1);
+      expect(preparedText).not.toContain(root);
+      expect(preparedText).not.toContain("raw_mcp_eval");
+
+      const requestRoot = path.join(root, ".openskill-kit", "learn-v2", "model-requests");
+      const evalDirs = (await readdir(requestRoot, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith("eval_"))
+        .map((entry) => path.join(requestRoot, entry.name));
+      expect(evalDirs).toHaveLength(1);
+      const manifestPath = path.join(evalDirs[0]!, "request-manifest.json");
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const outputPath = path.resolve(root, manifest.expectedOutputPath);
+      await writeFile(outputPath, JSON.stringify({
+        schemaVersion: "openskill-kit.learn-v2.llm-eval-plan-output.v1",
+        extractionScenarios: [{
+          schemaVersion: "openskill-kit.learn-v2.extraction-golden.v1",
+          id: "golden_mcp_parser_eval",
+          title: "MCP parser eval extraction",
+          expectedConceptText: ["focused parser regression"],
+          expectedKinds: ["verification"],
+          expectedTaskHints: ["parser"],
+          expectedPathText: ["packages/core/src/parser.ts"],
+          forbiddenText: ["broad rewrite only"]
+        }],
+        behaviorDeltaScenarios: [{
+          schemaVersion: "openskill-kit.learn-v2.behavior-delta-golden.v1",
+          id: "delta_mcp_parser_eval",
+          title: "MCP parser eval activation",
+          task: {
+            prompt: "Change parser behavior",
+            paths: ["packages/core/src/parser.ts"],
+            commands: ["npm test -- parser"],
+            taskTypes: ["parser-change"],
+            negativeSignals: []
+          },
+          expectedConceptText: ["focused parser regression"],
+          expectedKinds: ["verification"],
+          expectedPlanIncludes: ["focused parser regression"],
+          expectedPlanExcludes: ["broad rewrite only"],
+          minActivatedConcepts: 1
+        }],
+        rejected: []
+      }), "utf8");
+
+      const applied = await client.callTool({
+        name: "osk_apply_learn_v2_eval_outputs",
+        arguments: { projectRoot: root, outputPaths: [manifestPath] }
+      });
+      const appliedText = applied.content.find((item) => item.type === "text")?.text ?? "{}";
+      const appliedParsed = JSON.parse(appliedText);
+      expect(appliedParsed.schemaVersion).toBe("openskill-kit.learn-v2.eval-planner-apply-result.v1");
+      expect(appliedParsed.extractionScenarioCount).toBe(1);
+      expect(appliedParsed.behaviorDeltaScenarioCount).toBe(1);
+      expect(appliedParsed.rejected).toEqual([]);
+      expect(appliedText).not.toContain(root);
+      expect(appliedText).not.toContain("raw_mcp_eval");
+      const proposal = JSON.parse(await readFile(path.resolve(root, appliedParsed.proposalPath), "utf8"));
+      expect(proposal.schemaVersion).toBe("openskill-kit.learn-v2.eval-golden-proposal.v1");
+      expect(proposal.reviewRequired).toBe(true);
+    } finally {
+      await client.close();
+    }
+  }, 45_000);
+
   it("lists advanced tools and drafts a skill through stdio transport", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-fixture" }), "utf8");
@@ -402,6 +497,8 @@ describe("openskill-kit MCP server", () => {
           "osk_apply_learn_v2_scope_outputs",
           "osk_prepare_learn_v2_contradiction_requests",
           "osk_apply_learn_v2_contradiction_outputs",
+          "osk_prepare_learn_v2_eval_requests",
+          "osk_apply_learn_v2_eval_outputs",
           "osk_reconstruct_episodes",
           "osk_extract_concepts",
           "osk_run_learn_v2_eval",

@@ -41,10 +41,12 @@ Learn v2 advanced tools expose the raw-local pipeline as an explicit staged work
 | `osk_prepare_learn_v2_model_requests` | writes sanitized request artifacts | Generate ROI-routed OpenCode concept-extraction prompt/bundle manifests. |
 | `osk_prepare_learn_v2_scope_requests` | writes sanitized request artifacts | Generate ROI-routed OpenCode scope-inference concept prompt/bundle manifests. |
 | `osk_prepare_learn_v2_contradiction_requests` | writes sanitized request artifacts | Generate ROI-routed OpenCode contradiction-review prompt/bundle manifests for unresolved concept conflicts. |
+| `osk_prepare_learn_v2_eval_requests` | writes sanitized request artifacts | Generate ROI-routed OpenCode eval-planner prompt/bundle manifests for reviewed concepts. |
 | `osk_execute_learn_v2_model_requests` | writes validated model response files | Execute prepared sanitized manifests through OpenCode; raw-evidence requests are rejected. |
 | `osk_apply_learn_v2_model_outputs` | writes candidate concepts/review artifacts | Validate strict model proposal JSON and merge scoped atoms, activation hints, conditions, and counterevidence. |
 | `osk_apply_learn_v2_scope_outputs` | writes concept/review artifacts | Validate strict scope proposal JSON and merge narrowed scope, conditions, activation hints, negative triggers, and counterevidence. |
 | `osk_apply_learn_v2_contradiction_outputs` | writes concept/review artifacts | Validate strict contradiction-review JSON and merge only ledger-authorized counterevidence, narrowing, or supersession proposals. |
+| `osk_apply_learn_v2_eval_outputs` | writes eval proposal artifacts | Validate strict eval-planner JSON and write review-required proposed eval goldens without mutating concepts. |
 | `osk_run_learn_v2_eval` | writes eval artifacts | Run Learn v2 replay/golden/activation checks from persisted state. |
 
 ## Files
