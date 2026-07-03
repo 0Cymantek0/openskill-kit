@@ -1980,6 +1980,7 @@ describe("learn-v2 substrate", () => {
     expect(result.writtenCount).toBe(1);
     expect(result.failedCount).toBe(0);
     expect(result.results[0]?.status).toBe("written");
+    expect(result.results[0]?.modelRole).toBe("concept-extractor");
     expect(result.results[0]?.argsShape).toContain("[ATTACHED_FILE]");
     expect(result.results[0]?.stdoutHash).toMatch(/^sha256:/);
     expect(result.results[0]?.stderrHash).toMatch(/^sha256:/);
@@ -2082,6 +2083,7 @@ describe("learn-v2 substrate", () => {
       }
     });
     expect(executed.writtenCount).toBe(1);
+    expect(executed.results[0]?.modelRole).toBe("scope-inferencer");
     expect(await readText(executed.executionReportPath)).not.toContain("scope diagnostic must be hashed only");
 
     const applied = await applyLearnV2ScopeInferenceOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:21Z"));
@@ -2172,6 +2174,7 @@ describe("learn-v2 substrate", () => {
       }
     });
     expect(executed.writtenCount).toBe(1);
+    expect(executed.results[0]?.modelRole).toBe("contradiction-reviewer");
     expect(await readText(executed.executionReportPath)).not.toContain("contradiction diagnostic must be hashed only");
 
     const applied = await applyLearnV2ContradictionReviewOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:26Z"));

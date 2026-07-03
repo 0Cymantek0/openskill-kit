@@ -93,6 +93,49 @@ describe("osk CLI facade", () => {
     expect(conceptStore).not.toContain(root);
   }, 80_000);
 
+  it("routes executed Learn v2 scope responses to the scope applier", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-scope-exec-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "learn-scope-exec" }), "utf8");
+    await execCliJson(["init", "--json"], root);
+    const transcript = path.join(root, "session.md");
+    await writeFile(
+      transcript,
+      "user: Prefer focused parser regression fixtures for parser changes in packages/core/src/parser.ts.",
+      "utf8"
+    );
+
+    await execCliJson(["osk", "learn", "--raw", "--surface-file", transcript, "--apply", "--json"], root);
+    const conceptStorePath = path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
+    const conceptStore = JSON.parse(await readFile(conceptStorePath, "utf8"));
+    const conceptId = conceptStore.cards[0]?.id;
+    expect(conceptId).toMatch(/^concept_/);
+
+    const prepared = await execCliJson(["osk", "learn", "--prepare-scope-requests", "--scope-concept", conceptId, "--json"], root);
+    expect(prepared.requestCount).toBe(1);
+
+    const fakeOpenCode = await writeFakeOpenCodeCommand(root);
+    const executed = await execCliJson([
+      "osk",
+      "learn",
+      "--execute-model-requests",
+      "--model-request",
+      prepared.requests[0].manifestPath,
+      "--apply-model-responses",
+      "--opencode-command",
+      fakeOpenCode,
+      "--json"
+    ], root);
+
+    expect(executed.schemaVersion).toBe("openskill-kit.learn-v2.model-request-execute-apply-result.v1");
+    expect(executed.execution.results[0].modelRole).toBe("scope-inferencer");
+    expect(executed.apply.schemaVersion).toBe("openskill-kit.learn-v2.scope-inference-apply-result.v1");
+    expect(executed.applyByRole.scopeInferencer.updatedConceptIds).toEqual([conceptId]);
+    expect(executed.applyByRole.conceptExtractor).toBeUndefined();
+    const scopedStore = await readFile(conceptStorePath, "utf8");
+    expect(scopedStore).toContain("Parser behavior changes need focused regression fixtures.");
+    expect(scopedStore).not.toContain(root);
+  }, 80_000);
+
   it("renders the Learn v2 observability dashboard from latest report", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-observability-"));
     const dir = path.join(root, ".openskill-kit", "learn-v2", "observability");
@@ -796,6 +839,26 @@ async function writeFakeOpenCodeCommand(root: string): Promise<string> {
     "const files = args.flatMap((arg, index) => arg === '--file' ? [args[index + 1]] : []).filter(Boolean);",
     "const bundlePath = files[files.length - 1];",
     "const bundle = JSON.parse(fs.readFileSync(bundlePath, 'utf8'));",
+    "if (bundle.schemaVersion === 'openskill-kit.learn-v2.concept-scope-bundle.v1') {",
+    "  process.stdout.write(JSON.stringify({",
+    "    schemaVersion: 'openskill-kit.learn-v2.llm-scope-inference-output.v1',",
+    "    conceptId: bundle.conceptId,",
+    "    appliesWhen: ['Parser behavior changes need focused regression fixtures.'],",
+    "    doesNotApplyWhen: ['Docs-only edits should not run parser regression scope.'],",
+    "    scope: bundle.scope,",
+    "    activation: {",
+    "      phrases: ['parser regression fixture'],",
+    "      pathGlobs: bundle.scope.paths || [],",
+    "      commands: [],",
+    "      negativeTriggers: ['docs-only edits']",
+    "    },",
+    "    counterevidence: [],",
+    "    confidence: 0.72,",
+    "    rationale: 'Fake OpenCode scope runner keeps the existing bounded concept scope.',",
+    "    rejected: []",
+    "  }));",
+    "  process.exit(0);",
+    "}",
     "const evidenceId = bundle.evidenceIds[0];",
     "process.stdout.write(JSON.stringify({",
     "  schemaVersion: 'openskill-kit.learn-v2.llm-concept-extraction-output.v1',",

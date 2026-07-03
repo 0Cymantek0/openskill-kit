@@ -154,7 +154,11 @@ project-local `--dir`, and an inline permission profile that denies
 shell/edit/write/network/task access. OSK validates the request manifest and
 prompt/bundle hashes before execution, validates stdout as strict Learn v2
 proposal JSON before writing `response.json`, and records only byte counts and
-hashes for stdout/stderr in the execution report.
+hashes for stdout/stderr in the execution report. When paired with
+`--apply-model-responses`, OSK routes each written response by the executed
+manifest `modelRole` so mixed batches can apply concept-extractor,
+scope-inferencer, and contradiction-reviewer outputs through their matching
+validators in one pass.
 
 Concept-extractor responses merge through `--model-output`. Scope-inferencer
 responses merge through `--scope-output`, and can only add validated

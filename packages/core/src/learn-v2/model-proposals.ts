@@ -117,6 +117,7 @@ export interface LearnV2ModelRequestExecutionResult {
     manifestPath: string;
     outputPath?: string;
     episodeId?: string;
+    modelRole?: LearnV2ModelRequestManifest["modelRole"];
     status: "written" | "failed" | "skipped";
     reason?: string;
     detail?: string;
@@ -409,6 +410,7 @@ export async function executeLearnV2ModelRequests(
         manifestPath,
         outputPath,
         episodeId: manifest.episodeId,
+        modelRole: manifest.modelRole,
         status: "failed",
         reason: rejected[0]?.reason ?? "invalid-request-manifest",
         detail: rejected[0]?.detail
@@ -420,6 +422,7 @@ export async function executeLearnV2ModelRequests(
         manifestPath,
         outputPath,
         episodeId: manifest.episodeId,
+        modelRole: manifest.modelRole,
         status: "failed",
         reason: "unsafe-request-boundary",
         detail: "Only opencode-host-sanitized-only requests with rawRefsIncluded=false can be executed."
@@ -447,6 +450,7 @@ export async function executeLearnV2ModelRequests(
         manifestPath,
         outputPath,
         episodeId: manifest.episodeId,
+        modelRole: manifest.modelRole,
         status: "failed",
         reason: "routing-artifact-read-failed",
         detail: error instanceof Error ? error.message : String(error)
@@ -462,6 +466,7 @@ export async function executeLearnV2ModelRequests(
         manifestPath,
         outputPath,
         episodeId: manifest.episodeId,
+        modelRole: manifest.modelRole,
         status: "failed",
         reason: "opencode-invocation-failed",
         detail: error instanceof Error ? error.message : String(error),
@@ -479,6 +484,7 @@ export async function executeLearnV2ModelRequests(
         manifestPath,
         outputPath,
         episodeId: manifest.episodeId,
+        modelRole: manifest.modelRole,
         status: "failed",
         reason: "opencode-nonzero-exit",
         detail: run.signal ? `signal=${run.signal}` : `exitCode=${run.exitCode}`,
@@ -499,6 +505,7 @@ export async function executeLearnV2ModelRequests(
         manifestPath,
         outputPath,
         episodeId: manifest.episodeId,
+        modelRole: manifest.modelRole,
         status: "failed",
         reason: "invalid-json-or-schema",
         detail: "OpenCode stdout must be strict Learn v2 model proposal JSON.",
@@ -518,6 +525,7 @@ export async function executeLearnV2ModelRequests(
         manifestPath,
         outputPath,
         episodeId: manifest.episodeId,
+        modelRole: manifest.modelRole,
         status: "failed",
         reason: validation.reason,
         detail: validation.detail,
@@ -538,6 +546,7 @@ export async function executeLearnV2ModelRequests(
       manifestPath,
       outputPath,
       episodeId: manifest.episodeId,
+      modelRole: manifest.modelRole,
       status: "written",
       durationMs: Date.now() - started,
       stdoutBytes: Buffer.byteLength(stdout),

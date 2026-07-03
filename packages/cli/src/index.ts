@@ -437,20 +437,19 @@ osk.command("learn")
         opencodeAttachUrl: options.opencodeAttach,
         timeoutMs: options.modelRequestTimeoutMs
       });
-      const writtenOutputs = result.results
-        .filter((item) => item.status === "written" && item.outputPath)
-        .map((item) => item.outputPath!);
-      if (options.applyModelResponses === true && writtenOutputs.length) {
-        const applied = await applyLearnV2ModelProposalOutputs(process.cwd(), writtenOutputs);
+      const writtenOutputCount = result.results.filter((item) => item.status === "written" && item.outputPath).length;
+      if (options.applyModelResponses === true && writtenOutputCount > 0) {
+        const applied = await applyExecutedLearnV2ModelResponses(process.cwd(), result);
         const combined = {
           schemaVersion: "openskill-kit.learn-v2.model-request-execute-apply-result.v1",
           execution: result,
-          apply: applied
+          apply: selectPrimaryExecutedLearnV2ApplyResult(applied),
+          applyByRole: applied
         };
-        output(options.json, combined, `${renderLearnV2ModelRequestExecution(result)}\n\n${renderLearnV2ModelProposalApply(applied)}`);
+        output(options.json, combined, renderLearnV2ModelRequestExecutionApply(result, applied));
         return;
       }
-      output(options.json, result, `${renderLearnV2ModelRequestExecution(result)}${options.applyModelResponses === true ? "\nNo validated response files were written, so model proposal apply was skipped." : ""}`);
+      output(options.json, result, `${renderLearnV2ModelRequestExecution(result)}${options.applyModelResponses === true ? "\nNo validated response files were written, so model response apply was skipped." : ""}`);
       return;
     }
     if (options.modelOutput.length > 0) {
@@ -2373,9 +2372,62 @@ function renderLearnV2ModelRequestExecution(result: Awaited<ReturnType<typeof ex
     `Execution report: ${result.executionReportPath}`
   ];
   for (const item of result.results.slice(0, 30)) {
-    lines.push(`${item.status.toUpperCase()} ${item.episodeId ?? "unknown"}: ${item.outputPath ?? item.manifestPath}${item.reason ? ` (${item.reason}${item.detail ? `: ${item.detail}` : ""})` : ""}`);
+    const role = item.modelRole ? ` ${item.modelRole}` : "";
+    lines.push(`${item.status.toUpperCase()}${role} ${item.episodeId ?? "unknown"}: ${item.outputPath ?? item.manifestPath}${item.reason ? ` (${item.reason}${item.detail ? `: ${item.detail}` : ""})` : ""}`);
   }
   return lines.join("\n");
+}
+
+type LearnV2ExecutedModelApplyByRole = {
+  conceptExtractor?: Awaited<ReturnType<typeof applyLearnV2ModelProposalOutputs>>;
+  scopeInferencer?: Awaited<ReturnType<typeof applyLearnV2ScopeInferenceOutputs>>;
+  contradictionReviewer?: Awaited<ReturnType<typeof applyLearnV2ContradictionReviewOutputs>>;
+  skipped: Array<{ outputPath: string; manifestPath: string; reason: string }>;
+};
+
+async function applyExecutedLearnV2ModelResponses(
+  root: string,
+  execution: Awaited<ReturnType<typeof executeLearnV2ModelRequests>>
+): Promise<LearnV2ExecutedModelApplyByRole> {
+  const conceptOutputs: string[] = [];
+  const scopeOutputs: string[] = [];
+  const contradictionOutputs: string[] = [];
+  const skipped: LearnV2ExecutedModelApplyByRole["skipped"] = [];
+
+  for (const item of execution.results) {
+    if (item.status !== "written" || !item.outputPath) continue;
+    if (item.modelRole === "concept-extractor") conceptOutputs.push(item.outputPath);
+    else if (item.modelRole === "scope-inferencer") scopeOutputs.push(item.outputPath);
+    else if (item.modelRole === "contradiction-reviewer") contradictionOutputs.push(item.outputPath);
+    else skipped.push({ outputPath: item.outputPath, manifestPath: item.manifestPath, reason: "missing-model-role" });
+  }
+
+  const byRole: LearnV2ExecutedModelApplyByRole = { skipped };
+  if (conceptOutputs.length > 0) byRole.conceptExtractor = await applyLearnV2ModelProposalOutputs(root, conceptOutputs);
+  if (scopeOutputs.length > 0) byRole.scopeInferencer = await applyLearnV2ScopeInferenceOutputs(root, scopeOutputs);
+  if (contradictionOutputs.length > 0) byRole.contradictionReviewer = await applyLearnV2ContradictionReviewOutputs(root, contradictionOutputs);
+  return byRole;
+}
+
+function selectPrimaryExecutedLearnV2ApplyResult(applied: LearnV2ExecutedModelApplyByRole) {
+  return applied.conceptExtractor ?? applied.scopeInferencer ?? applied.contradictionReviewer ?? null;
+}
+
+function renderLearnV2ModelRequestExecutionApply(
+  execution: Awaited<ReturnType<typeof executeLearnV2ModelRequests>>,
+  applied: LearnV2ExecutedModelApplyByRole
+): string {
+  const sections = [renderLearnV2ModelRequestExecution(execution)];
+  if (applied.conceptExtractor) sections.push(renderLearnV2ModelProposalApply(applied.conceptExtractor));
+  if (applied.scopeInferencer) sections.push(renderLearnV2ScopeInferenceApply(applied.scopeInferencer));
+  if (applied.contradictionReviewer) sections.push(renderLearnV2ContradictionReviewApply(applied.contradictionReviewer));
+  if (applied.skipped.length > 0) {
+    const lines = ["Skipped model response apply:"];
+    for (const item of applied.skipped.slice(0, 20)) lines.push(`SKIPPED ${item.outputPath}: ${item.reason}`);
+    sections.push(lines.join("\n"));
+  }
+  if (sections.length === 1) sections.push("No written model responses had a supported model role, so apply was skipped.");
+  return sections.join("\n\n");
 }
 
 function renderLearnV2ModelProposalApply(result: Awaited<ReturnType<typeof applyLearnV2ModelProposalOutputs>>): string {
