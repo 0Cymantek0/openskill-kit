@@ -3542,6 +3542,57 @@ describe("learn-v2 substrate", () => {
     expect(broadFamilyOnly[0]!.score).toBe(0);
   });
 
+  it("activates path-scoped concepts for new files through deterministic subsystem labels", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:10:00Z");
+    const [concept] = mergeLearnV2ConceptCards([{
+      schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
+      id: "atom_subsystem_parser_fixture",
+      kind: "verification",
+      statement: "Prefer focused parser regression fixtures before broad parser rewrites.",
+      polarity: "positive",
+      scope: {
+        level: "path",
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: []
+      },
+      confidence: 0.82,
+      confidenceCap: 0.9,
+      sourceReliability: 0.85,
+      evidenceIds: ["ev_subsystem_parser_fixture"],
+      rawRefs: ["raw_subsystem_parser_fixture"],
+      rationale: "Explicit preference or correction language in episode.",
+      risk: "low"
+    }], now);
+    const activeConcept = {
+      ...concept!,
+      status: "active" as const,
+      activation: {
+        phrases: [],
+        pathGlobs: [],
+        commands: []
+      },
+      scope: {
+        ...concept!.scope,
+        taskTypes: []
+      }
+    };
+    await writeLearnV2ConceptStore(root, [activeConcept], now);
+    const activationIndex = await readText(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json"));
+    expect(activationIndex).toContain("subsystemLabels");
+    expect(activationIndex).toContain("parser subsystem");
+
+    const result = await activateLearnV2Concepts(root, {
+      paths: ["packages/core/src/parser/new-token-rule.ts"],
+      limit: 5
+    }, new Date("2026-06-30T00:11:00Z"));
+
+    expect(result.matches[0]?.conceptId).toBe(activeConcept.id);
+    expect(result.matches[0]?.reasons.join(",")).toContain("subsystem:");
+    expect(result.matches[0]?.reasons.join(",")).not.toContain("path:");
+    expect(result.matches[0]?.score).toBeGreaterThan(0);
+  });
+
   it("applies guarded auto-stage auto-apply-safe and assistant-only supersession policies", async () => {
     const root = await tempProject();
     const configPath = path.join(root, ".openskill-kit", "config.json");

@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { readProjectConfig } from "../events/store.js";
-import { deriveActivationSignalsFromText } from "./activation-signals.js";
+import { deriveActivationSignalsFromText, deriveLearnV2SubsystemLabels } from "./activation-signals.js";
 import { readLearnV2ConceptStore, writeLearnV2ActivationIndex, type LearnV2ActivationIndex } from "./store.js";
 import { learnV2Hash, learnV2ShortHash } from "./utils.js";
 
@@ -287,14 +287,21 @@ function scoreActivationEntries(
   query: LearnV2ConceptActivationQuery,
   outcomeFeedback: Map<string, LearnV2ConceptOutcomeFeedback> = new Map()
 ): LearnV2ConceptActivationMatch[] {
-  const queryText = normalizeText(query.query ?? "");
-  const queryTokens = tokenSet(queryText);
-  const querySignals = deriveActivationSignalsFromText([
+  const queryActivationText = [
     query.query ?? "",
     ...(query.paths ?? []),
     ...(query.commands ?? []),
     ...(query.taskTypes ?? [])
-  ].join(" "));
+  ].join(" ");
+  const queryText = normalizeText(queryActivationText);
+  const queryTokens = tokenSet(queryActivationText);
+  const querySignals = deriveActivationSignalsFromText(queryActivationText);
+  const querySubsystemLabels = new Set(deriveLearnV2SubsystemLabels({
+    text: queryActivationText,
+    paths: query.paths,
+    commands: query.commands,
+    taskTypes: query.taskTypes
+  }).map(normalizeText));
   const paths = (query.paths ?? []).map(normalizePath);
   const commands = (query.commands ?? []).map(normalizeText);
   const taskTypes = new Set((query.taskTypes ?? []).map(normalizeText));
@@ -302,7 +309,7 @@ function scoreActivationEntries(
   const visibleEntries = entries.filter((entry) => query.includeCandidates === true || entry.status === "active" || entry.status === "locked");
   const bm25 = buildActivationBm25Index(visibleEntries);
   return visibleEntries
-    .map((entry) => scoreEntry(entry, { queryText, queryTokens, querySignals, paths, commands, taskTypes, negativeSignals, bm25, outcomeFeedback }))
+    .map((entry) => scoreEntry(entry, { queryText, queryTokens, querySignals, querySubsystemLabels, paths, commands, taskTypes, negativeSignals, bm25, outcomeFeedback }))
     .sort((a, b) => Number(a.suppressed) - Number(b.suppressed) || b.score - a.score || a.title.localeCompare(b.title));
 }
 
@@ -312,6 +319,7 @@ function scoreEntry(
     queryText: string;
     queryTokens: Set<string>;
     querySignals: ReturnType<typeof deriveActivationSignalsFromText>;
+    querySubsystemLabels: Set<string>;
     paths: string[];
     commands: string[];
     taskTypes: Set<string>;
@@ -385,6 +393,18 @@ function scoreEntry(
   if (fingerprintOverlap.score >= 2) {
     score += Math.min(0.18, fingerprintOverlap.score * 0.06);
     reasons.push(`semantic-fingerprint:${fingerprintOverlap.hits.slice(0, 5).join(",")}`);
+  }
+
+  const subsystemHits = (entry.subsystemLabels ?? [])
+    .map((label) => {
+      const normalizedLabel = normalizeText(label);
+      return { label: normalizedLabel, tokens: tokenSet(normalizedLabel) };
+    })
+    .filter(({ label, tokens }) => label && (query.querySubsystemLabels.has(label) || query.queryText.includes(label) || tokenOverlap(tokens, query.queryTokens) >= Math.min(2, tokens.size)))
+    .map(({ label }) => label);
+  if (subsystemHits.length) {
+    score += Math.min(0.2, subsystemHits.length * 0.08);
+    reasons.push(`subsystem:${subsystemHits.slice(0, 4).join(",")}`);
   }
 
   if (feedback) {
@@ -520,6 +540,7 @@ function activationDocumentTokens(entry: LearnV2ActivationIndex["entries"][numbe
     ...entry.commands,
     ...(entry.semanticAliases ?? []),
     ...(entry.keywordFingerprint ?? []),
+    ...(entry.subsystemLabels ?? []),
     ...entry.pathGlobs.flatMap(pathTokens)
   ];
   return textParts.flatMap((part) => [...tokenSet(part)]);

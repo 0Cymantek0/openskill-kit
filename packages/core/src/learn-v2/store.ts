@@ -41,6 +41,7 @@ export interface LearnV2ActivationIndex {
     negativeTriggers: string[];
     semanticAliases?: string[];
     keywordFingerprint?: string[];
+    subsystemLabels?: string[];
     confidence: number;
     risk: LearnV2ConceptCard["risk"];
   }>;
