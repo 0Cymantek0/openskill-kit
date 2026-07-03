@@ -1102,6 +1102,53 @@ describe("learn-v2 substrate", () => {
     expect(summary.fileSummaries.find((file) => file.path.endsWith("lib.rs"))?.changedSymbols).toEqual(expect.arrayContaining(["CompilePlan", "run_checked"]));
   });
 
+  it("attributes decorator and attribute-only edits to adjacent Python Go and Rust declarations", async () => {
+    const diff = [
+      "diff --git a/python/openskillkit_evolution/report.py b/python/openskillkit_evolution/report.py",
+      "--- a/python/openskillkit_evolution/report.py",
+      "+++ b/python/openskillkit_evolution/report.py",
+      "@@",
+      " class ReportBuilder:",
+      "-    @cached_property",
+      "+    @property",
+      "     def summary(self):",
+      "         return build_summary()",
+      "diff --git a/src/server.go b/src/server.go",
+      "--- a/src/server.go",
+      "+++ b/src/server.go",
+      "@@",
+      "-//go:noinline",
+      "+//go:generate stringer -type=Handler",
+      " func (h *Handler[T]) Route(r router.Router) {}",
+      "diff --git a/src/lib.rs b/src/lib.rs",
+      "--- a/src/lib.rs",
+      "+++ b/src/lib.rs",
+      "@@",
+      "-#[derive(Debug)]",
+      "+#[derive(Debug, Clone)]",
+      " pub struct CompilePlan;",
+      " impl CompilePlan {",
+      "-  #[tracing::instrument]",
+      "+  #[tracing::instrument(skip(self))]",
+      "   pub async fn run_checked(&self) {}",
+      " }"
+    ].join("\n");
+
+    const summary = analyzeLearnV2StructuralDiff(diff);
+
+    expect(summary.changedSymbols).toEqual(expect.arrayContaining([
+      "CompilePlan",
+      "Handler",
+      "ReportBuilder",
+      "Route",
+      "run_checked",
+      "summary"
+    ]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("report.py"))?.changedSymbols).toEqual(expect.arrayContaining(["ReportBuilder", "summary"]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("server.go"))?.changedSymbols).toEqual(expect.arrayContaining(["Handler", "Route"]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("lib.rs"))?.changedSymbols).toEqual(expect.arrayContaining(["CompilePlan", "run_checked"]));
+  });
+
   it("rejects LLM atom proposals without valid evidence or with raw secrets", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_llm");

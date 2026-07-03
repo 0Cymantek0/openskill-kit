@@ -181,10 +181,17 @@ function blockSignalFromHunk(language: StructuralLanguage, hunk: DiffHunk, side:
 }
 
 function blockSignalFromSource(language: StructuralLanguage, lines: string[], changedLines: Set<number>): BlockStructuralSignal {
-  if (language === "python") return pythonBlockSignal(lines, changedLines);
-  if (language === "go") return braceBlockSignal(language, lines, changedLines);
-  if (language === "rust") return braceBlockSignal(language, lines, changedLines);
+  if (language === "python") return mergeBlockSignals(pythonBlockSignal(lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
+  if (language === "go") return mergeBlockSignals(braceBlockSignal(language, lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
+  if (language === "rust") return mergeBlockSignals(braceBlockSignal(language, lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
   return { symbols: [], imports: [] };
+}
+
+function mergeBlockSignals(...signals: BlockStructuralSignal[]): BlockStructuralSignal {
+  return {
+    symbols: [...new Set(signals.flatMap((signal) => signal.symbols))].sort(),
+    imports: [...new Set(signals.flatMap((signal) => signal.imports))].sort()
+  };
 }
 
 function pythonBlockSignal(lines: string[], changedLines: Set<number>): BlockStructuralSignal {
@@ -236,6 +243,54 @@ function braceLineSymbols(language: "go" | "rust", line: string): string[] {
     if (receiver?.[2]) symbols.add(receiver[2]);
   }
   return [...symbols];
+}
+
+function adjacentDeclarationSignal(language: "python" | "go" | "rust", lines: string[], changedLines: Set<number>): BlockStructuralSignal {
+  const symbols = new Set<string>();
+  const imports = new Set<string>();
+  for (const changedLine of changedLines) {
+    const line = lines[changedLine - 1] ?? "";
+    if (!isStructuralMetadataLine(language, line)) continue;
+    const declaration = findNextDeclarationLine(language, lines, changedLine - 1);
+    if (!declaration) continue;
+    for (const item of importsForLine(language, declaration)) imports.add(item);
+    const declarationSymbols = language === "python" ? symbolsForLine(language, declaration) : braceLineSymbols(language, declaration);
+    for (const symbol of declarationSymbols) symbols.add(symbol);
+  }
+  return { symbols: [...symbols].sort(), imports: [...imports].sort() };
+}
+
+function isStructuralMetadataLine(language: "python" | "go" | "rust", line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (language === "python") return /^@[\w.]/.test(trimmed);
+  if (language === "go") return /^(?:\/\/go:|\/\/\s*[A-Z][\w.]*\s)/.test(trimmed);
+  return /^(?:#\[[^\]]+\]|\/\/\/|\/\/!)/.test(trimmed);
+}
+
+function findNextDeclarationLine(language: "python" | "go" | "rust", lines: string[], startIndex: number): string | undefined {
+  const baseIndent = leadingIndentWidth(lines[startIndex] ?? "");
+  for (let index = startIndex + 1; index < Math.min(lines.length, startIndex + 8); index++) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (language === "python") {
+      if (trimmed.startsWith("@")) continue;
+      if (leadingIndentWidth(line) < baseIndent) return undefined;
+      if (symbolsForLine(language, line).length) return line;
+      return undefined;
+    }
+    if (language === "rust") {
+      if (/^(?:#\[[^\]]+\]|\/\/\/|\/\/!)/.test(trimmed)) continue;
+      if (braceLineSymbols(language, line).length) return line;
+      if (!trimmed.startsWith("//")) return undefined;
+      continue;
+    }
+    if (/^(?:\/\/go:|\/\/)/.test(trimmed)) continue;
+    if (braceLineSymbols(language, line).length) return line;
+    return undefined;
+  }
+  return undefined;
 }
 
 function typeScriptSignalFromHunk(file: string, language: StructuralLanguage, hunk: DiffHunk, side: "after" | "before"): TypeScriptStructuralSignal {
