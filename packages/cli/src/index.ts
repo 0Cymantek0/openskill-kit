@@ -83,12 +83,14 @@ import {
   applyLearnV2ConceptReview,
   applyLearnV2ModelProposalOutputs,
   executeLearnV2ModelRequests,
+  applyLearnV2ScopeInferenceOutputs,
   activateLearnV2Concepts,
   recordLearnV2ConceptOutcome,
   reconstructPersistedLearnV2Episodes,
   extractPersistedLearnV2Concepts,
   runPersistedLearnV2Eval,
   writeLearnV2ModelRequests,
+  writeLearnV2ScopeInferenceRequests,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
   RawLearningModelModes,
@@ -345,6 +347,8 @@ osk.command("learn")
   .option("--extract-concepts", "Extract deterministic Learn-v2 concepts from the persisted episode store")
   .option("--run-learn-v2-eval", "Run Learn-v2 eval from persisted episode and concept stores")
   .option("--prepare-model-requests", "Write prompt-safe Learn-v2 model request artifacts from the stored episode store")
+  .option("--prepare-scope-requests", "Write prompt-safe Learn-v2 scope-inferencer request artifacts from the concept store")
+  .option("--scope-concept <conceptId>", "Concept id to prepare for --prepare-scope-requests", collectOption, [])
   .option("--execute-model-requests", "Run sanitized Learn-v2 model requests through OpenCode and write validated response.json files")
   .option("--apply-model-responses", "After --execute-model-requests, validate and merge written response.json files into the Learn-v2 concept store")
   .option("--model-request <path>", "Learn-v2 request directory or request-manifest.json to execute; defaults to every prepared request", collectOption, [])
@@ -352,6 +356,7 @@ osk.command("learn")
   .option("--opencode-attach <url>", "Attach --execute-model-requests to a running OpenCode server")
   .option("--model-request-timeout-ms <number>", "Per-request OpenCode execution timeout", parseIntegerOption, 300_000)
   .option("--model-output <path>", "Learn-v2 model JSON output file or request-manifest.json to validate and merge", collectOption, [])
+  .option("--scope-output <path>", "Learn-v2 scope-inference response.json or request-manifest.json to validate and merge", collectOption, [])
   .option("--activation-query <text>", "Score reviewed Learn-v2 concepts for a task query")
   .option("--activation-path <path>", "Path hint for --activation-query", collectOption, [])
   .option("--activation-command <command>", "Command hint for --activation-query", collectOption, [])
@@ -406,6 +411,11 @@ osk.command("learn")
       output(options.json, result, renderLearnV2ModelRequests(result));
       return;
     }
+    if (options.prepareScopeRequests === true) {
+      const result = await writeLearnV2ScopeInferenceRequests(process.cwd(), options.scopeConcept);
+      output(options.json, result, renderLearnV2ScopeInferenceRequests(result));
+      return;
+    }
     if (options.executeModelRequests === true) {
       const result = await executeLearnV2ModelRequests(process.cwd(), {
         requestManifests: options.modelRequest,
@@ -432,6 +442,11 @@ osk.command("learn")
     if (options.modelOutput.length > 0) {
       const result = await applyLearnV2ModelProposalOutputs(process.cwd(), options.modelOutput);
       output(options.json, result, renderLearnV2ModelProposalApply(result));
+      return;
+    }
+    if (options.scopeOutput.length > 0) {
+      const result = await applyLearnV2ScopeInferenceOutputs(process.cwd(), options.scopeOutput);
+      output(options.json, result, renderLearnV2ScopeInferenceApply(result));
       return;
     }
     if (options.recordConceptOutcome) {
@@ -2279,6 +2294,18 @@ function renderLearnV2ModelRequests(result: Awaited<ReturnType<typeof writeLearn
   return lines.join("\n");
 }
 
+function renderLearnV2ScopeInferenceRequests(result: Awaited<ReturnType<typeof writeLearnV2ScopeInferenceRequests>>): string {
+  const lines = [
+    `Learn v2 scope inference requests: ${result.requestCount}`,
+    `Skipped concepts: ${result.skippedConcepts.length}`,
+    `Routing manifest: ${result.routingManifestPath}`,
+    ...result.requests.map((request) => `  ${request.conceptId}: ${request.promptPath} -> ${request.expectedOutputPath}`),
+    ...result.requests.map((request) => `  manifest: ${request.manifestPath}`)
+  ];
+  lines.push(...result.instructions);
+  return lines.join("\n");
+}
+
 function renderLearnV2Reconstruct(result: Awaited<ReturnType<typeof reconstructPersistedLearnV2Episodes>>): string {
   return [
     `Learn v2 analysis frames: ${result.analysisFrameCount}`,
@@ -2336,6 +2363,22 @@ function renderLearnV2ModelProposalApply(result: Awaited<ReturnType<typeof apply
   for (const item of result.rejected.slice(0, 20)) {
     lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
   }
+  return lines.join("\n");
+}
+
+function renderLearnV2ScopeInferenceApply(result: Awaited<ReturnType<typeof applyLearnV2ScopeInferenceOutputs>>): string {
+  const lines = [
+    `Learn v2 scope outputs applied: ${result.outputFiles.length}`,
+    `Updated concepts: ${result.updatedConceptIds.length}`,
+    `Rejected outputs: ${result.rejected.length}`,
+    `Concept store: ${result.conceptStorePath}`,
+    `Review queue: ${result.reviewQueuePath}`,
+    `Conflict ledger: ${result.conflictLedgerPath}`,
+    `Declassified snippets: ${result.declassifiedSnippetsPath ?? "not written"}`,
+    `Concept drift: ${result.conceptDriftPath}`
+  ];
+  for (const id of result.updatedConceptIds.slice(0, 30)) lines.push(`UPDATED ${id}`);
+  for (const item of result.rejected.slice(0, 20)) lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
   return lines.join("\n");
 }
 

@@ -142,14 +142,25 @@ sanitized: request bundles and prompts are declassified, `rawRefsIncluded` is
 false, and OSK treats model output as untrusted proposal JSON until schema,
 evidence-id, path, and leak checks pass.
 
-`openskill-kit osk learn --prepare-model-requests` only writes request
-artifacts. `openskill-kit osk learn --execute-model-requests` runs those
-prepared sanitized requests through `opencode run` with the configured agent id,
-attached prompt/bundle files, project-local `--dir`, and an inline permission
-profile that denies shell/edit/write/network/task access. OSK validates the
-request manifest and prompt/bundle hashes before execution, validates stdout as
-strict Learn v2 proposal JSON before writing `response.json`, and records only
-byte counts and hashes for stdout/stderr in the execution report. Raw-to-model
+`openskill-kit osk learn --prepare-model-requests` writes concept-extractor
+episode requests. `openskill-kit osk learn --prepare-scope-requests` writes
+scope-inferencer concept requests for cards that need clearer conditions,
+activation phrases, negative triggers, or narrower scope. `openskill-kit osk
+learn --execute-model-requests` runs prepared sanitized manifests through
+`opencode run` with the configured agent id, attached prompt/bundle files,
+project-local `--dir`, and an inline permission profile that denies
+shell/edit/write/network/task access. OSK validates the request manifest and
+prompt/bundle hashes before execution, validates stdout as strict Learn v2
+proposal JSON before writing `response.json`, and records only byte counts and
+hashes for stdout/stderr in the execution report.
+
+Concept-extractor responses merge through `--model-output`. Scope-inferencer
+responses merge through `--scope-output`, and can only add validated
+applies/does-not-apply conditions, narrow paths, task types, activation hints,
+negative triggers, safe command hints, and card-local counterevidence. Broader
+paths, absolute/local paths, unsafe command strings, invalid evidence ids,
+tampered prompt/bundle hashes, wrong response paths, malformed JSON, and
+secret-like content are rejected before concept store mutation. Raw-to-model
 execution remains rejected; `opencode-host-raw-allowed` is reserved for a future
 policy.
 

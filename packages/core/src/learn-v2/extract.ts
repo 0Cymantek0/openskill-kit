@@ -440,7 +440,7 @@ export function parseLearnV2LlmConceptExtractionOutput(text: string): LearnV2Llm
   return LearnV2LlmConceptExtractionOutputSchema.parse(JSON.parse(extractFirstJsonObject(text)));
 }
 
-function extractFirstJsonObject(text: string): string {
+export function extractFirstJsonObject(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Empty Learn v2 model output.");
   try {

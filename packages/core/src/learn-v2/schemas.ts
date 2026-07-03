@@ -392,6 +392,35 @@ export const LearnV2LlmConceptExtractionOutputSchema = z.object({
 });
 export type LearnV2LlmConceptExtractionOutput = z.infer<typeof LearnV2LlmConceptExtractionOutputSchema>;
 
+export const LearnV2LlmScopeInferenceOutputSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.llm-scope-inference-output.v1"),
+  conceptId: z.string().min(1),
+  appliesWhen: z.array(z.string().min(1).max(240)).default([]),
+  doesNotApplyWhen: z.array(z.string().min(1).max(240)).default([]),
+  scope: z.object({
+    level: z.enum(["project", "path", "directory", "task"]).optional(),
+    paths: z.array(z.string().min(1).max(240)).default([]),
+    taskTypes: z.array(z.string().min(1).max(80)).default([])
+  }).default({ paths: [], taskTypes: [] }),
+  activation: z.object({
+    phrases: z.array(z.string().min(1).max(120)).default([]),
+    pathGlobs: z.array(z.string().min(1).max(200)).default([]),
+    commands: z.array(z.string().min(1).max(200)).default([]),
+    negativeTriggers: z.array(z.string().min(1).max(160)).default([])
+  }).default({ phrases: [], pathGlobs: [], commands: [], negativeTriggers: [] }),
+  counterevidence: z.array(z.object({
+    evidenceId: z.string().min(1),
+    reason: z.string().min(1).max(300)
+  })).default([]),
+  confidence: z.number().min(0).max(1).optional(),
+  rationale: z.string().min(1).max(800).optional(),
+  rejected: z.array(z.object({
+    reason: z.string().min(1).max(300),
+    evidenceIds: z.array(z.string().min(1)).default([])
+  })).default([])
+});
+export type LearnV2LlmScopeInferenceOutput = z.infer<typeof LearnV2LlmScopeInferenceOutputSchema>;
+
 export const LearnV2ConceptCardSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.concept-card.v1"),
   id: z.string().min(1),

@@ -41,6 +41,8 @@ import {
   runLearnV2RawVaultMaintenance,
   executeLearnV2ModelRequests,
   writeLearnV2ModelRequests,
+  writeLearnV2ScopeInferenceRequests,
+  applyLearnV2ScopeInferenceOutputs,
   writeLearnV2EpisodeStore,
   writeLearnV2ConflictLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
@@ -1901,6 +1903,110 @@ describe("learn-v2 substrate", () => {
     expect(tampered.failedCount).toBe(1);
     expect(tampered.results[0]?.reason).toBe("request-file-hash-mismatch");
     expect(invocationLog).toHaveLength(1);
+  });
+
+  it("prepares executes and applies scope-inferencer proposals without broadening concept scope", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:20Z");
+    const [episode] = reconstructLearnV2Episodes([
+      normalizedMessage("ev_scope_parser", "Prefer focused parser regression fixtures for parser changes in packages/core/src/parser.ts.", "user")
+    ]);
+    await writeLearnV2EpisodeStore(root, [episode!], now);
+    const extracted = extractLearnV2BehaviorAtoms([episode!]);
+    const [card] = mergeLearnV2ConceptCards(extracted.atoms, now);
+    expect(card).toBeTruthy();
+    const scopedCard = {
+      ...card!,
+      scope: {
+        ...card!.scope,
+        level: "path" as const,
+        paths: ["packages/core/src/parser.ts"]
+      },
+      activation: {
+        ...card!.activation,
+        pathGlobs: ["packages/core/src/parser.ts"]
+      }
+    };
+    await writeLearnV2ConceptStore(root, [scopedCard], now);
+
+    const requests = await writeLearnV2ScopeInferenceRequests(root, [scopedCard.id], now);
+    expect(requests.requestCount).toBe(1);
+    const request = requests.requests[0]!;
+    const manifest = JSON.parse(await readText(request.manifestPath));
+    expect(manifest.modelRole).toBe("scope-inferencer");
+    expect(manifest.conceptId).toBe(scopedCard.id);
+    expect(manifest.outputSchema).toBe("openskill-kit.learn-v2.llm-scope-inference-output.v1");
+    expect(manifest.opencodeAgentId).toBe("osk-learn-v2-scope-inferencer");
+    expect(await readText(request.promptPath)).toContain("ConceptScopeBundle");
+    expect(await readText(request.bundlePath)).not.toContain("raw_");
+    expect(JSON.stringify(manifest)).not.toContain(root);
+
+    const scopeProposal = {
+      schemaVersion: "openskill-kit.learn-v2.llm-scope-inference-output.v1",
+      conceptId: scopedCard.id,
+      appliesWhen: ["Parser behavior changes need focused regression fixtures."],
+      doesNotApplyWhen: ["Docs-only edits should not run parser regression scope."],
+      scope: {
+        level: "path",
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"]
+      },
+      activation: {
+        phrases: ["parser regression fixture"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: ["npm test -- parser"],
+        negativeTriggers: ["docs-only edits"]
+      },
+      counterevidence: [{
+        evidenceId: scopedCard.evidenceIds[0],
+        reason: "Evidence is specifically parser scoped."
+      }],
+      confidence: 0.74,
+      rationale: "The concept only cites parser behavior evidence.",
+      rejected: []
+    };
+
+    const executed = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      opencodeCommand: "opencode-test",
+      runner: async (invocation) => {
+        const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}");
+        expect(invocation.args).toContain("osk-learn-v2-scope-inferencer");
+        expect(invocation.args).toContain(request.promptPath);
+        expect(invocation.args).toContain(request.bundlePath);
+        expect(JSON.stringify(config)).toContain("osk-learn-v2-scope-inferencer");
+        expect(config.agent["osk-learn-v2-scope-inferencer"].permission.bash).toBe("deny");
+        expect(JSON.stringify(invocation.args)).not.toContain("raw_");
+        return {
+          exitCode: 0,
+          stdout: `diagnostic\n\`\`\`json\n${JSON.stringify(scopeProposal)}\n\`\`\``,
+          stderr: "scope diagnostic must be hashed only"
+        };
+      }
+    });
+    expect(executed.writtenCount).toBe(1);
+    expect(await readText(executed.executionReportPath)).not.toContain("scope diagnostic must be hashed only");
+
+    const applied = await applyLearnV2ScopeInferenceOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:21Z"));
+    expect(applied.updatedConceptIds).toEqual([scopedCard.id]);
+    expect(applied.rejected).toEqual([]);
+    const scopedStore = await readLearnV2ConceptStore(root);
+    const scoped = scopedStore.cards.find((item) => item.id === scopedCard.id)!;
+    expect(scoped.conditions?.appliesWhen).toContain("Parser behavior changes need focused regression fixtures.");
+    expect(scoped.conditions?.doesNotApplyWhen).toContain("Docs-only edits should not run parser regression scope.");
+    expect(scoped.activation.phrases).toContain("parser regression fixture");
+    expect(scoped.scope.negativeTriggers).toContain("docs-only edits");
+    expect(scoped.activation.commands).toContain("npm test -- parser");
+    expect(scoped.counterevidence.some((item) => item.reason === "Evidence is specifically parser scoped.")).toBe(true);
+
+    await writeFile(request.expectedOutputPath, JSON.stringify({
+      ...scopeProposal,
+      scope: { level: "path", paths: ["packages"], taskTypes: ["parser-change"] },
+      activation: { ...scopeProposal.activation, pathGlobs: ["packages/**"] }
+    }), "utf8");
+    const unsafe = await applyLearnV2ScopeInferenceOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:22Z"));
+    expect(unsafe.updatedConceptIds).toEqual([]);
+    expect(unsafe.rejected[0]?.reason).toBe("scope-broadening-rejected");
   });
 
   it("rejects unsafe or malformed OpenCode execution outputs before writing response files", async () => {
