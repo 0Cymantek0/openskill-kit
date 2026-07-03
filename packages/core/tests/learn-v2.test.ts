@@ -3063,6 +3063,30 @@ describe("learn-v2 substrate", () => {
     expect(activationRunText).toContain("queryHash");
     expect(activationRunText).not.toContain("parser change needs focused test");
     expect(activationRunText).not.toContain(root);
+    // Fixture-style assertion: parse the persisted activation-run JSONL so the
+    // local telemetry shape is inspectable. Only hashed query/path/command
+    // fields are stored; raw query text, paths, and commands must never appear.
+    const activationRunLines = activationRunText.split(/\r?\n/).filter(Boolean);
+    expect(activationRunLines).toHaveLength(1);
+    const activationRunRecord = JSON.parse(activationRunLines[0]!) as {
+      schemaVersion: string;
+      queryHash?: string;
+      pathHashes: string[];
+      commandHashes: string[];
+      matchCount: number;
+      suppressedCount: number;
+      matches: Array<{ conceptId: string; status: string; score: number; suppressed: boolean }>;
+    };
+    expect(activationRunRecord.schemaVersion).toBe("openskill-kit.learn-v2.activation-run.v1");
+    expect(activationRunRecord.queryHash).toMatch(/^sha256:[0-9a-f]+$/);
+    expect(activationRunRecord.queryHash).not.toContain("parser");
+    expect(activationRunRecord.pathHashes).toHaveLength(1);
+    expect(activationRunRecord.pathHashes[0]).toMatch(/^sha256:[0-9a-f]+$/);
+    expect(activationRunRecord.pathHashes.join(" ")).not.toContain("parser.ts");
+    expect(activationRunRecord.commandHashes).toEqual([]);
+    expect(activationRunRecord.matchCount).toBe(activated.diagnostics.visiblePositiveMatchCount);
+    expect(activationRunRecord.suppressedCount).toBe(activated.diagnostics.suppressedMatchCount);
+    expect(activationRunRecord.matches.some((match) => match.conceptId === concept.id)).toBe(true);
     const driftFromActivationRuns = await detectLearnV2ConceptDrift(root, [{
       ...concept,
       status: "active",
@@ -3078,7 +3102,14 @@ describe("learn-v2 substrate", () => {
     });
     expect(driftFromActivationRuns.report.staleCandidates.some((item) => item.conceptId === concept.id)).toBe(false);
     const activationRuns = await readLearnV2ConceptActivationRuns(root);
-    expect(activationRuns.some((run) => run.matches.some((match) => match.conceptId === concept.id))).toBe(true);
+    expect(activationRuns).toHaveLength(1);
+    expect(activationRuns[0]!.schemaVersion).toBe("openskill-kit.learn-v2.activation-run.v1");
+    expect(activationRuns[0]!.queryHash).toBe(activationRunRecord.queryHash);
+    expect(activationRuns[0]!.pathHashes).toEqual(activationRunRecord.pathHashes);
+    expect(activationRuns[0]!.commandHashes).toEqual(activationRunRecord.commandHashes);
+    expect(activationRuns[0]!.matchCount).toBe(activationRunRecord.matchCount);
+    expect(activationRuns[0]!.suppressedCount).toBe(activationRunRecord.suppressedCount);
+    expect(activationRuns[0]!.matches.some((match) => match.conceptId === concept.id)).toBe(true);
 
     const outcome = await recordLearnV2ConceptOutcome(root, {
       conceptId: concept.id,
