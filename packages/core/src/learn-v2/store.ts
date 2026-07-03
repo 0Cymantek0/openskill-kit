@@ -73,8 +73,24 @@ export interface LearnV2ConceptReviewResult {
   candidateConceptCount: number;
   preferenceGraphPath?: string;
   workflowGraphPath?: string;
+  graphReconciliationPath?: string;
+  prunedPreferenceNodeIds?: string[];
+  prunedWorkflowNodeIds?: string[];
   messages: string[];
   store: LearnV2ConceptStore;
+}
+
+export interface LearnV2GraphReconciliationReport {
+  schemaVersion: "openskill-kit.learn-v2.graph-reconciliation.v1";
+  generatedAt: string;
+  projectId: string;
+  activeConceptIds: string[];
+  incomingPreferenceNodeIds: string[];
+  incomingWorkflowNodeIds: string[];
+  prunedPreferenceNodeIds: string[];
+  prunedWorkflowNodeIds: string[];
+  preferenceGraphPath: string;
+  workflowGraphPath: string;
 }
 
 export async function readLearnV2ConceptStore(projectRoot: string, now = new Date()): Promise<LearnV2ConceptStore> {
@@ -276,10 +292,16 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
     const activationIndex = await writeLearnV2ActivationIndex(root, nextStore, now);
     let preferenceGraphPath: string | undefined;
     let workflowGraphPath: string | undefined;
+    let graphReconciliationPath: string | undefined;
+    let prunedPreferenceNodeIds: string[] = [];
+    let prunedWorkflowNodeIds: string[] = [];
     if (options.compileActive !== false) {
       const synced = await syncLearnV2ActiveConcepts(root, nextStore.cards, now);
       preferenceGraphPath = synced.preferenceGraphPath;
       workflowGraphPath = synced.workflowGraphPath;
+      graphReconciliationPath = synced.graphReconciliationPath;
+      prunedPreferenceNodeIds = synced.prunedPreferenceNodeIds;
+      prunedWorkflowNodeIds = synced.prunedWorkflowNodeIds;
     }
     const reviewedCount = nextStore.cards.filter((card) => before.get(card.id) !== card.status || modifiedIds.has(card.id) || !before.has(card.id)).length;
     return {
@@ -291,10 +313,16 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       candidateConceptCount: nextStore.cards.filter((card) => card.status === "candidate" || card.status === "staged" || card.status === "conflict").length,
       preferenceGraphPath,
       workflowGraphPath,
+      graphReconciliationPath,
+      prunedPreferenceNodeIds,
+      prunedWorkflowNodeIds,
       messages: [
         `Reviewed ${reviewedCount} learn-v2 concept(s).`,
         ...restructureMessages,
         `Activation index entries: ${activationIndex.entries.length}.`,
+        ...(prunedPreferenceNodeIds.length || prunedWorkflowNodeIds.length
+          ? [`Pruned stale Learn v2 graph nodes: preferences=${prunedPreferenceNodeIds.length}, workflows=${prunedWorkflowNodeIds.length}.`]
+          : []),
         options.compileActive === false ? "Active concept graph sync skipped by option." : "Active concepts synced into preference/workflow graph compatibility outputs."
       ],
       store: nextStore
@@ -322,13 +350,43 @@ export async function writeLearnV2ActivationIndex(rootInput: string, store: Lear
   return index;
 }
 
-export async function syncLearnV2ActiveConcepts(projectRoot: string, cards: LearnV2ConceptCard[], now = new Date()): Promise<{ preferenceGraphPath: string; workflowGraphPath?: string }> {
+export async function syncLearnV2ActiveConcepts(projectRoot: string, cards: LearnV2ConceptCard[], now = new Date()): Promise<{
+  preferenceGraphPath: string;
+  workflowGraphPath: string;
+  graphReconciliationPath: string;
+  prunedPreferenceNodeIds: string[];
+  prunedWorkflowNodeIds: string[];
+}> {
   const root = path.resolve(projectRoot);
   const config = await readProjectConfig(root);
   const preview = await compileLearnV2ConceptPreview(root, config, cards, now);
-  const preferenceGraphPath = await mergePreferenceNodes(root, config.projectId, preview.preferenceNodes, now);
-  const workflowGraphPath = await mergeWorkflowNodes(root, config.projectId, preview.workflowNodes, now);
-  return { preferenceGraphPath, workflowGraphPath };
+  const preferenceSync = await mergePreferenceNodes(root, config.projectId, preview.preferenceNodes, now);
+  const workflowSync = await mergeWorkflowNodes(root, config.projectId, preview.workflowNodes, now);
+  const activeConceptIds = cards
+    .filter((card) => card.status === "active" || card.status === "locked")
+    .map((card) => card.id)
+    .sort();
+  const report: LearnV2GraphReconciliationReport = {
+    schemaVersion: "openskill-kit.learn-v2.graph-reconciliation.v1",
+    generatedAt: now.toISOString(),
+    projectId: config.projectId,
+    activeConceptIds,
+    incomingPreferenceNodeIds: preview.preferenceNodes.map((node) => node.id).sort(),
+    incomingWorkflowNodeIds: preview.workflowNodes.map((node) => node.id).sort(),
+    prunedPreferenceNodeIds: preferenceSync.prunedNodeIds,
+    prunedWorkflowNodeIds: workflowSync.prunedNodeIds,
+    preferenceGraphPath: preferenceSync.graphPath,
+    workflowGraphPath: workflowSync.graphPath
+  };
+  const graphReconciliationPath = learnV2GraphReconciliationPath(root);
+  await writeJsonAtomic(graphReconciliationPath, report);
+  return {
+    preferenceGraphPath: preferenceSync.graphPath,
+    workflowGraphPath: workflowSync.graphPath,
+    graphReconciliationPath,
+    prunedPreferenceNodeIds: report.prunedPreferenceNodeIds,
+    prunedWorkflowNodeIds: report.prunedWorkflowNodeIds
+  };
 }
 
 export function learnV2ConceptStorePath(root: string): string {
@@ -337,6 +395,10 @@ export function learnV2ConceptStorePath(root: string): string {
 
 export function learnV2ActivationIndexPath(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "activation-index.json");
+}
+
+export function learnV2GraphReconciliationPath(root: string): string {
+  return path.join(root, ".openskill-kit", "learn-v2", "compiled-preview", "graph-reconciliation.json");
 }
 
 function withStatus(card: LearnV2ConceptCard, status: LearnV2ConceptCard["status"], now: Date): LearnV2ConceptCard {
@@ -663,13 +725,17 @@ function wordSet(text: string): Set<string> {
   return new Set(text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((word) => word.length > 3));
 }
 
-async function mergePreferenceNodes(root: string, projectId: string, nodes: PreferenceNode[], now: Date): Promise<string> {
+async function mergePreferenceNodes(root: string, projectId: string, nodes: PreferenceNode[], now: Date): Promise<{ graphPath: string; prunedNodeIds: string[] }> {
   return withFileLock(path.join(root, ".openskill-kit", "preferences", ".graph.lock"), async () => {
     const file = path.join(root, ".openskill-kit", "preferences", "graph.json");
     const existing = await fs.readFile(file, "utf8")
       .then((text) => PreferenceGraphSchema.parse(JSON.parse(text)))
       .catch(() => PreferenceGraphSchema.parse({ schemaVersion: "openskill-kit.preference-graph.v1", projectId, nodes: [], conflicts: [], updatedAt: now.toISOString() }));
     const incomingIds = new Set(nodes.map((node) => node.id));
+    const prunedNodeIds = existing.nodes
+      .filter((node) => !incomingIds.has(node.id) && isLearnV2GeneratedPreferenceNode(node))
+      .map((node) => node.id)
+      .sort();
     const graph: PreferenceGraph = PreferenceGraphSchema.parse({
       ...existing,
       projectId,
@@ -681,23 +747,32 @@ async function mergePreferenceNodes(root: string, projectId: string, nodes: Pref
     });
     await writeJsonAtomic(file, graph);
     await writeJsonAtomic(path.join(root, ".openskill-kit", "preferences", "candidates", "pending.json"), graph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict"));
-    return file;
+    return { graphPath: file, prunedNodeIds };
   });
 }
 
-async function mergeWorkflowNodes(root: string, projectId: string, nodes: WorkflowNode[], now: Date): Promise<string> {
-  const graph = await readWorkflowGraph(root, projectId, now);
-  const incomingIds = new Set(nodes.map((node) => node.id));
-  const next: WorkflowGraph = WorkflowGraphSchema.parse({
-    ...graph,
-    projectId,
-    nodes: [
-      ...graph.nodes.filter((node) => !incomingIds.has(node.id) && !isLearnV2GeneratedWorkflowNode(node)),
-      ...nodes
-    ].sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name)),
-    updatedAt: now.toISOString()
+async function mergeWorkflowNodes(root: string, projectId: string, nodes: WorkflowNode[], now: Date): Promise<{ graphPath: string; prunedNodeIds: string[] }> {
+  return withFileLock(path.join(root, ".openskill-kit", "workflows", ".graph.lock"), async () => {
+    const graph = await readWorkflowGraph(root, projectId, now);
+    const incomingIds = new Set(nodes.map((node) => node.id));
+    const prunedNodeIds = graph.nodes
+      .filter((node) => !incomingIds.has(node.id) && isLearnV2GeneratedWorkflowNode(node))
+      .map((node) => node.id)
+      .sort();
+    const next: WorkflowGraph = WorkflowGraphSchema.parse({
+      ...graph,
+      projectId,
+      nodes: [
+        ...graph.nodes.filter((node) => !incomingIds.has(node.id) && !isLearnV2GeneratedWorkflowNode(node)),
+        ...nodes
+      ].sort((a, b) => b.confidence - a.confidence || a.name.localeCompare(b.name)),
+      updatedAt: now.toISOString()
+    });
+    return {
+      graphPath: await writeWorkflowGraph(root, next),
+      prunedNodeIds
+    };
   });
-  return writeWorkflowGraph(root, next);
 }
 
 function isLearnV2GeneratedPreferenceNode(node: PreferenceNode): boolean {

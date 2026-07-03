@@ -2348,22 +2348,32 @@ describe("learn-v2 substrate", () => {
     ], now);
     await writeLearnV2ConceptStore(root, [concept!], now);
 
-    await applyLearnV2ConceptReview(root, {
+    const activated = await applyLearnV2ConceptReview(root, {
       accept: [concept!.id],
       narrowScopes: [{ id: concept!.id, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] }],
       now: new Date("2026-06-30T00:01:00Z")
     });
     const config = await readProjectConfig(root);
+    expect(activated.graphReconciliationPath).toContain("graph-reconciliation.json");
+    expect(activated.prunedPreferenceNodeIds).toEqual([]);
+    expect(activated.prunedWorkflowNodeIds).toEqual([]);
     expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${concept!.id}`)).toBe(true);
     expect((await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:01:00Z"))).nodes.some((node) => node.id === `workflow_${concept!.id}`)).toBe(true);
 
-    await applyLearnV2ConceptReview(root, {
+    const rejected = await applyLearnV2ConceptReview(root, {
       reject: [concept!.id],
       now: new Date("2026-06-30T00:02:00Z")
     });
 
     expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${concept!.id}`)).toBe(false);
     expect((await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:02:00Z"))).nodes.some((node) => node.id === `workflow_${concept!.id}`)).toBe(false);
+    expect(rejected.prunedPreferenceNodeIds).toEqual([`pref_${concept!.id}`]);
+    expect(rejected.prunedWorkflowNodeIds).toEqual([`workflow_${concept!.id}`]);
+    const reconciliation = JSON.parse(await readText(rejected.graphReconciliationPath!));
+    expect(reconciliation.schemaVersion).toBe("openskill-kit.learn-v2.graph-reconciliation.v1");
+    expect(reconciliation.activeConceptIds).toEqual([]);
+    expect(reconciliation.prunedPreferenceNodeIds).toEqual([`pref_${concept!.id}`]);
+    expect(reconciliation.prunedWorkflowNodeIds).toEqual([`workflow_${concept!.id}`]);
   });
 
   it("merges splits and supersedes concept cards with lifecycle-safe review operations", async () => {

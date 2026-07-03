@@ -1426,3 +1426,37 @@ Suggested files:
 
 Verification:
 - `rtk npm test -- packages/core/tests/learn-v2.test.ts`
+
+## Task 79: Graph Reconciliation CLI Copy Audit
+
+Context:
+- Learn v2 review now writes `.openskill-kit/learn-v2/compiled-preview/graph-reconciliation.json` when active concepts sync into legacy Preference/Workflow graphs.
+- Review result messages include pruned counts, but CLI rendering may not explicitly show the reconciliation artifact path.
+
+Acceptance:
+- Inspect `/osk review` rendering in `packages/cli/src/index.ts`.
+- If review result output omits `graphReconciliationPath`, add a concise line.
+- Keep output terminal-native only.
+
+Suggested files:
+- `packages/cli/src/index.ts`
+
+Verification:
+- `rtk rg -n "graphReconciliationPath|render.*Review|concept.*review" packages/cli/src/index.ts packages/cli/tests`
+
+## Task 80: Graph Reconciliation Doctor Check
+
+Context:
+- Stale Learn v2 graph nodes are pruned during review sync, but `doctor --full` may not detect older projects with stale nodes until next review action.
+
+Acceptance:
+- Inspect doctor/full doctor implementation.
+- Add a warning when Preference/Workflow graph contains Learn v2-generated nodes whose `concept_*` card is rejected, superseded, one-off, or missing from the Learn v2 concept store.
+- Do not mutate project state from doctor.
+
+Suggested files:
+- `packages/core/src/doctor/*`
+- `packages/core/tests/*doctor*`
+
+Verification:
+- `rtk rg -n "learn-v2|PreferenceGraph|WorkflowGraph|doctor" packages/core/src/doctor packages/core/tests`
