@@ -84,6 +84,7 @@ import {
   applyLearnV2ModelProposalOutputs,
   executeLearnV2ModelRequests,
   applyLearnV2ScopeInferenceOutputs,
+  applyLearnV2ContradictionReviewOutputs,
   activateLearnV2Concepts,
   recordLearnV2ConceptOutcome,
   reconstructPersistedLearnV2Episodes,
@@ -91,6 +92,7 @@ import {
   runPersistedLearnV2Eval,
   writeLearnV2ModelRequests,
   writeLearnV2ScopeInferenceRequests,
+  writeLearnV2ContradictionReviewRequests,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
   RawLearningModelModes,
@@ -349,6 +351,8 @@ osk.command("learn")
   .option("--prepare-model-requests", "Write prompt-safe Learn-v2 model request artifacts from the stored episode store")
   .option("--prepare-scope-requests", "Write prompt-safe Learn-v2 scope-inferencer request artifacts from the concept store")
   .option("--scope-concept <conceptId>", "Concept id to prepare for --prepare-scope-requests", collectOption, [])
+  .option("--prepare-contradiction-requests", "Write prompt-safe Learn-v2 contradiction-reviewer request artifacts from the concept conflict ledger")
+  .option("--contradiction-concept <conceptId>", "Concept id to include for --prepare-contradiction-requests", collectOption, [])
   .option("--execute-model-requests", "Run sanitized Learn-v2 model requests through OpenCode and write validated response.json files")
   .option("--apply-model-responses", "After --execute-model-requests, validate and merge written response.json files into the Learn-v2 concept store")
   .option("--model-request <path>", "Learn-v2 request directory or request-manifest.json to execute; defaults to every prepared request", collectOption, [])
@@ -357,6 +361,7 @@ osk.command("learn")
   .option("--model-request-timeout-ms <number>", "Per-request OpenCode execution timeout", parseIntegerOption, 300_000)
   .option("--model-output <path>", "Learn-v2 model JSON output file or request-manifest.json to validate and merge", collectOption, [])
   .option("--scope-output <path>", "Learn-v2 scope-inference response.json or request-manifest.json to validate and merge", collectOption, [])
+  .option("--contradiction-output <path>", "Learn-v2 contradiction-review response.json or request-manifest.json to validate and merge", collectOption, [])
   .option("--activation-query <text>", "Score reviewed Learn-v2 concepts for a task query")
   .option("--activation-path <path>", "Path hint for --activation-query", collectOption, [])
   .option("--activation-command <command>", "Command hint for --activation-query", collectOption, [])
@@ -416,6 +421,11 @@ osk.command("learn")
       output(options.json, result, renderLearnV2ScopeInferenceRequests(result));
       return;
     }
+    if (options.prepareContradictionRequests === true) {
+      const result = await writeLearnV2ContradictionReviewRequests(process.cwd(), options.contradictionConcept);
+      output(options.json, result, renderLearnV2ContradictionReviewRequests(result));
+      return;
+    }
     if (options.executeModelRequests === true) {
       const result = await executeLearnV2ModelRequests(process.cwd(), {
         requestManifests: options.modelRequest,
@@ -447,6 +457,11 @@ osk.command("learn")
     if (options.scopeOutput.length > 0) {
       const result = await applyLearnV2ScopeInferenceOutputs(process.cwd(), options.scopeOutput);
       output(options.json, result, renderLearnV2ScopeInferenceApply(result));
+      return;
+    }
+    if (options.contradictionOutput.length > 0) {
+      const result = await applyLearnV2ContradictionReviewOutputs(process.cwd(), options.contradictionOutput);
+      output(options.json, result, renderLearnV2ContradictionReviewApply(result));
       return;
     }
     if (options.recordConceptOutcome) {
@@ -2306,6 +2321,18 @@ function renderLearnV2ScopeInferenceRequests(result: Awaited<ReturnType<typeof w
   return lines.join("\n");
 }
 
+function renderLearnV2ContradictionReviewRequests(result: Awaited<ReturnType<typeof writeLearnV2ContradictionReviewRequests>>): string {
+  const lines = [
+    `Learn v2 contradiction review requests: ${result.requestCount}`,
+    `Skipped conflicts: ${result.skippedConflicts.length}`,
+    `Routing manifest: ${result.routingManifestPath}`,
+    ...result.requests.map((request) => `  ${request.reviewId}: ${request.conceptIds.join(", ")} -> ${request.expectedOutputPath}`),
+    ...result.requests.map((request) => `  manifest: ${request.manifestPath}`)
+  ];
+  lines.push(...result.instructions);
+  return lines.join("\n");
+}
+
 function renderLearnV2Reconstruct(result: Awaited<ReturnType<typeof reconstructPersistedLearnV2Episodes>>): string {
   return [
     `Learn v2 analysis frames: ${result.analysisFrameCount}`,
@@ -2378,6 +2405,24 @@ function renderLearnV2ScopeInferenceApply(result: Awaited<ReturnType<typeof appl
     `Concept drift: ${result.conceptDriftPath}`
   ];
   for (const id of result.updatedConceptIds.slice(0, 30)) lines.push(`UPDATED ${id}`);
+  for (const item of result.rejected.slice(0, 20)) lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
+  return lines.join("\n");
+}
+
+function renderLearnV2ContradictionReviewApply(result: Awaited<ReturnType<typeof applyLearnV2ContradictionReviewOutputs>>): string {
+  const lines = [
+    `Learn v2 contradiction outputs applied: ${result.outputFiles.length}`,
+    `Counterevidence: ${result.appliedCounterevidence}`,
+    `Supersessions: ${result.appliedSupersessions}`,
+    `Narrowings: ${result.appliedNarrowings}`,
+    `Rejected findings: ${result.rejected.length}`,
+    `Reviewed concepts: ${result.reviewedCount}`,
+    `Concept store: ${result.conceptStorePath}`,
+    `Review queue: ${result.reviewQueuePath}`,
+    `Conflict ledger: ${result.conflictLedgerPath}`,
+    `Declassified snippets: ${result.declassifiedSnippetsPath ?? "not written"}`,
+    `Concept drift: ${result.conceptDriftPath}`
+  ];
   for (const item of result.rejected.slice(0, 20)) lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
   return lines.join("\n");
 }

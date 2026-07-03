@@ -146,7 +146,9 @@ evidence-id, path, and leak checks pass.
 episode requests. `openskill-kit osk learn --prepare-scope-requests` writes
 scope-inferencer concept requests for cards that need clearer conditions,
 activation phrases, negative triggers, or narrower scope. `openskill-kit osk
-learn --execute-model-requests` runs prepared sanitized manifests through
+learn --prepare-contradiction-requests` writes contradiction-reviewer conflict
+requests for unresolved concept conflicts that have deterministic review ROI.
+`openskill-kit osk learn --execute-model-requests` runs prepared sanitized manifests through
 `opencode run` with the configured agent id, attached prompt/bundle files,
 project-local `--dir`, and an inline permission profile that denies
 shell/edit/write/network/task access. OSK validates the request manifest and
@@ -160,9 +162,14 @@ applies/does-not-apply conditions, narrow paths, task types, activation hints,
 negative triggers, safe command hints, and card-local counterevidence. Broader
 paths, absolute/local paths, unsafe command strings, invalid evidence ids,
 tampered prompt/bundle hashes, wrong response paths, malformed JSON, and
-secret-like content are rejected before concept store mutation. Raw-to-model
-execution remains rejected; `opencode-host-raw-allowed` is reserved for a future
-policy.
+secret-like content are rejected before concept store mutation.
+Contradiction-reviewer responses merge through `--contradiction-output`. They
+can add validated counterevidence immediately, but supersession and narrowing
+only apply when the deterministic conflict ledger already grants
+`auto-supersede` or `auto-narrow` authority; broader scopes, protected concepts,
+invalid concept/evidence ids, human-review findings, and unsafe content are
+rejected. Raw-to-model execution remains rejected; `opencode-host-raw-allowed`
+is reserved for a future policy.
 
 ## Validation
 

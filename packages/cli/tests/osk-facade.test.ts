@@ -51,6 +51,8 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--execute-model-requests");
     expect(stdout).toContain("--apply-model-responses");
     expect(stdout).toContain("--model-request <path>");
+    expect(stdout).toContain("--prepare-contradiction-requests");
+    expect(stdout).toContain("--contradiction-output <path>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
   });

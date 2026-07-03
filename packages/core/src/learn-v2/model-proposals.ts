@@ -21,10 +21,12 @@ import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import {
   type LearnV2BehaviorAtom,
   type LearnV2LlmConceptExtractionOutput,
+  type LearnV2LlmContradictionReviewOutput,
   type LearnV2LlmScopeInferenceOutput,
   type LearnV2TaskEpisode
 } from "./schemas.js";
 import { parseLearnV2LlmScopeInferenceOutput, validateLearnV2ScopeInferenceForCard } from "./scope-proposals.js";
+import { parseLearnV2LlmContradictionReviewOutput, validateLearnV2ContradictionReviewForManifest } from "./contradiction-proposals.js";
 import { learnV2Hash } from "./utils.js";
 
 const execFileAsync = promisify(execFile);
@@ -134,7 +136,9 @@ interface LearnV2ModelRequestManifest {
   generatedAt: string;
   episodeId: string;
   conceptId?: string;
-  modelRole: "concept-extractor" | "scope-inferencer";
+  reviewId?: string;
+  conceptIds?: string[];
+  modelRole: "concept-extractor" | "scope-inferencer" | "contradiction-reviewer";
   routingPolicy: "learn-v2-roi-v1";
   routingReasons: string[];
   priority: number;
@@ -143,7 +147,7 @@ interface LearnV2ModelRequestManifest {
   promptHash: string;
   bundleHash: string;
   expectedOutputPath: string;
-  outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1" | "openskill-kit.learn-v2.llm-scope-inference-output.v1";
+  outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1" | "openskill-kit.learn-v2.llm-scope-inference-output.v1" | "openskill-kit.learn-v2.llm-contradiction-review-output.v1";
   opencodeAgentId: string;
   agentFile: string;
   modelRoutingArtifactPath: string;
@@ -564,8 +568,17 @@ export async function executeLearnV2ModelRequests(
 async function validateExecutedModelOutput(
   root: string,
   manifest: LearnV2ModelRequestManifest,
-  parsed: LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput
+  parsed: LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput | LearnV2LlmContradictionReviewOutput
 ): Promise<{ ok: true } | { ok: false; reason: "missing-episode-store" | "missing-concept-store" | "stale-request-manifest" | "model-output-evidence-validation-failed"; detail: string }> {
+  if (manifest.modelRole === "contradiction-reviewer" && manifest.outputSchema === "openskill-kit.learn-v2.llm-contradiction-review-output.v1") {
+    const config = await readProjectConfig(root);
+    const validation = await validateLearnV2ContradictionReviewForManifest(root, config, manifest as Parameters<typeof validateLearnV2ContradictionReviewForManifest>[2], parsed as LearnV2LlmContradictionReviewOutput);
+    if (!validation.ok) {
+      return { ok: false, reason: "model-output-evidence-validation-failed", detail: `${validation.reason}: ${validation.detail}` };
+    }
+    return { ok: true };
+  }
+
   if (manifest.modelRole === "scope-inferencer" && manifest.outputSchema === "openskill-kit.learn-v2.llm-scope-inference-output.v1") {
     const config = await readProjectConfig(root);
     const store = await readLearnV2ConceptStore(root).catch((error: unknown) => ({
@@ -656,11 +669,11 @@ function safeParseModelOutput(
   outputPath: string,
   rejected: LearnV2ModelProposalApplyResult["rejected"],
   outputSchema: LearnV2ModelRequestManifest["outputSchema"] = "openskill-kit.learn-v2.llm-concept-extraction-output.v1"
-): LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput | undefined {
+): LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput | LearnV2LlmContradictionReviewOutput | undefined {
   try {
-    return outputSchema === "openskill-kit.learn-v2.llm-scope-inference-output.v1"
-      ? parseLearnV2LlmScopeInferenceOutput(text)
-      : parseLearnV2LlmConceptExtractionOutput(text);
+    if (outputSchema === "openskill-kit.learn-v2.llm-scope-inference-output.v1") return parseLearnV2LlmScopeInferenceOutput(text);
+    if (outputSchema === "openskill-kit.learn-v2.llm-contradiction-review-output.v1") return parseLearnV2LlmContradictionReviewOutput(text);
+    return parseLearnV2LlmConceptExtractionOutput(text);
   } catch (error) {
     rejected.push({ outputPath, id: "file", reason: "invalid-json-or-schema", detail: error instanceof Error ? error.message : String(error) });
     return undefined;
@@ -779,6 +792,13 @@ function parseModelRequestManifest(text: string, manifestPath: string): LearnV2M
     value.outputSchema === "openskill-kit.learn-v2.llm-scope-inference-output.v1" &&
     value.opencodeAgentId === "osk-learn-v2-scope-inferencer" &&
     typeof value.conceptId === "string"
+  ) || (
+    value.modelRole === "contradiction-reviewer" &&
+    value.outputSchema === "openskill-kit.learn-v2.llm-contradiction-review-output.v1" &&
+    value.opencodeAgentId === "osk-learn-v2-contradiction-reviewer" &&
+    typeof value.reviewId === "string" &&
+    Array.isArray(value.conceptIds) &&
+    value.conceptIds.every((item) => typeof item === "string")
   );
   if (
     value.schemaVersion !== "openskill-kit.learn-v2.model-request-manifest.v1" ||
@@ -844,8 +864,8 @@ function buildOpenCodeInvocation(input: {
   attachUrl?: string;
   agent: { model: string; purpose: string; prompt: string; maxSteps?: number; reasoningEffort?: string };
 }): LearnV2OpenCodeInvocation {
-  const promptFile = input.manifest.modelRole === "scope-inferencer" ? "scope-inference-prompt.md" : "concept-extraction-prompt.md";
-  const bundleFile = input.manifest.modelRole === "scope-inferencer" ? "concept-scope-bundle.json" : "episode-learning-bundle.json";
+  const promptFile = promptBasenameForModelRole(input.manifest.modelRole);
+  const bundleFile = bundleBasenameForModelRole(input.manifest.modelRole);
   const args = [
     "run",
     "--agent", input.manifest.opencodeAgentId,
@@ -955,6 +975,18 @@ function shapeOpenCodeArgs(args: string[]): string[] {
   });
 }
 
+function promptBasenameForModelRole(role: LearnV2ModelRequestManifest["modelRole"]): string {
+  if (role === "scope-inferencer") return "scope-inference-prompt.md";
+  if (role === "contradiction-reviewer") return "contradiction-review-prompt.md";
+  return "concept-extraction-prompt.md";
+}
+
+function bundleBasenameForModelRole(role: LearnV2ModelRequestManifest["modelRole"]): string {
+  if (role === "scope-inferencer") return "concept-scope-bundle.json";
+  if (role === "contradiction-reviewer") return "contradiction-review-bundle.json";
+  return "episode-learning-bundle.json";
+}
+
 async function validateModelRequestManifestFiles(
   root: string,
   manifest: LearnV2ModelRequestManifest,
@@ -966,8 +998,8 @@ async function validateModelRequestManifestFiles(
   const promptPath = path.resolve(root, manifest.promptPath);
   const bundlePath = path.resolve(root, manifest.bundlePath);
   const expectedOutputPath = path.resolve(root, manifest.expectedOutputPath);
-  const expectedPromptBasename = manifest.modelRole === "scope-inferencer" ? "scope-inference-prompt.md" : "concept-extraction-prompt.md";
-  const expectedBundleBasename = manifest.modelRole === "scope-inferencer" ? "concept-scope-bundle.json" : "episode-learning-bundle.json";
+  const expectedPromptBasename = promptBasenameForModelRole(manifest.modelRole);
+  const expectedBundleBasename = bundleBasenameForModelRole(manifest.modelRole);
   const expectedFiles = [
     { label: "promptPath", file: promptPath, basename: expectedPromptBasename },
     { label: "bundlePath", file: bundlePath, basename: expectedBundleBasename },

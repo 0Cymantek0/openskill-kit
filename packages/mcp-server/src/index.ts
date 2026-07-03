@@ -64,6 +64,8 @@ import {
   writeLearnV2ModelRequests,
   writeLearnV2ScopeInferenceRequests,
   applyLearnV2ScopeInferenceOutputs,
+  writeLearnV2ContradictionReviewRequests,
+  applyLearnV2ContradictionReviewOutputs,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
   explainInteractionImport,
@@ -596,6 +598,23 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
   );
 
   registerTool(
+    "osk_prepare_learn_v2_contradiction_requests",
+    {
+      title: "OpenSkillKit Learn v2 Contradiction Request Preparation",
+      description: "Write prompt-safe concept-conflict bundles and contradiction-review prompts for OpenCode-configured agents. Does not call a provider.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        conceptIds: z.array(z.string().min(1)).default([])
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, conceptIds }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await writeLearnV2ContradictionReviewRequests(root, conceptIds), root);
+    }
+  );
+
+  registerTool(
     "osk_execute_learn_v2_model_requests",
     {
       title: "OpenSkillKit Learn v2 OpenCode Model Execution",
@@ -651,6 +670,23 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     async ({ projectRoot, outputPaths }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await withMcpCommandTelemetry(root, "learn", () => applyLearnV2ScopeInferenceOutputs(root, outputPaths.map((file) => resolvePath(file, root)))), root);
+    }
+  );
+
+  registerTool(
+    "osk_apply_learn_v2_contradiction_outputs",
+    {
+      title: "OpenSkillKit Learn v2 Contradiction Output Apply",
+      description: "Validate OpenCode-routed contradiction-review JSON outputs against stored Learn v2 concepts and merge only deterministic-ledger-authorized counterevidence, narrowing, or supersession proposals.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        outputPaths: z.array(z.string().min(1)).min(1)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, outputPaths }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "learn", () => applyLearnV2ContradictionReviewOutputs(root, outputPaths.map((file) => resolvePath(file, root)))), root);
     }
   );
 

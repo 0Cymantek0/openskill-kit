@@ -421,6 +421,42 @@ export const LearnV2LlmScopeInferenceOutputSchema = z.object({
 });
 export type LearnV2LlmScopeInferenceOutput = z.infer<typeof LearnV2LlmScopeInferenceOutputSchema>;
 
+export const LearnV2LlmContradictionReviewOutputSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.llm-contradiction-review-output.v1"),
+  reviewId: z.string().min(1),
+  findings: z.array(z.object({
+    id: z.string().min(1).optional(),
+    kind: z.enum(["counterevidence", "supersession", "scope-narrowing", "human-review"]),
+    conceptIds: z.array(z.string().min(1)).min(1).max(2),
+    evidenceIds: z.array(z.string().min(1)).default([]),
+    rationale: z.string().min(1).max(800),
+    confidence: z.number().min(0).max(1).optional(),
+    counterevidence: z.array(z.object({
+      conceptId: z.string().min(1),
+      evidenceId: z.string().min(1),
+      reason: z.string().min(1).max(300)
+    })).default([]),
+    supersession: z.object({
+      supersededId: z.string().min(1),
+      supersededById: z.string().min(1),
+      reason: z.string().min(1).max(300)
+    }).optional(),
+    narrowScopes: z.array(z.object({
+      conceptId: z.string().min(1),
+      paths: z.array(z.string().min(1).max(240)).optional(),
+      taskTypes: z.array(z.string().min(1).max(80)).optional(),
+      negativeTriggers: z.array(z.string().min(1).max(160)).optional()
+    })).default([]),
+    requiresHumanReview: z.boolean().default(true)
+  })).default([]),
+  rejected: z.array(z.object({
+    reason: z.string().min(1).max(300),
+    conceptIds: z.array(z.string().min(1)).default([]),
+    evidenceIds: z.array(z.string().min(1)).default([])
+  })).default([])
+});
+export type LearnV2LlmContradictionReviewOutput = z.infer<typeof LearnV2LlmContradictionReviewOutputSchema>;
+
 export const LearnV2ConceptCardSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.concept-card.v1"),
   id: z.string().min(1),

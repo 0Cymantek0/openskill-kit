@@ -43,6 +43,8 @@ import {
   writeLearnV2ModelRequests,
   writeLearnV2ScopeInferenceRequests,
   applyLearnV2ScopeInferenceOutputs,
+  writeLearnV2ContradictionReviewRequests,
+  applyLearnV2ContradictionReviewOutputs,
   writeLearnV2EpisodeStore,
   writeLearnV2ConflictLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
@@ -1446,6 +1448,35 @@ describe("learn-v2 substrate", () => {
     expect(result.learnV2).toBeTruthy();
   });
 
+  it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
+    const root = await tempProject();
+    const terminal = path.join(os.tmpdir(), `osk-review-needed-${Date.now()}.log`);
+    await writeFile(terminal, [
+      "$ npm test -- parser",
+      "PASS parser suite",
+      "user: Always prefer focused parser regression tests for packages/core/src/parser.ts parser changes."
+    ].join("\n"), "utf8");
+
+    const result = await runRawLocalLearning(root, {
+      sourceFiles: [terminal],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:01:10Z")
+    });
+
+    expect(result.sources[0]!.projectRelevance.decision).not.toBe("include");
+    expect(result.digest.sourcesIncluded).toBe(0);
+    expect(result.digest.sourcesAsk + result.digest.sourcesExcluded).toBe(1);
+    expect(result.digest.currentRunConceptCards).toBe(0);
+    expect(result.digest.behaviorAtoms).toBe(0);
+    expect(result.digest.canonicalConceptStateWritten).toBe(false);
+    expect(result.learnV2.episodes).toEqual([]);
+    expect(result.learnV2.currentRunConcepts).toEqual([]);
+    expect((await readLearnV2ConceptStore(root)).cards).toEqual([]);
+    expect(result.sources[0]!.rawVaultRecordPath).toBeUndefined();
+    expect(await readText(result.sources[0]!.analysisFramePath)).toContain("normalizedEvidence");
+  });
+
   it("preserves existing project relevance calibration across raw learning runs", async () => {
     const root = await tempProject();
     const calibrationPath = path.join(root, ".openskill-kit", "learn-v2", "relevance-calibration.json");
@@ -2007,6 +2038,128 @@ describe("learn-v2 substrate", () => {
     const unsafe = await applyLearnV2ScopeInferenceOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:22Z"));
     expect(unsafe.updatedConceptIds).toEqual([]);
     expect(unsafe.rejected[0]?.reason).toBe("scope-broadening-rejected");
+  });
+
+  it("prepares executes and applies contradiction-reviewer counterevidence under deterministic ledger authority", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:25Z");
+    const cards = mergeLearnV2ConceptCards([
+      behaviorAtom("contradict_positive", "Prefer focused parser regression tests for parser changes.", "positive"),
+      behaviorAtom("contradict_negative", "Avoid focused parser regression tests for parser changes.", "negative")
+    ], now);
+    await writeLearnV2ConceptStore(root, cards, now);
+    await writeLearnV2EpisodeStore(root, reconstructLearnV2Episodes([
+      normalizedMessage("ev_contradiction_episode", "Parser review showed focused regression guidance has conflicting evidence.", "reviewer")
+    ]), now);
+
+    const requests = await writeLearnV2ContradictionReviewRequests(root, [], now);
+    expect(requests.requestCount).toBe(1);
+    const request = requests.requests[0]!;
+    const prompt = await readText(request.promptPath);
+    const bundle = await readText(request.bundlePath);
+    const manifest = JSON.parse(await readText(request.manifestPath));
+    expect(prompt).toContain("ContradictionReviewBundle");
+    expect(prompt).not.toContain("raw_contradict");
+    expect(bundle).not.toContain("raw_contradict");
+    expect(manifest.modelRole).toBe("contradiction-reviewer");
+    expect(manifest.outputSchema).toBe("openskill-kit.learn-v2.llm-contradiction-review-output.v1");
+    expect(manifest.opencodeAgentId).toBe("osk-learn-v2-contradiction-reviewer");
+    expect(manifest.rawRefsIncluded).toBe(false);
+    expect(JSON.stringify(manifest)).not.toContain(root);
+
+    const targetConceptId = request.conceptIds[0]!;
+    const targetEvidenceId = cards.find((card) => card.id === targetConceptId)!.evidenceIds[0]!;
+    const counterevidenceProposal = {
+      schemaVersion: "openskill-kit.learn-v2.llm-contradiction-review-output.v1",
+      reviewId: request.reviewId,
+      findings: [{
+        kind: "counterevidence",
+        conceptIds: request.conceptIds,
+        evidenceIds: [targetEvidenceId],
+        rationale: "The opposing concept limits when the target concept should apply.",
+        counterevidence: [{
+          conceptId: targetConceptId,
+          evidenceId: targetEvidenceId,
+          reason: "Contradiction reviewer found bounded counterevidence for parser test guidance."
+        }],
+        requiresHumanReview: false
+      }],
+      rejected: []
+    };
+
+    const executed = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      opencodeCommand: "opencode-test",
+      runner: async (invocation) => {
+        const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}");
+        expect(invocation.args).toContain("osk-learn-v2-contradiction-reviewer");
+        expect(invocation.args).toContain(request.promptPath);
+        expect(invocation.args).toContain(request.bundlePath);
+        expect(JSON.stringify(config)).toContain("osk-learn-v2-contradiction-reviewer");
+        expect(config.agent["osk-learn-v2-contradiction-reviewer"].permission.bash).toBe("deny");
+        expect(JSON.stringify(invocation.args)).not.toContain("raw_contradict");
+        return {
+          exitCode: 0,
+          stdout: `diagnostic\n\`\`\`json\n${JSON.stringify(counterevidenceProposal)}\n\`\`\``,
+          stderr: "contradiction diagnostic must be hashed only"
+        };
+      }
+    });
+    expect(executed.writtenCount).toBe(1);
+    expect(await readText(executed.executionReportPath)).not.toContain("contradiction diagnostic must be hashed only");
+
+    const applied = await applyLearnV2ContradictionReviewOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:26Z"));
+    expect(applied.appliedCounterevidence).toBe(1);
+    expect(applied.appliedSupersessions).toBe(0);
+    expect(applied.appliedNarrowings).toBe(0);
+    expect(applied.rejected).toEqual([]);
+    expect(await readText(applied.reviewQueuePath)).toContain("Contradiction reviewer found bounded counterevidence");
+    const updatedStore = await readLearnV2ConceptStore(root);
+    expect(updatedStore.cards.find((card) => card.id === targetConceptId)?.counterevidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ evidenceId: targetEvidenceId, reason: "Contradiction reviewer found bounded counterevidence for parser test guidance." })
+    ]));
+
+    await writeFile(request.expectedOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-contradiction-review-output.v1",
+      reviewId: request.reviewId,
+      findings: [{
+        kind: "scope-narrowing",
+        conceptIds: request.conceptIds,
+        evidenceIds: [targetEvidenceId],
+        rationale: "Unsafe model tried to broaden a parser file concept to all packages.",
+        narrowScopes: [{
+          conceptId: targetConceptId,
+          paths: ["packages"],
+          taskTypes: ["parser-change"]
+        }],
+        requiresHumanReview: false
+      }],
+      rejected: []
+    }), "utf8");
+    const unsafeNarrow = await applyLearnV2ContradictionReviewOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:27Z"));
+    expect(unsafeNarrow.appliedNarrowings).toBe(0);
+    expect(unsafeNarrow.rejected[0]?.reason).toBe("invalid-narrow-scope");
+
+    await writeFile(request.expectedOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-contradiction-review-output.v1",
+      reviewId: request.reviewId,
+      findings: [{
+        kind: "supersession",
+        conceptIds: request.conceptIds,
+        evidenceIds: [targetEvidenceId],
+        rationale: "Unsafe model tried to supersede a manual direct conflict.",
+        supersession: {
+          supersededId: request.conceptIds[0],
+          supersededById: request.conceptIds[1],
+          reason: "Direct opposite conflict still needs human review."
+        },
+        requiresHumanReview: false
+      }],
+      rejected: []
+    }), "utf8");
+    const unsafeSupersession = await applyLearnV2ContradictionReviewOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:28Z"));
+    expect(unsafeSupersession.appliedSupersessions).toBe(0);
+    expect(unsafeSupersession.rejected[0]?.reason).toBe("unsafe-supersession");
   });
 
   it("rejects unsafe or malformed OpenCode execution outputs before writing response files", async () => {

@@ -1496,3 +1496,44 @@ Suggested files:
 
 Verification:
 - `rtk npm test -- packages/cli/tests/osk-facade.test.ts`
+
+## Task 83: Contradiction Tool Descriptor Copy Audit
+
+Context:
+- Learn v2 now exposes contradiction-reviewer prepare/apply through CLI and advanced MCP.
+- Core tests cover behavior, but generated descriptor/help artifacts may lag the source tool descriptions.
+
+Acceptance:
+- Inspect generated MCP descriptor/profile artifacts and docs for `osk_prepare_learn_v2_contradiction_requests` and `osk_apply_learn_v2_contradiction_outputs`.
+- Ensure copy says: sanitized conflict bundles, strict JSON validation, no raw evidence dispatch, and only deterministic-ledger-authorized supersession/narrowing.
+- If generated artifacts are stale, regenerate them with existing repo commands and keep diffs mechanical.
+- Do not change core contradiction behavior.
+
+Suggested files:
+- `docs/mcp-profiles.md`
+- `.openskill-kit/compiled/plugin/mcp/descriptors.json`
+- `.openskill-kit/compiled/plugin/mcp/profiles.json`
+- `packages/agent-plugin-bundle/mcp/descriptors.json`
+- `packages/agent-plugin-bundle/mcp/profiles.json`
+
+Verification:
+- `rtk rg -n "contradiction_requests|contradiction_outputs|contradiction-review" docs .openskill-kit/compiled/plugin/mcp packages/agent-plugin-bundle/mcp packages/mcp-server/src`
+
+## Task 84: Contradiction Review Queue Copy Audit
+
+Context:
+- Contradiction-reviewer outputs can add counterevidence and may reject human-review, unsafe supersession, or unsafe narrowing findings.
+- Review cards should make model-added counterevidence and remaining conflict state easy to see in terminal markdown.
+
+Acceptance:
+- Inspect `packages/core/src/learn-v2/review.ts` and generated review markdown from a small conflict fixture.
+- Confirm counterevidence reasons, unresolved conflict ids, and suggested resolution/action are visible after `--contradiction-output`.
+- If any field is hidden, add concise markdown lines. No browser UI.
+- Add or update a focused test only if missing behavior is changed.
+
+Suggested files:
+- `packages/core/src/learn-v2/review.ts`
+- `packages/core/tests/learn-v2.test.ts`
+
+Verification:
+- `rtk npm test -- packages/core/tests/learn-v2.test.ts`
