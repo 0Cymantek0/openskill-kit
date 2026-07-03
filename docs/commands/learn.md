@@ -111,6 +111,63 @@ retrieval and harmful or superseded outcomes suppress stale concepts. Both
 `activation-runs/` and `outcomes/` are project-local, gitignored, and excluded
 from compile/pack/sync/plugin outputs.
 
+## Activation No-Match Output
+
+When `--activation-query` finds no positive match, `/osk learn` prints
+terminal-native diagnostics plus a next-step hint. The guidance differs
+depending on whether any active/locked concepts exist at all.
+
+No active or locked concepts yet, but reviewable candidates are staged:
+
+```text
+$ openskill-kit osk learn --activation-query "refactor task"
+
+Learn v2 activation matches: 0
+Suppressed: 0
+Index entries: 3 total (0 active, 0 locked, 3 candidate/staged/conflict)
+Scored: 0; positive matches before limit: 0; suppressed before limit: 0
+Activation index: [PROJECT_ROOT]/.openskill-kit/learn-v2/activation-index.json
+Activation telemetry: [PROJECT_ROOT]/.openskill-kit/learn-v2/activation-runs/2026-07.jsonl
+No active or locked concepts are available. Review and accept/lock Learn v2 concept cards before relying on activation.
+Candidate concepts exist; rerun with --include-candidate-concepts to inspect reviewable matches without activating them.
+```
+
+Inspect those reviewable candidates without activating them:
+
+```text
+$ openskill-kit osk learn --activation-query "refactor task" --include-candidate-concepts
+
+Learn v2 activation matches: 1
+Suppressed: 0
+Index entries: 3 total (0 active, 0 locked, 3 candidate/staged/conflict)
+Scored: 3; positive matches before limit: 1; suppressed before limit: 0
+Activation index: [PROJECT_ROOT]/.openskill-kit/learn-v2/activation-index.json
+Activation telemetry: [PROJECT_ROOT]/.openskill-kit/learn-v2/activation-runs/2026-07.jsonl
+  [0.420] concept_a1b2c3 Focused regression fixture (candidate; path:packages/core/src/**, task:parser-change)
+```
+
+Active/locked concepts exist but none scored above zero for the query — add
+path, command, or task-type hints, or narrow the query:
+
+```text
+$ openskill-kit osk learn --activation-query "refactor task"
+
+Learn v2 activation matches: 0
+Suppressed: 0
+Index entries: 5 total (2 active, 0 locked, 3 candidate/staged/conflict)
+Scored: 2; positive matches before limit: 0; suppressed before limit: 0
+Activation index: [PROJECT_ROOT]/.openskill-kit/learn-v2/activation-index.json
+Activation telemetry: [PROJECT_ROOT]/.openskill-kit/learn-v2/activation-runs/2026-07.jsonl
+No active concept scored above zero for this query. Add path, command, or task-type hints, or narrow the query.
+Candidate concepts exist; rerun with --include-candidate-concepts to inspect reviewable matches without activating them.
+```
+
+`--include-candidate-concepts` only reveals candidate/staged/conflict entries
+for inspection; it does not activate them. Accepting or locking concepts still
+requires `/osk review`. Activation telemetry records only hashed query/path/
+command fields and matched concept ids, so the sample output above is
+representative and never includes raw query text, raw paths, or raw commands.
+
 ## Output Contract
 
 - Sources considered and used.
