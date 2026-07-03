@@ -22,6 +22,13 @@ export const LEARN_V2_GENERATED_DIRS = [
   ".openskill-kit/learn-v2/review/",
   ".openskill-kit/learn-v2/evals/",
   ".openskill-kit/learn-v2/outcomes/",
+  // Local hashed activation telemetry (schema version, query hash, sorted path
+  // hashes, sorted command hashes, task types, include-candidates flag,
+  // negative-signal hashes, index/match/suppressed counts, matched concept
+  // ids). Written by `recordLearnV2ConceptActivationRun`; consumed locally by
+  // drift detection + activation diagnostics. Raw query text, raw paths, and
+  // raw commands are never recorded. Project-local, gitignored, and excluded
+  // from compile/pack/sync/plugin outputs by `getCleanedLearnV2Paths`.
   ".openskill-kit/learn-v2/activation-runs/",
 
   // Generated model request/response artifacts

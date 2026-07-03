@@ -202,6 +202,23 @@ export function learnV2ConceptOutcomePath(root: string, now = new Date()): strin
   return path.join(root, ".openskill-kit", "learn-v2", "outcomes", `${now.toISOString().slice(0, 7)}.jsonl`);
 }
 
+/**
+ * Absolute path for the current month's activation-run JSONL telemetry.
+ *
+ * Activation runs are project-local diagnostics, not shareable artifacts. The
+ * file lives under `.openskill-kit/learn-v2/activation-runs/` which is
+ * gitignored (see `LEARN_V2_GENERATED_DIRS` in `./paths.ts`) and excluded from
+ * behavior packs, model-routing outputs, and compiled plugin artifacts (see
+ * the boundary hygiene tests in `packages/core/tests/learn-v2-hygiene.test.ts`
+ * and the pack audit in `packages/core/src/sync/bundle.ts`).
+ *
+ * Only hashed signals ever touch this file: query/path/command hashes, sorted
+ * path hashes, sorted command hashes, task types (already declassified enums
+ * supplied by the caller), include-candidates flag, index entry count, match
+ * count, suppressed count, and matched concept ids. Raw query text, raw paths,
+ * and raw commands are never written here by design and the
+ * `LearnV2ConceptActivationRunSchema` is the single enforcing contract.
+ */
 export function learnV2ConceptActivationRunPath(root: string, now = new Date()): string {
   return path.join(root, ".openskill-kit", "learn-v2", "activation-runs", `${now.toISOString().slice(0, 7)}.jsonl`);
 }

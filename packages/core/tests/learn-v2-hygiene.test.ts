@@ -40,16 +40,36 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
   it("proves pack/export excludes private Learn v2 directories", async () => {
     const root = await tempProject();
 
-    // Simulate private Learn v2 artifacts being created
+    // Simulate private Learn v2 artifacts being created.
+    //
+    // Every entry here represents project-local, non-shareable state that must
+    // stay inside `.openskill-kit/learn-v2/` and never reach behavior packs,
+    // model-routing artifacts, or compiled plugin outputs. The comment on each
+    // path documents the boundary so future contributors understand why the
+    // `privatePaths` list exists and why adding a new generated path without
+    // also updating `paths.ts` must fail hygiene.
+    //
+    // `activation-runs` specifically is local hashed activation telemetry:
+    // schema version, query hash, sorted path hashes, sorted command hashes,
+    // task types, include-candidates flag, index entry count, match count,
+    // suppressed count, and matched concept ids only (`recordLearnV2ConceptActivationRun`
+    // in `packages/core/src/learn-v2/activation.ts`). It is consumed locally by
+    // drift detection (`detectLearnV2ConceptDrift`) and activation diagnostics.
+    // It is never a portable shareable artifact, and raw queries, paths, or
+    // commands are never written into it.
     const privatePaths = [
-      "learn-v2/raw-vault/records/raw_12345678.json",
-      "learn-v2/declassified-snippets/snippet.json",
-      "learn-v2/evidence-quality/quality.json",
-      "learn-v2/conflicts/ledger.json",
-      "learn-v2/drift/drift.json",
-      "learn-v2/observability/obs.json",
-      "learn-v2/activation-runs/2026-06.jsonl", // local hashed activation telemetry (query/path/command hashes + matched concept ids only); diagnostics, never a shareable artifact
-      "learn-v2/activation-index.json"
+      "learn-v2/raw-vault/records/raw_12345678.json", // content-addressed raw blobs; only raw refs (e.g. raw_12345678) leave this dir, declassified
+      "learn-v2/declassified-snippets/snippet.json", // bounded declassified review snippets; safe-text only, but still local-only diagnostics
+      "learn-v2/evidence-quality/quality.json", // per-record quality scores over normalized analysis frames; local prioritization aid
+      "learn-v2/conflicts/ledger.json", // deterministic concept conflict ledger; drives review queue, never shareable on its own
+      "learn-v2/drift/drift.json", // stale/supersession/low-activation diagnostics derived from local outcomes + activation runs
+      "learn-v2/observability/obs.json", // declassified pipeline observability report; local rollout-facing diagnostics only
+      // Local hashed activation telemetry: query/path/command hashes plus matched
+      // concept ids and counts. Used by drift detection + activation run
+      // diagnostics. Raw query text, raw paths, and raw commands are never
+      // recorded. Local-only by design; never a shareable artifact.
+      "learn-v2/activation-runs/2026-06.jsonl",
+      "learn-v2/activation-index.json" // activation index built from reviewed concept store; tied to local concept ids
     ];
 
     for (const rel of privatePaths) {
@@ -86,6 +106,34 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
     const extractedFilePath = path.join(pack.packPath, badPath);
     await fs.mkdir(path.dirname(extractedFilePath), { recursive: true });
     await writeFile(extractedFilePath, "dummy", "utf8");
+
+    const verified = await verifyProjectBehaviorPack(pack.packPath);
+    expect(verified.status).toBe("fail");
+    expect(verified.issues.some((issue) => issue.includes("Private path included"))).toBe(true);
+  });
+
+  it("proves pack verification fails if manifest smuggles a Learn v2 activation-run file", async () => {
+    // Defense-in-depth sibling of the generic private-path injection test above.
+    //
+    // `activation-runs/*.jsonl` is local hashed activation telemetry. Even if a
+    // future bug or attacker attempts to smuggle a run file into a behavior pack
+    // via the manifest, verification must refuse it. This test pins the boundary
+    // for the activation-runs directory independently of any other private path
+    // so regressions in private-path filter rules for activation telemetry are
+    // caught on their own.
+    const root = await tempProject();
+    const pack = await exportProjectBehaviorPack(root);
+
+    const manifestPath = path.join(pack.packPath, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    const badPath = ".openskill-kit/learn-v2/activation-runs/2026-06.jsonl";
+    manifest.files.push(badPath);
+    manifest.hashes[badPath] = "dummyhash";
+    await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+
+    const extractedFilePath = path.join(pack.packPath, badPath);
+    await fs.mkdir(path.dirname(extractedFilePath), { recursive: true });
+    await writeFile(extractedFilePath, JSON.stringify({ telemetry: "smuggled" }), "utf8");
 
     const verified = await verifyProjectBehaviorPack(pack.packPath);
     expect(verified.status).toBe("fail");
