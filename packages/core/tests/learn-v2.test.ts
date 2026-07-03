@@ -2784,6 +2784,59 @@ describe("learn-v2 substrate", () => {
     expect(reconciliation.prunedWorkflowNodeIds).toEqual([`workflow_${concept!.id}`]);
   });
 
+  it("prunes stale Learn v2 graph nodes even when active concept compilation is skipped", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [parserConcept, lexerConcept] = mergeLearnV2ConceptCards([
+      behaviorAtom("graph_skip_compile_parser_tests", "Prefer focused parser tests for parser changes.", "positive"),
+      {
+        ...behaviorAtom("graph_skip_compile_lexer_tests", "Prefer focused lexer tests for lexer changes.", "positive"),
+        scope: {
+          level: "path",
+          paths: ["packages/core/src/lexer.ts"],
+          taskTypes: ["lexer-change"]
+        }
+      }
+    ], now);
+    await writeLearnV2ConceptStore(root, [parserConcept!, lexerConcept!], now);
+
+    await applyLearnV2ConceptReview(root, {
+      accept: [parserConcept!.id, lexerConcept!.id],
+      narrowScopes: [
+        { id: parserConcept!.id, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] },
+        { id: lexerConcept!.id, paths: ["packages/core/src/lexer.ts"], taskTypes: ["lexer-change"] }
+      ],
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+    const config = await readProjectConfig(root);
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${parserConcept!.id}`)).toBe(true);
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${lexerConcept!.id}`)).toBe(true);
+    expect((await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:01:00Z"))).nodes.some((node) => node.id === `workflow_${parserConcept!.id}`)).toBe(true);
+    expect((await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:01:00Z"))).nodes.some((node) => node.id === `workflow_${lexerConcept!.id}`)).toBe(true);
+
+    const rejected = await applyLearnV2ConceptReview(root, {
+      reject: [parserConcept!.id],
+      compileActive: false,
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+    const preferenceGraph = await readPreferenceGraph(root);
+    const workflowGraph = await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:02:00Z"));
+
+    expect(preferenceGraph.nodes.some((node) => node.id === `pref_${parserConcept!.id}`)).toBe(false);
+    expect(workflowGraph.nodes.some((node) => node.id === `workflow_${parserConcept!.id}`)).toBe(false);
+    expect(preferenceGraph.nodes.some((node) => node.id === `pref_${lexerConcept!.id}`)).toBe(true);
+    expect(workflowGraph.nodes.some((node) => node.id === `workflow_${lexerConcept!.id}`)).toBe(true);
+    expect(rejected.prunedPreferenceNodeIds).toEqual([`pref_${parserConcept!.id}`]);
+    expect(rejected.prunedWorkflowNodeIds).toEqual([`workflow_${parserConcept!.id}`]);
+    expect(rejected.messages.join("\n")).toContain("Active concept graph sync skipped by option");
+    const reconciliation = JSON.parse(await readText(rejected.graphReconciliationPath!));
+    expect(reconciliation.activeConceptIds).toEqual([lexerConcept!.id]);
+    expect(reconciliation.incomingPreferenceNodeIds).toEqual([`pref_${lexerConcept!.id}`]);
+    expect(reconciliation.incomingWorkflowNodeIds).toEqual([`workflow_${lexerConcept!.id}`]);
+    expect(reconciliation.prunedPreferenceNodeIds).toEqual([`pref_${parserConcept!.id}`]);
+    expect(reconciliation.prunedWorkflowNodeIds).toEqual([`workflow_${parserConcept!.id}`]);
+  });
+
   it("merges splits and supersedes concept cards with lifecycle-safe review operations", async () => {
     const root = await tempProject();
     const transcript = path.join(root, "session.md");

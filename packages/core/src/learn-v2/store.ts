@@ -4,7 +4,7 @@ import type { ProjectConfig } from "../config/schema.js";
 import { readProjectConfig } from "../events/store.js";
 import { PreferenceGraphSchema, type PreferenceGraph, type PreferenceNode } from "../preferences/schema.js";
 import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowNode } from "../workflows/schema.js";
-import { readWorkflowGraph, writeWorkflowGraph } from "../workflows/store.js";
+import { readWorkflowGraph, workflowGraphFile, writeWorkflowGraph } from "../workflows/store.js";
 import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { compileLearnV2ConceptPreview } from "./compile.js";
 import {
@@ -302,6 +302,13 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       graphReconciliationPath = synced.graphReconciliationPath;
       prunedPreferenceNodeIds = synced.prunedPreferenceNodeIds;
       prunedWorkflowNodeIds = synced.prunedWorkflowNodeIds;
+    } else {
+      const pruned = await pruneInactiveLearnV2CompatibilityGraphNodes(root, nextStore.cards, now);
+      preferenceGraphPath = pruned.preferenceGraphPath;
+      workflowGraphPath = pruned.workflowGraphPath;
+      graphReconciliationPath = pruned.graphReconciliationPath;
+      prunedPreferenceNodeIds = pruned.prunedPreferenceNodeIds;
+      prunedWorkflowNodeIds = pruned.prunedWorkflowNodeIds;
     }
     const reviewedCount = nextStore.cards.filter((card) => before.get(card.id) !== card.status || modifiedIds.has(card.id) || !before.has(card.id)).length;
     return {
@@ -323,7 +330,9 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
         ...(prunedPreferenceNodeIds.length || prunedWorkflowNodeIds.length
           ? [`Pruned stale Learn v2 graph nodes: preferences=${prunedPreferenceNodeIds.length}, workflows=${prunedWorkflowNodeIds.length}.`]
           : []),
-        options.compileActive === false ? "Active concept graph sync skipped by option." : "Active concepts synced into preference/workflow graph compatibility outputs."
+        options.compileActive === false
+          ? "Active concept graph sync skipped by option; stale generated compatibility graph nodes checked for pruning."
+          : "Active concepts synced into preference/workflow graph compatibility outputs."
       ],
       store: nextStore
     };
@@ -383,6 +392,49 @@ export async function syncLearnV2ActiveConcepts(projectRoot: string, cards: Lear
   return {
     preferenceGraphPath: preferenceSync.graphPath,
     workflowGraphPath: workflowSync.graphPath,
+    graphReconciliationPath,
+    prunedPreferenceNodeIds: report.prunedPreferenceNodeIds,
+    prunedWorkflowNodeIds: report.prunedWorkflowNodeIds
+  };
+}
+
+async function pruneInactiveLearnV2CompatibilityGraphNodes(projectRoot: string, cards: LearnV2ConceptCard[], now: Date): Promise<{
+  preferenceGraphPath?: string;
+  workflowGraphPath?: string;
+  graphReconciliationPath?: string;
+  prunedPreferenceNodeIds: string[];
+  prunedWorkflowNodeIds: string[];
+}> {
+  const root = path.resolve(projectRoot);
+  const config = await readProjectConfig(root);
+  const activeConceptIds = new Set(cards
+    .filter((card) => card.status === "active" || card.status === "locked")
+    .map((card) => card.id));
+  const preferencePrune = await pruneInactiveLearnV2PreferenceNodes(root, config.projectId, activeConceptIds, now);
+  const workflowPrune = await pruneInactiveLearnV2WorkflowNodes(root, config.projectId, activeConceptIds, now);
+  if (!preferencePrune.prunedNodeIds.length && !workflowPrune.prunedNodeIds.length) {
+    return {
+      prunedPreferenceNodeIds: [],
+      prunedWorkflowNodeIds: []
+    };
+  }
+  const graphReconciliationPath = learnV2GraphReconciliationPath(root);
+  const report: LearnV2GraphReconciliationReport = {
+    schemaVersion: "openskill-kit.learn-v2.graph-reconciliation.v1",
+    generatedAt: now.toISOString(),
+    projectId: config.projectId,
+    activeConceptIds: [...activeConceptIds].sort(),
+    incomingPreferenceNodeIds: preferencePrune.retainedGeneratedNodeIds,
+    incomingWorkflowNodeIds: workflowPrune.retainedGeneratedNodeIds,
+    prunedPreferenceNodeIds: preferencePrune.prunedNodeIds,
+    prunedWorkflowNodeIds: workflowPrune.prunedNodeIds,
+    preferenceGraphPath: preferencePrune.graphPath ?? path.join(root, ".openskill-kit", "preferences", "graph.json"),
+    workflowGraphPath: workflowPrune.graphPath ?? workflowGraphFile(root)
+  };
+  await writeJsonAtomic(graphReconciliationPath, report);
+  return {
+    preferenceGraphPath: preferencePrune.graphPath,
+    workflowGraphPath: workflowPrune.graphPath,
     graphReconciliationPath,
     prunedPreferenceNodeIds: report.prunedPreferenceNodeIds,
     prunedWorkflowNodeIds: report.prunedWorkflowNodeIds
@@ -751,6 +803,44 @@ async function mergePreferenceNodes(root: string, projectId: string, nodes: Pref
   });
 }
 
+async function pruneInactiveLearnV2PreferenceNodes(
+  root: string,
+  projectId: string,
+  activeConceptIds: Set<string>,
+  now: Date
+): Promise<{ graphPath?: string; prunedNodeIds: string[]; retainedGeneratedNodeIds: string[] }> {
+  return withFileLock(path.join(root, ".openskill-kit", "preferences", ".graph.lock"), async () => {
+    const file = path.join(root, ".openskill-kit", "preferences", "graph.json");
+    const text = await fs.readFile(file, "utf8").catch(() => "");
+    if (!text) return { prunedNodeIds: [], retainedGeneratedNodeIds: [] };
+    const existing = PreferenceGraphSchema.parse(JSON.parse(text));
+    const staleIds = new Set(existing.nodes
+      .filter((node) => isLearnV2GeneratedPreferenceNode(node))
+      .filter((node) => {
+        const conceptId = learnV2ConceptIdFromPreferenceNode(node);
+        return !conceptId || !activeConceptIds.has(conceptId);
+      })
+      .map((node) => node.id));
+    const retainedNodes = existing.nodes.filter((node) => !staleIds.has(node.id));
+    const retainedNodeIds = new Set(retainedNodes.map((node) => node.id));
+    const retainedGeneratedNodeIds = retainedNodes
+      .filter((node) => isLearnV2GeneratedPreferenceNode(node))
+      .map((node) => node.id)
+      .sort();
+    if (!staleIds.size) return { prunedNodeIds: [], retainedGeneratedNodeIds };
+    const graph: PreferenceGraph = PreferenceGraphSchema.parse({
+      ...existing,
+      projectId,
+      nodes: retainedNodes,
+      conflicts: existing.conflicts.filter((conflict) => conflict.nodeIds.every((id) => retainedNodeIds.has(id))),
+      updatedAt: now.toISOString()
+    });
+    await writeJsonAtomic(file, graph);
+    await writeJsonAtomic(path.join(root, ".openskill-kit", "preferences", "candidates", "pending.json"), graph.nodes.filter((node) => node.status === "candidate" || node.status === "staged" || node.status === "conflict"));
+    return { graphPath: file, prunedNodeIds: [...staleIds].sort(), retainedGeneratedNodeIds };
+  });
+}
+
 async function mergeWorkflowNodes(root: string, projectId: string, nodes: WorkflowNode[], now: Date): Promise<{ graphPath: string; prunedNodeIds: string[] }> {
   return withFileLock(path.join(root, ".openskill-kit", "workflows", ".graph.lock"), async () => {
     const graph = await readWorkflowGraph(root, projectId, now);
@@ -775,6 +865,46 @@ async function mergeWorkflowNodes(root: string, projectId: string, nodes: Workfl
   });
 }
 
+async function pruneInactiveLearnV2WorkflowNodes(
+  root: string,
+  projectId: string,
+  activeConceptIds: Set<string>,
+  now: Date
+): Promise<{ graphPath?: string; prunedNodeIds: string[]; retainedGeneratedNodeIds: string[] }> {
+  return withFileLock(path.join(root, ".openskill-kit", "workflows", ".graph.lock"), async () => {
+    const file = workflowGraphFile(root);
+    const text = await fs.readFile(file, "utf8").catch(() => "");
+    if (!text) return { prunedNodeIds: [], retainedGeneratedNodeIds: [] };
+    const existing = WorkflowGraphSchema.parse(JSON.parse(text));
+    const staleIds = new Set(existing.nodes
+      .filter((node) => isLearnV2GeneratedWorkflowNode(node))
+      .filter((node) => {
+        const conceptId = learnV2ConceptIdFromWorkflowNode(node);
+        return !conceptId || !activeConceptIds.has(conceptId);
+      })
+      .map((node) => node.id));
+    const retainedNodes = existing.nodes.filter((node) => !staleIds.has(node.id));
+    const retainedNodeIds = new Set(retainedNodes.map((node) => node.id));
+    const retainedGeneratedNodeIds = retainedNodes
+      .filter((node) => isLearnV2GeneratedWorkflowNode(node))
+      .map((node) => node.id)
+      .sort();
+    if (!staleIds.size) return { prunedNodeIds: [], retainedGeneratedNodeIds };
+    const next: WorkflowGraph = WorkflowGraphSchema.parse({
+      ...existing,
+      projectId,
+      nodes: retainedNodes,
+      conflicts: existing.conflicts.filter((conflict) => conflict.workflowIds.every((id) => retainedNodeIds.has(id))),
+      updatedAt: now.toISOString()
+    });
+    return {
+      graphPath: await writeWorkflowGraph(root, next),
+      prunedNodeIds: [...staleIds].sort(),
+      retainedGeneratedNodeIds
+    };
+  });
+}
+
 function isLearnV2GeneratedPreferenceNode(node: PreferenceNode): boolean {
   return node.evidence.some((item) => item.signalId.startsWith("learn-v2:")) ||
     (node.id.startsWith("pref_concept_") && /learn-v2 concept card/i.test(node.privacy?.rationale ?? ""));
@@ -783,6 +913,29 @@ function isLearnV2GeneratedPreferenceNode(node: PreferenceNode): boolean {
 function isLearnV2GeneratedWorkflowNode(node: WorkflowNode): boolean {
   return node.sourceSignalIds.some((signalId) => signalId.startsWith("learn-v2:")) ||
     (node.id.startsWith("workflow_concept_") && /learn-v2 concept card/i.test(node.privacy?.rationale ?? ""));
+}
+
+function learnV2ConceptIdFromPreferenceNode(node: PreferenceNode): string | undefined {
+  const evidenceConceptId = node.evidence
+    .flatMap((item) => [
+      ...item.cardIds,
+      item.signalId.startsWith("learn-v2:") ? item.signalId.slice("learn-v2:".length) : undefined
+    ])
+    .find((id): id is string => Boolean(id));
+  if (evidenceConceptId) return evidenceConceptId;
+  return node.id.startsWith("pref_") ? node.id.slice("pref_".length) : undefined;
+}
+
+function learnV2ConceptIdFromWorkflowNode(node: WorkflowNode): string | undefined {
+  const signalConceptId = node.sourceSignalIds
+    .map((signalId) => signalId.startsWith("learn-v2:") ? signalId.slice("learn-v2:".length) : undefined)
+    .find((id): id is string => Boolean(id));
+  if (signalConceptId) return signalConceptId;
+  const prefConceptId = node.preferenceNodeIds
+    .map((id) => id.startsWith("pref_") ? id.slice("pref_".length) : undefined)
+    .find((id): id is string => Boolean(id));
+  if (prefConceptId) return prefConceptId;
+  return node.id.startsWith("workflow_") ? node.id.slice("workflow_".length) : undefined;
 }
 
 function pathToGlob(file: string): string {
