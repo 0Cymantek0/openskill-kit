@@ -93,6 +93,24 @@ openskill-kit osk review --reject-label sha256:... --label-kind path
 openskill-kit osk review --write
 ```
 
+## Activation Query Telemetry
+
+`--activation-query` scores reviewed Learn v2 concepts against a task query and
+appends a local hashed activation-run record under
+`.openskill-kit/learn-v2/activation-runs/`. Each run stores the schema version,
+a `queryHash`, sorted `pathHashes`, sorted `commandHashes`, task types,
+match count, suppressed count, and matched concept ids. It never stores or
+prints the raw query text, raw paths, or raw commands. `--activation-path`,
+`--activation-command`, and `--activation-task-type` feed the same hashed
+telemetry boundary.
+
+`--record-concept-outcome` shares that boundary: outcome records store concept
+ids plus hashes of query/path/command/task identifiers, never the raw values.
+Later activation reads this local telemetry so helpful outcomes can boost
+retrieval and harmful or superseded outcomes suppress stale concepts. Both
+`activation-runs/` and `outcomes/` are project-local, gitignored, and excluded
+from compile/pack/sync/plugin outputs.
+
 ## Output Contract
 
 - Sources considered and used.

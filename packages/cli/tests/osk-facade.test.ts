@@ -57,6 +57,21 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("raw-to-model");
   });
 
+  it("documents --activation-query local hashed telemetry side effect in help", async () => {
+    const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--help"], { cwd: repoRoot, windowsHide: true });
+
+    expect(stdout).toContain("--activation-query <text>");
+    expect(stdout).toContain("activation-run telemetry");
+    expect(stdout).toContain(".openskill-kit/learn-v2/activation-runs");
+    expect(stdout).toContain("never raw values");
+    expect(stdout).toContain("--record-concept-outcome <conceptId>");
+    expect(stdout).toContain("hashed Learn-v2 concept outcome telemetry");
+    // Help text must not imply raw query/path/command values are stored.
+    expect(stdout).not.toContain("stores raw query");
+    expect(stdout).not.toContain("stores raw path");
+    expect(stdout).not.toContain("stores raw command");
+  });
+
   it("executes and applies Learn v2 model responses through a fake OpenCode command", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-model-exec-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "learn-model-exec" }), "utf8");
