@@ -270,6 +270,27 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
     await expect(compileBehaviorLayer(root, { targets: ["mcp-resources"] }))
       .rejects.toThrow(/Compile-time declassification checks failed/);
   });
+
+  it("blocks Learn v2 leaks before writing project-rules policy artifacts", async () => {
+    const root = await tempProject();
+    const badCard = createBadCard("policy_scope_leak", "Prefer focused parser regression tests.");
+    badCard.atoms[0]!.kind = "command-policy";
+    badCard.activation.commands = ["npm test -- parser"];
+    badCard.scope.paths = ["C:\\Users\\john\\private\\parser.ts"];
+    badCard.atoms[0]!.scope.paths = ["C:\\Users\\john\\private\\parser.ts"];
+
+    const storePath = path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
+    await fs.mkdir(path.dirname(storePath), { recursive: true });
+    await writeFile(storePath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
+      projectId: "hygiene-project",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+      cards: [badCard]
+    }, null, 2), "utf8");
+
+    await expect(compileBehaviorLayer(root, { targets: ["project-rules"] }))
+      .rejects.toThrow(/Learn v2 policy artifacts/);
+  });
 });
 
 async function tempProject(): Promise<string> {

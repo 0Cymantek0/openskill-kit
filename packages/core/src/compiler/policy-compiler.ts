@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readProjectConfig } from "../events/store.js";
 import { buildLearnV2CommandPolicyRules, renderLearnV2CommandPolicyMarkdown } from "../learn-v2/command-policy.js";
+import { declassificationReport } from "../learn-v2/compile.js";
 import { readLearnV2ConceptStore } from "../learn-v2/store.js";
 import { readApprovedAmbientLabels } from "../preferences/labels.js";
 import { readPreferenceGraph } from "../preferences/graph.js";
@@ -25,7 +26,12 @@ export async function compilePolicyArtifacts(projectRoot: string): Promise<Compi
   const active = graph.nodes.filter((node) => node.status === "active" || node.status === "locked");
   const activeWorkflows = workflowGraph.nodes.filter((node) => node.status === "active" || node.status === "locked");
   const learnV2Store = await readLearnV2ConceptStore(root).catch(() => undefined);
-  const learnV2CommandRules = buildLearnV2CommandPolicyRules(learnV2Store?.cards ?? []);
+  const activeLearnV2Cards = (learnV2Store?.cards ?? []).filter((card) => card.status === "active" || card.status === "locked");
+  const learnV2Boundary = declassificationReport(activeLearnV2Cards);
+  if (learnV2Boundary.status === "fail") {
+    throw new Error(`Compile-time declassification checks failed for Learn v2 policy artifacts. Issues detected: ${learnV2Boundary.issues.join(", ")}`);
+  }
+  const learnV2CommandRules = buildLearnV2CommandPolicyRules(activeLearnV2Cards);
   const approvedLabels = await readApprovedAmbientLabels(root);
   const pathMapPath = path.join(root, ".openskill-kit", "compiled", "behavior", "path-map.json");
   const commandPolicyPath = path.join(root, ".openskill-kit", "compiled", "behavior", "command-policy.md");
