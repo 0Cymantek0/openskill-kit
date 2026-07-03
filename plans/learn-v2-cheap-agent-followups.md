@@ -1467,11 +1467,12 @@ Verification:
 
 Context:
 - Stale Learn v2 graph nodes are pruned during review sync, but `doctor --full` may not detect older projects with stale nodes until next review action.
+- Main implementation now adds the core `Learn v2 graph freshness` full-doctor check. Remaining cheap work is CLI/docs copy and generated help audit.
 
 Acceptance:
-- Inspect doctor/full doctor implementation.
-- Add a warning when Preference/Workflow graph contains Learn v2-generated nodes whose `concept_*` card is rejected, superseded, one-off, or missing from the Learn v2 concept store.
-- Do not mutate project state from doctor.
+- Inspect CLI doctor rendering and docs.
+- Confirm the new `Learn v2 graph freshness` warning is easy to spot in non-JSON output.
+- Add wording-only docs/tests if needed. Do not mutate doctor behavior.
 
 Suggested files:
 - `packages/core/src/doctor/*`
@@ -1479,3 +1480,19 @@ Suggested files:
 
 Verification:
 - `rtk rg -n "learn-v2|PreferenceGraph|WorkflowGraph|doctor" packages/core/src/doctor packages/core/tests`
+
+## Task 82: Learn v2 Doctor Warning CLI Snapshot
+
+Context:
+- Full doctor now reports stale Learn v2-generated graph nodes when compatibility Preference/Workflow graphs reference inactive or missing concepts.
+- Cheap work can add CLI-level rendering coverage without changing core doctor logic.
+
+Acceptance:
+- Add or update a CLI facade test proving `doctor --full` non-JSON output includes `WARN Learn v2 graph freshness` for a seeded stale graph fixture.
+- Keep fixture small; do not invoke raw learning pipeline if direct store/graph setup is simpler.
+
+Suggested files:
+- `packages/cli/tests/osk-facade.test.ts`
+
+Verification:
+- `rtk npm test -- packages/cli/tests/osk-facade.test.ts`

@@ -1,19 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   appendEvent,
   archiveProjectState,
+  applyLearnV2ConceptReview,
   compactProjectState,
   compileBehaviorLayer,
   explainAdaptiveStatus,
   extractSignals,
   initAdaptiveProject,
+  mergeLearnV2ConceptCards,
   pruneProjectState,
   resetProjectState,
   runFullDoctor,
-  updatePreferenceGraph
+  updatePreferenceGraph,
+  writeLearnV2ConceptStore,
+  type LearnV2BehaviorAtom
 } from "../src/index.js";
 
 describe("maintenance and full status", () => {
@@ -100,4 +104,58 @@ describe("maintenance and full status", () => {
     expect(profileCheck?.status).toBe("fail");
     expect(profileCheck?.message).toContain("permissionsProfile");
   });
+
+  it("warns when legacy graphs contain stale Learn v2-generated nodes", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-maintenance-learn-v2-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "learn-v2-stale", now: new Date("2026-06-25T00:00:00.000Z") });
+    const now = new Date("2026-06-25T00:01:00.000Z");
+    const [concept] = mergeLearnV2ConceptCards([
+      learnV2MaintenanceAtom("doctor_stale_graph", "Prefer focused parser regression tests for parser changes.", "positive")
+    ], now);
+    await writeLearnV2ConceptStore(root, [concept!], now);
+    await applyLearnV2ConceptReview(root, {
+      accept: [concept!.id],
+      narrowScopes: [{ id: concept!.id, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] }],
+      now: new Date("2026-06-25T00:02:00.000Z")
+    });
+    const cleanDoctor = await runFullDoctor(root);
+    const cleanCheck = cleanDoctor.checks.find((check) => check.name === "Learn v2 graph freshness");
+    expect(cleanCheck?.status).toBe("pass");
+
+    const storePath = path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
+    const store = JSON.parse(await readFile(storePath, "utf8"));
+    store.cards = store.cards.map((card: { id: string; status: string; lifecycle: { updatedAt: string } }) => card.id === concept!.id
+      ? { ...card, status: "rejected", lifecycle: { ...card.lifecycle, updatedAt: "2026-06-25T00:03:00.000Z" } }
+      : card);
+    await writeFile(storePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+
+    const staleDoctor = await runFullDoctor(root);
+    const staleCheck = staleDoctor.checks.find((check) => check.name === "Learn v2 graph freshness");
+    expect(staleDoctor.status).toBe("warn");
+    expect(staleCheck?.status).toBe("warn");
+    expect(staleCheck?.message).toContain(`pref_${concept!.id}`);
+    expect(staleCheck?.message).toContain(`workflow_${concept!.id}`);
+  });
 });
+
+function learnV2MaintenanceAtom(id: string, statement: string, polarity: LearnV2BehaviorAtom["polarity"]): LearnV2BehaviorAtom {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
+    id,
+    kind: "verification",
+    statement,
+    polarity,
+    scope: {
+      level: "path",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    },
+    confidence: 0.84,
+    confidenceCap: 0.9,
+    sourceReliability: 0.82,
+    evidenceIds: [`ev_${id}_a`, `ev_${id}_b`],
+    rawRefs: [`raw_${id}_a`, `raw_${id}_b`],
+    rationale: "test fixture atom",
+    risk: "low"
+  };
+}

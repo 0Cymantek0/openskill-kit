@@ -11,6 +11,11 @@ import { explainAdaptiveStatus } from "../status/status.js";
 import { readRegistry } from "../registry/registry.js";
 import { verifyProjectBehaviorPack } from "../sync/bundle.js";
 import { readModelRouting, ModelRouteNames } from "../config/model-routing.js";
+import { readPreferenceGraph } from "../preferences/graph.js";
+import { readWorkflowGraph } from "../workflows/store.js";
+import { readLearnV2ConceptStore } from "../learn-v2/store.js";
+import type { PreferenceNode } from "../preferences/schema.js";
+import type { WorkflowNode } from "../workflows/schema.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -57,6 +62,7 @@ export async function runFullDoctor(projectRoot: string, homeDir = os.homedir())
     checks.push(schemaConstantsCheck());
     checks.push(compileTargetsCheck(config.compileTargets));
     checks.push(await modelRoutingCheck(root));
+    checks.push(await learnV2GraphFreshnessCheck(root));
     const redaction = validateRedactionConfig(config);
     checks.push({
       name: "Custom redaction config",
@@ -103,6 +109,96 @@ export async function runFullDoctor(projectRoot: string, homeDir = os.homedir())
   }
   const finalStatus = checks.some((check) => check.status === "fail") ? "fail" : checks.some((check) => check.status === "warn") ? "warn" : "pass";
   return { status: finalStatus, checks };
+}
+
+async function learnV2GraphFreshnessCheck(root: string): Promise<DoctorCheck> {
+  const config = await readProjectConfig(root).catch(() => undefined);
+  if (!config) return { name: "Learn v2 graph freshness", status: "warn", message: "Missing project config" };
+  try {
+    const [store, preferenceGraph, workflowGraph] = await Promise.all([
+      readLearnV2ConceptStore(root),
+      readPreferenceGraph(root),
+      readWorkflowGraph(root, config.projectId, new Date())
+    ]);
+    const conceptsById = new Map(store.cards.map((card) => [card.id, card]));
+    const stalePreferenceNodeIds = preferenceGraph.nodes
+      .filter(isLearnV2GeneratedPreferenceNode)
+      .filter((node) => conceptIdsForPreferenceNode(node).some((id) => conceptsById.get(id)?.status !== "active" && conceptsById.get(id)?.status !== "locked"))
+      .map((node) => node.id)
+      .sort();
+    const staleWorkflowNodeIds = workflowGraph.nodes
+      .filter(isLearnV2GeneratedWorkflowNode)
+      .filter((node) => conceptIdsForWorkflowNode(node).some((id) => conceptsById.get(id)?.status !== "active" && conceptsById.get(id)?.status !== "locked"))
+      .map((node) => node.id)
+      .sort();
+    const staleCount = stalePreferenceNodeIds.length + staleWorkflowNodeIds.length;
+    if (!staleCount) {
+      return {
+        name: "Learn v2 graph freshness",
+        status: "pass",
+        message: "No stale Learn v2-generated preference/workflow graph nodes"
+      };
+    }
+    return {
+      name: "Learn v2 graph freshness",
+      status: "warn",
+      message: `Stale Learn v2 graph nodes need review sync: preferences=${stalePreferenceNodeIds.slice(0, 8).join(", ") || "none"}; workflows=${staleWorkflowNodeIds.slice(0, 8).join(", ") || "none"}`
+    };
+  } catch (error) {
+    return {
+      name: "Learn v2 graph freshness",
+      status: "warn",
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function isLearnV2GeneratedPreferenceNode(node: PreferenceNode): boolean {
+  return node.evidence.some((item) => item.signalId.startsWith("learn-v2:")) ||
+    (node.id.startsWith("pref_concept_") && /learn-v2 concept card/i.test(node.privacy?.rationale ?? ""));
+}
+
+function isLearnV2GeneratedWorkflowNode(node: WorkflowNode): boolean {
+  return node.sourceSignalIds.some((signalId) => signalId.startsWith("learn-v2:")) ||
+    (node.id.startsWith("workflow_concept_") && /learn-v2 concept card/i.test(node.privacy?.rationale ?? ""));
+}
+
+function conceptIdsForPreferenceNode(node: PreferenceNode): string[] {
+  return uniqueStrings([
+    ...node.evidence.flatMap((item) => [
+      ...item.cardIds.filter((id) => id.startsWith("concept_")),
+      ...item.eventIds.filter((id) => id.startsWith("concept_")),
+      signalConceptId(item.signalId)
+    ]),
+    prefNodeConceptId(node.id)
+  ]);
+}
+
+function conceptIdsForWorkflowNode(node: WorkflowNode): string[] {
+  return uniqueStrings([
+    ...node.preferenceNodeIds.map(prefNodeConceptId),
+    ...node.sourceSignalIds.map(signalConceptId),
+    workflowNodeConceptId(node.id)
+  ]);
+}
+
+function signalConceptId(signalId: string | undefined): string | undefined {
+  const match = /^learn-v2:(concept_[A-Za-z0-9_-]+)$/.exec(signalId ?? "");
+  return match?.[1];
+}
+
+function prefNodeConceptId(nodeId: string | undefined): string | undefined {
+  const match = /^pref_(concept_[A-Za-z0-9_-]+)$/.exec(nodeId ?? "");
+  return match?.[1];
+}
+
+function workflowNodeConceptId(nodeId: string | undefined): string | undefined {
+  const match = /^workflow_(concept_[A-Za-z0-9_-]+)$/.exec(nodeId ?? "");
+  return match?.[1];
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((item): item is string => Boolean(item)))];
 }
 
 async function modelRoutingCheck(root: string): Promise<DoctorCheck> {
