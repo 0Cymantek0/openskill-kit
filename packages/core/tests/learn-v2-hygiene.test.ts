@@ -48,7 +48,7 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
       "learn-v2/conflicts/ledger.json",
       "learn-v2/drift/drift.json",
       "learn-v2/observability/obs.json",
-      "learn-v2/activation-runs/2026-06.jsonl",
+      "learn-v2/activation-runs/2026-06.jsonl", // local hashed activation telemetry (query/path/command hashes + matched concept ids only); diagnostics, never a shareable artifact
       "learn-v2/activation-index.json"
     ];
 
