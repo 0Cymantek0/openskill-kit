@@ -23,6 +23,11 @@ interface TypeScriptStructuralSignal {
   imports: string[];
 }
 
+interface BlockStructuralSignal {
+  symbols: string[];
+  imports: string[];
+}
+
 export function analyzeLearnV2StructuralDiff(text: string, fallbackPaths: string[] = []): LearnV2PatchComparison["structuralSummary"] {
   const diffFiles = parseUnifiedDiff(text);
   const files = diffFiles.length
@@ -99,13 +104,16 @@ function summarizeFile(file: DiffFile): FileSummary {
   const language = languageForPath(file.path);
   const allChanged = [...file.added, ...file.removed];
   const typeScriptSignal = typeScriptStructuralSignal(file, language);
+  const blockSignal = blockStructuralSignal(file, language);
   const changedSymbols = [...new Set([
     ...typeScriptSignal.symbols,
+    ...blockSignal.symbols,
     ...allChanged.flatMap((line) => symbolsForLine(language, line)),
     ...symbolsFromHunks(language, file.hunks)
   ])].sort().slice(0, 20);
   const changedImports = [...new Set([
     ...typeScriptSignal.imports,
+    ...blockSignal.imports,
     ...allChanged.flatMap((line) => importsForLine(language, line))
   ])].sort().slice(0, 20);
   const classes = classesForFile(file.path, language, allChanged, changedSymbols, changedImports);
@@ -139,6 +147,95 @@ function typeScriptStructuralSignal(file: DiffFile, language: StructuralLanguage
     symbols: [...new Set(signals.flatMap((signal) => signal.symbols))].sort(),
     imports: [...new Set(signals.flatMap((signal) => signal.imports))].sort()
   };
+}
+
+function blockStructuralSignal(file: DiffFile, language: StructuralLanguage): BlockStructuralSignal {
+  if (language !== "python" && language !== "go" && language !== "rust") return { symbols: [], imports: [] };
+  const signals: BlockStructuralSignal[] = [];
+  for (const hunk of file.hunks) {
+    signals.push(blockSignalFromHunk(language, hunk, "after"));
+    signals.push(blockSignalFromHunk(language, hunk, "before"));
+  }
+  if (!file.hunks.length) {
+    signals.push(blockSignalFromSource(language, file.added, new Set(file.added.map((_, index) => index + 1))));
+    signals.push(blockSignalFromSource(language, file.removed, new Set(file.removed.map((_, index) => index + 1))));
+  }
+  return {
+    symbols: [...new Set(signals.flatMap((signal) => signal.symbols))].sort(),
+    imports: [...new Set(signals.flatMap((signal) => signal.imports))].sort()
+  };
+}
+
+function blockSignalFromHunk(language: StructuralLanguage, hunk: DiffHunk, side: "after" | "before"): BlockStructuralSignal {
+  const lines: string[] = [];
+  const changedLines = new Set<number>();
+  const headerContext = /^@@[^@]*@@\s*(.*)$/.exec(hunk.header)?.[1]?.trim();
+  if (headerContext) lines.push(headerContext);
+  for (const line of hunk.lines) {
+    if (line.kind === "context" || (side === "after" && line.kind === "added") || (side === "before" && line.kind === "removed")) {
+      lines.push(line.text);
+      if ((side === "after" && line.kind === "added") || (side === "before" && line.kind === "removed")) changedLines.add(lines.length);
+    }
+  }
+  return blockSignalFromSource(language, lines, changedLines);
+}
+
+function blockSignalFromSource(language: StructuralLanguage, lines: string[], changedLines: Set<number>): BlockStructuralSignal {
+  if (language === "python") return pythonBlockSignal(lines, changedLines);
+  if (language === "go") return braceBlockSignal(language, lines, changedLines);
+  if (language === "rust") return braceBlockSignal(language, lines, changedLines);
+  return { symbols: [], imports: [] };
+}
+
+function pythonBlockSignal(lines: string[], changedLines: Set<number>): BlockStructuralSignal {
+  const symbols = new Set<string>();
+  const imports = new Set<string>();
+  const stack: Array<{ indent: number; name: string }> = [];
+  lines.forEach((line, index) => {
+    for (const item of importsForLine("python", line)) imports.add(item);
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const indent = leadingIndentWidth(line);
+    while (stack.length && indent <= stack[stack.length - 1]!.indent) stack.pop();
+    for (const name of symbolsForLine("python", line)) {
+      if (/^(?:async\s+)?def\s+|^class\s+/.test(trimmed)) stack.push({ indent, name });
+      symbols.add(name);
+    }
+    if (changedLines.has(index + 1)) {
+      for (const item of stack) symbols.add(item.name);
+    }
+  });
+  return { symbols: [...symbols].sort(), imports: [...imports].sort() };
+}
+
+function braceBlockSignal(language: "go" | "rust", lines: string[], changedLines: Set<number>): BlockStructuralSignal {
+  const symbols = new Set<string>();
+  const imports = new Set<string>();
+  const stack: Array<{ depth: number; names: string[] }> = [];
+  let depth = 0;
+  lines.forEach((line, index) => {
+    for (const item of importsForLine(language, line)) imports.add(item);
+    const lineSymbols = braceLineSymbols(language, line);
+    for (const symbol of lineSymbols) symbols.add(symbol);
+    if (line.includes("{") && lineSymbols.length) stack.push({ depth, names: lineSymbols });
+    if (changedLines.has(index + 1)) {
+      for (const scope of stack) for (const symbol of scope.names) symbols.add(symbol);
+    }
+    depth = Math.max(0, depth + braceDelta(line));
+    while (stack.length && depth <= stack[stack.length - 1]!.depth) stack.pop();
+  });
+  return { symbols: [...symbols].sort(), imports: [...imports].sort() };
+}
+
+function braceLineSymbols(language: "go" | "rust", line: string): string[] {
+  const symbols = new Set(symbolsForLine(language, line));
+  if (language === "go") {
+    const receiver = /\bfunc\s+\(([^)]*)\)\s*([A-Za-z_]\w*)/.exec(line);
+    const receiverType = receiver ? goReceiverTypeName(receiver[1]!) : undefined;
+    if (receiverType) symbols.add(receiverType);
+    if (receiver?.[2]) symbols.add(receiver[2]);
+  }
+  return [...symbols];
 }
 
 function typeScriptSignalFromHunk(file: string, language: StructuralLanguage, hunk: DiffHunk, side: "after" | "before"): TypeScriptStructuralSignal {
@@ -359,6 +456,35 @@ function expandRustUse(value: string): string[] {
     .map((item) => item.trim())
     .filter(Boolean)
     .map((item) => `${prefix}::${item}`);
+}
+
+function leadingIndentWidth(line: string): number {
+  let width = 0;
+  for (const char of line) {
+    if (char === " ") width += 1;
+    else if (char === "\t") width += 4;
+    else break;
+  }
+  return width;
+}
+
+function braceDelta(line: string): number {
+  const scrubbed = stripQuotedSegments(line);
+  return [...scrubbed].filter((char) => char === "{").length - [...scrubbed].filter((char) => char === "}").length;
+}
+
+function stripQuotedSegments(line: string): string {
+  return line
+    .replace(/"([^"\\]|\\.)*"/g, "\"\"")
+    .replace(/'([^'\\]|\\.)*'/g, "''")
+    .replace(/`([^`\\]|\\.)*`/g, "``");
+}
+
+function goReceiverTypeName(receiver: string): string | undefined {
+  const tokens = receiver.trim().split(/\s+/);
+  const rawType = tokens.at(-1)?.replace(/^\*/, "").replace(/\[.*\]$/, "");
+  const match = rawType ? /([A-Za-z_]\w*)$/.exec(rawType) : undefined;
+  return match?.[1];
 }
 
 function classesForFile(file: string, language: StructuralLanguage, lines: string[], symbols: string[], imports: string[]): StructuralClass[] {

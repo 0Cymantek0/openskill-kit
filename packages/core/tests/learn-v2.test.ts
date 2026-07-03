@@ -1057,6 +1057,51 @@ describe("learn-v2 substrate", () => {
     expect(summary.fileSummaries.every((file) => file.semanticChange)).toBe(true);
   });
 
+  it("attributes body-only Python Go and Rust edits to enclosing structural scopes", async () => {
+    const diff = [
+      "diff --git a/python/openskillkit_evolution/report.py b/python/openskillkit_evolution/report.py",
+      "--- a/python/openskillkit_evolution/report.py",
+      "+++ b/python/openskillkit_evolution/report.py",
+      "@@",
+      " class ReportBuilder:",
+      "     async def build_async(self, value):",
+      "-        return old_report(value)",
+      "+        return regression_report(value)",
+      "diff --git a/src/server.go b/src/server.go",
+      "--- a/src/server.go",
+      "+++ b/src/server.go",
+      "@@",
+      " func (h *Handler[T]) Route(r router.Router) {",
+      "-\twriteOldResponse(r)",
+      "+\twriteNewResponse(r)",
+      " }",
+      "diff --git a/src/lib.rs b/src/lib.rs",
+      "--- a/src/lib.rs",
+      "+++ b/src/lib.rs",
+      "@@",
+      " impl CompilePlan {",
+      "   pub async fn run_checked(&self) {",
+      "-    compile_old();",
+      "+    compile_checked();",
+      "   }",
+      " }"
+    ].join("\n");
+
+    const summary = analyzeLearnV2StructuralDiff(diff);
+
+    expect(summary.changedSymbols).toEqual(expect.arrayContaining([
+      "CompilePlan",
+      "Handler",
+      "ReportBuilder",
+      "Route",
+      "build_async",
+      "run_checked"
+    ]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("report.py"))?.changedSymbols).toEqual(expect.arrayContaining(["ReportBuilder", "build_async"]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("server.go"))?.changedSymbols).toEqual(expect.arrayContaining(["Handler", "Route"]));
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("lib.rs"))?.changedSymbols).toEqual(expect.arrayContaining(["CompilePlan", "run_checked"]));
+  });
+
   it("rejects LLM atom proposals without valid evidence or with raw secrets", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_llm");
