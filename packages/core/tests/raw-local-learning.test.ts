@@ -255,6 +255,99 @@ describe("raw local learning", () => {
     expect(gc.removedBlobRefs).toContain(rawRecord.content.blobRef);
   });
 
+  it("rejects accepted raw evidence before blob write when configured per-run budget is exceeded", async () => {
+    const root = await tempProject();
+    await patchConfig(root, {
+      learning: {
+        rawEvidence: {
+          maxRawBytesPerRun: 100_000,
+          maxRawBytesTotal: 1_000_000
+        }
+      }
+    });
+    const source = path.join(root, "too-large-session.md");
+    await writeFile(source, `${root}\npackages/core/src/parser.ts\nuser: Prefer focused parser regression fixtures.\n${"x".repeat(101_000)}`, "utf8");
+
+    await expect(runRawLocalLearning(root, {
+      sourceFiles: [source],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      maxRawBytes: 5_000_000,
+      now: new Date("2026-06-30T01:47:00.000Z")
+    })).rejects.toThrow("maxRawBytes=100000");
+
+    expect(await rawRecordIds(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", "records"))).toEqual([]);
+  });
+
+  it("rejects total raw-vault budget overflow before writing a second accepted source when auto-compaction is disabled", async () => {
+    const root = await tempProject();
+    await patchConfig(root, {
+      learning: {
+        rawEvidence: {
+          maxRawBytesPerRun: 900_000,
+          maxRawBytesTotal: 1_000_000,
+          autoCompactOnBudget: false
+        }
+      }
+    });
+    const first = path.join(root, "large-context-one.md");
+    const second = path.join(root, "large-context-two.md");
+    await writeFile(first, `${root}\npackages/core/src/parser.ts\ncontext only\n${"a".repeat(600_000)}`, "utf8");
+    await writeFile(second, `${root}\npackages/core/src/parser.ts\ncontext only\n${"b".repeat(600_000)}`, "utf8");
+    const firstRun = await runRawLocalLearning(root, {
+      sourceFiles: [first],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T01:48:00.000Z")
+    });
+    expect(firstRun.digest.rawVaultRecordsWritten).toBe(1);
+    const recordsDir = path.join(firstRun.artifacts.learnV2RawVaultDir, "records");
+    const beforeRecords = await rawRecordIds(recordsDir);
+
+    await expect(runRawLocalLearning(root, {
+      sourceFiles: [second],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T01:49:00.000Z")
+    })).rejects.toThrow("Raw vault budget would be exceeded before writing raw evidence");
+
+    expect(await rawRecordIds(recordsDir)).toEqual(beforeRecords);
+  });
+
+  it("auto-compacts old unpinned hot evidence before accepting a new source under total budget", async () => {
+    const root = await tempProject();
+    await patchConfig(root, {
+      learning: {
+        rawEvidence: {
+          maxRawBytesPerRun: 900_000,
+          maxRawBytesTotal: 1_000_000,
+          autoCompactOnBudget: true
+        }
+      }
+    });
+    const first = path.join(root, "large-context-auto-one.md");
+    const second = path.join(root, "large-context-auto-two.md");
+    await writeFile(first, `${root}\npackages/core/src/parser.ts\nproject context only\n${"a".repeat(600_000)}`, "utf8");
+    await writeFile(second, `${root}\npackages/core/src/parser.ts\nproject context only\n${"b".repeat(600_000)}`, "utf8");
+    await runRawLocalLearning(root, {
+      sourceFiles: [first],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T01:50:00.000Z")
+    });
+    const secondRun = await runRawLocalLearning(root, {
+      sourceFiles: [second],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T01:51:00.000Z")
+    });
+
+    const manifest = JSON.parse(await readFile(path.join(secondRun.artifacts.learnV2RawVaultDir, "manifest.json"), "utf8"));
+    expect(manifest.budget.status).toBe("ok");
+    expect(manifest.records.map((record: { retentionTier: string }) => record.retentionTier)).toEqual(expect.arrayContaining(["compacted", "hot-spool"]));
+    expect(manifest.records).toHaveLength(2);
+  });
+
   it("uses virtual merged preview state without mutating existing canonical store or activation index", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T01:30:00.000Z");
@@ -338,4 +431,26 @@ async function tempProject(): Promise<string> {
   await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "raw-learning-project" }), "utf8");
   await initAdaptiveProject({ projectRoot: root, now: new Date("2026-06-30T00:00:00.000Z") });
   return root;
+}
+
+async function patchConfig(root: string, patch: Record<string, any>): Promise<void> {
+  const configPath = path.join(root, ".openskill-kit", "config.json");
+  const existing = JSON.parse(await readFile(configPath, "utf8"));
+  const merged = deepMerge(existing, patch);
+  await writeFile(configPath, JSON.stringify(merged, null, 2), "utf8");
+}
+
+function deepMerge<T extends Record<string, any>>(target: T, patch: Record<string, any>): T {
+  const out: Record<string, any> = { ...target };
+  for (const [key, value] of Object.entries(patch)) {
+    out[key] = value && typeof value === "object" && !Array.isArray(value)
+      ? deepMerge(out[key] ?? {}, value)
+      : value;
+  }
+  return out as T;
+}
+
+async function rawRecordIds(recordsDir: string): Promise<string[]> {
+  const entries = await readdir(recordsDir, { withFileTypes: true }).catch(() => []);
+  return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".json")).map((entry) => entry.name).sort();
 }

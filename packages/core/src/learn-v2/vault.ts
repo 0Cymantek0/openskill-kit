@@ -119,6 +119,26 @@ export async function storeLearnV2RawEvidence(options: LearnV2RawVaultOptions, i
   const sourcePath = path.resolve(input.sourcePath);
   const declassified = learnV2DeclassifyText(input.text, root, options.config);
   const contentHash = learnV2Hash(input.text);
+  const byteCount = Buffer.byteLength(input.text, "utf8");
+  const maxPerRunBytes = options.config.learning.rawEvidence.maxRawBytesPerRun;
+  if (byteCount > maxPerRunBytes) {
+    throw new Error(`Raw learning source exceeds configured maxRawBytesPerRun=${maxPerRunBytes}: ${learnV2SafeLocalPath(sourcePath, root)}`);
+  }
+  const maxTotalBytes = options.maxTotalBytes ?? options.config.learning.rawEvidence.maxRawBytesTotal;
+  const maxHotBytes = options.maxHotBytes ?? Math.min(50_000_000, maxTotalBytes);
+  if (byteCount > maxHotBytes) {
+    throw new Error(`Raw learning source exceeds raw hot-spool budget maxHotBytes=${maxHotBytes}: ${learnV2SafeLocalPath(sourcePath, root)}`);
+  }
+  if (byteCount > maxTotalBytes) {
+    throw new Error(`Raw learning source exceeds raw vault total budget maxTotalBytes=${maxTotalBytes}: ${learnV2SafeLocalPath(sourcePath, root)}`);
+  }
+  await enforceRawVaultBudgetBeforeWrite(root, options.config, options.now, {
+    incomingBytes: byteCount,
+    maxHotBytes,
+    maxPinnedBytes: options.maxPinnedBytes,
+    maxTotalBytes,
+    autoCompact: options.config.learning.rawEvidence.autoCompactOnBudget
+  });
   const id = `raw_${learnV2ShortHash(`${input.adapterId}:${sourcePath}:${contentHash}`)}`;
   const vaultRoot = learnV2VaultRoot(root);
   const blobRel = `blobs/${contentHash.replace(/^sha256:/, "").slice(0, 2)}/${contentHash.replace(/^sha256:/, "")}.txt`;
@@ -142,7 +162,7 @@ export async function storeLearnV2RawEvidence(options: LearnV2RawVaultOptions, i
     content: {
       kind: input.contentKind,
       encoding: "utf8",
-      byteCount: Buffer.byteLength(input.text, "utf8"),
+      byteCount,
       lineCount: input.text.split(/\r?\n/).length,
       blobRef: blobRel,
       blobHash: contentHash
@@ -162,9 +182,9 @@ export async function storeLearnV2RawEvidence(options: LearnV2RawVaultOptions, i
     trace: input.trace ?? {}
   });
   await writeJsonAtomic(recordPath, record);
-  const manifest = await rebuildLearnV2RawManifest(root, options.config.projectId, options.maxHotBytes ?? 50_000_000, options.now, {
+  const manifest = await rebuildLearnV2RawManifest(root, options.config.projectId, maxHotBytes, options.now, {
     maxPinnedBytes: options.maxPinnedBytes,
-    maxTotalBytes: options.maxTotalBytes
+    maxTotalBytes
   });
   return {
     record,
@@ -227,6 +247,102 @@ export async function rebuildLearnV2RawManifest(
   return manifest;
 }
 
+async function enforceRawVaultBudgetBeforeWrite(
+  root: string,
+  config: ProjectConfig,
+  now: Date,
+  budget: {
+    incomingBytes: number;
+    maxHotBytes: number;
+    maxPinnedBytes?: number;
+    maxTotalBytes: number;
+    autoCompact: boolean;
+  }
+): Promise<void> {
+  let manifest = await rebuildLearnV2RawManifest(root, config.projectId, budget.maxHotBytes, now, {
+    maxPinnedBytes: budget.maxPinnedBytes,
+    maxTotalBytes: budget.maxTotalBytes
+  });
+  if (rawVaultBudgetAllowsWrite(manifest, budget.incomingBytes)) return;
+  if (budget.autoCompact) {
+    await compactUnpinnedHotRecordsForBudget(root, config, now, budget, manifest);
+    manifest = await rebuildLearnV2RawManifest(root, config.projectId, budget.maxHotBytes, now, {
+      maxPinnedBytes: budget.maxPinnedBytes,
+      maxTotalBytes: budget.maxTotalBytes
+    });
+    if (rawVaultBudgetAllowsWrite(manifest, budget.incomingBytes)) return;
+  }
+  const totalAfterWrite = manifest.budget.totalBytes + budget.incomingBytes;
+  const hotAfterWrite = manifest.budget.hotBytes + budget.incomingBytes;
+  throw new Error([
+    "Raw vault budget would be exceeded before writing raw evidence.",
+    `hotAfterWrite=${hotAfterWrite}/${manifest.budget.maxHotBytes}`,
+    `totalAfterWrite=${totalAfterWrite}/${manifest.budget.maxTotalBytes}`,
+    "Run raw-vault maintenance, reject/demote stale concepts to unpin evidence, compact expired evidence, or raise learning.rawEvidence budgets."
+  ].join(" "));
+}
+
+function rawVaultBudgetAllowsWrite(manifest: LearnV2RawEvidenceManifest, incomingBytes: number): boolean {
+  const maxPinnedBytes = manifest.budget.maxPinnedBytes ?? Math.max(manifest.budget.maxHotBytes * 2, manifest.budget.maxHotBytes);
+  const maxTotalBytes = manifest.budget.maxTotalBytes ?? Math.max(manifest.budget.maxHotBytes * 4, manifest.budget.maxHotBytes);
+  return manifest.budget.hotBytes + incomingBytes <= manifest.budget.maxHotBytes
+    && manifest.budget.pinnedBytes <= maxPinnedBytes
+    && manifest.budget.totalBytes + incomingBytes <= maxTotalBytes;
+}
+
+async function compactUnpinnedHotRecordsForBudget(
+  root: string,
+  config: ProjectConfig,
+  now: Date,
+  budget: {
+    incomingBytes: number;
+    maxHotBytes: number;
+    maxPinnedBytes?: number;
+    maxTotalBytes: number;
+  },
+  manifest: LearnV2RawEvidenceManifest
+): Promise<void> {
+  const recordsRoot = path.join(learnV2VaultRoot(root), "records");
+  const candidates: LearnV2RawEvidenceRecord[] = [];
+  for (const entry of await fs.readdir(recordsRoot, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const record = LearnV2RawEvidenceRecordSchema.parse(JSON.parse(await fs.readFile(path.join(recordsRoot, entry.name), "utf8")));
+    if (record.retention.tier !== "hot-spool" || record.retention.pinnedBy.length > 0) continue;
+    candidates.push(record);
+  }
+  candidates.sort((a, b) =>
+    new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime() ||
+    a.content.byteCount - b.content.byteCount ||
+    a.id.localeCompare(b.id)
+  );
+  for (const record of candidates) {
+    if (rawVaultBudgetAllowsWrite(manifest, budget.incomingBytes)) break;
+    const recordPath = path.join(recordsRoot, `${record.id}.json`);
+    const compactedRef = await compactLearnV2RawRecord(root, config, record, now);
+    const retained = LearnV2RawEvidenceRecordSchema.parse({
+      ...record,
+      retention: compactedRef
+        ? {
+            ...record.retention,
+            tier: "compacted",
+            compactedRef,
+            tombstoneReason: "budget-compacted"
+          }
+        : {
+            ...record.retention,
+            tier: "expired",
+            tombstoneReason: "budget-expired-missing-blob"
+          }
+    });
+    await writeJsonAtomic(recordPath, retained);
+    await fs.rm(path.join(learnV2VaultRoot(root), record.content.blobRef)).catch(() => undefined);
+    manifest = await rebuildLearnV2RawManifest(root, config.projectId, budget.maxHotBytes, now, {
+      maxPinnedBytes: budget.maxPinnedBytes,
+      maxTotalBytes: budget.maxTotalBytes
+    });
+  }
+}
+
 export async function garbageCollectLearnV2RawVault(
   rootInput: string,
   config: ProjectConfig,
@@ -284,16 +400,17 @@ export async function runLearnV2RawVaultMaintenance(
   const root = path.resolve(projectRootInput);
   const config = await readProjectConfig(root);
   const now = options.now ?? new Date();
-  const maxHotBytes = options.maxHotBytes ?? 50_000_000;
+  const maxTotalBytes = options.maxTotalBytes ?? config.learning.rawEvidence.maxRawBytesTotal;
+  const maxHotBytes = options.maxHotBytes ?? Math.min(50_000_000, maxTotalBytes);
   const gc = options.gc === true
     ? await garbageCollectLearnV2RawVault(root, config, now, maxHotBytes, {
         maxPinnedBytes: options.maxPinnedBytes,
-        maxTotalBytes: options.maxTotalBytes
+        maxTotalBytes
       })
     : {
         manifest: await rebuildLearnV2RawManifest(root, config.projectId, maxHotBytes, now, {
           maxPinnedBytes: options.maxPinnedBytes,
-          maxTotalBytes: options.maxTotalBytes
+          maxTotalBytes
         }),
         expiredRecords: 0,
         compactedRecords: 0,

@@ -224,7 +224,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     const sourcePath = path.resolve(sourceFile);
     const stat = await fs.stat(sourcePath).catch(() => undefined);
     if (!stat?.isFile()) throw new Error(`Raw learning source is not a file: ${sourcePath}`);
-    const maxBytes = options.maxRawBytes ?? 5_000_000;
+    const maxBytes = Math.min(options.maxRawBytes ?? config.learning.rawEvidence.maxRawBytesPerRun, config.learning.rawEvidence.maxRawBytesPerRun);
     if (stat.size > maxBytes) throw new Error(`Raw learning source exceeds maxRawBytes=${maxBytes}: ${sourcePath}`);
     const surface = await readLearnV2Surface(sourcePath, options.adapter);
     const relevance = await scoreLearnV2ProjectRelevance(root, sourcePath, surface.rawText, undefined, {
@@ -241,8 +241,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
           root,
           config,
           now,
-          maxHotBytes: 50_000_000,
-          retentionDays: 30
+          maxHotBytes: Math.min(50_000_000, config.learning.rawEvidence.maxRawBytesTotal),
+          maxTotalBytes: config.learning.rawEvidence.maxRawBytesTotal,
+          retentionDays: config.learning.rawEvidence.retainRawDays
         }, {
           adapterId: surface.adapterId,
           sourcePath,
