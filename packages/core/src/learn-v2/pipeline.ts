@@ -25,6 +25,7 @@ import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
 import { detectLearnV2ConceptDrift } from "./drift.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { learnV2ModelRequestsRoot, writeLearnV2EpisodeStore, writeLearnV2ModelRequests } from "./model-proposals.js";
+import { buildLearnV2SourceGateReviewEntry, writeLearnV2SourceGateReviewArtifact, type LearnV2SourceGateReviewEntry } from "./source-gate.js";
 import {
   learnV2DeclassifyText,
   learnV2Hash,
@@ -89,6 +90,8 @@ interface LearnV2SourceDigestCompat {
     surfacePolicy?: LearnV2SurfaceAdapterPolicy;
     v2AnalysisPath: string;
     v2RawVaultDir: string;
+    sourceGateReviewJsonPath?: string;
+    sourceGateReviewPath?: string;
   };
 }
 
@@ -119,6 +122,8 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2ConflictLedgerPath: string;
     learnV2DeclassifiedSnippetsPath: string;
     learnV2ConceptDriftPath: string;
+    learnV2SourceGateReviewJsonPath: string;
+    learnV2SourceGateReviewPath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -193,6 +198,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const sourceDigests: LearnV2SourceDigestCompat[] = [];
   const acceptedRawEvidence: LearnV2NormalizedEvidence[] = [];
   const acceptedDeclassifiedEvidence: LearnV2NormalizedEvidence[] = [];
+  const sourceGateEntries: LearnV2SourceGateReviewEntry[] = [];
   let eventsAppended = 0;
   const importRuns: InteractionImportRun[] = [];
 
@@ -229,6 +235,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     const learnerText = normalizeRawLearnerLocalPaths(surface.rawText, root);
     const normalizedRaw = normalizeLearnV2Evidence(surface, rawRecord, learnerText).slice(0, options.maxTurns ?? 500);
     const normalized = normalizedRaw.map((item) => declassifyLearnV2NormalizedEvidence(item, root, config));
+    const gatedNormalized = sourceAcceptedForLearning ? normalized : [];
     if (sourceAcceptedForLearning) {
       acceptedRawEvidence.push(...normalizedRaw);
       acceptedDeclassifiedEvidence.push(...normalized);
@@ -278,11 +285,29 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       },
       modelMode,
       learningInputBoundary,
-      promptSafe: true,
-      normalizedEvidence: normalized
+      promptSafe: sourceAcceptedForLearning,
+      sourceGate: {
+        extractionEligible: sourceAcceptedForLearning,
+        normalizedEvidenceSuppressed: !sourceAcceptedForLearning,
+        decision: relevance.decision
+      },
+      normalizedEvidence: gatedNormalized
     };
     await writeJsonAtomic(analysisFramePath, analysisPayload);
     await writeJsonAtomic(v2AnalysisPath, analysisPayload);
+    sourceGateEntries.push(buildLearnV2SourceGateReviewEntry({
+      id: `source_${short}`,
+      root,
+      sourcePath,
+      sourceHash: rawRecord.source.contentHash,
+      byteCount: stat.size,
+      lineCount: surface.rawText.split(/\r?\n/).length,
+      surface,
+      relevance,
+      declassifiedText: declassified.text,
+      declassificationMatches: declassified.matches,
+      rawVaultRecordWritten: Boolean(legacyRawVaultRecordPath)
+    }));
 
     let importRun: InteractionImportRun | undefined;
     if (!previewOnly && sourceAcceptedForLearning) {
@@ -307,7 +332,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       projectRelevance: legacyRelevance(relevance),
       rawVaultRecordPath: legacyRawVaultRecordPath,
       analysisFramePath,
-      turnCount: normalized.length,
+      turnCount: gatedNormalized.length,
       windowCount: 0,
       atomCount: 0,
       conceptCount: 0,
@@ -329,6 +354,11 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         v2RawVaultDir: learnV2VaultRoot(root)
       }
     });
+  }
+  const sourceGateReview = await writeLearnV2SourceGateReviewArtifact(root, sourceGateEntries, now);
+  for (const source of sourceDigests) {
+    source.learnV2.sourceGateReviewJsonPath = sourceGateReview.paths.json;
+    source.learnV2.sourceGateReviewPath = sourceGateReview.paths.markdown;
   }
 
   const rawEpisodes = reconstructLearnV2Episodes(acceptedRawEvidence);
@@ -413,7 +443,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2EvidenceQualityPath: evidenceQualityPath,
       learnV2ConflictLedgerPath: conflictLedger.artifactPaths.markdown,
       learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
-      learnV2ConceptDriftPath: conceptDrift.artifactPath
+      learnV2ConceptDriftPath: conceptDrift.artifactPath,
+      learnV2SourceGateReviewJsonPath: sourceGateReview.paths.json,
+      learnV2SourceGateReviewPath: sourceGateReview.paths.markdown
     },
     conflictLedger: conflictLedger.ledger,
     conceptDrift: conceptDrift.report,
@@ -447,7 +479,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2EvidenceQualityPath: evidenceQualityPath,
       learnV2ConflictLedgerPath: conflictLedger.artifactPaths.markdown,
       learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
-      learnV2ConceptDriftPath: conceptDrift.artifactPath
+      learnV2ConceptDriftPath: conceptDrift.artifactPath,
+      learnV2SourceGateReviewJsonPath: sourceGateReview.paths.json,
+      learnV2SourceGateReviewPath: sourceGateReview.paths.markdown
     },
     lifecycle,
     digest: {
@@ -882,6 +916,8 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Conflict ledger: ${result.artifacts.learnV2ConflictLedgerPath}`,
     `- Declassified snippets: ${result.artifacts.learnV2DeclassifiedSnippetsPath}`,
     `- Concept drift: ${result.artifacts.learnV2ConceptDriftPath}`,
+    `- Source gate review: ${result.artifacts.learnV2SourceGateReviewPath}`,
+    `- Source gate review JSON: ${result.artifacts.learnV2SourceGateReviewJsonPath}`,
     `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
     "",
     "## Quality",

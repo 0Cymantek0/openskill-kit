@@ -35,6 +35,7 @@ export const LEARN_V2_GENERATED_DIRS = [
   ".openskill-kit/learn-v2/drift/",
   ".openskill-kit/learn-v2/observability/",
   ".openskill-kit/learn-v2/evidence-quality/",
+  ".openskill-kit/learn-v2/source-gate/",
 
   // Compiled/preview local output
   ".openskill-kit/learn-v2/compiled-preview/",

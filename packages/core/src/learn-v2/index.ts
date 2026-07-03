@@ -29,3 +29,4 @@ export * from "./trace.js";
 export * from "./quality.js";
 export * from "./drift.js";
 export * from "./paths.js";
+export * from "./source-gate.js";

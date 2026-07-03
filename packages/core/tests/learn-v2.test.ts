@@ -1451,30 +1451,51 @@ describe("learn-v2 substrate", () => {
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
     const root = await tempProject();
     const terminal = path.join(os.tmpdir(), `osk-review-needed-${Date.now()}.log`);
+    const globalMemory = path.join(os.tmpdir(), `osk-rejected-global-${Date.now()}.txt`);
     await writeFile(terminal, [
       "$ npm test -- parser",
-      "PASS parser suite",
-      "user: Always prefer focused parser regression tests for packages/core/src/parser.ts parser changes."
+      "PASS parser suite"
     ].join("\n"), "utf8");
+    await writeFile(globalMemory, "global memory across repos: always use a personal deployment token", "utf8");
 
     const result = await runRawLocalLearning(root, {
-      sourceFiles: [terminal],
+      sourceFiles: [terminal, globalMemory],
       previewOnly: false,
       allowDuplicateImports: true,
       now: new Date("2026-06-30T00:01:10Z")
     });
 
-    expect(result.sources[0]!.projectRelevance.decision).not.toBe("include");
+    expect(result.sources.map((source) => source.projectRelevance.decision)).toEqual(expect.arrayContaining(["ask", "exclude"]));
     expect(result.digest.sourcesIncluded).toBe(0);
-    expect(result.digest.sourcesAsk + result.digest.sourcesExcluded).toBe(1);
+    expect(result.digest.sourcesAsk).toBe(1);
+    expect(result.digest.sourcesExcluded).toBe(1);
     expect(result.digest.currentRunConceptCards).toBe(0);
     expect(result.digest.behaviorAtoms).toBe(0);
     expect(result.digest.canonicalConceptStateWritten).toBe(false);
     expect(result.learnV2.episodes).toEqual([]);
     expect(result.learnV2.currentRunConcepts).toEqual([]);
     expect((await readLearnV2ConceptStore(root)).cards).toEqual([]);
-    expect(result.sources[0]!.rawVaultRecordPath).toBeUndefined();
-    expect(await readText(result.sources[0]!.analysisFramePath)).toContain("normalizedEvidence");
+    expect(result.sources.every((source) => source.rawVaultRecordPath === undefined)).toBe(true);
+    for (const source of result.sources) {
+      const analysisFrame = JSON.parse(await readText(source.analysisFramePath));
+      expect(analysisFrame.promptSafe).toBe(false);
+      expect(analysisFrame.sourceGate.extractionEligible).toBe(false);
+      expect(analysisFrame.sourceGate.normalizedEvidenceSuppressed).toBe(true);
+      expect(analysisFrame.normalizedEvidence).toEqual([]);
+    }
+    const sourceGate = JSON.parse(await readText(result.artifacts.learnV2SourceGateReviewJsonPath));
+    expect(sourceGate.schemaVersion).toBe("openskill-kit.learn-v2.source-gate-review.v1");
+    expect(sourceGate.counts).toMatchObject({
+      total: 2,
+      accepted: 0,
+      review: 1,
+      rejected: 1,
+      extractionEligible: 0,
+      normalizedEvidenceSuppressed: 2
+    });
+    expect(sourceGate.entries.find((entry: { decision: string }) => entry.decision === "review")?.reviewSnippet).toContain("npm test");
+    expect(sourceGate.entries.find((entry: { decision: string }) => entry.decision === "reject")?.reviewSnippet).toBeUndefined();
+    expect(await readText(result.artifacts.learnV2SourceGateReviewPath)).toContain("Suppressed normalized evidence: 2");
   });
 
   it("preserves existing project relevance calibration across raw learning runs", async () => {
