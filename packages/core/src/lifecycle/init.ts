@@ -1,7 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { createDefaultProjectConfig, ProjectConfigSchema, type ProjectConfig } from "../config/schema.js";
+import { createDefaultProjectConfig, type ProjectConfig } from "../config/schema.js";
+import { migrateProjectConfig } from "../config/migrations.js";
 import { ensureModelRouting } from "../config/model-routing.js";
 import { getCleanedLearnV2Paths } from "../learn-v2/paths.js";
 
@@ -59,7 +60,7 @@ export async function initAdaptiveProject(options: InitProjectOptions): Promise<
 async function readConfigIfExists(configPath: string): Promise<ProjectConfig | undefined> {
   try {
     const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
-    if (parsed.schemaVersion === "openskill-kit.config.v1") return ProjectConfigSchema.parse(parsed);
+    if (parsed.schemaVersion === "openskill-kit.config.v1") return migrateProjectConfig(parsed, path.dirname(path.dirname(configPath)));
     return undefined;
   } catch {
     return undefined;

@@ -149,12 +149,15 @@ activation phrases, negative triggers, or narrower scope. `openskill-kit osk
 learn --prepare-contradiction-requests` writes contradiction-reviewer conflict
 requests for unresolved concept conflicts that have deterministic review ROI.
 `openskill-kit osk learn --execute-model-requests` runs prepared sanitized manifests through
-`opencode run` with the configured agent id, attached prompt/bundle files,
-project-local `--dir`, and an inline permission profile that denies
-shell/edit/write/network/task access. OSK validates the request manifest and
-prompt/bundle hashes before execution, validates stdout as strict Learn v2
-proposal JSON before writing `response.json`, and records only byte counts and
-hashes for stdout/stderr in the execution report. When paired with
+`opencode run` with the configured agent id and isolated copies of the
+declassified prompt/bundle files in a request-only temporary execution
+directory. OSK rejects manifests outside `.openskill-kit/learn-v2/model-requests`,
+rejects absolute or traversing request paths, validates prompt/bundle hashes
+before execution, validates stdout as strict Learn v2 proposal JSON before
+writing request-local `response.json`, and records only byte counts and hashes
+for stdout/stderr in the execution report. The inline permission profile denies
+shell/edit/write/network/task access; model filesystem reads are limited to the
+request-only execution directory rather than the project root. When paired with
 `--apply-model-responses`, OSK routes each written response by the executed
 manifest `modelRole` so mixed batches can apply concept-extractor,
 scope-inferencer, and contradiction-reviewer outputs through their matching

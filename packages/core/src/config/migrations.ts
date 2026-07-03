@@ -4,7 +4,16 @@ import { createDefaultProjectConfig, ProjectConfigSchema, type ProjectConfig } f
 
 export function migrateProjectConfig(input: unknown, projectRoot: string): ProjectConfig {
   const value = input as Record<string, unknown>;
-  if (value?.schemaVersion === "openskill-kit.config.v1") return ProjectConfigSchema.parse(value);
+  if (value?.schemaVersion === "openskill-kit.config.v1") {
+    const learning = typeof value.learning === "object" && value.learning !== null ? value.learning as Record<string, unknown> : {};
+    return ProjectConfigSchema.parse({
+      ...value,
+      learning: {
+        ...learning,
+        rawEvidence: typeof learning.rawEvidence === "object" && learning.rawEvidence !== null ? learning.rawEvidence : {}
+      }
+    });
+  }
   if (value?.schemaVersion === "openskill-kit.config.v0") {
     const root = path.resolve(projectRoot);
     return createDefaultProjectConfig({

@@ -1784,9 +1784,9 @@ describe("learn-v2 substrate", () => {
     await writeFile(path.join(tamperedPromptDir, "request-manifest.json"), JSON.stringify({
       ...manifest,
       episodeId: request.episodeId,
-      promptPath: path.join(root, ".openskill-kit", "learn-v2", "model-requests", "other", "concept-extraction-prompt.md"),
-      bundlePath: path.join(tamperedPromptDir, "episode-learning-bundle.json"),
-      expectedOutputPath: tamperedPromptOutputPath,
+      promptPath: ".openskill-kit/learn-v2/model-requests/other/concept-extraction-prompt.md",
+      bundlePath: projectRel(root, path.join(tamperedPromptDir, "episode-learning-bundle.json")),
+      expectedOutputPath: projectRel(root, tamperedPromptOutputPath),
       evidenceIds: [evidenceId]
     }), "utf8");
     await writeFile(tamperedPromptOutputPath, JSON.stringify({
@@ -1807,9 +1807,9 @@ describe("learn-v2 substrate", () => {
     await writeFile(path.join(tamperedMissingDir, "request-manifest.json"), JSON.stringify({
       ...manifest,
       episodeId: request.episodeId,
-      promptPath: path.join(tamperedMissingDir, "concept-extraction-prompt.md"),
-      bundlePath: path.join(tamperedMissingDir, "episode-learning-bundle.json"),
-      expectedOutputPath: tamperedMissingOutputPath,
+      promptPath: projectRel(root, path.join(tamperedMissingDir, "concept-extraction-prompt.md")),
+      bundlePath: projectRel(root, path.join(tamperedMissingDir, "episode-learning-bundle.json")),
+      expectedOutputPath: projectRel(root, tamperedMissingOutputPath),
       evidenceIds: [evidenceId]
     }), "utf8");
     await writeFile(tamperedMissingOutputPath, JSON.stringify({
@@ -1831,9 +1831,9 @@ describe("learn-v2 substrate", () => {
     await writeFile(path.join(tamperedBundleDir, "request-manifest.json"), JSON.stringify({
       ...manifest,
       episodeId: request.episodeId,
-      promptPath: path.join(tamperedBundleDir, "concept-extraction-prompt.md"),
-      bundlePath: path.join(tamperedBundleDir, "episode-learning-bundle.json"),
-      expectedOutputPath: tamperedBundleOutputPath,
+      promptPath: projectRel(root, path.join(tamperedBundleDir, "concept-extraction-prompt.md")),
+      bundlePath: projectRel(root, path.join(tamperedBundleDir, "episode-learning-bundle.json")),
+      expectedOutputPath: projectRel(root, tamperedBundleOutputPath),
       evidenceIds: [evidenceId]
     }), "utf8");
     await writeFile(tamperedBundleOutputPath, JSON.stringify({
@@ -1855,9 +1855,9 @@ describe("learn-v2 substrate", () => {
     await writeFile(path.join(staleDir, "request-manifest.json"), JSON.stringify({
       ...manifest,
       episodeId: "episode_missing",
-      promptPath: path.join(staleDir, "concept-extraction-prompt.md"),
-      bundlePath: path.join(staleDir, "episode-learning-bundle.json"),
-      expectedOutputPath: staleOutputPath,
+      promptPath: projectRel(root, path.join(staleDir, "concept-extraction-prompt.md")),
+      bundlePath: projectRel(root, path.join(staleDir, "episode-learning-bundle.json")),
+      expectedOutputPath: projectRel(root, staleOutputPath),
       evidenceIds: [evidenceId]
     }), "utf8");
     await writeFile(staleOutputPath, JSON.stringify({
@@ -1871,9 +1871,23 @@ describe("learn-v2 substrate", () => {
       }],
       rejected: []
     }), "utf8");
-    const malformedOutputPath = path.join(root, "malformed-response.json");
+    const malformedDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_malformed");
+    const malformedOutputPath = path.join(malformedDir, "response.json");
+    await mkdir(malformedDir, { recursive: true });
+    await writeFile(path.join(malformedDir, "concept-extraction-prompt.md"), prompt, "utf8");
+    await writeFile(path.join(malformedDir, "episode-learning-bundle.json"), bundle, "utf8");
+    await writeFile(path.join(malformedDir, "request-manifest.json"), JSON.stringify({
+      ...manifest,
+      episodeId: request.episodeId,
+      promptPath: projectRel(root, path.join(malformedDir, "concept-extraction-prompt.md")),
+      bundlePath: projectRel(root, path.join(malformedDir, "episode-learning-bundle.json")),
+      expectedOutputPath: projectRel(root, malformedOutputPath),
+      evidenceIds: [evidenceId]
+    }), "utf8");
     await writeFile(malformedOutputPath, "{", "utf8");
-    const bareOutputPath = path.join(root, "response.json");
+    const bareDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "episode_no_manifest");
+    const bareOutputPath = path.join(bareDir, "response.json");
+    await mkdir(bareDir, { recursive: true });
     await writeFile(bareOutputPath, JSON.stringify({
       schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
       atoms: [{
@@ -1900,7 +1914,6 @@ describe("learn-v2 substrate", () => {
     expect(applied.outputFiles).toContain(outputPath);
     expect(applied.atomCount).toBe(1);
     expect(applied.rejected.map((item) => item.reason)).toEqual(expect.arrayContaining([
-      "unexpected-output-path",
       "unexpected-request-file-path",
       "missing-request-file",
       "request-file-hash-mismatch",
@@ -1944,17 +1957,22 @@ describe("learn-v2 substrate", () => {
         invocationLog.push(invocation);
         const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}");
         expect(invocation.command).toBe("opencode-test");
-        expect(invocation.cwd).toBe(root);
+        expect(invocation.cwd).not.toBe(root);
+        expect(path.relative(root, invocation.cwd).startsWith("..") || path.isAbsolute(path.relative(root, invocation.cwd))).toBe(true);
         expect(invocation.timeoutMs).toBe(20_000);
         expect(invocation.args).toContain("run");
         expect(invocation.args).toContain("--agent");
         expect(invocation.args).toContain("osk-learn-v2-concept-extractor");
+        expect(invocation.args[invocation.args.indexOf("--dir") + 1]).toBe(invocation.cwd);
         expect(invocation.args).toContain("--file");
-        expect(invocation.args).toContain(request.promptPath);
-        expect(invocation.args).toContain(request.bundlePath);
+        expect(invocation.args).not.toContain(request.promptPath);
+        expect(invocation.args).not.toContain(request.bundlePath);
+        expect(path.basename(invocation.args[invocation.args.indexOf("--file") + 1])).toBe("concept-extraction-prompt.md");
+        expect(path.basename(invocation.args[invocation.args.lastIndexOf("--file") + 1])).toBe("episode-learning-bundle.json");
         expect(JSON.stringify(config)).toContain("osk-learn-v2-concept-extractor");
         expect(config.agent["osk-learn-v2-concept-extractor"].permission.bash).toBe("deny");
         expect(config.agent["osk-learn-v2-concept-extractor"].permission.edit).toBe("deny");
+        expect(JSON.stringify(invocation.args)).not.toContain(root);
         expect(JSON.stringify(invocation.args)).not.toContain("raw_");
         expect(JSON.stringify(config)).not.toContain("raw_");
         const proposal = {
@@ -1982,6 +2000,7 @@ describe("learn-v2 substrate", () => {
     expect(result.results[0]?.status).toBe("written");
     expect(result.results[0]?.modelRole).toBe("concept-extractor");
     expect(result.results[0]?.argsShape).toContain("[ATTACHED_FILE]");
+    expect(result.results[0]?.argsShape).toContain("[EXECUTION_DIR]");
     expect(result.results[0]?.stdoutHash).toMatch(/^sha256:/);
     expect(result.results[0]?.stderrHash).toMatch(/^sha256:/);
     expect(invocationLog).toHaveLength(1);
@@ -2001,6 +2020,47 @@ describe("learn-v2 substrate", () => {
     expect(tampered.failedCount).toBe(1);
     expect(tampered.results[0]?.reason).toBe("request-file-hash-mismatch");
     expect(invocationLog).toHaveLength(1);
+  });
+
+  it("rejects model request manifests outside OSK request roots and unsafe manifest paths", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:10Z");
+    const [episode] = reconstructLearnV2Episodes([
+      normalizedMessage("ev_exec_confine", "Prefer focused parser regression fixtures before broad parser rewrites.", "user")
+    ]);
+    await writeLearnV2EpisodeStore(root, [episode!], now);
+    const requests = await writeLearnV2ModelRequests(root, undefined, now);
+    const request = requests.requests[0]!;
+    const outsideDir = await mkdtemp(path.join(os.tmpdir(), "osk-external-model-request-"));
+    await mkdir(outsideDir, { recursive: true });
+    await writeFile(path.join(outsideDir, "request-manifest.json"), await readText(request.manifestPath), "utf8");
+
+    const outside = await executeLearnV2ModelRequests(root, {
+      requestManifests: [path.join(outsideDir, "request-manifest.json")],
+      opencodeCommand: "opencode-test",
+      runner: async () => {
+        throw new Error("runner should not execute external manifests");
+      }
+    });
+    expect(outside.writtenCount).toBe(0);
+    expect(outside.failedCount).toBe(1);
+    expect(outside.results[0]?.reason).toBe("request-manifest-outside-model-requests");
+
+    const manifest = JSON.parse(await readText(request.manifestPath));
+    await writeFile(request.manifestPath, JSON.stringify({
+      ...manifest,
+      expectedOutputPath: path.join(outsideDir, "response.json")
+    }, null, 2), "utf8");
+    const unsafePath = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      opencodeCommand: "opencode-test",
+      runner: async () => {
+        throw new Error("runner should not execute unsafe manifests");
+      }
+    });
+    expect(unsafePath.writtenCount).toBe(0);
+    expect(unsafePath.failedCount).toBe(1);
+    expect(unsafePath.results[0]?.reason).toBe("unexpected-request-file-path");
   });
 
   it("prepares executes and applies scope-inferencer proposals without broadening concept scope", async () => {
@@ -2070,10 +2130,15 @@ describe("learn-v2 substrate", () => {
       runner: async (invocation) => {
         const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}");
         expect(invocation.args).toContain("osk-learn-v2-scope-inferencer");
-        expect(invocation.args).toContain(request.promptPath);
-        expect(invocation.args).toContain(request.bundlePath);
+        expect(invocation.cwd).not.toBe(root);
+        expect(invocation.args[invocation.args.indexOf("--dir") + 1]).toBe(invocation.cwd);
+        expect(invocation.args).not.toContain(request.promptPath);
+        expect(invocation.args).not.toContain(request.bundlePath);
+        expect(path.basename(invocation.args[invocation.args.indexOf("--file") + 1])).toBe("scope-inference-prompt.md");
+        expect(path.basename(invocation.args[invocation.args.lastIndexOf("--file") + 1])).toBe("concept-scope-bundle.json");
         expect(JSON.stringify(config)).toContain("osk-learn-v2-scope-inferencer");
         expect(config.agent["osk-learn-v2-scope-inferencer"].permission.bash).toBe("deny");
+        expect(JSON.stringify(invocation.args)).not.toContain(root);
         expect(JSON.stringify(invocation.args)).not.toContain("raw_");
         return {
           exitCode: 0,
@@ -2161,10 +2226,15 @@ describe("learn-v2 substrate", () => {
       runner: async (invocation) => {
         const config = JSON.parse(invocation.env.OPENCODE_CONFIG_CONTENT ?? "{}");
         expect(invocation.args).toContain("osk-learn-v2-contradiction-reviewer");
-        expect(invocation.args).toContain(request.promptPath);
-        expect(invocation.args).toContain(request.bundlePath);
+        expect(invocation.cwd).not.toBe(root);
+        expect(invocation.args[invocation.args.indexOf("--dir") + 1]).toBe(invocation.cwd);
+        expect(invocation.args).not.toContain(request.promptPath);
+        expect(invocation.args).not.toContain(request.bundlePath);
+        expect(path.basename(invocation.args[invocation.args.indexOf("--file") + 1])).toBe("contradiction-review-prompt.md");
+        expect(path.basename(invocation.args[invocation.args.lastIndexOf("--file") + 1])).toBe("contradiction-review-bundle.json");
         expect(JSON.stringify(config)).toContain("osk-learn-v2-contradiction-reviewer");
         expect(config.agent["osk-learn-v2-contradiction-reviewer"].permission.bash).toBe("deny");
+        expect(JSON.stringify(invocation.args)).not.toContain(root);
         expect(JSON.stringify(invocation.args)).not.toContain("raw_contradict");
         return {
           exitCode: 0,
@@ -3302,4 +3372,8 @@ function episodeWithCommand(id: string, command: string, status: "pass" | "fail"
 
 async function readText(file: string): Promise<string> {
   return await import("node:fs/promises").then((fs) => fs.readFile(file, "utf8"));
+}
+
+function projectRel(root: string, file: string): string {
+  return path.relative(root, file).replace(/\\/g, "/");
 }

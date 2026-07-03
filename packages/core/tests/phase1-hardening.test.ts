@@ -275,6 +275,57 @@ describe("phase 1 hardening", () => {
     expect(migrated.schemaVersion).toBe("openskill-kit.config.v1");
     expect(migrated.privacy.localOnly).toBe(true);
   });
+
+  it("migrates pre raw-evidence v1 configs without losing existing learning settings", async () => {
+    const migrated = migrateProjectConfig({
+      schemaVersion: "openskill-kit.config.v1",
+      projectId: "osk_old",
+      projectName: "old-project",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      learning: {
+        enabled: true,
+        mode: "auto-stage",
+        highValueOnly: false,
+        minConfidenceToApply: 0.8,
+        minConfidenceToShare: 0.91,
+        decayHalfLifeDays: 30
+      },
+      privacy: {},
+      scopes: {},
+      adapters: {},
+      compileTargets: undefined
+    }, "C:/tmp/old-project");
+
+    expect(migrated.learning.mode).toBe("auto-stage");
+    expect(migrated.learning.highValueOnly).toBe(false);
+    expect(migrated.learning.rawEvidence.enabled).toBe(false);
+    expect(migrated.learning.rawEvidence.extractionExecution).toBe("deterministic-only");
+  });
+
+  it("opens existing pre raw-evidence configs during init without rewriting them", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-old-config-"));
+    const oskRoot = path.join(root, ".openskill-kit");
+    await mkdir(oskRoot, { recursive: true });
+    await writeJson(path.join(oskRoot, "config.json"), {
+      schemaVersion: "openskill-kit.config.v1",
+      projectId: "osk_old_init",
+      projectName: "old-init",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      learning: { enabled: true, mode: "manual-review" },
+      privacy: {},
+      scopes: {},
+      adapters: {},
+      compileTargets: undefined
+    });
+
+    const result = await initAdaptiveProject({ projectRoot: root, projectName: "ignored", now: new Date("2026-07-03T00:00:00.000Z") });
+
+    expect(result.status).toBe("exists");
+    expect(result.config.projectId).toBe("osk_old_init");
+    expect(result.config.learning.rawEvidence.maxRawBytesTotal).toBe(250_000_000);
+    const stored = JSON.parse(await readFile(path.join(oskRoot, "config.json"), "utf8"));
+    expect(stored.learning.rawEvidence).toBeUndefined();
+  });
 });
 
 async function tempProject(): Promise<string> {

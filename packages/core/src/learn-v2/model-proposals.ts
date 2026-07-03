@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import { execFile } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { readProjectConfig } from "../events/store.js";
@@ -27,7 +28,7 @@ import {
 } from "./schemas.js";
 import { parseLearnV2LlmScopeInferenceOutput, validateLearnV2ScopeInferenceForCard } from "./scope-proposals.js";
 import { parseLearnV2LlmContradictionReviewOutput, validateLearnV2ContradictionReviewForManifest } from "./contradiction-proposals.js";
-import { learnV2Hash } from "./utils.js";
+import { learnV2Hash, learnV2IsInside } from "./utils.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -376,6 +377,16 @@ export async function executeLearnV2ModelRequests(
   for (const manifestPath of manifestPaths) {
     const started = Date.now();
     const outputPathForManifest = path.join(path.dirname(manifestPath), "response.json");
+    if (!isLearnV2ModelRequestManifestPath(root, manifestPath)) {
+      results.push({
+        manifestPath,
+        outputPath: outputPathForManifest,
+        status: "failed",
+        reason: "request-manifest-outside-model-requests",
+        detail: "Model request manifests must be request-manifest.json files inside .openskill-kit/learn-v2/model-requests/."
+      });
+      continue;
+    }
     const manifestRead = await fs.readFile(manifestPath, "utf8").catch((error: unknown) => {
       results.push({
         manifestPath,
@@ -433,19 +444,24 @@ export async function executeLearnV2ModelRequests(
     const promptPath = path.resolve(root, manifest.promptPath);
     const bundlePath = path.resolve(root, manifest.bundlePath);
     let invocation: LearnV2OpenCodeInvocation;
+    let executionDir: string | undefined;
     try {
       const agent = await resolveRequestAgent(root, manifest);
+      const isolated = await createIsolatedOpenCodeRequestDir(manifest, promptPath, bundlePath);
+      executionDir = isolated.dir;
       invocation = buildOpenCodeInvocation({
         root,
         command,
         manifest,
-        promptPath,
-        bundlePath,
+        executionDir: isolated.dir,
+        promptPath: isolated.promptPath,
+        bundlePath: isolated.bundlePath,
         timeoutMs,
         attachUrl: options.opencodeAttachUrl,
         agent
       });
     } catch (error) {
+      if (executionDir) await fs.rm(executionDir, { recursive: true, force: true }).catch(() => undefined);
       results.push({
         manifestPath,
         outputPath,
@@ -475,6 +491,8 @@ export async function executeLearnV2ModelRequests(
         argsShape: shapeOpenCodeArgs(invocation.args)
       });
       continue;
+    } finally {
+      await fs.rm(invocation.cwd, { recursive: true, force: true }).catch(() => undefined);
     }
 
     const stdout = run.stdout ?? "";
@@ -668,6 +686,36 @@ export function learnV2ModelRequestsRoot(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "model-requests");
 }
 
+function isLearnV2ModelRequestManifestPath(root: string, manifestPath: string): boolean {
+  const requestRoot = path.resolve(learnV2ModelRequestsRoot(root));
+  const resolvedManifest = path.resolve(manifestPath);
+  const requestDir = path.dirname(resolvedManifest);
+  return path.basename(resolvedManifest) === "request-manifest.json"
+    && samePath(path.dirname(requestDir), requestRoot)
+    && learnV2IsInside(requestRoot, requestDir);
+}
+
+function isLearnV2ModelRequestOutputPath(root: string, outputPath: string): boolean {
+  const requestRoot = path.resolve(learnV2ModelRequestsRoot(root));
+  const resolvedOutput = path.resolve(outputPath);
+  const requestDir = path.dirname(resolvedOutput);
+  return path.basename(resolvedOutput) === "response.json"
+    && samePath(path.dirname(requestDir), requestRoot)
+    && learnV2IsInside(requestRoot, requestDir);
+}
+
+function resolveManifestProjectPath(root: string, value: string | undefined): string | undefined {
+  if (!value || path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || value.includes("\\") || /(^|\/)\.\.(\/|$)/.test(value)) return undefined;
+  const resolved = path.resolve(root, value);
+  return learnV2IsInside(path.resolve(root), resolved) ? resolved : undefined;
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
+}
+
 function learnV2ProjectRelativePath(root: string, file: string): string {
   const relative = path.relative(root, file).replace(/\\/g, "/");
   return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : file;
@@ -718,7 +766,11 @@ async function resolveEpisodeForModelOutput(
   episodesById: Map<string, LearnV2TaskEpisode>,
   rejected: LearnV2ModelProposalApplyResult["rejected"]
 ): Promise<LearnV2TaskEpisode | undefined> {
-  const manifestRead = await readSiblingModelRequestManifest(outputPath).catch((error: unknown) => {
+  if (!isLearnV2ModelRequestOutputPath(root, outputPath)) {
+    rejected.push({ outputPath, id: "file", reason: "unexpected-request-file-path", detail: "Model outputs must be response.json files inside .openskill-kit/learn-v2/model-requests/." });
+    return undefined;
+  }
+  const manifestRead = await readSiblingModelRequestManifest(root, outputPath).catch((error: unknown) => {
     rejected.push({ outputPath, id: "file", reason: "invalid-request-manifest", detail: error instanceof Error ? error.message : String(error) });
     return undefined;
   });
@@ -763,8 +815,9 @@ async function resolveEpisodeForModelOutput(
   return episode;
 }
 
-async function readSiblingModelRequestManifest(outputPath: string): Promise<{ manifest: LearnV2ModelRequestManifest; manifestPath: string } | undefined> {
+async function readSiblingModelRequestManifest(root: string, outputPath: string): Promise<{ manifest: LearnV2ModelRequestManifest; manifestPath: string } | undefined> {
   const manifestPath = path.join(path.dirname(outputPath), "request-manifest.json");
+  if (!isLearnV2ModelRequestManifestPath(root, manifestPath)) return undefined;
   const text = await fs.readFile(manifestPath, "utf8").catch(() => undefined);
   if (!text) return undefined;
   return { manifest: parseModelRequestManifest(text, manifestPath), manifestPath };
@@ -776,14 +829,29 @@ async function resolveModelOutputInputPath(
   rejected: LearnV2ModelProposalApplyResult["rejected"]
 ): Promise<string | undefined> {
   const absolute = path.resolve(root, inputPath);
-  if (path.basename(absolute) !== "request-manifest.json") return absolute;
+  if (path.basename(absolute) !== "request-manifest.json") {
+    if (!isLearnV2ModelRequestOutputPath(root, absolute)) {
+      rejected.push({ outputPath: absolute, id: "file", reason: "unexpected-request-file-path", detail: "Model output files must be request-local response.json files." });
+      return undefined;
+    }
+    return absolute;
+  }
+  if (!isLearnV2ModelRequestManifestPath(root, absolute)) {
+    rejected.push({ outputPath: absolute, id: "file", reason: "request-manifest-outside-model-requests", detail: "Model request manifests must live in .openskill-kit/learn-v2/model-requests/." });
+    return undefined;
+  }
   const text = await fs.readFile(absolute, "utf8").catch((error: unknown) => {
     rejected.push({ outputPath: absolute, id: "file", reason: "read-failed", detail: error instanceof Error ? error.message : String(error) });
     return undefined;
   });
   if (!text) return undefined;
   try {
-    return path.resolve(root, parseModelRequestManifest(text, absolute).expectedOutputPath);
+    const expectedOutputPath = resolveManifestProjectPath(root, parseModelRequestManifest(text, absolute).expectedOutputPath);
+    if (!expectedOutputPath || !isLearnV2ModelRequestOutputPath(root, expectedOutputPath)) {
+      rejected.push({ outputPath: absolute, id: "file", reason: "unexpected-request-file-path", detail: "Expected output path must be request-local response.json." });
+      return undefined;
+    }
+    return expectedOutputPath;
   } catch (error) {
     rejected.push({ outputPath: absolute, id: "file", reason: "invalid-request-manifest", detail: error instanceof Error ? error.message : String(error) });
     return undefined;
@@ -863,10 +931,31 @@ async function resolveRequestAgent(root: string, manifest: LearnV2ModelRequestMa
   };
 }
 
+async function createIsolatedOpenCodeRequestDir(
+  manifest: LearnV2ModelRequestManifest,
+  promptPath: string,
+  bundlePath: string
+): Promise<{ dir: string; promptPath: string; bundlePath: string }> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "osk-learn-v2-model-"));
+  const isolatedPromptPath = path.join(dir, promptBasenameForModelRole(manifest.modelRole));
+  const isolatedBundlePath = path.join(dir, bundleBasenameForModelRole(manifest.modelRole));
+  try {
+    await Promise.all([
+      fs.copyFile(promptPath, isolatedPromptPath),
+      fs.copyFile(bundlePath, isolatedBundlePath)
+    ]);
+  } catch (error) {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+  return { dir, promptPath: isolatedPromptPath, bundlePath: isolatedBundlePath };
+}
+
 function buildOpenCodeInvocation(input: {
   root: string;
   command: string;
   manifest: LearnV2ModelRequestManifest;
+  executionDir: string;
   promptPath: string;
   bundlePath: string;
   timeoutMs: number;
@@ -879,7 +968,7 @@ function buildOpenCodeInvocation(input: {
     "run",
     "--agent", input.manifest.opencodeAgentId,
     "--model", input.agent.model,
-    "--dir", input.root,
+    "--dir", input.executionDir,
     "--title", `OSK Learn v2 ${input.manifest.modelRole} ${input.manifest.episodeId}`,
     "--file", input.promptPath,
     "--file", input.bundlePath
@@ -894,7 +983,7 @@ function buildOpenCodeInvocation(input: {
   return {
     command: input.command,
     args,
-    cwd: input.root,
+    cwd: input.executionDir,
     timeoutMs: input.timeoutMs,
     env: {
       ...process.env,
@@ -979,6 +1068,7 @@ function shapeOpenCodeArgs(args: string[]): string[] {
   return args.map((arg, index) => {
     if (index > 0 && args[index - 1] === "--file") return "[ATTACHED_FILE]";
     if (index > 0 && args[index - 1] === "--title") return "[TITLE]";
+    if (index > 0 && args[index - 1] === "--dir") return "[EXECUTION_DIR]";
     if (index === args.length - 1 && !arg.startsWith("--")) return "[PROMPT]";
     return arg;
   });
@@ -1004,9 +1094,30 @@ async function validateModelRequestManifestFiles(
   rejected: LearnV2ModelProposalApplyResult["rejected"]
 ): Promise<boolean> {
   const requestDir = path.dirname(path.resolve(manifestPath));
-  const promptPath = path.resolve(root, manifest.promptPath);
-  const bundlePath = path.resolve(root, manifest.bundlePath);
-  const expectedOutputPath = path.resolve(root, manifest.expectedOutputPath);
+  if (!isLearnV2ModelRequestManifestPath(root, manifestPath)) {
+    rejected.push({
+      outputPath,
+      id: "file",
+      reason: "request-manifest-outside-model-requests",
+      detail: "Model request manifests must live in an OSK-owned model request directory."
+    });
+    return false;
+  }
+  const promptPath = resolveManifestProjectPath(root, manifest.promptPath);
+  const bundlePath = resolveManifestProjectPath(root, manifest.bundlePath);
+  const expectedOutputPath = resolveManifestProjectPath(root, manifest.expectedOutputPath);
+  const agentFile = resolveManifestProjectPath(root, manifest.agentFile);
+  const modelRoutingArtifactPath = resolveManifestProjectPath(root, manifest.modelRoutingArtifactPath);
+  const opencodeAgentIndexPath = resolveManifestProjectPath(root, manifest.opencodeAgentIndexPath);
+  if (!promptPath || !bundlePath || !expectedOutputPath || !agentFile || !modelRoutingArtifactPath || !opencodeAgentIndexPath) {
+    rejected.push({
+      outputPath,
+      id: "file",
+      reason: "unexpected-request-file-path",
+      detail: "Request manifest paths must be project-relative, normalized, and inside the project."
+    });
+    return false;
+  }
   const expectedPromptBasename = promptBasenameForModelRole(manifest.modelRole);
   const expectedBundleBasename = bundleBasenameForModelRole(manifest.modelRole);
   const expectedFiles = [
@@ -1024,6 +1135,20 @@ async function validateModelRequestManifestFiles(
       });
       return false;
     }
+  }
+  const routingRoot = path.join(path.resolve(root), ".openskill-kit", "model-routing");
+  if (
+    !learnV2IsInside(routingRoot, agentFile) ||
+    !learnV2IsInside(routingRoot, modelRoutingArtifactPath) ||
+    !learnV2IsInside(routingRoot, opencodeAgentIndexPath)
+  ) {
+    rejected.push({
+      outputPath,
+      id: "file",
+      reason: "unexpected-request-file-path",
+      detail: "Model routing artifacts must stay inside .openskill-kit/model-routing."
+    });
+    return false;
   }
   for (const item of expectedFiles.slice(0, 2)) {
     const stat = await fs.stat(item.file).catch(() => undefined);

@@ -15,7 +15,7 @@ import {
   type LearnV2LlmScopeInferenceOutput
 } from "./schemas.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
-import { learnV2DeclassifyText, learnV2Hash, learnV2ShortHash } from "./utils.js";
+import { learnV2DeclassifyText, learnV2Hash, learnV2IsInside, learnV2ShortHash } from "./utils.js";
 
 export interface LearnV2ScopeInferenceRequest {
   conceptId: string;
@@ -209,8 +209,8 @@ export async function applyLearnV2ScopeInferenceOutputs(
   const config = await readProjectConfig(root);
   const store = await readLearnV2ConceptStore(root, now);
   const byId = new Map(store.cards.map((card) => [card.id, card]));
-  const outputFiles = (await Promise.all(outputPathsInput.map((file) => resolveScopeOutputInputPath(root, file)))).filter((file): file is string => Boolean(file));
   const rejected: LearnV2ScopeInferenceApplyResult["rejected"] = [];
+  const outputFiles = (await Promise.all(outputPathsInput.map((file) => resolveScopeOutputInputPath(root, file, rejected)))).filter((file): file is string => Boolean(file));
   const updated = new Map<string, LearnV2ConceptCard>();
 
   for (const outputPath of outputFiles) {
@@ -417,13 +417,21 @@ async function readScopeRequestManifest(
   rejected: LearnV2ScopeInferenceApplyResult["rejected"]
 ): Promise<Record<string, any> | undefined> {
   const manifestPath = path.join(path.dirname(outputPath), "request-manifest.json");
+  if (!isLearnV2ModelRequestOutputPath(root, outputPath) || !isLearnV2ModelRequestManifestPath(root, manifestPath)) {
+    rejected.push({ outputPath, id: "file", reason: "unexpected-request-file-path" });
+    return undefined;
+  }
   const text = await fs.readFile(manifestPath, "utf8").catch(() => undefined);
   if (!text) {
     rejected.push({ outputPath, id: "file", reason: "missing-request-manifest" });
     return undefined;
   }
   const manifest = JSON.parse(text) as Record<string, any>;
-  const expectedOutput = path.resolve(root, String(manifest.expectedOutputPath ?? ""));
+  const expectedOutput = resolveManifestProjectPath(root, String(manifest.expectedOutputPath ?? ""));
+  if (!expectedOutput || !isLearnV2ModelRequestOutputPath(root, expectedOutput)) {
+    rejected.push({ outputPath, id: "file", reason: "unexpected-request-file-path" });
+    return undefined;
+  }
   if (expectedOutput !== path.resolve(outputPath)) {
     rejected.push({ outputPath, id: "file", reason: "unexpected-output-path", detail: `Expected ${expectedOutput}` });
     return undefined;
@@ -440,8 +448,12 @@ async function readScopeRequestManifest(
     return undefined;
   }
   const requestDir = path.dirname(manifestPath);
-  const promptPath = path.resolve(root, String(manifest.promptPath));
-  const bundlePath = path.resolve(root, String(manifest.bundlePath));
+  const promptPath = resolveManifestProjectPath(root, String(manifest.promptPath));
+  const bundlePath = resolveManifestProjectPath(root, String(manifest.bundlePath));
+  if (!promptPath || !bundlePath) {
+    rejected.push({ outputPath, id: "file", reason: "unexpected-request-file-path" });
+    return undefined;
+  }
   if (path.dirname(promptPath) !== requestDir || path.basename(promptPath) !== "scope-inference-prompt.md" || path.dirname(bundlePath) !== requestDir || path.basename(bundlePath) !== "concept-scope-bundle.json") {
     rejected.push({ outputPath, id: "file", reason: "unexpected-request-file-path" });
     return undefined;
@@ -461,13 +473,28 @@ async function readScopeRequestManifest(
   return manifest;
 }
 
-async function resolveScopeOutputInputPath(root: string, inputPath: string): Promise<string | undefined> {
+async function resolveScopeOutputInputPath(root: string, inputPath: string, rejected: LearnV2ScopeInferenceApplyResult["rejected"]): Promise<string | undefined> {
   const absolute = path.resolve(root, inputPath);
-  if (path.basename(absolute) !== "request-manifest.json") return absolute;
+  if (path.basename(absolute) !== "request-manifest.json") {
+    if (!isLearnV2ModelRequestOutputPath(root, absolute)) {
+      rejected.push({ outputPath: absolute, id: "file", reason: "unexpected-request-file-path" });
+      return undefined;
+    }
+    return absolute;
+  }
+  if (!isLearnV2ModelRequestManifestPath(root, absolute)) {
+    rejected.push({ outputPath: absolute, id: "file", reason: "request-manifest-outside-model-requests" });
+    return undefined;
+  }
   const text = await fs.readFile(absolute, "utf8").catch(() => undefined);
   if (!text) return undefined;
   const manifest = JSON.parse(text) as { expectedOutputPath?: string };
-  return manifest.expectedOutputPath ? path.resolve(root, manifest.expectedOutputPath) : undefined;
+  const outputPath = resolveManifestProjectPath(root, manifest.expectedOutputPath);
+  if (!outputPath || !isLearnV2ModelRequestOutputPath(root, outputPath)) {
+    rejected.push({ outputPath: absolute, id: "file", reason: "unexpected-request-file-path" });
+    return undefined;
+  }
+  return outputPath;
 }
 
 function learnV2ProjectRelativePath(root: string, file: string): string {
@@ -477,6 +504,36 @@ function learnV2ProjectRelativePath(root: string, file: string): string {
 
 function learnV2ModelRequestsRoot(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "model-requests");
+}
+
+function isLearnV2ModelRequestManifestPath(root: string, manifestPath: string): boolean {
+  const requestRoot = path.resolve(learnV2ModelRequestsRoot(root));
+  const resolvedManifest = path.resolve(manifestPath);
+  const requestDir = path.dirname(resolvedManifest);
+  return path.basename(resolvedManifest) === "request-manifest.json"
+    && samePath(path.dirname(requestDir), requestRoot)
+    && learnV2IsInside(requestRoot, requestDir);
+}
+
+function isLearnV2ModelRequestOutputPath(root: string, outputPath: string): boolean {
+  const requestRoot = path.resolve(learnV2ModelRequestsRoot(root));
+  const resolvedOutput = path.resolve(outputPath);
+  const requestDir = path.dirname(resolvedOutput);
+  return path.basename(resolvedOutput) === "response.json"
+    && samePath(path.dirname(requestDir), requestRoot)
+    && learnV2IsInside(requestRoot, requestDir);
+}
+
+function resolveManifestProjectPath(root: string, value: string | undefined): string | undefined {
+  if (!value || path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || value.includes("\\") || /(^|\/)\.\.(\/|$)/.test(value)) return undefined;
+  const resolved = path.resolve(root, value);
+  return learnV2IsInside(path.resolve(root), resolved) ? resolved : undefined;
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalizedLeft = path.resolve(left);
+  const normalizedRight = path.resolve(right);
+  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
 }
 
 async function readLocalEpisodeStore(root: string): Promise<{ episodes: any[] }> {
