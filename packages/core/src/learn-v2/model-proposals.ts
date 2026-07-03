@@ -501,6 +501,25 @@ export async function executeLearnV2ModelRequests(
       });
       continue;
     }
+    const validation = await validateExecutedModelOutput(root, manifest, parsed);
+    if (!validation.ok) {
+      results.push({
+        manifestPath,
+        outputPath,
+        episodeId: manifest.episodeId,
+        status: "failed",
+        reason: validation.reason,
+        detail: validation.detail,
+        durationMs: Date.now() - started,
+        stdoutBytes: Buffer.byteLength(stdout),
+        stderrBytes: Buffer.byteLength(stderr),
+        stdoutHash: learnV2Hash(stdout),
+        stderrHash: learnV2Hash(stderr),
+        command: invocation.command,
+        argsShape: shapeOpenCodeArgs(invocation.args)
+      });
+      continue;
+    }
 
     const text = `${JSON.stringify(parsed, null, 2)}\n`;
     await writeFileAtomic(outputPath, text);
@@ -533,6 +552,48 @@ export async function executeLearnV2ModelRequests(
   };
   await writeJsonAtomic(executionReportPath, result);
   return result;
+}
+
+async function validateExecutedModelOutput(
+  root: string,
+  manifest: LearnV2ModelRequestManifest,
+  parsed: ReturnType<typeof parseLearnV2LlmConceptExtractionOutput>
+): Promise<{ ok: true } | { ok: false; reason: "missing-episode-store" | "stale-request-manifest" | "model-output-evidence-validation-failed"; detail: string }> {
+  const episodeStore = await readLearnV2EpisodeStore(root).catch((error: unknown) => ({
+    schemaVersion: "openskill-kit.learn-v2.episode-store.v1" as const,
+    updatedAt: "",
+    episodes: [],
+    error
+  }));
+  if ("error" in episodeStore) {
+    return {
+      ok: false,
+      reason: "missing-episode-store",
+      detail: episodeStore.error instanceof Error ? episodeStore.error.message : String(episodeStore.error)
+    };
+  }
+  const episode = episodeStore.episodes.find((item) => item.id === manifest.episodeId);
+  if (!episode) {
+    return { ok: false, reason: "stale-request-manifest", detail: `Unknown episode ${manifest.episodeId}` };
+  }
+  const episodeEvidenceIds = new Set(episode.evidenceIds);
+  const staleEvidence = manifest.evidenceIds.filter((id) => !episodeEvidenceIds.has(id));
+  if (staleEvidence.length) {
+    return {
+      ok: false,
+      reason: "stale-request-manifest",
+      detail: `Evidence no longer belongs to episode: ${staleEvidence.slice(0, 5).join(", ")}`
+    };
+  }
+  const validation = validateLearnV2LlmConceptExtractionOutput(episode, parsed);
+  if (validation.rejected.length) {
+    return {
+      ok: false,
+      reason: "model-output-evidence-validation-failed",
+      detail: validation.rejected.slice(0, 5).map((item) => `${item.id}:${item.reason}`).join("; ")
+    };
+  }
+  return { ok: true };
 }
 
 export function learnV2EpisodeStorePath(root: string): string {
@@ -788,13 +849,19 @@ function buildOpenCodeConfigContent(agentId: string, agent: { model: string; pro
 
 async function defaultOpenCodeRunner(invocation: LearnV2OpenCodeInvocation): Promise<LearnV2OpenCodeRunResult> {
   try {
-    const output = await execFileAsync(invocation.command, invocation.args, {
+    const commandIsWindowsShim = process.platform === "win32" && /\.(?:cmd|bat)$/i.test(invocation.command);
+    const commandIsNodeShim = /\.(?:cjs|mjs|js)$/i.test(invocation.command);
+    const output = await execFileAsync(
+      commandIsNodeShim ? process.execPath : commandIsWindowsShim ? (process.env.ComSpec ?? "cmd.exe") : invocation.command,
+      commandIsNodeShim ? [invocation.command, ...invocation.args] : commandIsWindowsShim ? ["/d", "/s", "/c", windowsShellCommand(invocation.command, invocation.args)] : invocation.args,
+      {
       cwd: invocation.cwd,
       env: invocation.env,
       timeout: invocation.timeoutMs,
       windowsHide: true,
       maxBuffer: 8 * 1024 * 1024
-    });
+      }
+    );
     return { exitCode: 0, stdout: output.stdout, stderr: output.stderr };
   } catch (error) {
     const childError = error as Error & { code?: number | string; signal?: string; stdout?: string | Buffer; stderr?: string | Buffer };
@@ -808,6 +875,14 @@ async function defaultOpenCodeRunner(invocation: LearnV2OpenCodeInvocation): Pro
     }
     throw error;
   }
+}
+
+function windowsShellCommand(command: string, args: string[]): string {
+  return [command, ...args].map(windowsShellQuote).join(" ");
+}
+
+function windowsShellQuote(value: string): string {
+  return `"${value.replace(/(["^&|<>])/g, "^$1")}"`;
 }
 
 function bufferOrString(value: string | Buffer | undefined): string {

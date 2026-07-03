@@ -1858,20 +1858,21 @@ describe("learn-v2 substrate", () => {
         expect(config.agent["osk-learn-v2-concept-extractor"].permission.edit).toBe("deny");
         expect(JSON.stringify(invocation.args)).not.toContain("raw_");
         expect(JSON.stringify(config)).not.toContain("raw_");
+        const proposal = {
+          schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+          atoms: [{
+            statement: "For parser changes, prefer focused parser regression fixtures before broad parser rewrites.",
+            kind: "verification",
+            polarity: "positive",
+            evidenceIds: [episode!.evidenceIds[0]],
+            confidence: 0.76,
+            rationale: "The episode contains an explicit correction."
+          }],
+          rejected: []
+        };
         return {
           exitCode: 0,
-          stdout: JSON.stringify({
-            schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
-            atoms: [{
-              statement: "For parser changes, prefer focused parser regression fixtures before broad parser rewrites.",
-              kind: "verification",
-              polarity: "positive",
-              evidenceIds: [episode!.evidenceIds[0]],
-              confidence: 0.76,
-              rationale: "The episode contains an explicit correction."
-            }],
-            rejected: []
-          }),
+          stdout: `OpenCode diagnostic preface\n\`\`\`json\n${JSON.stringify(proposal)}\n\`\`\`\nOpenCode diagnostic suffix`,
           stderr: "diagnostic line that must not be persisted"
         };
       }
@@ -1923,6 +1924,30 @@ describe("learn-v2 substrate", () => {
     expect(invalid.writtenCount).toBe(0);
     expect(invalid.failedCount).toBe(1);
     expect(invalid.results[0]?.reason).toBe("invalid-json-or-schema");
+    await expect(stat(request.expectedOutputPath)).rejects.toThrow();
+
+    const ungrounded = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      runner: async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({
+          schemaVersion: "openskill-kit.learn-v2.llm-concept-extraction-output.v1",
+          atoms: [{
+            statement: "Prefer unsupported parser behavior from missing evidence.",
+            kind: "verification",
+            polarity: "positive",
+            evidenceIds: ["ev_missing_from_episode"],
+            confidence: 0.8
+          }],
+          rejected: []
+        }),
+        stderr: ""
+      })
+    });
+    expect(ungrounded.writtenCount).toBe(0);
+    expect(ungrounded.failedCount).toBe(1);
+    expect(ungrounded.results[0]?.reason).toBe("model-output-evidence-validation-failed");
+    expect(ungrounded.results[0]?.detail).toContain("missing-or-invalid-evidence-id");
     await expect(stat(request.expectedOutputPath)).rejects.toThrow();
 
     const unsafeDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", "unsafe-boundary");

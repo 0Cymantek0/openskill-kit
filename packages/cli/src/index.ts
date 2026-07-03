@@ -346,6 +346,7 @@ osk.command("learn")
   .option("--run-learn-v2-eval", "Run Learn-v2 eval from persisted episode and concept stores")
   .option("--prepare-model-requests", "Write prompt-safe Learn-v2 model request artifacts from the stored episode store")
   .option("--execute-model-requests", "Run sanitized Learn-v2 model requests through OpenCode and write validated response.json files")
+  .option("--apply-model-responses", "After --execute-model-requests, validate and merge written response.json files into the Learn-v2 concept store")
   .option("--model-request <path>", "Learn-v2 request directory or request-manifest.json to execute; defaults to every prepared request", collectOption, [])
   .option("--opencode-command <command>", "OpenCode executable for --execute-model-requests; defaults to OSK_OPENCODE_COMMAND, OPENCODE_COMMAND, or opencode")
   .option("--opencode-attach <url>", "Attach --execute-model-requests to a running OpenCode server")
@@ -412,7 +413,20 @@ osk.command("learn")
         opencodeAttachUrl: options.opencodeAttach,
         timeoutMs: options.modelRequestTimeoutMs
       });
-      output(options.json, result, renderLearnV2ModelRequestExecution(result));
+      const writtenOutputs = result.results
+        .filter((item) => item.status === "written" && item.outputPath)
+        .map((item) => item.outputPath!);
+      if (options.applyModelResponses === true && writtenOutputs.length) {
+        const applied = await applyLearnV2ModelProposalOutputs(process.cwd(), writtenOutputs);
+        const combined = {
+          schemaVersion: "openskill-kit.learn-v2.model-request-execute-apply-result.v1",
+          execution: result,
+          apply: applied
+        };
+        output(options.json, combined, `${renderLearnV2ModelRequestExecution(result)}\n\n${renderLearnV2ModelProposalApply(applied)}`);
+        return;
+      }
+      output(options.json, result, `${renderLearnV2ModelRequestExecution(result)}${options.applyModelResponses === true ? "\nNo validated response files were written, so model proposal apply was skipped." : ""}`);
       return;
     }
     if (options.modelOutput.length > 0) {

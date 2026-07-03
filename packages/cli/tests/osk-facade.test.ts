@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -49,10 +49,47 @@ describe("osk CLI facade", () => {
 
     expect(stdout).toContain("Learn v2 execution policy");
     expect(stdout).toContain("--execute-model-requests");
+    expect(stdout).toContain("--apply-model-responses");
     expect(stdout).toContain("--model-request <path>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
   });
+
+  it("executes and applies Learn v2 model responses through a fake OpenCode command", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-model-exec-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "learn-model-exec" }), "utf8");
+    await execCliJson(["init", "--json"], root);
+    const transcript = path.join(root, "session.md");
+    await writeFile(
+      transcript,
+      `user: ${root} wrong approach. Prefer focused parser regression fixtures before broad parser rewrites in packages/core/src/parser.ts.`,
+      "utf8"
+    );
+
+    const learned = await execCliJson(["osk", "learn", "--raw", "--surface-file", transcript, "--apply", "--json"], root);
+    expect(learned.digest.learningWindows).toBeGreaterThan(0);
+    expect(learned.learnV2.modelRequestCount).toBeGreaterThan(0);
+
+    const fakeOpenCode = await writeFakeOpenCodeCommand(root);
+    const executed = await execCliJson([
+      "osk",
+      "learn",
+      "--execute-model-requests",
+      "--apply-model-responses",
+      "--opencode-command",
+      fakeOpenCode,
+      "--json"
+    ], root);
+
+    expect(executed.schemaVersion).toBe("openskill-kit.learn-v2.model-request-execute-apply-result.v1");
+    expect(executed.execution.writtenCount).toBeGreaterThan(0);
+    expect(executed.execution.failedCount).toBe(0);
+    expect(executed.apply.atomCount).toBeGreaterThan(0);
+    expect(executed.apply.rejected).toEqual([]);
+    const conceptStore = await readFile(path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"), "utf8");
+    expect(conceptStore).toContain("Use focused parser regression fixtures before broad parser rewrites.");
+    expect(conceptStore).not.toContain(root);
+  }, 80_000);
 
   it("renders the Learn v2 observability dashboard from latest report", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-observability-"));
@@ -706,6 +743,32 @@ async function execCliJson(args: string[], cwd: string): Promise<any> {
 async function eventJsonlCount(root: string): Promise<number> {
   const entries = await readdir(path.join(root, ".openskill-kit", "events")).catch(() => []);
   return entries.filter((entry) => entry.endsWith(".jsonl")).length;
+}
+
+async function writeFakeOpenCodeCommand(root: string): Promise<string> {
+  const script = path.join(root, "fake-opencode.cjs");
+  await writeFile(script, [
+    "const fs = require('node:fs');",
+    "const args = process.argv.slice(2);",
+    "const files = args.flatMap((arg, index) => arg === '--file' ? [args[index + 1]] : []).filter(Boolean);",
+    "const bundlePath = files[files.length - 1];",
+    "const bundle = JSON.parse(fs.readFileSync(bundlePath, 'utf8'));",
+    "const evidenceId = bundle.evidenceIds[0];",
+    "process.stdout.write(JSON.stringify({",
+    "  schemaVersion: 'openskill-kit.learn-v2.llm-concept-extraction-output.v1',",
+    "  atoms: [{",
+    "    statement: 'Use focused parser regression fixtures before broad parser rewrites.',",
+    "    kind: 'verification',",
+    "    polarity: 'positive',",
+    "    evidenceIds: [evidenceId],",
+    "    confidence: 0.74,",
+    "    rationale: 'Fake OpenCode test runner cites the provided declassified evidence id.'",
+    "  }],",
+    "  rejected: []",
+    "}));"
+  ].join("\n"), "utf8");
+  if (process.platform !== "win32") await chmod(script, 0o755);
+  return script;
 }
 
 async function runCliWithInput(args: string[], input: string, cwd: string, env: Record<string, string> = {}): Promise<{ code: number | null; stdout: string; stderr: string }> {

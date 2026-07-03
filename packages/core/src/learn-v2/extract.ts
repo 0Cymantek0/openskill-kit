@@ -437,7 +437,72 @@ export function renderLearnV2ConceptExtractionPrompt(bundle: LearnV2EpisodeLearn
 }
 
 export function parseLearnV2LlmConceptExtractionOutput(text: string): LearnV2LlmConceptExtractionOutput {
-  return LearnV2LlmConceptExtractionOutputSchema.parse(JSON.parse(text));
+  return LearnV2LlmConceptExtractionOutputSchema.parse(JSON.parse(extractFirstJsonObject(text)));
+}
+
+function extractFirstJsonObject(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Empty Learn v2 model output.");
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    // Continue with wrapped-output recovery below.
+  }
+  const fenced = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(trimmed);
+  if (fenced?.[1]) {
+    const candidate = fenced[1].trim();
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Continue with brace scan; models sometimes put explanatory text inside fences too.
+    }
+  }
+  const candidate = scanBalancedJsonObject(trimmed);
+  if (!candidate) throw new Error("No JSON object found in Learn v2 model output.");
+  return candidate;
+}
+
+function scanBalancedJsonObject(text: string): string | undefined {
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index]!;
+    if (start === -1) {
+      if (char !== "{") continue;
+      start = index;
+      depth = 1;
+      continue;
+    }
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = inString;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+    if (depth !== 0) continue;
+    const candidate = text.slice(start, index + 1);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      start = -1;
+      depth = 0;
+    }
+  }
+  return undefined;
 }
 
 export function validateLearnV2LlmExtractionProposal(episode: LearnV2TaskEpisode, proposal: LearnV2LlmExtractionProposal): LearnV2ExtractorResult {
