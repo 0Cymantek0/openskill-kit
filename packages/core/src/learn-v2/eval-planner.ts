@@ -4,7 +4,7 @@ import { readProjectConfig } from "../events/store.js";
 import { writeFileAtomic, writeJsonAtomic } from "../storage/atomic.js";
 import { extractFirstJsonObject } from "./extract.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
-import { validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
+import { scanLearnV2OutputArtifactBoundary, validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
 import {
   LearnV2LlmEvalPlannerOutputSchema,
   type LearnV2ConceptCard,
@@ -279,7 +279,7 @@ export async function applyLearnV2EvalPlannerOutputs(
   }
 
   const proposalPath = extractionScenarios.length || behaviorDeltaScenarios.length
-    ? await writeEvalPlannerGoldenProposal(root, now, extractionScenarios, behaviorDeltaScenarios)
+    ? await writeEvalPlannerGoldenProposal(root, config, now, extractionScenarios, behaviorDeltaScenarios, rejected)
     : undefined;
   return {
     schemaVersion: "openskill-kit.learn-v2.eval-planner-apply-result.v1",
@@ -317,13 +317,15 @@ export function validateLearnV2EvalPlannerOutput(
 
 async function writeEvalPlannerGoldenProposal(
   root: string,
+  config: Awaited<ReturnType<typeof readProjectConfig>>,
   now: Date,
   extractionScenarios: LearnV2LlmEvalPlannerOutput["extractionScenarios"],
-  behaviorDeltaScenarios: LearnV2LlmEvalPlannerOutput["behaviorDeltaScenarios"]
-): Promise<string> {
+  behaviorDeltaScenarios: LearnV2LlmEvalPlannerOutput["behaviorDeltaScenarios"],
+  rejected: LearnV2EvalPlannerApplyResult["rejected"]
+): Promise<string | undefined> {
   const dir = path.join(root, ".openskill-kit", "learn-v2", "evals", "proposals");
   const file = path.join(dir, `eval-goldens-${now.toISOString().replace(/[^0-9]/g, "").slice(0, 14)}.json`);
-  await writeJsonAtomic(file, {
+  const proposal = {
     schemaVersion: "openskill-kit.learn-v2.eval-golden-proposal.v1",
     generatedAt: now.toISOString(),
     source: "eval-planner-model-proposal",
@@ -335,7 +337,18 @@ async function writeEvalPlannerGoldenProposal(
       "Review before using as a regression gate.",
       "Run with openskill-kit osk learn --run-learn-v2-eval --learn-v2-goldens <this-file>."
     ]
-  });
+  };
+  const boundary = scanLearnV2OutputArtifactBoundary(root, config, [{ label: "eval-golden-proposal", content: proposal }]);
+  if (boundary.status === "fail") {
+    rejected.push({
+      outputPath: file,
+      id: "eval-golden-proposal",
+      reason: "unsafe-output-content",
+      detail: `Eval golden proposal crosses declassification boundary: ${boundary.issues.slice(0, 8).join(", ")}`
+    });
+    return undefined;
+  }
+  await writeJsonAtomic(file, proposal);
   return file;
 }
 

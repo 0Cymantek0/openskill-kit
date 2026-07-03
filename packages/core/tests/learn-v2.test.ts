@@ -1520,6 +1520,29 @@ describe("learn-v2 substrate", () => {
     expect(JSON.stringify(preview)).not.toContain("raw_compile");
   });
 
+  it("scans compiled Learn v2 artifacts with the shared declassification boundary", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:01:05Z");
+    const [base] = mergeLearnV2ConceptCards([
+      behaviorAtom("compiled_boundary", "Prefer parser regression tests before parser changes.", "positive")
+    ], now);
+    const unsafe = {
+      ...base!,
+      status: "active" as const,
+      canonicalBehavior: `Never compile local path ${root} or raw_compiled_boundary_secret into behavior.`,
+      behaviorDelta: "This unsafe concept intentionally crosses the output boundary."
+    };
+
+    const preview = await compileLearnV2ConceptPreview(root, (await readProjectConfig(root)), [unsafe], now);
+    expect(preview.declassificationReport.status).toBe("fail");
+    expect(preview.declassificationReport.issues.join(" ")).toContain("project-root");
+    expect(preview.declassificationReport.issues.join(" ")).toContain("raw-ref");
+
+    await writeLearnV2ConceptStore(root, [unsafe], now);
+    await expect(compileBehaviorLayer(root, { targets: ["project-rules"] })).rejects.toThrow("Compile-time declassification checks failed");
+    await expect(compileBehaviorLayer(root, { targets: ["mcp-resources"] })).rejects.toThrow("Compile-time declassification checks failed");
+  });
+
   it("runs raw-local facade with v2 artifacts and excludes new private state from packs", async () => {
     const root = await tempProject();
     const transcript = path.join(root, "codex-transcript.md");

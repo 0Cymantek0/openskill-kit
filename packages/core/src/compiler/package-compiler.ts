@@ -290,10 +290,11 @@ async function compileLearnV2ConceptResources(root: string): Promise<{
   resources: CompiledConceptResource[];
 }> {
   const now = new Date().toISOString();
+  const config = await readProjectConfig(root);
   const store = await readLearnV2ConceptStore(root).catch(() => undefined);
   const active = (store?.cards ?? []).filter((card) => card.status === "active" || card.status === "locked");
 
-  const report = declassificationReport(active);
+  const report = declassificationReport(active, [], [], { root, config });
   if (report.status === "fail") {
     throw new Error(`Compile-time declassification checks failed for active concepts. Issues detected: ${report.issues.join(", ")}`);
   }

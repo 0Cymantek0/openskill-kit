@@ -8,6 +8,7 @@ import { writeJsonAtomic } from "../storage/atomic.js";
 import type { LearnV2ConceptCard } from "./schemas.js";
 import { learnV2ShortHash } from "./utils.js";
 import { LEARN_V2_GENERATED_DIRS, LEARN_V2_GENERATED_FILES } from "./paths.js";
+import { scanLearnV2OutputArtifactBoundary } from "./output-boundary.js";
 
 
 export interface LearnV2CompilePreview {
@@ -37,7 +38,7 @@ export async function compileLearnV2ConceptPreview(rootInput: string, config: Pr
   const preferenceNodes = active.map((card) => conceptToPreference(config.projectId, card, now));
   const workflowNodes = active.filter((card) => card.atoms.some((atom) => atom.kind === "workflow" || atom.kind === "command-policy" || atom.kind === "verification"))
     .map((card) => conceptToWorkflow(card, now));
-  const report = declassificationReport(cards, preferenceNodes, workflowNodes);
+  const report = declassificationReport(cards, preferenceNodes, workflowNodes, { root, config });
   const dir = path.join(root, ".openskill-kit", "learn-v2", "compiled-preview");
   const json = path.join(dir, "concept-compile-preview.json");
   const markdown = path.join(dir, "concept-compile-preview.md");
@@ -147,10 +148,10 @@ function categoryFor(card: LearnV2ConceptCard): PreferenceNode["category"] {
 export function declassificationReport(
   cards: LearnV2ConceptCard[],
   preferenceNodes: PreferenceNode[] = [],
-  workflowNodes: WorkflowNode[] = []
+  workflowNodes: WorkflowNode[] = [],
+  context?: { root: string; config: ProjectConfig }
 ): LearnV2CompilePreview["declassificationReport"] {
-  const text = JSON.stringify({
-    concepts: cards.map((card) => ({
+  const concepts = cards.map((card) => ({
       id: card.id,
       title: card.title,
       canonicalBehavior: card.canonicalBehavior,
@@ -168,12 +169,24 @@ export function declassificationReport(
         rationale: atom.rationale,
         counterevidence: atom.counterevidence
       }))
-    })),
-    compiledOutputs: {
-      preferenceNodes,
-      workflowNodes
-    }
-  });
+    }));
+  const compiledOutputs = { preferenceNodes, workflowNodes };
+  if (context) {
+    const scan = scanLearnV2OutputArtifactBoundary(context.root, context.config, [
+      { label: "learn-v2-concepts", content: concepts },
+      { label: "preference-nodes", content: preferenceNodes },
+      { label: "workflow-nodes", content: workflowNodes }
+    ]);
+    return {
+      rawRefsExported: scan.rawRefsExported,
+      blockedPrivatePaths: scan.blockedPrivatePaths,
+      placeholders: [...new Set([...cards.flatMap((card) => card.privacy.placeholders), ...scan.placeholders])].sort(),
+      status: scan.status,
+      issues: scan.issues
+    };
+  }
+
+  const text = JSON.stringify({ concepts, compiledOutputs });
   const issues: string[] = [];
   if (/raw_[A-Za-z0-9_-]{8,}/i.test(text)) issues.push("raw-ref-like-token-in-output");
 

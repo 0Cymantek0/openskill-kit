@@ -27,7 +27,7 @@ export async function compilePolicyArtifacts(projectRoot: string): Promise<Compi
   const activeWorkflows = workflowGraph.nodes.filter((node) => node.status === "active" || node.status === "locked");
   const learnV2Store = await readLearnV2ConceptStore(root).catch(() => undefined);
   const activeLearnV2Cards = (learnV2Store?.cards ?? []).filter((card) => card.status === "active" || card.status === "locked");
-  const learnV2Boundary = declassificationReport(activeLearnV2Cards);
+  const learnV2Boundary = declassificationReport(activeLearnV2Cards, [], [], { root, config });
   if (learnV2Boundary.status === "fail") {
     throw new Error(`Compile-time declassification checks failed for Learn v2 policy artifacts. Issues detected: ${learnV2Boundary.issues.join(", ")}`);
   }
