@@ -2502,11 +2502,13 @@ function toolResult(data: unknown, projectRoot: string): CallToolResult {
   };
 }
 
-function sanitizeForOutput(value: unknown, projectRoot: string): unknown {
-  if (typeof value === "string") return sanitizeText(value, projectRoot);
-  if (Array.isArray(value)) return value.map((item) => sanitizeForOutput(item, projectRoot));
+function sanitizeForOutput(value: unknown, projectRoot: string, key?: string): unknown {
+  if (typeof value === "string") return sanitizeText(value, projectRoot, key);
+  if (Array.isArray(value)) return value.map((item) => sanitizeForOutput(item, projectRoot, key));
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, sanitizeForOutput(nested, projectRoot)]));
+    return Object.fromEntries(Object.entries(value)
+      .filter(([nestedKey]) => nestedKey !== "rawRef" && nestedKey !== "rawRefs")
+      .map(([nestedKey, nested]) => [nestedKey, sanitizeForOutput(nested, projectRoot, nestedKey)]));
   }
   return value;
 }
@@ -2523,12 +2525,26 @@ function stripLearnV2RawRefs(value: unknown): unknown {
   return value;
 }
 
-function sanitizeText(value: string, projectRoot: string): string {
+function sanitizeText(value: string, projectRoot: string, key?: string): string {
+  if (key && isPathLikeOutputKey(key) && path.isAbsolute(value) && !isInsideOrSame(projectRoot, value)) {
+    return "[LOCAL_PATH]";
+  }
   const roots = [projectRoot, path.normalize(projectRoot), process.cwd(), path.normalize(process.cwd()), os.homedir(), path.normalize(os.homedir())];
-  return roots.reduce((current, root) => {
+  const sanitized = roots.reduce((current, root) => {
     const replacement = root === os.homedir() || root === path.normalize(os.homedir()) ? "~" : ".";
     return current.replaceAll(root, replacement);
   }, value);
+  if (key && isPathLikeOutputKey(key) && path.isAbsolute(sanitized)) return "[LOCAL_PATH]";
+  return sanitized;
+}
+
+function isPathLikeOutputKey(key: string): boolean {
+  return /(?:paths?|dirs?|files?|roots?|uris?)$/i.test(key);
+}
+
+function isInsideOrSame(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 if (isDirectRun()) {

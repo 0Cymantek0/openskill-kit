@@ -136,8 +136,10 @@ describe("openskill-kit MCP server", () => {
       const rawParsed = JSON.parse(rawText);
       expect(rawParsed.digest.topLevelConceptsScope).toBe("current-run-legacy-projection");
       expect(rawParsed.digest.mergedConceptCards).toBeGreaterThanOrEqual(rawParsed.digest.currentRunConceptCards);
+      expect(rawParsed.sources[0]?.learnV2?.rawRef).toBeUndefined();
       expect(rawText).not.toContain(root);
       expect(rawText).not.toContain("sk-live-secret");
+      expect(rawText).not.toMatch(/"rawRefs?"\s*:/);
 
       const queue = await client.callTool({
         name: "osk_get_concept_review_queue",

@@ -72,6 +72,22 @@ describe("osk CLI facade", () => {
     expect(stdout).not.toContain("stores raw command");
   });
 
+  it("sanitizes raw Learn v2 JSON paths and local raw refs", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-raw-json-boundary-"));
+    await execCliJson(["init", "--json"], root);
+    const externalSource = path.join(os.tmpdir(), `osk-cli-raw-source-${Date.now()}.log`);
+    await writeFile(externalSource, "$ npm test -- parser\nPASS parser suite\nPRIVATE_RAW_JSON_BOUNDARY_MARKER", "utf8");
+
+    const parsed = await execCliJson(["osk", "learn", "--raw", "--surface-file", externalSource, "--json"], root);
+    const text = JSON.stringify(parsed);
+
+    expect(parsed.sources[0]?.sourcePath).toBe("[LOCAL_PATH]");
+    expect(parsed.sources[0]?.learnV2?.rawRef).toBeUndefined();
+    expect(text).not.toContain(externalSource);
+    expect(text).not.toContain("PRIVATE_RAW_JSON_BOUNDARY_MARKER");
+    expect(text).not.toMatch(/"rawRefs?"\s*:/);
+  });
+
   it("executes and applies Learn v2 model responses through a fake OpenCode command", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-model-exec-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "learn-model-exec" }), "utf8");

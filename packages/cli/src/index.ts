@@ -2,6 +2,7 @@
 import { Command, Option } from "commander";
 import { intro as clackIntro, log as clackLog, note as clackNote, outro as clackOutro } from "@clack/prompts";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { applyEdits, modify, parse as parseJsonc, type ParseError } from "jsonc-parser/lib/esm/main.js";
@@ -3002,8 +3003,8 @@ async function printEvidencePreview(projectRoot: string, node: { id: string; evi
   for (const card of cards) {
     console.log(`- ${card.id} ${card.kind} ${card.privacyClass} ${card.hash}`);
     console.log(`  ${sanitizeText(card.summary)}`);
-    if (card.paths.length) console.log(`  paths: ${card.paths.map(sanitizeText).join(", ")}`);
-    if (card.commands.length) console.log(`  commands: ${card.commands.map(sanitizeText).join(", ")}`);
+    if (card.paths.length) console.log(`  paths: ${card.paths.map((item) => sanitizeText(item, "path")).join(", ")}`);
+    if (card.commands.length) console.log(`  commands: ${card.commands.map((item) => sanitizeText(item)).join(", ")}`);
     if (card.quote) console.log(`  quote: ${sanitizeText(card.quote).slice(0, 240)}`);
     if (card.privacy.redacted) console.log(`  redacted: ${card.privacy.matches.join(", ") || "yes"}`);
   }
@@ -3050,20 +3051,39 @@ function printCalibrationSection(title: string, buckets: Record<string, { accept
   }
 }
 
-function sanitizeForOutput(value: unknown): unknown {
-  if (typeof value === "string") return sanitizeText(value);
-  if (Array.isArray(value)) return value.map((item) => sanitizeForOutput(item));
+function sanitizeForOutput(value: unknown, key?: string): unknown {
+  if (typeof value === "string") return sanitizeText(value, key);
+  if (Array.isArray(value)) return value.map((item) => sanitizeForOutput(item, key));
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, sanitizeForOutput(nested)]));
+    return Object.fromEntries(Object.entries(value)
+      .filter(([nestedKey]) => nestedKey !== "rawRef" && nestedKey !== "rawRefs")
+      .map(([nestedKey, nested]) => [nestedKey, sanitizeForOutput(nested, nestedKey)]));
   }
   return value;
 }
 
-function sanitizeText(value: string): string {
+function sanitizeText(value: string, key?: string): string {
   const cwd = process.cwd();
-  return value
+  const home = os.homedir();
+  if (key && isPathLikeOutputKey(key) && path.isAbsolute(value) && !isInsideOrSame(cwd, value)) {
+    return "[LOCAL_PATH]";
+  }
+  const sanitized = value
     .replaceAll(cwd, ".")
-    .replaceAll(path.normalize(cwd), ".");
+    .replaceAll(path.normalize(cwd), ".")
+    .replaceAll(home, "~")
+    .replaceAll(path.normalize(home), "~");
+  if (key && isPathLikeOutputKey(key) && path.isAbsolute(sanitized)) return "[LOCAL_PATH]";
+  return sanitized;
+}
+
+function isPathLikeOutputKey(key: string): boolean {
+  return /(?:paths?|dirs?|files?|roots?|uris?)$/i.test(key);
+}
+
+function isInsideOrSame(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 interface SetupWizardOptions {
