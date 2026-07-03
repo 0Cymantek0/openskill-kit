@@ -1499,7 +1499,8 @@ describe("learn-v2 substrate", () => {
     const globalMemory = path.join(os.tmpdir(), `osk-rejected-global-${Date.now()}.txt`);
     await writeFile(terminal, [
       "$ npm test -- parser",
-      "PASS parser suite"
+      "PASS parser suite",
+      "PRIVATE_REVIEW_ONLY_MARKER_12345"
     ].join("\n"), "utf8");
     await writeFile(globalMemory, "global memory across repos: always use a personal deployment token", "utf8");
 
@@ -1538,9 +1539,16 @@ describe("learn-v2 substrate", () => {
       extractionEligible: 0,
       normalizedEvidenceSuppressed: 2
     });
-    expect(sourceGate.entries.find((entry: { decision: string }) => entry.decision === "review")?.reviewSnippet).toContain("npm test");
+    expect(sourceGate.entries.find((entry: { decision: string; reviewSnippet?: string }) => entry.decision === "review")?.reviewSnippet).toBeUndefined();
     expect(sourceGate.entries.find((entry: { decision: string }) => entry.decision === "reject")?.reviewSnippet).toBeUndefined();
-    expect(await readText(result.artifacts.learnV2SourceGateReviewPath)).toContain("Suppressed normalized evidence: 2");
+    const sourceGateJson = JSON.stringify(sourceGate);
+    const sourceGateMarkdown = await readText(result.artifacts.learnV2SourceGateReviewPath);
+    expect(sourceGateJson).not.toContain("npm test");
+    expect(sourceGateJson).not.toContain("PRIVATE_REVIEW_ONLY_MARKER_12345");
+    expect(sourceGateMarkdown).toContain("Suppressed normalized evidence: 2");
+    expect(sourceGateMarkdown).toContain("review-metadata-only");
+    expect(sourceGateMarkdown).not.toContain("npm test");
+    expect(sourceGateMarkdown).not.toContain("PRIVATE_REVIEW_ONLY_MARKER_12345");
   });
 
   it("preserves canonical Learn v2 artifacts when a later raw run has no accepted sources", async () => {

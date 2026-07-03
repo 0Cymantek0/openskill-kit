@@ -196,7 +196,7 @@ describe("raw local learning", () => {
     const root = await tempProject();
     const reviewSource = path.join(os.tmpdir(), `osk-unanchored-terminal-${Date.now()}.log`);
     const rejectedSource = path.join(os.tmpdir(), `osk-global-memory-${Date.now()}.txt`);
-    await writeFile(reviewSource, "$ npm test\nPASS parser suite\nuser: Prefer focused parser tests before broad rewrites.", "utf8");
+    await writeFile(reviewSource, "$ npm test\nPASS parser suite\nuser: Prefer focused parser tests before broad rewrites.\nPRIVATE_REVIEW_ONLY_MARKER_98765", "utf8");
     await writeFile(rejectedSource, "global memory across repos: Prefer focused parser tests before broad rewrites.", "utf8");
 
     const result = await runRawLocalLearning(root, {
@@ -221,6 +221,15 @@ describe("raw local learning", () => {
     for (const source of result.sources) {
       await expect(stat(path.join(result.artifacts.learnV2RawVaultDir, "records", `${source.learnV2.rawRef}.json`))).rejects.toThrow();
     }
+    const sourceGateJson = await readFile(result.artifacts.learnV2SourceGateReviewJsonPath, "utf8");
+    const sourceGate = JSON.parse(sourceGateJson);
+    const sourceGateMarkdown = await readFile(result.artifacts.learnV2SourceGateReviewPath, "utf8");
+    expect(sourceGate.entries.find((entry: { decision: string }) => entry.decision === "review")?.artifactPolicy.reviewSnippetIncluded).toBe(false);
+    expect(sourceGateMarkdown).toContain("review-metadata-only");
+    expect(sourceGateJson).not.toContain("npm test");
+    expect(sourceGateMarkdown).not.toContain("npm test");
+    expect(sourceGateJson).not.toContain("PRIVATE_REVIEW_ONLY_MARKER_98765");
+    expect(sourceGateMarkdown).not.toContain("PRIVATE_REVIEW_ONLY_MARKER_98765");
   });
 
   it("keeps accepted no-signal raw evidence unpinned so GC can compact it", async () => {

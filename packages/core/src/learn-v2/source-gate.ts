@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import { learnV2SafeLocalPath, learnV2Snippet } from "./utils.js";
+import { learnV2SafeLocalPath } from "./utils.js";
 import { LearnV2ProjectRelevanceSchema, type LearnV2ProjectRelevance } from "./relevance.js";
 import { LearnV2SurfaceReadSchema, type LearnV2SurfaceRead } from "./surfaces.js";
 
@@ -71,7 +71,6 @@ export interface LearnV2SourceGateEntryInput {
 
 export function buildLearnV2SourceGateReviewEntry(input: LearnV2SourceGateEntryInput): LearnV2SourceGateReviewEntry {
   const extractionEligible = input.relevance.decision === "accept";
-  const reviewSnippetIncluded = input.relevance.decision === "review";
   return LearnV2SourceGateReviewEntrySchema.parse({
     id: input.id,
     sourcePath: learnV2SafeLocalPath(input.sourcePath, input.root),
@@ -93,10 +92,10 @@ export function buildLearnV2SourceGateReviewEntry(input: LearnV2SourceGateEntryI
     artifactPolicy: {
       normalizedEvidenceWritten: extractionEligible,
       rawVaultRecordWritten: input.rawVaultRecordWritten,
-      reviewSnippetIncluded,
+      reviewSnippetIncluded: false,
       tombstoneOnly: input.relevance.decision === "reject"
     },
-    reviewSnippet: reviewSnippetIncluded ? learnV2Snippet(input.declassifiedText, 700) : undefined,
+    reviewSnippet: undefined,
     declassification: {
       redacted: input.declassificationMatches.length > 0,
       matches: input.declassificationMatches
@@ -104,7 +103,7 @@ export function buildLearnV2SourceGateReviewEntry(input: LearnV2SourceGateEntryI
     nextAction: extractionEligible
       ? "Accepted source entered Learn v2 extraction."
       : input.relevance.decision === "review"
-        ? "Review source relevance, then rerun with a more clearly project-anchored source if it should enter extraction."
+        ? "Review source relevance from metadata only, then rerun with a more clearly project-anchored source if it should enter extraction."
         : "Rejected source stayed tombstone-only and did not enter extraction."
   });
 }
@@ -158,7 +157,12 @@ function renderSourceGateReviewMarkdown(artifact: LearnV2SourceGateReviewArtifac
     lines.push(`- Extraction eligible: ${entry.extractionEligible ? "yes" : "no"}`);
     lines.push(`- Normalized evidence written: ${entry.artifactPolicy.normalizedEvidenceWritten ? "yes" : "no"}`);
     lines.push(`- Raw vault record written: ${entry.artifactPolicy.rawVaultRecordWritten ? "yes" : "no"}`);
-    lines.push(`- Policy: ${entry.artifactPolicy.tombstoneOnly ? "tombstone-only" : entry.artifactPolicy.reviewSnippetIncluded ? "review-snippet" : "accepted-extraction"}`);
+    const policy = entry.extractionEligible
+      ? "accepted-extraction"
+      : entry.artifactPolicy.tombstoneOnly
+        ? "tombstone-only"
+        : "review-metadata-only";
+    lines.push(`- Policy: ${policy}`);
     if (entry.reviewSnippet) lines.push(`- Review snippet: ${entry.reviewSnippet}`);
     lines.push(`- Next: ${entry.nextAction}`, "");
   }
