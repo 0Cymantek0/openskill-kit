@@ -2996,6 +2996,63 @@ describe("learn-v2 substrate", () => {
     expect(pack.files).toContain(".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json");
   });
 
+  it("preserves reviewer-narrowed concept scope while accumulating future support", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [base] = mergeLearnV2ConceptCards([
+      behaviorAtom("scope_lock_parser_a", "Prefer focused parser tests for parser changes.", "positive")
+    ], now);
+    await writeLearnV2ConceptStore(root, [base!], now);
+
+    const reviewed = await applyLearnV2ConceptReview(root, {
+      accept: [base!.id],
+      edits: [{
+        id: base!.id,
+        canonicalBehavior: "Prefer focused parser regression coverage before changing parser behavior.",
+        activationPhrases: ["parser regression coverage"]
+      }],
+      narrowScopes: [{
+        id: base!.id,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: ["unrelated-docs-change"]
+      }],
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+    const reviewedConcept = reviewed.store.cards.find((card) => card.id === base!.id)!;
+    expect(reviewedConcept.scope.reviewLocked).toBe(true);
+    expect(reviewedConcept.scope.reviewedAt).toBe("2026-06-30T00:01:00.000Z");
+
+    const incomingAtom = {
+      ...behaviorAtom("scope_lock_parser_b", "Prefer focused parser tests for parser changes.", "positive"),
+      scope: {
+        level: "path" as const,
+        paths: ["packages/core/src/parser.ts", "docs/parser-guide.md"],
+        taskTypes: ["parser-change", "docs-change"]
+      },
+      evidenceIds: ["ev_scope_lock_parser_b"],
+      rawRefs: ["raw_scope_lock_parser_b"]
+    };
+    const [incoming] = mergeLearnV2ConceptCards([incomingAtom], new Date("2026-06-30T00:02:00Z"));
+    await writeLearnV2ConceptStore(root, [incoming!], new Date("2026-06-30T00:02:00Z"));
+    const store = await readLearnV2ConceptStore(root);
+    const merged = store.cards.find((card) => card.id === base!.id)!;
+
+    expect(merged.status).toBe("active");
+    expect(merged.canonicalBehavior).toBe("Prefer focused parser regression coverage before changing parser behavior.");
+    expect(merged.evidenceIds).toEqual(expect.arrayContaining(["ev_scope_lock_parser_a", "ev_scope_lock_parser_b"]));
+    expect(merged.rawRefs).toEqual(expect.arrayContaining(["raw_scope_lock_parser_a", "raw_scope_lock_parser_b"]));
+    expect(merged.atoms.map((atom) => atom.id)).toEqual(expect.arrayContaining(["scope_lock_parser_a", "scope_lock_parser_b"]));
+    expect(merged.scope.paths).toEqual(["packages/core/src/parser.ts"]);
+    expect(merged.scope.taskTypes).toEqual(["parser-change"]);
+    expect(merged.scope.negativeTriggers).toEqual(["unrelated-docs-change"]);
+    expect(merged.scope.reviewLocked).toBe(true);
+    expect(merged.activation.phrases).toEqual(["parser regression coverage"]);
+    expect(merged.activation.phrases).not.toContain("docs change");
+    expect(merged.scope.paths).not.toContain("docs/parser-guide.md");
+    expect(merged.scope.taskTypes).not.toContain("docs-change");
+  });
+
   it("removes stale Learn v2 compatibility graph nodes after concepts are rejected", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:00:00Z");

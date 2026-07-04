@@ -74,7 +74,12 @@ interface LearnV2ScopeBundle {
     statement: string;
     kind: string;
     polarity: string;
-    scope: LearnV2ConceptCard["scope"];
+    scope: {
+      level: LearnV2ConceptCard["scope"]["level"];
+      paths: string[];
+      taskTypes: string[];
+      negativeTriggers: string[];
+    };
     evidenceIds: string[];
   }>;
 }

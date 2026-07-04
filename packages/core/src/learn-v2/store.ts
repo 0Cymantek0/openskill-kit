@@ -10,6 +10,7 @@ import { compileLearnV2ConceptPreview } from "./compile.js";
 import {
   learnV2ConceptSemanticKeyForAtoms,
   learnV2ConceptSemanticKeyForCard,
+  learnV2ConceptSemanticSignatureForKey,
   learnV2ConceptSemanticSignatureForCard
 } from "./concepts.js";
 import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
@@ -142,8 +143,10 @@ export function mergeLearnV2ConceptStoreCards(existing: LearnV2ConceptCard[], in
 function findMatchingStoredConcept(existing: LearnV2ConceptCard[], incoming: LearnV2ConceptCard): LearnV2ConceptCard | undefined {
   const incomingSemanticKey = learnV2ConceptSemanticKeyForCard(incoming);
   const incomingSignature = learnV2ConceptSemanticSignatureForCard(incoming);
+  const incomingKeySignature = learnV2ConceptSemanticSignatureForKey(incomingSemanticKey);
   return existing.find((card) => card.id === incoming.id) ??
     existing.find((card) => learnV2ConceptSemanticKeyForCard(card) === incomingSemanticKey) ??
+    existing.find((card) => learnV2ConceptSemanticSignatureForKey(learnV2ConceptSemanticKeyForCard(card)) === incomingKeySignature && conceptScopesOverlap(card, incoming)) ??
     existing.find((card) => learnV2ConceptSemanticSignatureForCard(card) === incomingSignature && conceptScopesOverlap(card, incoming));
 }
 
@@ -151,9 +154,16 @@ function mergeStoredConceptSupport(previous: LearnV2ConceptCard, incoming: Learn
   const atoms = uniqueAtoms([...previous.atoms, ...incoming.atoms]);
   const evidenceIds = uniqueStrings([...previous.evidenceIds, ...incoming.evidenceIds]);
   const rawRefs = uniqueStrings([...previous.rawRefs, ...incoming.rawRefs]);
-  const paths = uniqueStrings([...previous.scope.paths, ...incoming.scope.paths]).slice(0, 20);
-  const taskTypes = uniqueStrings([...previous.scope.taskTypes, ...incoming.scope.taskTypes]).slice(0, 12);
-  const negativeTriggers = uniqueStrings([...previous.scope.negativeTriggers, ...incoming.scope.negativeTriggers]).slice(0, 20);
+  const scopeReviewLocked = previous.scope.reviewLocked === true;
+  const paths = scopeReviewLocked
+    ? previous.scope.paths
+    : uniqueStrings([...previous.scope.paths, ...incoming.scope.paths]).slice(0, 20);
+  const taskTypes = scopeReviewLocked
+    ? previous.scope.taskTypes
+    : uniqueStrings([...previous.scope.taskTypes, ...incoming.scope.taskTypes]).slice(0, 12);
+  const negativeTriggers = scopeReviewLocked
+    ? previous.scope.negativeTriggers
+    : uniqueStrings([...previous.scope.negativeTriggers, ...incoming.scope.negativeTriggers]).slice(0, 20);
   const conditions = {
     appliesWhen: uniqueStrings([...(previous.conditions?.appliesWhen ?? []), ...(incoming.conditions?.appliesWhen ?? [])]).slice(0, 16),
     doesNotApplyWhen: uniqueStrings([...(previous.conditions?.doesNotApplyWhen ?? []), ...(incoming.conditions?.doesNotApplyWhen ?? [])]).slice(0, 16)
@@ -172,12 +182,20 @@ function mergeStoredConceptSupport(previous: LearnV2ConceptCard, incoming: Learn
       level: paths.length ? "path" : previous.scope.level,
       paths,
       taskTypes,
-      negativeTriggers
+      negativeTriggers,
+      reviewLocked: previous.scope.reviewLocked,
+      reviewedAt: previous.scope.reviewedAt
     },
     activation: {
-      phrases: uniqueStrings([...previous.activation.phrases, ...incoming.activation.phrases]).slice(0, 24),
-      pathGlobs: uniqueStrings([...previous.activation.pathGlobs, ...incoming.activation.pathGlobs, ...paths.map(pathToGlob)]).slice(0, 24),
-      commands: uniqueStrings([...previous.activation.commands, ...incoming.activation.commands]).slice(0, 16)
+      phrases: scopeReviewLocked
+        ? previous.activation.phrases
+        : uniqueStrings([...previous.activation.phrases, ...incoming.activation.phrases]).slice(0, 24),
+      pathGlobs: scopeReviewLocked
+        ? previous.activation.pathGlobs
+        : uniqueStrings([...previous.activation.pathGlobs, ...incoming.activation.pathGlobs, ...paths.map(pathToGlob)]).slice(0, 24),
+      commands: scopeReviewLocked
+        ? previous.activation.commands
+        : uniqueStrings([...previous.activation.commands, ...incoming.activation.commands]).slice(0, 16)
     },
     conditions: conditions.appliesWhen.length || conditions.doesNotApplyWhen.length ? conditions : undefined,
     confidence: scoring.confidence,
@@ -247,7 +265,9 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
             ...next.scope,
             paths: narrow.paths ?? next.scope.paths,
             taskTypes: narrow.taskTypes ?? next.scope.taskTypes,
-            negativeTriggers: narrow.negativeTriggers ?? next.scope.negativeTriggers
+            negativeTriggers: narrow.negativeTriggers ?? next.scope.negativeTriggers,
+            reviewLocked: true,
+            reviewedAt: now.toISOString()
           },
           activation: {
             ...next.activation,
@@ -637,8 +657,9 @@ function rebuildConceptFromAtoms(input: {
   conditions?: LearnV2ConceptCard["conditions"];
 }): LearnV2ConceptCard {
   const first = input.atoms[0]!;
-  const paths = input.paths ?? [...new Set(input.atoms.flatMap((atom) => atom.scope.paths))].slice(0, 20);
-  const taskTypes = input.taskTypes ?? [...new Set(input.atoms.flatMap((atom) => atom.scope.taskTypes))].slice(0, 12);
+  const preserveReviewedScope = input.base.scope.reviewLocked === true && input.paths === undefined && input.taskTypes === undefined;
+  const paths = input.paths ?? (preserveReviewedScope ? input.base.scope.paths : [...new Set(input.atoms.flatMap((atom) => atom.scope.paths))].slice(0, 20));
+  const taskTypes = input.taskTypes ?? (preserveReviewedScope ? input.base.scope.taskTypes : [...new Set(input.atoms.flatMap((atom) => atom.scope.taskTypes))].slice(0, 12));
   const evidenceIds = [...new Set(input.atoms.flatMap((atom) => atom.evidenceIds))];
   const rawRefs = [...new Set(input.atoms.flatMap((atom) => atom.rawRefs))];
   const canonicalBehavior = learnV2NormalizeStatement(input.canonicalBehavior ?? input.base.canonicalBehavior ?? first.statement);
@@ -661,12 +682,16 @@ function rebuildConceptFromAtoms(input: {
       ...input.base.scope,
       level: paths.length ? "path" : input.base.scope.level,
       paths,
-      taskTypes
+      taskTypes,
+      reviewLocked: input.base.scope.reviewLocked,
+      reviewedAt: input.base.scope.reviewedAt
     },
     activation: {
       phrases: input.activationPhrases ?? input.base.activation.phrases,
-      pathGlobs: paths.map(pathToGlob),
-      commands: input.atoms.some((atom) => atom.kind === "command-policy") ? [...new Set(input.atoms.flatMap((atom) => commandSnippets(atom.statement)))] : input.base.activation.commands
+      pathGlobs: preserveReviewedScope ? input.base.activation.pathGlobs : paths.map(pathToGlob),
+      commands: preserveReviewedScope
+        ? input.base.activation.commands
+        : input.atoms.some((atom) => atom.kind === "command-policy") ? [...new Set(input.atoms.flatMap((atom) => commandSnippets(atom.statement)))] : input.base.activation.commands
     },
     conditions: input.conditions ?? input.base.conditions,
     confidence: scoring.confidence,

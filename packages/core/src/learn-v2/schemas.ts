@@ -509,7 +509,9 @@ export const LearnV2ConceptCardSchema = z.object({
     level: z.enum(["project", "path", "directory", "task"]),
     paths: z.array(z.string()).default([]),
     taskTypes: z.array(z.string()).default([]),
-    negativeTriggers: z.array(z.string()).default([])
+    negativeTriggers: z.array(z.string()).default([]),
+    reviewLocked: z.boolean().default(false),
+    reviewedAt: z.string().datetime().optional()
   }),
   activation: z.object({
     phrases: z.array(z.string()).default([]),

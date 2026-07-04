@@ -42,6 +42,18 @@ export function learnV2ConceptSemanticSignatureForCard(card: LearnV2ConceptCard)
   ].join("|");
 }
 
+export function learnV2ConceptSemanticSignatureForKey(semanticKey: string): string {
+  const fields = new Map(semanticKey.split("|").map((part) => {
+    const [key, ...rest] = part.split(":");
+    return [key ?? "", rest.join(":")];
+  }));
+  return [
+    `kind:${fields.get("kind") ?? "unknown"}`,
+    `polarity:${fields.get("polarity") ?? "neutral"}`,
+    `behavior:${fields.get("behavior") ?? "general"}`
+  ].join("|");
+}
+
 function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2ConceptCard {
   const first = items[0]!;
   const evidenceIds = [...new Set(items.flatMap((item) => item.evidenceIds))];
@@ -74,7 +86,8 @@ function makeConceptCard(items: LearnV2BehaviorAtom[], now: Date): LearnV2Concep
         ...negativeTriggers(first),
         ...activationHintNegativeTriggers,
         ...doesNotApplyWhen
-      ]).slice(0, 20)
+      ]).slice(0, 20),
+      reviewLocked: false
     },
     activation: {
       phrases: uniqueStrings([...activationPhrases(first.statement, taskTypes), ...activationHintPhrases, ...appliesWhen]).slice(0, 24),

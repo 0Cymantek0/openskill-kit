@@ -122,6 +122,7 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     lines.push(`Delta: ${card.behaviorDelta}`);
     lines.push(`Behavior: ${card.canonicalBehavior}`);
     lines.push(`Confidence: ${card.confidence.toFixed(2)} Durability: ${card.durability.toFixed(2)} Reliability: ${card.sourceReliability.toFixed(2)} Risk: ${card.risk}`);
+    if (card.scope.reviewLocked) lines.push(`Scope lock: reviewer-narrowed${card.scope.reviewedAt ? ` at ${card.scope.reviewedAt}` : ""}`);
     if (card.scope.paths.length) lines.push(`Scope paths: ${card.scope.paths.join(", ")}`);
     if (card.scope.taskTypes.length) lines.push(`Task types: ${card.scope.taskTypes.join(", ")}`);
     if (card.conditions?.appliesWhen.length) lines.push(`Applies when: ${card.conditions.appliesWhen.join("; ")}`);
