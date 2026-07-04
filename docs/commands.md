@@ -76,8 +76,10 @@ Load task context before work and record safe outcome after work.
 Workflow:
 
 1. For context, call task-context facade first.
-2. For finish, call finish-task with safe summary, files, commands, outcome, patch hashes, and diff stats.
-3. Stage learned behavior for review unless no-learn is requested.
+2. Treat `preferences.items` and `learnedConcepts.shown` as the actionable behavior surfaces. `learnV2Activation.matches` is diagnostic and can include concepts already covered by generated preference nodes.
+3. Pass `negativeSignals` / `--negative-signal` when task facts should suppress a learned concept through its reviewed negative triggers.
+4. For finish, call finish-task with safe summary, files, commands, outcome, patch hashes, and diff stats.
+5. Stage learned behavior for review unless no-learn is requested.
 
 ### /osk learn
 

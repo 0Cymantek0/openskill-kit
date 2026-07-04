@@ -156,9 +156,13 @@ Harness behavior should stay conservative:
   explicitly needs them.
 - For normal coding tasks, route `/osk context` to
   `osk_get_task_context`; it returns the route plan, compact relevant
-  preferences, workflow matches, plugin health, plugin install profile status,
-  review counts, compact pending review items, action hints, and next actions in
-  one harness-friendly response.
+  preferences, actionable Learn v2 `learnedConcepts.shown`, workflow matches,
+  plugin health, plugin install profile status, review counts, compact pending
+  review items, action hints, and next actions in one harness-friendly response.
+  Treat `learnV2Activation.matches` as diagnostics; it may include concepts
+  already represented by legacy preference nodes. Pass `negativeSignals` when
+  task facts should suppress reviewed learned concepts through negative
+  triggers.
   Semantic proposals and OpenWorld review promotions shown there are review
   inputs only; the host must still run learning/update graph and explicit
   review actions before compiling or installing active behavior.

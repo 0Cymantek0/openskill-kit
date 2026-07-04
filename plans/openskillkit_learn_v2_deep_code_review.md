@@ -803,8 +803,24 @@ Final verification passed: full Vitest suite reported 40 files and 287 tests pas
 
 Remaining highest-value next slices:
 
-1. Add explicit task-context API contract docs: `learnedConcepts.shown` is the actionable Learn v2 surface; raw `learnV2Activation.matches` is diagnostic and may include concepts already covered by legacy preference nodes.
-2. Add parser abstraction and confidence-capped fallbacks for Python/Go/Rust structural diff support.
-3. Add OpenCode trace emission/propagation in plugin/hook paths, not only ingestion.
-4. Upgrade eval labels so deterministic replay is not confused with real sandbox/agent behavior proof.
-5. Add more MCP/CLI contract tests for `negativeSignals` once task-context schema snapshots exist.
+1. Add parser abstraction and confidence-capped fallbacks for Python/Go/Rust structural diff support.
+2. Add OpenCode trace emission/propagation in plugin/hook paths, not only ingestion.
+3. Upgrade eval labels so deterministic replay is not confused with real sandbox/agent behavior proof.
+4. Add de-duplication contract tests where a generated `pref_<conceptId>` and a Learn v2 activation match both exist.
+5. Add team-sharing/export flow for reviewed/declassified concepts.
+
+### Slice 2 completed locally: public task-context contract
+
+Done:
+
+- Documented that `preferences.items` and `learnedConcepts.shown` are the actionable task-context behavior surfaces.
+- Documented that `learnV2Activation.matches` is diagnostic because it can include concepts already represented by generated legacy preference nodes.
+- Added CLI task-context regression coverage proving `--negative-signal` suppresses a reviewed Learn v2 concept.
+- Added MCP task-context regression coverage proving `negativeSignals` suppresses a reviewed Learn v2 concept through the public MCP tool.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts packages/mcp-server/tests/mcp-server.test.ts packages/core/tests/docs-coverage.test.ts
+rtk npm run typecheck
+```

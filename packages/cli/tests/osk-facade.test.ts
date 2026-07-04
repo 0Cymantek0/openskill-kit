@@ -269,6 +269,59 @@ describe("osk CLI facade", () => {
     expect(result.stdout).not.toContain(root);
   });
 
+  it("passes Learn v2 negative signals through task context and exposes actionable learnedConcepts", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-task-context-learn-v2-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
+    const dir = path.join(root, ".openskill-kit", "learn-v2");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "activation-index.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.activation-index.v1",
+      projectId: "project",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+      entries: [{
+        conceptId: "concept_cli_task_context",
+        status: "active",
+        title: "Focused parser regression",
+        phrases: ["parser behavior"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: [],
+        taskTypes: ["parser-change"],
+        negativeTriggers: ["docs-only"],
+        confidence: 0.82,
+        risk: "low"
+      }]
+    }, null, 2), "utf8");
+
+    const shown = await execCliJson([
+      "osk",
+      "task",
+      "context",
+      "parser behavior",
+      "--path",
+      "packages/core/src/parser.ts",
+      "--json"
+    ], root);
+    expect(shown.learnedConcepts.shown.some((match: { conceptId: string }) => match.conceptId === "concept_cli_task_context")).toBe(true);
+    expect(shown.learnV2Activation.matches.some((match: { conceptId: string }) => match.conceptId === "concept_cli_task_context")).toBe(true);
+    expect(shown.compactMarkdown).toContain("Relevant Learned Concepts");
+
+    const suppressed = await execCliJson([
+      "osk",
+      "task",
+      "context",
+      "parser behavior",
+      "--path",
+      "packages/core/src/parser.ts",
+      "--negative-signal",
+      "docs-only",
+      "--json"
+    ], root);
+    expect(suppressed.learnedConcepts.shown.some((match: { conceptId: string }) => match.conceptId === "concept_cli_task_context")).toBe(false);
+    expect(suppressed.learnedConcepts.suppressed.some((match: { conceptId: string }) => match.conceptId === "concept_cli_task_context")).toBe(true);
+    expect(suppressed.learnV2Activation.suppressed.find((match: { conceptId: string; reasons: string[] }) => match.conceptId === "concept_cli_task_context")?.reasons)
+      .toContain("negative-trigger:docs-only");
+  });
+
   it("renders raw vault hot pinned and total budgets in terminal output", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-raw-vault-budget-"));
     await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });

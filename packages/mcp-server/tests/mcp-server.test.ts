@@ -71,6 +71,66 @@ describe("openskill-kit MCP server", () => {
     }
   });
 
+  it("passes Learn v2 negative signals through public task context", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-task-context-learn-v2-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-task-context-learn-v2-fixture" }), "utf8");
+    await initAdaptiveProject({ projectRoot: root, now: new Date("2026-06-30T00:00:00Z") });
+    const dir = path.join(root, ".openskill-kit", "learn-v2");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "activation-index.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.activation-index.v1",
+      projectId: "project",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+      entries: [{
+        conceptId: "concept_mcp_task_context",
+        status: "active",
+        title: "Focused parser regression",
+        phrases: ["parser behavior"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: [],
+        taskTypes: ["parser-change"],
+        negativeTriggers: ["docs-only"],
+        confidence: 0.82,
+        risk: "low"
+      }]
+    }, null, 2), "utf8");
+
+    const client = new Client({ name: "openskill-kit-task-context-test", version: "0.1.0" }, { capabilities: {} });
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(repoRoot, "node_modules", "tsx", "dist", "cli.mjs"), path.join(repoRoot, "packages", "mcp-server", "src", "index.ts")],
+      cwd: root,
+      stderr: "pipe"
+    });
+
+    try {
+      await client.connect(transport);
+      const shown = await client.callTool({
+        name: "osk_get_task_context",
+        arguments: { projectRoot: root, query: "parser behavior", paths: ["packages/core/src/parser.ts"] }
+      });
+      const shownParsed = JSON.parse(shown.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(shownParsed.learnedConcepts.shown.some((match: { conceptId: string }) => match.conceptId === "concept_mcp_task_context")).toBe(true);
+
+      const suppressed = await client.callTool({
+        name: "osk_get_task_context",
+        arguments: {
+          projectRoot: root,
+          query: "parser behavior",
+          paths: ["packages/core/src/parser.ts"],
+          negativeSignals: ["docs-only"]
+        }
+      });
+      const suppressedParsed = JSON.parse(suppressed.content.find((item) => item.type === "text")?.text ?? "{}");
+      expect(suppressedParsed.learnedConcepts.shown.some((match: { conceptId: string }) => match.conceptId === "concept_mcp_task_context")).toBe(false);
+      expect(suppressedParsed.learnedConcepts.suppressed.some((match: { conceptId: string }) => match.conceptId === "concept_mcp_task_context")).toBe(true);
+      expect(suppressedParsed.learnV2Activation.suppressed.find((match: { conceptId: string; reasons: string[] }) => match.conceptId === "concept_mcp_task_context")?.reasons)
+        .toContain("negative-trigger:docs-only");
+    } finally {
+      await client.close();
+    }
+  });
+
   it("exposes declassified Learn v2 observability through advanced MCP", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-mcp-learn-v2-"));
     await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "mcp-learn-v2-fixture" }), "utf8");
