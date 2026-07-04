@@ -13,6 +13,54 @@ const SECRET_URL = "https://example.com/private?token=abc";
 const SECRET_INLINE = "sk-SECRET";
 
 describe("OpenCode ambient telemetry privacy", () => {
+  it("source bundle plugin emits privacy-safe trace context before compilation", async () => {
+    const root = await tempProject();
+    const previousTrace = process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE;
+    const previousSession = process.env.OSK_SESSION_ID;
+    const previousEpisode = process.env.OSK_EPISODE_ID;
+    const previousTraceId = process.env.OSK_TRACE_ID;
+    process.env.OSK_SESSION_ID = "osk_session_source_bundle";
+    process.env.OSK_EPISODE_ID = "osk_episode_source_bundle";
+    process.env.OSK_TRACE_ID = "osk_trace_source_bundle";
+    delete process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE;
+    try {
+      const pluginPath = path.resolve("packages", "agent-plugin-bundle", "opencode", "plugins", "openskillkit.ts");
+      const imported = await import(`${pathToFileURL(pluginPath).href}?case=${Date.now()}-source`);
+      const hooks = await imported.OpenSkillKitPlugin({
+        worktree: root,
+        client: { app: { log: async () => ({}) } }
+      });
+
+      await hooks.event({ event: { type: "session.created", sessionID: "raw-opencode-session" } });
+      await hooks["tool.execute.after"](
+        { tool: "bash", command: SECRET_COMMAND, path: SECRET_PATH, sessionID: "raw-opencode-session" },
+        { status: "success", output: SECRET_URL }
+      );
+    } finally {
+      restoreEnv("OPENSKILLKIT_AMBIENT_TRACE_MODE", previousTrace);
+      restoreEnv("OSK_SESSION_ID", previousSession);
+      restoreEnv("OSK_EPISODE_ID", previousEpisode);
+      restoreEnv("OSK_TRACE_ID", previousTraceId);
+    }
+
+    const ambient = await readFile(path.join(root, ".openskill-kit", "ambient", "opencode-events.jsonl"), "utf8");
+    const records = ambient.trim().split("\n").map((line) => JSON.parse(line));
+    expect(records).toHaveLength(2);
+    expect(records.map((record) => record.eventType)).toEqual(["session-start", "post-tool-use"]);
+    expect(records.every((record) => record.traceContext.schemaVersion === "openskill-kit.learn-v2.trace-context.v1")).toBe(true);
+    expect(records.every((record) => record.traceContext.oskSessionId === "osk_session_source_bundle")).toBe(true);
+    expect(records.every((record) => record.traceContext.oskEpisodeId === "osk_episode_source_bundle")).toBe(true);
+    expect(records.every((record) => record.traceContext.oskTraceId === "osk_trace_source_bundle")).toBe(true);
+    expect(records.every((record) => record.traceContext.source === "env")).toBe(true);
+    expect(records.every((record) => record.traceContext.projectRootHash?.startsWith("sha256:"))).toBe(true);
+    expect(records.every((record) => !("projectRoot" in record.traceContext))).toBe(true);
+    expect(records[0]!.traceContext.opencodeSessionId).toBe(records[1]!.traceContext.opencodeSessionId);
+    expect(records[0]!.traceContext.opencodeSessionId).toMatch(/^opencode_session_/);
+    for (const secret of [root, SECRET_COMMAND, SECRET_PATH, SECRET_URL, "raw-opencode-session"]) {
+      expect(ambient).not.toContain(secret);
+    }
+  });
+
   it("safe mode projects commands/paths into derived fields and never stores raw secrets", async () => {
     const root = await tempProject();
     await compileBehaviorLayer(root, { targets: ["plugin"] });
@@ -251,6 +299,11 @@ describe("OpenCode ambient telemetry privacy", () => {
     expect(await readEvents(root)).toHaveLength(0);
   });
 });
+
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 async function tempProject(): Promise<string> {
   const root = await mkdtemp(path.join(os.tmpdir(), "osk-ambient-privacy-"));

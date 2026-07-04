@@ -671,6 +671,20 @@ describe("osk CLI facade", () => {
     expect(ambient).not.toContain("npm test");
     expect(ambient).not.toContain("src/parser.ts");
     expect(ambient).not.toContain("secret output");
+    expect(ambient).not.toContain(root);
+    const ambientRecords = ambient.trim().split("\n").map((line) => JSON.parse(line));
+    expect(ambientRecords).toHaveLength(2);
+    expect(ambientRecords.every((record) => record.traceContext.schemaVersion === "openskill-kit.learn-v2.trace-context.v1")).toBe(true);
+    expect(ambientRecords.every((record) => record.traceContext.oskSessionId === ambientRecords[0]!.traceContext.oskSessionId)).toBe(true);
+    expect(ambientRecords.every((record) => record.traceContext.oskEpisodeId === ambientRecords[0]!.traceContext.oskEpisodeId)).toBe(true);
+    expect(ambientRecords.every((record) => record.traceContext.oskTraceId === ambientRecords[0]!.traceContext.oskTraceId)).toBe(true);
+    expect(ambientRecords.every((record) => record.traceContext.opencodeSessionId === ambientRecords[0]!.traceContext.opencodeSessionId)).toBe(true);
+    expect(ambientRecords[0]!.traceContext.oskSessionId).toMatch(/^osk_session_/);
+    expect(ambientRecords[0]!.traceContext.oskEpisodeId).toMatch(/^osk_episode_/);
+    expect(ambientRecords[0]!.traceContext.oskTraceId).toMatch(/^osk_trace_/);
+    expect(ambientRecords[0]!.traceContext.opencodeSessionId).toMatch(/^opencode_session_/);
+    expect(ambientRecords[0]!.traceContext.projectRootHash).toMatch(/^sha256:/);
+    expect(ambientRecords[0]!.traceContext).not.toHaveProperty("projectRoot");
 
     const learnPreview = await execCliJson(["osk", "learn", "--source", "opencode-ambient", "--json"], root);
     expect(learnPreview.previewOnly).toBe(true);

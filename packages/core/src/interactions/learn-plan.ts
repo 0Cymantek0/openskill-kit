@@ -694,7 +694,7 @@ function mapOpenCodeAmbientEventType(eventType: string, metadata: Record<string,
 }
 
 function isSafeOpenCodeDerivedMetadataKey(key: string): boolean {
-  return /^(input|output)\.(tool|type|status|decision|timestamp|sessionID|messageID|commandKind|commandHash|commandLengthBucket|commandRiskFlags|pathKind|pathHash|pathExtension|pathDepth|pathRiskFlags)$/.test(key);
+  return /^(input|output)\.(tool|type|status|decision|timestamp|messageID|sessionIDHash|commandKind|commandHash|commandLengthBucket|commandRiskFlags|pathKind|pathHash|pathExtension|pathDepth|pathRiskFlags)$/.test(key);
 }
 
 const RAW_PRONE_AMBIENT_KEYS = new Set([

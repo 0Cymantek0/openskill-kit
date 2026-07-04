@@ -7,6 +7,23 @@
 **Review date:** 2026-07-04  
 **Output:** Deep code/architecture/plan/product review for the raw-local Learn Engine v2 direction.
 
+## Codex implementation progress
+
+### 2026-07-04 trace context slice
+
+- Done: OpenCode plugin source bundle now emits `traceContext` on safe ambient records, matching the generated compiler template.
+- Done: OpenCode session IDs are no longer copied as raw safe primitives. They are projected into `sessionIDHash`, and `opencodeSessionId` is derived from the hash.
+- Done: OpenCode plugin keeps the current hashed session ID after `session.created`, so later hook events without session metadata still stitch to the same OpenCode episode.
+- Done: `opencode-ambient` learning allow-list now accepts `sessionIDHash` and no longer treats raw `sessionID` as safe metadata.
+- Done: tests cover the source bundle plugin, generated plugin golden fixture, CLI setup golden flow, privacy-safe trace emission, and trace ID stability without raw project root/commands/paths/session IDs.
+- Verified: `rtk npx vitest --run packages/core/tests/opencode-ambient-privacy.test.ts`, focused generated OpenCode golden tests, focused CLI golden flow, and `rtk npm run typecheck`.
+
+### 2026-07-04 prior slices
+
+- Done: normal task context now surfaces Learn v2 activation through `learnedConcepts.shown` with negative-signal suppression.
+- Done: active/locked concepts are hard-gated before compatibility graph sync, concept store write, and activation index write when declassification fails.
+- Done: structural diff summaries now report parser backend/confidence metadata and cap confidence for heuristic fallbacks.
+
 ---
 
 ## 0. Executive verdict
