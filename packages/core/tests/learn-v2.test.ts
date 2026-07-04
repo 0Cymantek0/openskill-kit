@@ -1419,19 +1419,7 @@ describe("learn-v2 substrate", () => {
         minActivatedConcepts: 1
       }]
     }), "utf8");
-    const rootForward = root.replace(/\\/g, "/");
-    const conceptsForEval = concepts.map((concept) => ({
-      ...concept,
-      scope: {
-        ...concept.scope,
-        paths: [...concept.scope.paths, path.join(root, "private", "parser.ts"), "C:/Users/alice/secret/parser.ts"]
-      },
-      activation: {
-        ...concept.activation,
-        commands: [...concept.activation.commands, `npm test -- ${rootForward}/private/parser.ts`, "node C:/Users/alice/secret/run.js"]
-      }
-    }));
-    const report = await runLearnV2Eval(root, episodes, conceptsForEval, new Date("2026-06-30T00:01:00Z"), {
+    const report = await runLearnV2Eval(root, episodes, concepts, new Date("2026-06-30T00:01:00Z"), {
       goldensPath
     });
     expect(report.status).toBe("pass");
@@ -1452,24 +1440,65 @@ describe("learn-v2 substrate", () => {
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
     const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
     expect(counterfactualCases).toContain("openskill-kit.counterfactual-trace-eval-case.v1");
-    expect(counterfactualCases).toContain("[PROJECT_ROOT]");
-    expect(counterfactualCases).toContain("[USER_HOME]");
     expect(counterfactualCases).not.toContain("raw_");
     expect(counterfactualCases).not.toContain(root);
-    expect(counterfactualCases).not.toContain(rootForward);
-    expect(counterfactualCases).not.toContain("C:/Users/alice");
     const behaviorDeltaCases = await readText(report.artifacts.behaviorDeltaCases!);
     expect(behaviorDeltaCases).toContain("openskill-kit.behavior-delta-eval-case.v1");
     expect(behaviorDeltaCases).toContain("parser regression tests");
-    expect(behaviorDeltaCases).toContain("[PROJECT_ROOT]");
-    expect(behaviorDeltaCases).toContain("[USER_HOME]");
     expect(behaviorDeltaCases).not.toContain("raw_");
     expect(behaviorDeltaCases).not.toContain(root);
-    expect(behaviorDeltaCases).not.toContain(rootForward);
     const markdown = await readText(report.artifacts.markdown);
     expect(markdown).toContain("## Behavior Delta");
     expect(markdown).toContain("Result rows:");
     expect(markdown).toContain("Activated cases:");
+  });
+
+  it("fails eval leak check for raw concept scope while declassifying counterfactual artifacts", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_eval_leak_scope");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Prefer focused parser regression tests before broad parser rewrites.\ntool: npm test -- parser\nPASS"
+    );
+    const episodes = reconstructLearnV2Episodes(evidence);
+    const [baseConcept] = mergeLearnV2ConceptCards(extractLearnV2BehaviorAtoms(episodes).atoms, new Date("2026-06-30T00:04:00Z"));
+    const rootForward = root.replace(/\\/g, "/");
+    const concept = {
+      ...baseConcept!,
+      scope: {
+        ...baseConcept!.scope,
+        paths: [path.join(root, "private", "parser.ts"), "C:/Users/alice/secret/parser.ts"]
+      },
+      activation: {
+        ...baseConcept!.activation,
+        phrases: [...baseConcept!.activation.phrases, "C:/Users/alice/secret parser task"],
+        commands: [
+          ...baseConcept!.activation.commands,
+          `npm test -- ${rootForward}/private/parser.ts`,
+          "node C:/Users/alice/secret/run.js --token npm_12345678901234567890"
+        ]
+      }
+    };
+
+    const report = await runLearnV2Eval(root, episodes, [concept], new Date("2026-06-30T00:05:00Z"));
+    expect(report.status).toBe("fail");
+    expect(report.leakCheck.status).toBe("fail");
+    expect(report.leakCheck.issues).toEqual(expect.arrayContaining([
+      "project root leaked",
+      "absolute user path leaked",
+      "secret-like token leaked"
+    ]));
+    expect(report.summary.counterfactualTrace.caseCount).toBe(1);
+
+    const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
+    expect(counterfactualCases).toContain("[PROJECT_ROOT]");
+    expect(counterfactualCases).toContain("[USER_HOME]");
+    expect(counterfactualCases).toContain("[SECRET]");
+    expect(counterfactualCases).not.toContain(root);
+    expect(counterfactualCases).not.toContain(rootForward);
+    expect(counterfactualCases).not.toContain("C:/Users/alice");
+    expect(counterfactualCases).not.toContain("npm_12345678901234567890");
   });
 
   it("uses runtime semantic activation entries during eval replay", async () => {

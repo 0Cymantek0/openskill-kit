@@ -92,7 +92,7 @@ export async function runLearnV2Eval(
   const markdown = path.join(runDir, "learn-v2-eval.md");
   const counterfactualCasesPath = path.join(runDir, "counterfactual-trace-cases.json");
   const behaviorDeltaCasesPath = path.join(runDir, "behavior-delta-cases.json");
-  const leakIssues = leakIssuesForConcepts(concepts);
+  const leakIssues = leakIssuesForConcepts(root, concepts);
   const goldenFile = options.goldensPath ? await loadLearnV2EvalGoldens(root, options.goldensPath) : { extraction: [], behaviorDelta: [] };
   const goldens = goldenFile.extraction;
   const behaviorDeltaGoldens = goldenFile.behaviorDelta;
@@ -607,17 +607,23 @@ function semanticTokens(text: string): Set<string> {
   return new Set(text.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []);
 }
 
-function leakIssuesForConcepts(concepts: LearnV2ConceptCard[]): string[] {
+function leakIssuesForConcepts(root: string, concepts: LearnV2ConceptCard[]): string[] {
   const text = JSON.stringify(concepts.map((concept) => ({
     id: concept.id,
     title: concept.title,
     canonicalBehavior: concept.canonicalBehavior,
     behaviorDelta: concept.behaviorDelta,
+    scope: concept.scope,
+    conditions: concept.conditions,
     activation: concept.activation,
+    counterevidence: concept.counterevidence,
     evidenceIds: concept.evidenceIds
   })));
   const issues: string[] = [];
-  if (/\b[A-Z]:\\Users\\/i.test(text)) issues.push("absolute user path leaked");
+  const normalizedText = text.replace(/\\/g, "/");
+  const normalizedRoot = root.replace(/\\/g, "/");
+  if (normalizedRoot && normalizedText.toLowerCase().includes(normalizedRoot.toLowerCase())) issues.push("project root leaked");
+  if (/\b[A-Z]:[\\/]Users[\\/]/i.test(text) || /\b[A-Z]:\/Users\//i.test(normalizedText) || /\/(?:Users|home)\/[^/\s"'`]+/i.test(normalizedText)) issues.push("absolute user path leaked");
   if (/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/.test(text)) issues.push("secret-like token leaked");
   if (/raw_[a-f0-9]{8,}/i.test(text)) issues.push("raw vault ref leaked into output-facing concept text");
   return issues;
