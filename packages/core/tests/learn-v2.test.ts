@@ -2415,6 +2415,103 @@ describe("learn-v2 substrate", () => {
     expect(unsafe.rejected[0]?.reason).toBe("scope-broadening-rejected");
   });
 
+  it("blocks scope-inferencer outputs from bypassing reviewer-locked scope", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:30Z");
+    const [card] = mergeLearnV2ConceptCards([
+      behaviorAtom("scope_infer_lock", "Prefer focused parser tests for parser changes.", "positive")
+    ], now);
+    const lockedCard = {
+      ...card!,
+      status: "active" as const,
+      scope: {
+        ...card!.scope,
+        level: "path" as const,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: ["docs-only"],
+        reviewLocked: true,
+        reviewedAt: "2026-06-30T00:03:30.000Z"
+      },
+      activation: {
+        phrases: ["parser regression coverage"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: []
+      },
+      conditions: undefined,
+      atoms: card!.atoms.map((atom) => ({
+        ...atom,
+        scope: {
+          ...atom.scope,
+          paths: ["packages/core/src/parser.ts", "docs/parser-guide.md"],
+          taskTypes: ["parser-change", "docs-change"]
+        }
+      }))
+    };
+    await writeLearnV2ConceptStore(root, [lockedCard], now);
+
+    const requests = await writeLearnV2ScopeInferenceRequests(root, [lockedCard.id], now);
+    expect(requests.requestCount).toBe(1);
+    expect(requests.requests[0]?.routing.reasons).toContain("reviewer-scope-locked-conditions-only");
+    const request = requests.requests[0]!;
+
+    await writeFile(request.expectedOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-scope-inference-output.v1",
+      conceptId: lockedCard.id,
+      appliesWhen: ["Parser behavior changes need focused regression coverage."],
+      doesNotApplyWhen: ["Docs-only edits stay outside parser coverage scope."],
+      scope: {
+        level: "path",
+        paths: ["packages/core/src/parser.ts", "docs/parser-guide.md"],
+        taskTypes: ["parser-change", "docs-change"]
+      },
+      activation: {
+        phrases: ["parser guide docs"],
+        pathGlobs: ["docs/**"],
+        commands: [],
+        negativeTriggers: ["docs-only"]
+      },
+      counterevidence: [],
+      rejected: []
+    }), "utf8");
+    const rejected = await applyLearnV2ScopeInferenceOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:31Z"));
+    expect(rejected.updatedConceptIds).toEqual([]);
+    expect(rejected.rejected[0]?.reason).toBe("review-locked-scope-change");
+
+    await writeFile(request.expectedOutputPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.llm-scope-inference-output.v1",
+      conceptId: lockedCard.id,
+      appliesWhen: ["Parser behavior changes need focused regression coverage."],
+      doesNotApplyWhen: ["Docs-only edits stay outside parser coverage scope."],
+      scope: {
+        paths: [],
+        taskTypes: []
+      },
+      activation: {
+        phrases: [],
+        pathGlobs: [],
+        commands: [],
+        negativeTriggers: []
+      },
+      counterevidence: [],
+      rejected: []
+    }), "utf8");
+    const applied = await applyLearnV2ScopeInferenceOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:32Z"));
+    expect(applied.updatedConceptIds).toEqual([lockedCard.id]);
+    expect(applied.rejected).toEqual([]);
+    const store = await readLearnV2ConceptStore(root);
+    const scoped = store.cards.find((item) => item.id === lockedCard.id)!;
+    expect(scoped.conditions?.appliesWhen).toContain("Parser behavior changes need focused regression coverage.");
+    expect(scoped.conditions?.doesNotApplyWhen).toContain("Docs-only edits stay outside parser coverage scope.");
+    expect(scoped.scope.paths).toEqual(["packages/core/src/parser.ts"]);
+    expect(scoped.scope.taskTypes).toEqual(["parser-change"]);
+    expect(scoped.scope.negativeTriggers).toEqual(["docs-only"]);
+    expect(scoped.scope.reviewLocked).toBe(true);
+    expect(scoped.scope.reviewedAt).toBe("2026-06-30T00:03:30.000Z");
+    expect(scoped.activation.phrases).toEqual(["parser regression coverage"]);
+    expect(scoped.activation.pathGlobs).toEqual(["packages/core/src/parser.ts"]);
+  });
+
   it("prepares executes and applies contradiction-reviewer counterevidence under deterministic ledger authority", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:03:25Z");

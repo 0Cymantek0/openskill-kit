@@ -290,10 +290,14 @@ export function validateLearnV2ScopeInferenceForCard(
   const evidenceIds = new Set(card.evidenceIds);
   const badCounterevidence = output.counterevidence.find((item) => !evidenceIds.has(item.evidenceId));
   if (badCounterevidence) return { ok: false, reason: "invalid-counterevidence", detail: `Unknown evidence id ${badCounterevidence.evidenceId}` };
-  const allowedPaths = uniqueStrings([
-    ...card.scope.paths,
-    ...card.atoms.flatMap((atom) => atom.scope.paths)
-  ]);
+  const reviewLockedChange = findReviewLockedScopeChange(card, output);
+  if (reviewLockedChange) return { ok: false, reason: "review-locked-scope-change", detail: reviewLockedChange };
+  const allowedPaths = card.scope.reviewLocked
+    ? card.scope.paths
+    : uniqueStrings([
+      ...card.scope.paths,
+      ...card.atoms.flatMap((atom) => atom.scope.paths)
+    ]);
   const badPath = output.scope.paths.find((item) => !isSafeRelativePath(item) || !isWithinAllowedScope(item, allowedPaths));
   if (badPath) return { ok: false, reason: "scope-broadening-rejected", detail: `Unsafe or broader path: ${badPath}` };
   const badGlob = output.activation.pathGlobs.find((item) => !isSafeRelativeGlob(item) || !isGlobWithinAllowedScope(item, allowedPaths));
@@ -341,6 +345,7 @@ function renderLearnV2ScopeInferencePrompt(bundle: LearnV2ScopeBundle): string {
     "Return strict JSON only with schemaVersion openskill-kit.learn-v2.llm-scope-inference-output.v1.",
     "Do not quote raw transcripts, raw refs, secrets, local absolute paths, usernames, or machine-local paths.",
     "Only narrow or clarify scope. Do not propose broader paths than existing card/atom paths.",
+    bundle.scope.reviewLocked ? "This concept has a reviewer-locked scope. You may add appliesWhen/doesNotApplyWhen only; do not add or change paths, task types, activation phrases, path globs, commands, or negative triggers." : "",
     "Prefer useful appliesWhen, doesNotApplyWhen, activation phrases, pathGlobs, commands, and negativeTriggers.",
     "Use cited evidenceIds only from the bundle when adding counterevidence.",
     "",
@@ -372,11 +377,17 @@ function routeLearnV2ConceptForScopeInference(card: LearnV2ConceptCard): ScopeRo
   const reasons = new Set<string>();
   if (["rejected", "one-off", "superseded"].includes(card.status)) return { decision: "skip", priority: 0, reasons: ["inactive-concept-status"] };
   if (!card.conditions?.appliesWhen?.length || !card.conditions.doesNotApplyWhen.length) reasons.add("missing-conditions");
-  if (!card.scope.negativeTriggers.length) reasons.add("missing-negative-triggers");
-  if (card.activation.phrases.length < 3) reasons.add("thin-activation-phrases");
-  if (card.scope.paths.length > 3 || card.scope.level === "project") reasons.add("broad-or-unclear-scope");
-  if (card.status === "active" || card.status === "locked") reasons.add("reviewed-concept-high-impact");
-  if (card.risk !== "low") reasons.add("non-low-risk-scope-needs-review");
+  if (!card.scope.reviewLocked) {
+    if (!card.scope.negativeTriggers.length) reasons.add("missing-negative-triggers");
+    if (card.activation.phrases.length < 3) reasons.add("thin-activation-phrases");
+    if (card.scope.paths.length > 3 || card.scope.level === "project") reasons.add("broad-or-unclear-scope");
+    if (card.status === "active" || card.status === "locked") reasons.add("reviewed-concept-high-impact");
+    if (card.risk !== "low") reasons.add("non-low-risk-scope-needs-review");
+  } else if (!reasons.size) {
+    return { decision: "skip", priority: 0.2, reasons: ["reviewer-scope-locked"] };
+  } else {
+    reasons.add("reviewer-scope-locked-conditions-only");
+  }
   const priority = Math.min(1, Number((
     0.2
     + Math.min(0.35, reasons.size * 0.08)
@@ -390,31 +401,46 @@ function routeLearnV2ConceptForScopeInference(card: LearnV2ConceptCard): ScopeRo
 }
 
 function mergeScopeInference(card: LearnV2ConceptCard, output: LearnV2LlmScopeInferenceOutput, now: Date): LearnV2ConceptCard {
-  const nextPaths = output.scope.paths.length ? uniqueStrings(output.scope.paths).slice(0, 20) : card.scope.paths;
-  const nextTaskTypes = uniqueStrings([...card.scope.taskTypes, ...output.scope.taskTypes]).slice(0, 16);
+  const preserveReviewedScope = card.scope.reviewLocked === true;
+  const nextPaths = preserveReviewedScope ? card.scope.paths : output.scope.paths.length ? uniqueStrings(output.scope.paths).slice(0, 20) : card.scope.paths;
+  const nextTaskTypes = preserveReviewedScope ? card.scope.taskTypes : uniqueStrings([...card.scope.taskTypes, ...output.scope.taskTypes]).slice(0, 16);
   const appliesWhen = uniqueStrings([...(card.conditions?.appliesWhen ?? []), ...output.appliesWhen]).slice(0, 24);
   const doesNotApplyWhen = uniqueStrings([...(card.conditions?.doesNotApplyWhen ?? []), ...output.doesNotApplyWhen]).slice(0, 24);
   return LearnV2ConceptCardSchema.parse({
     ...card,
     scope: {
-      level: output.scope.level ?? (nextPaths.length ? "path" : card.scope.level),
+      level: preserveReviewedScope ? card.scope.level : output.scope.level ?? (nextPaths.length ? "path" : card.scope.level),
       paths: nextPaths,
       taskTypes: nextTaskTypes,
-      negativeTriggers: uniqueStrings([
+      negativeTriggers: preserveReviewedScope ? card.scope.negativeTriggers : uniqueStrings([
         ...card.scope.negativeTriggers,
         ...output.activation.negativeTriggers,
         ...doesNotApplyWhen
-      ]).slice(0, 32)
+      ]).slice(0, 32),
+      reviewLocked: card.scope.reviewLocked,
+      reviewedAt: card.scope.reviewedAt
     },
     activation: {
-      phrases: uniqueStrings([...card.activation.phrases, ...output.activation.phrases, ...appliesWhen]).slice(0, 32),
-      pathGlobs: uniqueStrings([...card.activation.pathGlobs, ...output.activation.pathGlobs]).slice(0, 32),
-      commands: uniqueStrings([...card.activation.commands, ...output.activation.commands]).slice(0, 20)
+      phrases: preserveReviewedScope ? card.activation.phrases : uniqueStrings([...card.activation.phrases, ...output.activation.phrases, ...appliesWhen]).slice(0, 32),
+      pathGlobs: preserveReviewedScope ? card.activation.pathGlobs : uniqueStrings([...card.activation.pathGlobs, ...output.activation.pathGlobs]).slice(0, 32),
+      commands: preserveReviewedScope ? card.activation.commands : uniqueStrings([...card.activation.commands, ...output.activation.commands]).slice(0, 20)
     },
     conditions: appliesWhen.length || doesNotApplyWhen.length ? { appliesWhen, doesNotApplyWhen } : card.conditions,
     counterevidence: uniqueCounterevidence([...card.counterevidence, ...output.counterevidence]).slice(0, 32),
     lifecycle: { ...card.lifecycle, updatedAt: now.toISOString() }
   });
+}
+
+function findReviewLockedScopeChange(card: LearnV2ConceptCard, output: LearnV2LlmScopeInferenceOutput): string | undefined {
+  if (!card.scope.reviewLocked) return undefined;
+  if (output.scope.level && output.scope.level !== card.scope.level) return `Reviewer-locked scope level is ${card.scope.level}; proposed ${output.scope.level}.`;
+  if (output.scope.paths.length && !isSubsetOfExisting(output.scope.paths, card.scope.paths)) return "Reviewer-locked paths cannot be changed by scope inference.";
+  if (output.scope.taskTypes.length && !isSubsetOfExisting(output.scope.taskTypes, card.scope.taskTypes)) return "Reviewer-locked task types cannot be changed by scope inference.";
+  if (output.activation.phrases.length && !isSubsetOfExisting(output.activation.phrases, card.activation.phrases)) return "Reviewer-locked activation phrases cannot be changed by scope inference.";
+  if (output.activation.pathGlobs.length && !isSubsetOfExisting(output.activation.pathGlobs, card.activation.pathGlobs)) return "Reviewer-locked path globs cannot be changed by scope inference.";
+  if (output.activation.commands.length && !isSubsetOfExisting(output.activation.commands, card.activation.commands)) return "Reviewer-locked commands cannot be changed by scope inference.";
+  if (output.activation.negativeTriggers.length && !isSubsetOfExisting(output.activation.negativeTriggers, card.scope.negativeTriggers)) return "Reviewer-locked negative triggers cannot be changed by scope inference.";
+  return undefined;
 }
 
 async function readScopeRequestManifest(
@@ -592,6 +618,15 @@ function normalizeScopePath(value: string): string {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((item) => item.trim()).filter(Boolean))];
+}
+
+function isSubsetOfExisting(values: string[], existing: string[]): boolean {
+  const allowed = new Set(existing.map(normalizeComparableString));
+  return values.every((value) => allowed.has(normalizeComparableString(value)));
+}
+
+function normalizeComparableString(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/\s+/g, " ").toLowerCase();
 }
 
 function uniqueCounterevidence(values: LearnV2ConceptCard["counterevidence"]): LearnV2ConceptCard["counterevidence"] {
