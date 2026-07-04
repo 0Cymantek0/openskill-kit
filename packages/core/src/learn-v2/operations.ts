@@ -6,7 +6,7 @@ import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { runLearnV2Eval, type LearnV2EvalOptions } from "./eval.js";
 import { learnV2ModelRequestsRoot, readLearnV2EpisodeStore, writeLearnV2EpisodeStore, writeLearnV2ModelRequests } from "./model-proposals.js";
-import { type LearnV2NormalizedEvidence } from "./schemas.js";
+import { type LearnV2EvalReport, type LearnV2NormalizedEvidence } from "./schemas.js";
 
 export interface LearnV2EpisodeReconstructionResult {
   schemaVersion: "openskill-kit.learn-v2.reconstruct-episodes-result.v1";
@@ -36,6 +36,9 @@ export interface LearnV2PersistedEvalResult {
   conceptCount: number;
   evalReportPath: string;
   evalStatus: "pass" | "fail";
+  summary: LearnV2EvalReport["summary"];
+  leakCheck: LearnV2EvalReport["leakCheck"];
+  tokenBudget: LearnV2EvalReport["tokenBudget"];
 }
 
 export async function reconstructPersistedLearnV2Episodes(rootInput: string, now = new Date()): Promise<LearnV2EpisodeReconstructionResult> {
@@ -85,7 +88,10 @@ export async function runPersistedLearnV2Eval(rootInput: string, options: LearnV
     episodeCount: episodeStore.episodes.length,
     conceptCount: conceptStore.cards.length,
     evalReportPath: report.artifacts.markdown,
-    evalStatus: report.status
+    evalStatus: report.status,
+    summary: report.summary,
+    leakCheck: report.leakCheck,
+    tokenBudget: report.tokenBudget
   };
 }
 

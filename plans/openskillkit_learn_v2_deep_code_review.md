@@ -9,6 +9,15 @@
 
 ## Codex implementation progress
 
+### 2026-07-05 eval visibility and artifact privacy slice
+
+- Done: Learn v2 eval reports now expose structured summary metrics for result rows, activation replay retrieval, counterfactual trace activation, and behavior-delta scenarios.
+- Done: persisted eval command results include summary, leak-check, and token-budget data so CLI/MCP consumers do not need to scrape report markdown to understand whether learned behavior changed task plans.
+- Done: plain CLI output for `osk learn --run-learn-v2-eval` now shows behavior-delta, activation-replay, counterfactual-trace, leak-check, compression, and failure summary lines with project-local report paths.
+- Done: counterfactual trace eval artifacts are declassified with the same scrubber as behavior-delta artifacts; task prompts, paths, commands, task types, expected behavior, and negative signals are redacted before artifact write.
+- Done: tests cover structured eval summary JSON, markdown summary sections, CLI plain output, and counterfactual artifact redaction for project roots and user-home paths.
+- Verified: `rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "runs extraction golden|uses runtime semantic activation|fails eval"`, `rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "persisted Learn v2 eval summary"`, full `rtk npm test`, and `rtk npm run typecheck`.
+
 ### 2026-07-04 trace context slice
 
 - Done: OpenCode plugin source bundle now emits `traceContext` on safe ambient records, matching the generated compiler template.

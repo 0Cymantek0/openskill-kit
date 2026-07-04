@@ -2393,7 +2393,16 @@ function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersist
     `Learn v2 eval: ${result.evalStatus}`,
     `Episodes: ${result.episodeCount}`,
     `Concepts: ${result.conceptCount}`,
-    `Eval report: ${result.evalReportPath}`
+    `Results: ${result.summary.resultCounts.pass}/${result.summary.resultCounts.total} pass (${result.summary.resultCounts.fail} fail)`,
+    `Behavior delta: ${result.summary.behaviorDelta.status} (${result.summary.behaviorDelta.passedScenarios}/${result.summary.behaviorDelta.scenarioCount} scenarios, ${result.summary.behaviorDelta.activatedConceptCount} activated concepts)`,
+    `Activation replay: ${result.summary.activationReplay.status} (${result.summary.activationReplay.retrievedConcepts}/${result.summary.activationReplay.replayableConcepts}, rate ${result.summary.activationReplay.retrievalRate})`,
+    `Counterfactual trace: ${result.summary.counterfactualTrace.status} (${result.summary.counterfactualTrace.activatedCases}/${result.summary.counterfactualTrace.caseCount}, rate ${result.summary.counterfactualTrace.activationRate})`,
+    `Leak check: ${result.leakCheck.status}`,
+    `Compression ratio: ${result.tokenBudget.compressionRatio}`,
+    ...(result.summary.behaviorDelta.failedScenarioIds.length ? [`Behavior-delta failures: ${result.summary.behaviorDelta.failedScenarioIds.slice(0, 8).join(", ")}`] : []),
+    ...(result.summary.activationReplay.misses.length ? [`Activation misses: ${result.summary.activationReplay.misses.slice(0, 8).join(", ")}`] : []),
+    ...(result.summary.counterfactualTrace.misses.length ? [`Counterfactual misses: ${result.summary.counterfactualTrace.misses.slice(0, 8).join(", ")}`] : []),
+    `Eval report: ${formatProjectLocalPath(result.evalReportPath)}`
   ].join("\n");
 }
 

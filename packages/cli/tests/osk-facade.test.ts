@@ -214,6 +214,65 @@ describe("osk CLI facade", () => {
     expect(JSON.stringify(proposal)).not.toContain(root);
   }, 80_000);
 
+  it("prints persisted Learn v2 eval summary metrics", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-eval-summary-"));
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "learn-eval-summary" }), "utf8");
+    await execCliJson(["init", "--json"], root);
+    const transcript = path.join(root, "session.md");
+    await writeFile(
+      transcript,
+      "user: Prefer focused parser regression tests before broad parser rewrites in packages/core/src/parser.ts.\ntool: npm test -- parser\nPASS",
+      "utf8"
+    );
+
+    await execCliJson(["osk", "learn", "--raw", "--surface-file", transcript, "--apply", "--json"], root);
+    const goldensPath = path.join(root, "learn-v2-goldens.json");
+    await writeFile(goldensPath, JSON.stringify({
+      scenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.extraction-golden.v1",
+        id: "cli-parser-regression",
+        title: "CLI parser regression extraction",
+        expectedConceptText: ["parser regression"],
+        expectedKinds: ["verification"],
+        expectedTaskHints: ["parser"],
+        expectedPathText: ["packages/core/src/parser.ts"],
+        forbiddenText: ["broad rewrite only"]
+      }],
+      behaviorDeltaScenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.behavior-delta-golden.v1",
+        id: "cli-parser-delta",
+        title: "CLI parser behavior delta",
+        task: {
+          prompt: "Change parser behavior without broad rewrite",
+          paths: ["packages/core/src/parser.ts"],
+          commands: ["npm test -- parser"],
+          taskTypes: ["parser-change"],
+          negativeSignals: []
+        },
+        expectedConceptText: ["parser regression"],
+        expectedKinds: ["verification"],
+        expectedPlanIncludes: ["parser regression"],
+        expectedPlanExcludes: ["broad rewrite only"],
+        minActivatedConcepts: 1
+      }]
+    }), "utf8");
+
+    const parsed = await execCliJson(["osk", "learn", "--run-learn-v2-eval", "--learn-v2-goldens", goldensPath, "--json"], root);
+    expect(parsed.schemaVersion).toBe("openskill-kit.learn-v2.persisted-eval-result.v1");
+    expect(parsed.summary.behaviorDelta.scenarioCount).toBe(1);
+    expect(parsed.summary.behaviorDelta.status).toBe("pass");
+    expect(parsed.summary.activationReplay.retrievalRate).toBeGreaterThan(0);
+    expect(parsed.summary.counterfactualTrace.activationRate).toBe(1);
+    expect(parsed.leakCheck.status).toBe("pass");
+
+    const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--run-learn-v2-eval", "--learn-v2-goldens", goldensPath], { cwd: root, windowsHide: true });
+    expect(textResult.stdout).toContain("Behavior delta: pass");
+    expect(textResult.stdout).toContain("Activation replay: pass");
+    expect(textResult.stdout).toContain("Counterfactual trace: pass");
+    expect(textResult.stdout).toContain("Compression ratio:");
+    expect(textResult.stdout).not.toContain(root);
+  }, 80_000);
+
   it("renders the Learn v2 observability dashboard from latest report", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-observability-"));
     const dir = path.join(root, ".openskill-kit", "learn-v2", "observability");

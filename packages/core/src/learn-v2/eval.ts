@@ -76,6 +76,9 @@ export interface LearnV2BehaviorDeltaEvalCase {
   minActivatedConcepts: number;
 }
 
+type LearnV2EvalResultRow = LearnV2EvalReport["results"][number];
+type LearnV2EvalSummary = LearnV2EvalReport["summary"];
+
 export async function runLearnV2Eval(
   rootInput: string,
   episodes: LearnV2TaskEpisode[],
@@ -97,6 +100,9 @@ export async function runLearnV2Eval(
   const behaviorDeltaCases = buildBehaviorDeltaEvalCases(concepts, behaviorDeltaGoldens);
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
+  const activationReplay = evaluateActivationReplay(episodes, concepts);
+  const counterfactualTrace = evaluateCounterfactualTraceCases(concepts, counterfactualCases);
+  const behaviorDeltaResults = behaviorDeltaCases.map((item) => evaluateBehaviorDeltaCase(item));
   const results = [
     {
       id: "concept-evidence-grounding",
@@ -126,11 +132,12 @@ export async function runLearnV2Eval(
       }]
     },
     evaluateLearnV2ConceptQualityGates(concepts),
-    evaluateActivationReplay(episodes, concepts),
-    evaluateCounterfactualTraceCases(concepts, counterfactualCases),
-    ...behaviorDeltaCases.map((item) => evaluateBehaviorDeltaCase(item)),
+    activationReplay.result,
+    counterfactualTrace.result,
+    ...behaviorDeltaResults,
     ...goldens.map((golden) => evaluateGolden(golden, episodes, concepts))
   ];
+  const summary = summarizeLearnV2Eval(results, activationReplay.summary, counterfactualTrace.summary, behaviorDeltaCases, behaviorDeltaResults);
   const report = LearnV2EvalReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.eval-report.v1",
     status: results.every((result) => result.status === "pass") ? "pass" : "fail",
@@ -138,6 +145,7 @@ export async function runLearnV2Eval(
     behaviorDeltaGoldenCount: behaviorDeltaGoldens.length,
     counterfactualTraceCaseCount: counterfactualCases.length,
     replayEpisodeCount: episodes.length,
+    summary,
     leakCheck: {
       status: leakIssues.length ? "fail" : "pass",
       issues: leakIssues
@@ -153,7 +161,7 @@ export async function runLearnV2Eval(
   await writeJsonAtomic(counterfactualCasesPath, {
     schemaVersion: "openskill-kit.counterfactual-trace-eval-cases.v1",
     generatedAt: now.toISOString(),
-    cases: counterfactualCases
+    cases: counterfactualCases.map((item) => declassifyCounterfactualTraceCase(root, item))
   });
   await writeJsonAtomic(behaviorDeltaCasesPath, {
     schemaVersion: "openskill-kit.behavior-delta-eval-cases.v1",
@@ -270,7 +278,10 @@ function buildCounterfactualTraceCases(episodes: LearnV2TaskEpisode[], concepts:
     });
 }
 
-function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases: LearnV2CounterfactualTraceEvalCase[]): LearnV2EvalReport["results"][number] {
+function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases: LearnV2CounterfactualTraceEvalCase[]): {
+  result: LearnV2EvalResultRow;
+  summary: LearnV2EvalSummary["counterfactualTrace"];
+} {
   const entries = concepts
     .filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded")
     .map(buildLearnV2ActivationIndexEntry);
@@ -301,26 +312,38 @@ function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases:
     }
   }
   const pass = misses.length === 0 && suppressionMisses.length === 0 && behaviorMismatches.length === 0;
+  const activatedCases = cases.length - misses.length;
   return {
-    id: "counterfactual-trace-eval",
-    status: pass ? "pass" : "fail",
-    checks: [
-      check(
-        "expected-concept-activation",
-        misses.length === 0,
-        cases.length ? `${cases.length - misses.length}/${cases.length} counterfactual case(s) activated expected concept${misses.length ? `; misses: ${misses.slice(0, 6).join(", ")}` : ""}` : "no counterfactual cases"
-      ),
-      check(
-        "negative-trigger-suppression",
-        suppressionMisses.length === 0,
-        suppressionMisses.length ? `suppression misses: ${suppressionMisses.slice(0, 6).join(", ")}` : "negative triggers suppress matching concepts"
-      ),
-      check(
-        "expected-behavior-consistency",
-        behaviorMismatches.length === 0,
-        behaviorMismatches.length ? `expected behavior mismatches: ${behaviorMismatches.slice(0, 6).join(", ")}` : "counterfactual expected behavior matches concept behavior"
-      )
-    ]
+    result: {
+      id: "counterfactual-trace-eval",
+      status: pass ? "pass" : "fail",
+      checks: [
+        check(
+          "expected-concept-activation",
+          misses.length === 0,
+          cases.length ? `${activatedCases}/${cases.length} counterfactual case(s) activated expected concept${misses.length ? `; misses: ${misses.slice(0, 6).join(", ")}` : ""}` : "no counterfactual cases"
+        ),
+        check(
+          "negative-trigger-suppression",
+          suppressionMisses.length === 0,
+          suppressionMisses.length ? `suppression misses: ${suppressionMisses.slice(0, 6).join(", ")}` : "negative triggers suppress matching concepts"
+        ),
+        check(
+          "expected-behavior-consistency",
+          behaviorMismatches.length === 0,
+          behaviorMismatches.length ? `expected behavior mismatches: ${behaviorMismatches.slice(0, 6).join(", ")}` : "counterfactual expected behavior matches concept behavior"
+        )
+      ]
+    },
+    summary: {
+      status: pass ? "pass" : "fail",
+      caseCount: cases.length,
+      activatedCases,
+      activationRate: cases.length ? Number((activatedCases / cases.length).toFixed(3)) : 1,
+      misses,
+      suppressionMisses,
+      behaviorMismatches
+    }
   };
 }
 
@@ -419,7 +442,10 @@ function evaluateBehaviorDeltaCase(item: LearnV2BehaviorDeltaEvalCase): LearnV2E
   };
 }
 
-function evaluateActivationReplay(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2EvalReport["results"][number] {
+function evaluateActivationReplay(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): {
+  result: LearnV2EvalResultRow;
+  summary: LearnV2EvalSummary["activationReplay"];
+} {
   const replayable = concepts.filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded");
   const entries = replayable.map(buildLearnV2ActivationIndexEntry);
   const misses: string[] = [];
@@ -442,14 +468,54 @@ function evaluateActivationReplay(episodes: LearnV2TaskEpisode[], concepts: Lear
     if (!result.slice(0, 5).some((match) => match.conceptId === concept.id && match.score > 0)) misses.push(`${concept.id}:not-retrieved`);
   }
   const pass = replayable.length === 0 || ((replayable.length - misses.length) / replayable.length) >= 0.8;
+  const retrievedConcepts = replayable.length - misses.length;
   return {
-    id: "activation-replay",
-    status: pass ? "pass" : "fail",
-    checks: [check(
-      "originating-episode-retrieval",
-      pass,
-      replayable.length ? `${replayable.length - misses.length}/${replayable.length} concept(s) retrieved from originating episode context${misses.length ? `; misses: ${misses.slice(0, 6).join(", ")}` : ""}` : "no replayable concepts"
-    )]
+    result: {
+      id: "activation-replay",
+      status: pass ? "pass" : "fail",
+      checks: [check(
+        "originating-episode-retrieval",
+        pass,
+        replayable.length ? `${retrievedConcepts}/${replayable.length} concept(s) retrieved from originating episode context${misses.length ? `; misses: ${misses.slice(0, 6).join(", ")}` : ""}` : "no replayable concepts"
+      )]
+    },
+    summary: {
+      status: pass ? "pass" : "fail",
+      replayableConcepts: replayable.length,
+      retrievedConcepts,
+      retrievalRate: replayable.length ? Number((retrievedConcepts / replayable.length).toFixed(3)) : 1,
+      misses
+    }
+  };
+}
+
+function summarizeLearnV2Eval(
+  results: LearnV2EvalResultRow[],
+  activationReplay: LearnV2EvalSummary["activationReplay"],
+  counterfactualTrace: LearnV2EvalSummary["counterfactualTrace"],
+  behaviorDeltaCases: LearnV2BehaviorDeltaEvalCase[],
+  behaviorDeltaResults: LearnV2EvalResultRow[]
+): LearnV2EvalSummary {
+  const failedBehaviorDeltaIds = behaviorDeltaResults
+    .filter((result) => result.status === "fail")
+    .map((result) => result.id.replace(/^behavior-delta:/, ""));
+  const activatedConceptIds = new Set(behaviorDeltaCases.flatMap((item) => item.activatedConceptIds));
+  return {
+    resultCounts: {
+      total: results.length,
+      pass: results.filter((result) => result.status === "pass").length,
+      fail: results.filter((result) => result.status === "fail").length
+    },
+    activationReplay,
+    counterfactualTrace,
+    behaviorDelta: {
+      status: behaviorDeltaCases.length === 0 ? "not-configured" : failedBehaviorDeltaIds.length === 0 ? "pass" : "fail",
+      scenarioCount: behaviorDeltaCases.length,
+      passedScenarios: behaviorDeltaResults.filter((result) => result.status === "pass").length,
+      failedScenarios: failedBehaviorDeltaIds.length,
+      activatedConceptCount: activatedConceptIds.size,
+      failedScenarioIds: failedBehaviorDeltaIds
+    }
   };
 }
 
@@ -499,6 +565,19 @@ function declassifyBehaviorDeltaCase(root: string, item: LearnV2BehaviorDeltaEva
     withConceptPlan: item.withConceptPlan.map(scrub),
     expectedPlanIncludes: item.expectedPlanIncludes.map(scrub),
     expectedPlanExcludes: item.expectedPlanExcludes.map(scrub)
+  };
+}
+
+function declassifyCounterfactualTraceCase(root: string, item: LearnV2CounterfactualTraceEvalCase): LearnV2CounterfactualTraceEvalCase {
+  const scrub = (value: string) => scrubEvalText(root, value);
+  return {
+    ...item,
+    taskPrompt: scrub(item.taskPrompt),
+    paths: item.paths.map(scrub),
+    commands: item.commands.map(scrub),
+    taskTypes: item.taskTypes.map(scrub),
+    expectedBehavior: scrub(item.expectedBehavior),
+    negativeSignals: item.negativeSignals.map(scrub)
   };
 }
 
@@ -555,6 +634,29 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     `Counterfactual trace cases: ${report.counterfactualTraceCaseCount}`,
     `Leak check: ${report.leakCheck.status}`,
     `Compression ratio: ${report.tokenBudget.compressionRatio}`,
+    `Result rows: ${report.summary.resultCounts.pass}/${report.summary.resultCounts.total} pass`,
+    "",
+    "## Behavior Delta",
+    "",
+    `Status: ${report.summary.behaviorDelta.status}`,
+    `Scenarios: ${report.summary.behaviorDelta.passedScenarios}/${report.summary.behaviorDelta.scenarioCount} pass`,
+    `Activated concepts: ${report.summary.behaviorDelta.activatedConceptCount}`,
+    report.summary.behaviorDelta.failedScenarioIds.length ? `Failed scenarios: ${report.summary.behaviorDelta.failedScenarioIds.join(", ")}` : "Failed scenarios: none",
+    "",
+    "## Activation Replay",
+    "",
+    `Status: ${report.summary.activationReplay.status}`,
+    `Retrieved: ${report.summary.activationReplay.retrievedConcepts}/${report.summary.activationReplay.replayableConcepts}`,
+    `Retrieval rate: ${report.summary.activationReplay.retrievalRate}`,
+    report.summary.activationReplay.misses.length ? `Misses: ${report.summary.activationReplay.misses.slice(0, 10).join(", ")}` : "Misses: none",
+    "",
+    "## Counterfactual Trace",
+    "",
+    `Status: ${report.summary.counterfactualTrace.status}`,
+    `Activated cases: ${report.summary.counterfactualTrace.activatedCases}/${report.summary.counterfactualTrace.caseCount}`,
+    `Activation rate: ${report.summary.counterfactualTrace.activationRate}`,
+    report.summary.counterfactualTrace.misses.length ? `Misses: ${report.summary.counterfactualTrace.misses.slice(0, 10).join(", ")}` : "Misses: none",
+    report.summary.counterfactualTrace.suppressionMisses.length ? `Suppression misses: ${report.summary.counterfactualTrace.suppressionMisses.slice(0, 10).join(", ")}` : "Suppression misses: none",
     "",
     "## Results",
     "",

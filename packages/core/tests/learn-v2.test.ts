@@ -1419,25 +1419,57 @@ describe("learn-v2 substrate", () => {
         minActivatedConcepts: 1
       }]
     }), "utf8");
-    const report = await runLearnV2Eval(root, episodes, concepts, new Date("2026-06-30T00:01:00Z"), {
+    const rootForward = root.replace(/\\/g, "/");
+    const conceptsForEval = concepts.map((concept) => ({
+      ...concept,
+      scope: {
+        ...concept.scope,
+        paths: [...concept.scope.paths, path.join(root, "private", "parser.ts"), "C:/Users/alice/secret/parser.ts"]
+      },
+      activation: {
+        ...concept.activation,
+        commands: [...concept.activation.commands, `npm test -- ${rootForward}/private/parser.ts`, "node C:/Users/alice/secret/run.js"]
+      }
+    }));
+    const report = await runLearnV2Eval(root, episodes, conceptsForEval, new Date("2026-06-30T00:01:00Z"), {
       goldensPath
     });
     expect(report.status).toBe("pass");
     expect(report.extractionGoldenCount).toBe(1);
     expect(report.behaviorDeltaGoldenCount).toBe(1);
     expect(report.counterfactualTraceCaseCount).toBeGreaterThanOrEqual(1);
+    expect(report.summary.resultCounts.fail).toBe(0);
+    expect(report.summary.behaviorDelta).toMatchObject({
+      status: "pass",
+      scenarioCount: 1,
+      passedScenarios: 1,
+      failedScenarios: 0
+    });
+    expect(report.summary.activationReplay.retrievalRate).toBeGreaterThan(0);
+    expect(report.summary.counterfactualTrace.activationRate).toBe(1);
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "behavior-delta:parser-plan-delta" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
     const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
     expect(counterfactualCases).toContain("openskill-kit.counterfactual-trace-eval-case.v1");
+    expect(counterfactualCases).toContain("[PROJECT_ROOT]");
+    expect(counterfactualCases).toContain("[USER_HOME]");
     expect(counterfactualCases).not.toContain("raw_");
     expect(counterfactualCases).not.toContain(root);
+    expect(counterfactualCases).not.toContain(rootForward);
+    expect(counterfactualCases).not.toContain("C:/Users/alice");
     const behaviorDeltaCases = await readText(report.artifacts.behaviorDeltaCases!);
     expect(behaviorDeltaCases).toContain("openskill-kit.behavior-delta-eval-case.v1");
     expect(behaviorDeltaCases).toContain("parser regression tests");
+    expect(behaviorDeltaCases).toContain("[PROJECT_ROOT]");
+    expect(behaviorDeltaCases).toContain("[USER_HOME]");
     expect(behaviorDeltaCases).not.toContain("raw_");
     expect(behaviorDeltaCases).not.toContain(root);
+    expect(behaviorDeltaCases).not.toContain(rootForward);
+    const markdown = await readText(report.artifacts.markdown);
+    expect(markdown).toContain("## Behavior Delta");
+    expect(markdown).toContain("Result rows:");
+    expect(markdown).toContain("Activated cases:");
   });
 
   it("uses runtime semantic activation entries during eval replay", async () => {

@@ -635,6 +635,42 @@ export const LearnV2EvalReportSchema = z.object({
   behaviorDeltaGoldenCount: z.number().int().min(0).default(0),
   counterfactualTraceCaseCount: z.number().int().min(0).default(0),
   replayEpisodeCount: z.number().int().min(0),
+  summary: z.object({
+    resultCounts: z.object({
+      total: z.number().int().min(0),
+      pass: z.number().int().min(0),
+      fail: z.number().int().min(0)
+    }),
+    activationReplay: z.object({
+      status: z.enum(["pass", "fail"]),
+      replayableConcepts: z.number().int().min(0),
+      retrievedConcepts: z.number().int().min(0),
+      retrievalRate: z.number().min(0).max(1),
+      misses: z.array(z.string()).default([])
+    }),
+    counterfactualTrace: z.object({
+      status: z.enum(["pass", "fail"]),
+      caseCount: z.number().int().min(0),
+      activatedCases: z.number().int().min(0),
+      activationRate: z.number().min(0).max(1),
+      misses: z.array(z.string()).default([]),
+      suppressionMisses: z.array(z.string()).default([]),
+      behaviorMismatches: z.array(z.string()).default([])
+    }),
+    behaviorDelta: z.object({
+      status: z.enum(["pass", "fail", "not-configured"]),
+      scenarioCount: z.number().int().min(0),
+      passedScenarios: z.number().int().min(0),
+      failedScenarios: z.number().int().min(0),
+      activatedConceptCount: z.number().int().min(0),
+      failedScenarioIds: z.array(z.string()).default([])
+    })
+  }).default({
+    resultCounts: { total: 0, pass: 0, fail: 0 },
+    activationReplay: { status: "pass", replayableConcepts: 0, retrievedConcepts: 0, retrievalRate: 1, misses: [] },
+    counterfactualTrace: { status: "pass", caseCount: 0, activatedCases: 0, activationRate: 1, misses: [], suppressionMisses: [], behaviorMismatches: [] },
+    behaviorDelta: { status: "not-configured", scenarioCount: 0, passedScenarios: 0, failedScenarios: 0, activatedConceptCount: 0, failedScenarioIds: [] }
+  }),
   leakCheck: z.object({
     status: z.enum(["pass", "fail"]),
     issues: z.array(z.string()).default([])
