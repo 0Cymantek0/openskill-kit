@@ -37,6 +37,7 @@ import {
   runPersistedLearnV2Eval,
   readPreferenceGraph,
   readLearnV2Surface,
+  discoverLearnV2SurfaceCandidates,
   learnV2SurfaceAdapterContracts,
   validateLearnV2SurfaceAdapterContracts,
   reconstructLearnV2Episodes,
@@ -181,6 +182,12 @@ describe("learn-v2 substrate", () => {
     const codex = path.join(root, "codex-transcript.md");
     const claude = path.join(root, "claude-transcript.md");
     const cursor = path.join(root, "cursor-chat.md");
+    const gemini = path.join(root, "gemini-session.jsonl");
+    const roo = path.join(root, "roo-code-chat.md");
+    const kilo = path.join(root, "kilo-code-session.md");
+    const cline = path.join(root, "cline-transcript.txt");
+    const goose = path.join(root, "goose-session.json");
+    const zed = path.join(root, "zed-agent-chat.md");
     const diff = path.join(root, "session.diff");
     const generic = path.join(root, "session.md");
     const summaryCollision = path.join(root, "ordinary-session.md");
@@ -189,6 +196,12 @@ describe("learn-v2 substrate", () => {
     await writeFile(codex, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(claude, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(cursor, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(gemini, "{\"role\":\"user\",\"content\":\"Prefer focused parser tests.\"}\n", "utf8");
+    await writeFile(roo, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(kilo, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(cline, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(goose, JSON.stringify([{ role: "user", content: "Prefer focused parser tests." }]), "utf8");
+    await writeFile(zed, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(diff, "diff --git a/src/parser.ts b/src/parser.ts\n+test", "utf8");
     await writeFile(generic, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(summaryCollision, "Summary: we discussed the plan.\nuser: Prefer focused parser tests.\nassistant: done", "utf8");
@@ -198,6 +211,12 @@ describe("learn-v2 substrate", () => {
     const codexSurface = await readLearnV2Surface(codex);
     const claudeSurface = await readLearnV2Surface(claude);
     const cursorSurface = await readLearnV2Surface(cursor);
+    const geminiSurface = await readLearnV2Surface(gemini);
+    const rooSurface = await readLearnV2Surface(roo);
+    const kiloSurface = await readLearnV2Surface(kilo);
+    const clineSurface = await readLearnV2Surface(cline);
+    const gooseSurface = await readLearnV2Surface(goose);
+    const zedSurface = await readLearnV2Surface(zed);
     const diffSurface = await readLearnV2Surface(diff);
     const genericSurface = await readLearnV2Surface(generic);
     const summaryCollisionSurface = await readLearnV2Surface(summaryCollision);
@@ -208,6 +227,12 @@ describe("learn-v2 substrate", () => {
     expect(codexSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
     expect(claudeSurface.adapterId).toBe("claude-code");
     expect(cursorSurface.adapterId).toBe("cursor");
+    expect(geminiSurface.adapterId).toBe("gemini");
+    expect(rooSurface.adapterId).toBe("roo");
+    expect(kiloSurface.adapterId).toBe("kilo");
+    expect(clineSurface.adapterId).toBe("cline");
+    expect(gooseSurface.adapterId).toBe("goose");
+    expect(zedSurface.adapterId).toBe("zed");
     expect(diffSurface.adapterId).toBe("git");
     expect(diffSurface.contentKind).toBe("diff");
     expect(genericSurface.adapterId).toBe("generic-transcript");
@@ -218,6 +243,16 @@ describe("learn-v2 substrate", () => {
     expect(docsSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
     expect(handoffSurface.adapterId).toBe("agent-summaries");
     expect(handoffSurface.adapterDetection).toMatchObject({ matchedBy: "filename", confidence: "high" });
+    const discovered = await discoverLearnV2SurfaceCandidates(root, { limit: 20 });
+    expect(discovered.map((candidate) => candidate.adapterId)).toEqual(expect.arrayContaining([
+      "gemini",
+      "roo",
+      "kilo",
+      "cline",
+      "goose",
+      "zed"
+    ]));
+    expect(discovered.find((candidate) => candidate.adapterId === "gemini")?.score).toBeGreaterThanOrEqual(0.72);
     expect(diffSurface.normalizationProfile).toBe("diff");
     expect(handoffSurface.normalizationProfile).toBe("agent-summaries");
     expect(genericSurface.normalizationProfile).toBe("generic-transcript");
@@ -233,6 +268,12 @@ describe("learn-v2 substrate", () => {
       "codex",
       "claude-code",
       "cursor",
+      "gemini",
+      "roo",
+      "kilo",
+      "cline",
+      "goose",
+      "zed",
       "git",
       "terminal",
       "review-local",

@@ -118,6 +118,12 @@ export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
   makeAdapter("codex", "Codex transcript", "structured-events", /codex/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
   makeAdapter("claude-code", "Claude Code transcript", "structured-events", /claude/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
   makeAdapter("cursor", "Cursor transcript", "structured-events", /cursor/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("gemini", "Gemini CLI transcript", "structured-events", /gemini/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("roo", "Roo Code transcript", "structured-events", /\broo(?:[-_. ]?code)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("kilo", "Kilo Code transcript", "structured-events", /\bkilo(?:[-_. ]?code)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("cline", "Cline transcript", "structured-events", /\bcline\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("goose", "Goose transcript", "structured-events", /\bgoose\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("zed", "Zed agent transcript", "structured-events", /\bzed(?:[-_. ]?agent)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
   makeAdapter("git", "Git diff or metadata", "diff", /(?:\.diff|\.patch|^git[-_.]?|diff --git)/i, "diff", "high", ["Raw diffs are local-only learner input; output artifacts receive declassified summaries."]),
   makeAdapter("terminal", "Terminal transcript", "terminal", /(?:terminal|shell|console|history|commands?)/i, "log", "high", ["Shell history and output can contain secrets or machine-local paths."]),
   makeAdapter("review-local", "Local review notes", "review-local", /\b(?:review|comments?|pr|pull-request)\b/i, "document", "medium", ["Review notes are explicit local evidence and remain declassified before output."], /(?:^|\n)\s*(?:reviewer|review comment|pr comment|pull request comment|pull-request comment)\s*:/i),
@@ -384,7 +390,7 @@ function rawLocalSourceCandidateScore(
   if (detection.matchedBy === "filename") score += 0.22;
   if (detection.confidence === "high") score += 0.18;
   if (adapter.id !== "generic-transcript") score += 0.14;
-  if (/(^|\/)(codex|claude|cursor|opencode|terminal|review|comments?|ci|logs?|plans?|docs?|handoff|summary)[^/]*\.(jsonl|json|md|txt|log|patch|diff)$/.test(lower)) score += 0.18;
+  if (/(^|\/)(codex|claude|cursor|gemini|roo|kilo|cline|goose|zed|opencode|terminal|review|comments?|ci|logs?|plans?|docs?|handoff|summary)[^/]*\.(jsonl|json|md|txt|log|patch|diff)$/.test(lower)) score += 0.18;
   if (/\.(patch|diff|jsonl|log)$/.test(lower)) score += 0.08;
   if (/(^|\/)(logs?|traces?|sessions?|transcripts?|reviews?|plans?|docs?)\//.test(lower)) score += 0.08;
   if (/(^|\/)(readme|notes?)\.md$/.test(lower)) score += 0.04;

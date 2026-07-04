@@ -20,6 +20,13 @@
 - Done: tests cover structured eval summary JSON, markdown summary sections, CLI plain output, and counterfactual artifact redaction for project roots and user-home paths.
 - Verified: focused Learn v2 eval/observability tests, focused CLI eval/observability tests, full `rtk npm test`, and `rtk npm run typecheck`.
 
+### 2026-07-05 raw surface adapter coverage slice
+
+- Done: Learn v2 raw surface registry now has explicit high-sensitivity adapters for Gemini, Roo Code, Kilo Code, Cline, Goose, and Zed agent transcripts.
+- Done: raw local candidate scoring recognizes those adapter filename families, so discovery surfaces them above generic fallback while still keeping them blocked/explicit-only in normal source plans.
+- Done: `/osk learn` docs list the expanded adapter matrix and keep the privacy rule: transcript exports are never default-selected and require explicit file choice.
+- Verified: focused raw-surface adapter tests and `rtk npm run typecheck`.
+
 ### 2026-07-04 trace context slice
 
 - Done: OpenCode plugin source bundle now emits `traceContext` on safe ambient records, matching the generated compiler template.

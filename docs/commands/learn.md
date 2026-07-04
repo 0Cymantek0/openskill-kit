@@ -17,7 +17,7 @@ review-gated.
 | Current session safe summary | selected | safe metadata | Uses OSK task-finish summaries and safe event metadata. |
 | Git metadata | selected for all-detected | safe metadata | Branch, changed file names, diff stats, and commit subjects only. No raw diffs. |
 | OpenCode ambient metadata | selected when present | safe metadata | Reads `.openskill-kit/ambient/opencode-events.jsonl` written by generated OpenCode hooks. Whitelisted event metadata only; no raw prompts, raw diffs, or tool output. |
-| Codex/Claude/Cursor/manual export file | not selected | explicit import | Preview first, apply only after explicit approval. |
+| Codex/Claude/Cursor/Gemini/Roo/Kilo/Cline/Goose/Zed/manual export file | not selected | explicit import | Preview first, apply only after explicit approval. |
 | Review notes file | not selected | explicit import | Converts supplied notes into redacted review-comment events. |
 | Terminal history file | not selected | explicit import | Requires explicit file path; command metadata only. |
 | Raw local surface file | explicit only | raw local | Reads raw local evidence, stores content-addressed raw blobs under `.openskill-kit/learn-v2/raw-vault/`, writes declassified analysis/review/eval artifacts, keeps legacy deidentified compatibility records under `.openskill-kit/raw-vault/`, and stages reviewable concepts. |
@@ -31,6 +31,12 @@ review-gated.
 | `codex` | `codex-*` or Codex marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
 | `claude-code` | `claude-*` or Claude marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
 | `cursor` | `cursor-*` or Cursor marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `gemini` | `gemini-*` or Gemini marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `roo` | `roo-*`, `roo-code-*`, or Roo marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `kilo` | `kilo-*`, `kilo-code-*`, or Kilo marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `cline` | `cline-*` or Cline marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `goose` | `goose-*` or Goose marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
+| `zed` | `zed-*`, `zed-agent-*`, or Zed marker in content prefix | inferred | `structured-events` | high | Transcript source; explicit file selection still required. |
 | `git` | `.diff`, `.patch`, `git-*`, or `diff --git` | diff | `diff` | high | Raw diffs stay local; output artifacts receive summaries. |
 | `terminal` | `terminal-*`, `shell-*`, `console-*`, command/history marker | log | `terminal` | high | Shell output can contain local paths or secrets. |
 | `review-local` | `review-*`, `comments-*`, `pull-request-*`, or explicit `review comment:` prefix | document | `review-local` | medium | Review evidence is declassified before output. |
