@@ -481,6 +481,16 @@ describe("learn-v2 substrate", () => {
     ]));
     expect(summary.changedImports).toEqual(expect.arrayContaining(["./parser.js"]));
     expect(summary.fileSummaries.find((file) => file.path.endsWith("parser-service.ts"))?.classes).toContain("api");
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("parser-service.ts"))).toMatchObject({
+      parserBackend: "typescript-compiler",
+      structuralConfidence: "parser",
+      confidenceCap: 1
+    });
+    expect(summary.fileSummaries.find((file) => file.path.endsWith("plugin-loader.js"))).toMatchObject({
+      parserBackend: "typescript-compiler",
+      structuralConfidence: "parser",
+      confidenceCap: 1
+    });
     expect(summary.semanticChange).toBe(true);
   });
 
@@ -963,7 +973,7 @@ describe("learn-v2 substrate", () => {
     expect(reviewMarkdown).toContain("recent-negative-outcomes");
   });
 
-  it("detects Python Go and Rust structural symbols without new parser dependencies", async () => {
+  it("detects Python Go and Rust structural symbols with confidence-capped fallback parsers", async () => {
     const diff = [
       "diff --git a/python/openskillkit_evolution/cli.py b/python/openskillkit_evolution/cli.py",
       "--- a/python/openskillkit_evolution/cli.py",
@@ -1020,6 +1030,42 @@ describe("learn-v2 substrate", () => {
     ]));
     expect(summary.semanticChange).toBe(true);
     expect(summary.fileSummaries.every((file) => file.classes.includes("api"))).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.parserBackend === "heuristic-fallback")).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.structuralConfidence === "fallback")).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.confidenceCap === 0.68)).toBe(true);
+  });
+
+  it("caps patch-pair confidence when only fallback structural parsers are available", async () => {
+    const proposed = [
+      "diff --git a/python/openskillkit_evolution/report.py b/python/openskillkit_evolution/report.py",
+      "--- a/python/openskillkit_evolution/report.py",
+      "+++ b/python/openskillkit_evolution/report.py",
+      "@@",
+      " class ReportBuilder:",
+      "     def build(self, value):",
+      "-        return old_report(value)",
+      "+        return proposed_report(value)"
+    ].join("\n");
+    const finalPatch = [
+      "diff --git a/python/openskillkit_evolution/report.py b/python/openskillkit_evolution/report.py",
+      "--- a/python/openskillkit_evolution/report.py",
+      "+++ b/python/openskillkit_evolution/report.py",
+      "@@",
+      " class ReportBuilder:",
+      "     def build(self, value):",
+      "-        return old_report(value)",
+      "+        return final_regression_report(value)"
+    ].join("\n");
+    const patches = summarizeLearnV2Patches([
+      normalizedFileChange("ev_agent_fallback_patch", proposed, { metadata: { patchKind: "proposed patch" } }),
+      normalizedFileChange("ev_final_fallback_patch", finalPatch, { metadata: { patchKind: "final-patch" } })
+    ]);
+    const final = patches.find((patch) => patch.kind === "final-patch")!;
+
+    expect(final.structuralSummary.fileSummaries.every((file) => file.parserBackend === "heuristic-fallback")).toBe(true);
+    expect(final.comparison?.confidence).toBeLessThanOrEqual(0.68);
+    expect(final.comparison?.confidence).toBeGreaterThanOrEqual(0.5);
+    expect(final.summary).toContain("structural=python:heuristic-fallback:fallback");
   });
 
   it("recovers enclosing symbols from hunk headers and context for body-only edits", async () => {

@@ -277,7 +277,7 @@ function comparePatchPair(proposed: LearnV2PatchComparison, finalPatch: LearnV2P
     addedLineDelta,
     removedLineDelta
   });
-  const confidence = patchComparisonConfidence({
+  const rawConfidence = patchComparisonConfidence({
     sharedPaths,
     sharedStructuralClasses,
     proposedOnlyPaths,
@@ -286,6 +286,8 @@ function comparePatchPair(proposed: LearnV2PatchComparison, finalPatch: LearnV2P
     reasons,
     behaviorSignal
   });
+  const confidenceCap = Math.min(patchStructuralConfidenceCap(proposed.structuralSummary), patchStructuralConfidenceCap(finalPatch.structuralSummary));
+  const confidence = Math.min(rawConfidence, confidenceCap);
   return {
     schemaVersion: "openskill-kit.learn-v2.patch-comparison.v1",
     role: "standalone",
@@ -377,6 +379,14 @@ function patchComparisonConfidence(input: {
   return Number(Math.min(0.9, 0.42 + sharedPathBoost + sharedClassBoost + finalScopeBoost + signalBoost + reasonBoost).toFixed(2));
 }
 
+function patchStructuralConfidenceCap(summary: LearnV2PatchComparison["structuralSummary"]): number {
+  const caps = summary.fileSummaries
+    .map((file) => file.confidenceCap ?? 0.35)
+    .filter((cap) => Number.isFinite(cap) && cap > 0);
+  if (!caps.length) return 0.55;
+  return Math.max(0.35, Math.min(...caps));
+}
+
 export function learnV2TokenBudget(evidence: LearnV2NormalizedEvidence[], compressed: string): { inputChars: number; compressedChars: number; compressionRatio: number } {
   const inputChars = evidence.reduce((sum, item) => sum + item.text.length, 0);
   const compressedChars = compressed.length;
@@ -429,11 +439,16 @@ function renderPatchSummary(summary: LearnV2PatchComparison["structuralSummary"]
     summary.fileSummaries.length ? `files=${summary.fileSummaries.map((file) => file.path).slice(0, 6).join(",")}` : undefined,
     summary.changedSymbols.length ? `symbols=${summary.changedSymbols.slice(0, 8).join(",")}` : undefined,
     summary.changedImports.length ? `imports=${summary.changedImports.slice(0, 5).join(",")}` : undefined,
+    summary.fileSummaries.length ? `structural=${renderStructuralBackends(summary)}` : undefined,
     summary.ignoredFiles.length ? `ignored=${summary.ignoredFiles.slice(0, 5).join(",")}` : undefined,
     summary.formattingOnly ? "formatting-only" : summary.semanticChange ? "semantic-change" : undefined,
     filterReasons.length ? `learning-filter=${filterReasons.join(",")}` : undefined
   ].filter(Boolean);
   return parts.length ? parts.join("; ") : learnV2Snippet(text, 320) || "Patch summary";
+}
+
+function renderStructuralBackends(summary: LearnV2PatchComparison["structuralSummary"]): string {
+  return [...new Set(summary.fileSummaries.map((file) => `${file.language}:${file.parserBackend}:${file.structuralConfidence}`))].slice(0, 6).join(",");
 }
 
 function intersectStrings<T extends string>(left: T[], right: T[]): T[] {

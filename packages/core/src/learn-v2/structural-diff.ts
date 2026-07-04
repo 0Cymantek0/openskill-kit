@@ -28,6 +28,14 @@ interface BlockStructuralSignal {
   imports: string[];
 }
 
+interface StructuralParser {
+  language: StructuralLanguage;
+  backend: FileSummary["parserBackend"];
+  confidence: FileSummary["structuralConfidence"];
+  confidenceCap: number;
+  signal(file: DiffFile): { symbols: string[]; imports: string[] };
+}
+
 export function analyzeLearnV2StructuralDiff(text: string, fallbackPaths: string[] = []): LearnV2PatchComparison["structuralSummary"] {
   const diffFiles = parseUnifiedDiff(text);
   const files = diffFiles.length
@@ -103,17 +111,15 @@ function parseUnifiedDiff(text: string): DiffFile[] {
 function summarizeFile(file: DiffFile): FileSummary {
   const language = languageForPath(file.path);
   const allChanged = [...file.added, ...file.removed];
-  const typeScriptSignal = typeScriptStructuralSignal(file, language);
-  const blockSignal = blockStructuralSignal(file, language);
+  const parser = structuralParserForLanguage(language);
+  const parserSignal = parser.signal(file);
   const changedSymbols = [...new Set([
-    ...typeScriptSignal.symbols,
-    ...blockSignal.symbols,
+    ...parserSignal.symbols,
     ...allChanged.flatMap((line) => symbolsForLine(language, line)),
     ...symbolsFromHunks(language, file.hunks)
   ])].sort().slice(0, 20);
   const changedImports = [...new Set([
-    ...typeScriptSignal.imports,
-    ...blockSignal.imports,
+    ...parserSignal.imports,
     ...allChanged.flatMap((line) => importsForLine(language, line))
   ])].sort().slice(0, 20);
   const classes = classesForFile(file.path, language, allChanged, changedSymbols, changedImports);
@@ -128,7 +134,38 @@ function summarizeFile(file: DiffFile): FileSummary {
     changedImports,
     addedLines: file.added.length,
     removedLines: file.removed.length,
+    parserBackend: parser.backend,
+    structuralConfidence: parser.confidence,
+    confidenceCap: parser.confidenceCap,
     semanticChange
+  };
+}
+
+function structuralParserForLanguage(language: StructuralLanguage): StructuralParser {
+  if (language === "typescript" || language === "javascript") {
+    return {
+      language,
+      backend: "typescript-compiler",
+      confidence: "parser",
+      confidenceCap: 1,
+      signal: (file) => typeScriptStructuralSignal(file, language)
+    };
+  }
+  if (language === "python" || language === "go" || language === "rust") {
+    return {
+      language,
+      backend: "heuristic-fallback",
+      confidence: "fallback",
+      confidenceCap: 0.68,
+      signal: (file) => blockStructuralSignal(file, language)
+    };
+  }
+  return {
+    language,
+    backend: "none",
+    confidence: "none",
+    confidenceCap: 0.35,
+    signal: () => ({ symbols: [], imports: [] })
   };
 }
 

@@ -803,11 +803,11 @@ Final verification passed: full Vitest suite reported 40 files and 287 tests pas
 
 Remaining highest-value next slices:
 
-1. Add parser abstraction and confidence-capped fallbacks for Python/Go/Rust structural diff support.
-2. Add OpenCode trace emission/propagation in plugin/hook paths, not only ingestion.
-3. Upgrade eval labels so deterministic replay is not confused with real sandbox/agent behavior proof.
-4. Add de-duplication contract tests where a generated `pref_<conceptId>` and a Learn v2 activation match both exist.
-5. Add team-sharing/export flow for reviewed/declassified concepts.
+1. Add OpenCode trace emission/propagation in plugin/hook paths, not only ingestion.
+2. Upgrade eval labels so deterministic replay is not confused with real sandbox/agent behavior proof.
+3. Add de-duplication contract tests where a generated `pref_<conceptId>` and a Learn v2 activation match both exist.
+4. Add team-sharing/export flow for reviewed/declassified concepts.
+5. Replace Python/Go/Rust heuristic fallbacks with real parser backends only if dependency/runtime tradeoffs are acceptable.
 
 ### Slice 2 completed locally: public task-context contract
 
@@ -824,3 +824,24 @@ Verification run:
 rtk npx vitest --run packages/cli/tests/osk-facade.test.ts packages/mcp-server/tests/mcp-server.test.ts packages/core/tests/docs-coverage.test.ts
 rtk npm run typecheck
 ```
+
+### Slice 3 completed locally: structural parser contract and fallback caps
+
+Done:
+
+- Added explicit structural parser metadata on Learn v2 patch file summaries: `parserBackend`, `structuralConfidence`, and `confidenceCap`.
+- Routed TypeScript/JavaScript structural extraction through a named `typescript-compiler` parser backend with parser confidence.
+- Routed Python/Go/Rust structural extraction through an explicit `heuristic-fallback` backend with fallback confidence and a 0.68 cap.
+- Kept unknown/unsupported languages on `none` backend with low structural confidence.
+- Applied structural confidence caps to agent-patch versus final/manual patch comparison confidence so fallback-only patch pairings cannot be overrepresented as parser-grade evidence.
+- Added regression tests for TS/JS parser backend metadata, Python/Go/Rust fallback metadata, and fallback-capped patch-pair confidence.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts
+rtk npm run typecheck
+rtk npm test
+```
+
+Final verification passed: full Vitest suite reported 40 files and 290 tests passing.
