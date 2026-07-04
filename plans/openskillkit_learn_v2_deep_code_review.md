@@ -27,6 +27,14 @@
 - Done: `/osk learn` docs list the expanded adapter matrix and keep the privacy rule: transcript exports are never default-selected and require explicit file choice.
 - Verified: focused raw-surface adapter tests and `rtk npm run typecheck`.
 
+### 2026-07-05 MCP descriptor coverage slice
+
+- Done: generated advanced MCP descriptors now expose the Learn v2 raw-ingest, review, concept compilation, sanitized model request, activation, observability, reconstruction, extraction, and eval tools.
+- Done: descriptor hash metadata now marks raw evidence ingest, concept review, OpenCode model execution, and model-output application tools as approval-required, while the public MCP profile still excludes raw ingest.
+- Done: the packaged agent-plugin bundle now carries the regenerated advanced descriptor set, descriptor hashes, server config tool list, and empty Learn v2 concept resource catalog.
+- Done: tests guard both compiler-generated descriptors and the static package bundle so future MCP descriptor drift fails fast.
+- Verified: focused plugin manifest test, focused deep architecture plugin compile test, full `rtk npm test` (40 files, 293 tests), and `rtk npm run typecheck`.
+
 ### 2026-07-04 trace context slice
 
 - Done: OpenCode plugin source bundle now emits `traceContext` on safe ambient records, matching the generated compiler template.

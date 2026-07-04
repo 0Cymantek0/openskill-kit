@@ -68,11 +68,40 @@ describe("agent plugin manifest", () => {
     expect(mcp.mcpServers["openskill-kit"].command).toBe("openskill-kit-mcp");
     expect(mcp.mcpServers["openskill-kit"].env.OPENSKILLKIT_MCP_PROFILE).toBe("public");
     const mcpProfiles = JSON.parse(readFileSync(path.join(root, "mcp", "profiles.json"), "utf8"));
+    const advancedDescriptors = JSON.parse(readFileSync(path.join(root, "mcp", "descriptors.json"), "utf8"));
     const publicDescriptors = JSON.parse(readFileSync(path.join(root, "mcp", "descriptors.public.json"), "utf8"));
+    const descriptorHashes = JSON.parse(readFileSync(path.join(root, "mcp", "descriptor-hashes.json"), "utf8"));
+    const serverConfig = JSON.parse(readFileSync(path.join(root, "mcp", "server-config.json"), "utf8"));
+    const conceptResources = JSON.parse(readFileSync(path.join(root, "mcp", "resources", "learn-v2-concepts.json"), "utf8"));
     expect(mcpProfiles.defaultProfile).toBe("public");
     expect(mcpProfiles.profiles.public).toHaveLength(12);
     expect(publicDescriptors.profile).toBe("public");
     expect(publicDescriptors.tools).toHaveLength(12);
+    expect(advancedDescriptors.profile).toBe("advanced");
+    expect(advancedDescriptors.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining([
+      "osk_plan_learning_sources_v2",
+      "osk_ingest_raw_evidence",
+      "osk_get_concept_review_queue",
+      "osk_review_concepts",
+      "osk_compile_concepts",
+      "osk_prepare_learn_v2_model_requests",
+      "osk_execute_learn_v2_model_requests",
+      "osk_apply_learn_v2_model_outputs",
+      "osk_activate_learn_v2_concepts",
+      "osk_get_learn_v2_observability",
+      "osk_reconstruct_episodes",
+      "osk_extract_concepts",
+      "osk_run_learn_v2_eval"
+    ]));
+    expect(advancedDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_ingest_raw_evidence" && tool.approvalRequired === true)).toBe(true);
+    expect(advancedDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_concept_review_queue" && tool.writeRisk === "read-only")).toBe(true);
+    expect(publicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_ingest_raw_evidence")).toBe(false);
+    expect(descriptorHashes.approvalRequiredTools).toEqual(expect.arrayContaining(["osk_ingest_raw_evidence", "osk_review_concepts", "osk_execute_learn_v2_model_requests"]));
+    expect(descriptorHashes.resources).toBe("resources/learn-v2-concepts.json");
+    expect(serverConfig.tools).toEqual(expect.arrayContaining(["osk_plan_learning_sources_v2", "osk_run_learn_v2_eval"]));
+    expect(serverConfig.resources.learnV2Concepts).toBe("resources/learn-v2-concepts.json");
+    expect(conceptResources.schemaVersion).toBe("openskill-kit.mcp.learn-v2-concept-resources.v1");
+    expect(conceptResources.resources).toEqual([]);
     const commandMap = JSON.parse(readFileSync(path.join(root, "commands", "commands.json"), "utf8"));
     expect(commandMap.publicFamilyCount).toBe(12);
     expect(commandMap.commands).toHaveLength(12);

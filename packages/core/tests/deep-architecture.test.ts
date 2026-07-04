@@ -283,6 +283,13 @@ describe("deep architecture hardening", () => {
     expect(mcpPublicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_run_behavior_eval")).toBe(false);
     expect(mcpDescriptors.profile).toBe("advanced");
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_run_learning_plan" && tool.approvalRequired === true)).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_plan_learning_sources_v2" && tool.writeRisk === "local-write")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_ingest_raw_evidence" && tool.approvalRequired === true)).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_concept_review_queue" && tool.writeRisk === "read-only")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_review_concepts" && tool.approvalRequired === true)).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_run_learn_v2_eval" && tool.writeRisk === "local-write")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_learn_v2_observability" && tool.writeRisk === "read-only")).toBe(true);
+    expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_execute_learn_v2_model_requests" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_compile_deploy" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_manifest_install" && tool.approvalRequired === true)).toBe(true);
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_apply_plugin_attach" && tool.approvalRequired === true)).toBe(true);
@@ -303,6 +310,11 @@ describe("deep architecture hardening", () => {
     expect(mcpDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_openworld_promote_review" && tool.approvalRequired === true)).toBe(true);
     expect(mcpHashes.tools["osk_get_status"]).toMatch(/^sha256:/);
     expect(mcpHashes.approvalRequiredTools).toContain("osk_install_agent_hooks");
+    expect(mcpHashes.approvalRequiredTools).toEqual(expect.arrayContaining([
+      "osk_ingest_raw_evidence",
+      "osk_review_concepts",
+      "osk_execute_learn_v2_model_requests"
+    ]));
     expect(mcpHashes.approvalRequiredTools).toContain("osk_apply_plugin_attach");
     expect(mcpHashes.approvalRequiredTools).toContain("osk_import_interaction_source");
     expect(mcpHashes.approvalRequiredTools).toContain("osk_openworld_promote_review");
