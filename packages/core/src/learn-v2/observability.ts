@@ -79,6 +79,10 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
     leakStatus: z.enum(["pass", "fail"]),
+    behaviorDeltaStatus: z.enum(["pass", "fail", "not-configured"]).default("not-configured"),
+    behaviorDeltaScenarios: z.number().int().min(0).default(0),
+    activationReplayRate: z.number().min(0).max(1).default(1),
+    counterfactualTraceRate: z.number().min(0).max(1).default(1),
     reviewCards: z.number().int().min(0),
     safeBulkActions: z.array(z.string()).default([])
   }),
@@ -264,6 +268,10 @@ export async function writeLearnV2PipelineObservabilityReport(
     qualityGates: {
       evalStatus: input.evalReport.status,
       leakStatus: input.evalReport.leakCheck.status,
+      behaviorDeltaStatus: input.evalReport.summary.behaviorDelta.status,
+      behaviorDeltaScenarios: input.evalReport.summary.behaviorDelta.scenarioCount,
+      activationReplayRate: input.evalReport.summary.activationReplay.retrievalRate,
+      counterfactualTraceRate: input.evalReport.summary.counterfactualTrace.activationRate,
       reviewCards: input.reviewQueue.cards.length,
       safeBulkActions: input.reviewQueue.safeBulkActions
     },
@@ -345,6 +353,9 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Drift health: ${report.concepts.driftHealthScore.toFixed(2)} (${report.concepts.staleDriftCandidates} stale, ${renderCounts(report.concepts.driftReasonCounts)})`,
     `- Eval: ${report.qualityGates.evalStatus}`,
     `- Leak check: ${report.qualityGates.leakStatus}`,
+    `- Behavior delta: ${report.qualityGates.behaviorDeltaStatus} (${report.qualityGates.behaviorDeltaScenarios} scenarios)`,
+    `- Activation replay rate: ${report.qualityGates.activationReplayRate}`,
+    `- Counterfactual trace rate: ${report.qualityGates.counterfactualTraceRate}`,
     "",
     "## Health",
     "",
@@ -382,6 +393,9 @@ function buildPipelineHealth(
   const reviewFocus: string[] = [];
   if (input.evalReport.status === "fail") blockers.push("Learn v2 eval failed.");
   if (input.evalReport.leakCheck.status === "fail") blockers.push("Leak check failed.");
+  if (input.evalReport.summary.behaviorDelta.status === "not-configured") warnings.push("No behavior-delta eval goldens configured.");
+  if (input.evalReport.summary.activationReplay.status === "fail") reviewFocus.push("Fix activation replay misses.");
+  if (input.evalReport.summary.counterfactualTrace.status === "fail") reviewFocus.push("Fix counterfactual trace misses.");
   const blockedSnippets = context.declassifiedSnippets?.counts.blockedFromCompile ?? input.reviewQueue.evidenceSnippetSummary.blockedFromCompileCount;
   if (blockedSnippets > 0) blockers.push(`${blockedSnippets} declassified snippet(s) are compile-blocked.`);
   const unresolvedConflicts = context.conflictLedger?.unresolvedCount ?? input.reviewQueue.conflictSummary.unresolvedCount;

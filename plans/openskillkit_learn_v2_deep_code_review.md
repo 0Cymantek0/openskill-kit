@@ -14,10 +14,11 @@
 - Done: Learn v2 eval reports now expose structured summary metrics for result rows, activation replay retrieval, counterfactual trace activation, and behavior-delta scenarios.
 - Done: persisted eval command results include summary, leak-check, and token-budget data so CLI/MCP consumers do not need to scrape report markdown to understand whether learned behavior changed task plans.
 - Done: plain CLI output for `osk learn --run-learn-v2-eval` now shows behavior-delta, activation-replay, counterfactual-trace, leak-check, compression, and failure summary lines with project-local report paths.
+- Done: Learn v2 pipeline observability now carries eval proof metrics and warns when behavior-delta eval goldens are missing, making proof gaps visible in JSON, Markdown, and CLI dashboard output.
 - Done: counterfactual trace eval artifacts are declassified with the same scrubber as behavior-delta artifacts; task prompts, paths, commands, task types, expected behavior, and negative signals are redacted before artifact write.
 - Done: eval leak check now inspects concept scope, conditions, activation, counterevidence, and project-root/user-home path shapes, so unsafe concept metadata fails the eval instead of only being scrubbed in artifacts.
 - Done: tests cover structured eval summary JSON, markdown summary sections, CLI plain output, and counterfactual artifact redaction for project roots and user-home paths.
-- Verified: `rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "runs extraction golden|fails eval leak check|uses runtime semantic activation"`, `rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "persisted Learn v2 eval summary"`, full `rtk npm test`, and `rtk npm run typecheck`.
+- Verified: focused Learn v2 eval/observability tests, focused CLI eval/observability tests, full `rtk npm test`, and `rtk npm run typecheck`.
 
 ### 2026-07-04 trace context slice
 
