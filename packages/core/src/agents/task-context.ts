@@ -3,6 +3,7 @@ import { getAdaptiveStatus } from "../status/status.js";
 import { buildReviewQueue, type ReviewQueueResult } from "../preferences/proposals.js";
 import { retrieveRelevantPreferences } from "../preferences/retrieval.js";
 import { routeBehavior } from "../routing/router.js";
+import { activateLearnV2Concepts, type LearnV2ConceptActivationResult } from "../learn-v2/activation.js";
 import { getAgentPluginAttachStatus, getAgentPluginInstallProfile } from "./plugin-attach.js";
 
 export interface AgentTaskContextInput {
@@ -11,6 +12,7 @@ export interface AgentTaskContextInput {
   paths?: string[];
   changedFiles?: string[];
   commands?: string[];
+  negativeSignals?: string[];
   limit?: number;
 }
 
@@ -20,8 +22,15 @@ export interface AgentTaskContextResult {
   paths: string[];
   changedFiles: string[];
   commands: string[];
+  negativeSignals: string[];
   route: Awaited<ReturnType<typeof routeBehavior>>;
   preferences: Awaited<ReturnType<typeof retrieveRelevantPreferences>>;
+  learnV2Activation: LearnV2ConceptActivationResult;
+  learnedConcepts: {
+    shown: LearnV2ConceptActivationResult["matches"];
+    dedupedByPreference: LearnV2ConceptActivationResult["matches"];
+    suppressed: LearnV2ConceptActivationResult["suppressed"];
+  };
   status: {
     activePreferenceCount: number;
     pendingReviewCount: number;
@@ -57,21 +66,34 @@ export async function getAgentTaskContext(input: AgentTaskContextInput): Promise
   const paths = normalizeList(input.paths ?? []);
   const changedFiles = normalizeList(input.changedFiles ?? []);
   const commands = normalizeList(input.commands ?? []);
+  const negativeSignals = normalizeList(input.negativeSignals ?? []);
   const query = input.query?.trim() || undefined;
   const limit = Math.max(1, Math.min(input.limit ?? 8, 20));
-  const [route, preferences, status, plugin, pluginInstallProfile, reviewQueue] = await Promise.all([
+  const [route, preferences, learnV2Activation, status, plugin, pluginInstallProfile, reviewQueue] = await Promise.all([
     routeBehavior({ projectRoot: root, query, paths, changedFiles, commands }),
     retrieveRelevantPreferences({ projectRoot: root, query, paths: [...paths, ...changedFiles], limit }),
+    activateLearnV2Concepts(root, {
+      query,
+      paths: [...paths, ...changedFiles],
+      commands,
+      negativeSignals,
+      taskTypes: inferLearnV2TaskTypes(query, [...paths, ...changedFiles], commands),
+      includeCandidates: false,
+      limit
+    }),
     getAdaptiveStatus(root),
     getAgentPluginAttachStatus(root),
     getAgentPluginInstallProfile(root),
     buildReviewQueue(root)
   ]);
+  const learnedConcepts = dedupeLearnV2ActivationMatches(learnV2Activation, preferences);
   const review = summarizeReviewQueue(reviewQueue, limit);
-  const nextActions = buildNextActions(route, preferences.items.length, status.pendingReviewCount, plugin.attached, pluginInstallProfile.ready, review);
+  const nextActions = buildNextActions(route, preferences.items.length, learnedConcepts.shown.length, status.pendingReviewCount, plugin.attached, pluginInstallProfile.ready, review);
   const compactMarkdown = renderAgentTaskContextMarkdown({
     route,
     preferences,
+    learnV2Activation,
+    learnedConcepts,
     status: {
       activePreferenceCount: status.activePreferenceCount,
       pendingReviewCount: status.pendingReviewCount,
@@ -89,8 +111,11 @@ export async function getAgentTaskContext(input: AgentTaskContextInput): Promise
     paths,
     changedFiles,
     commands,
+    negativeSignals,
     route,
     preferences,
+    learnV2Activation,
+    learnedConcepts,
     status: {
       activePreferenceCount: status.activePreferenceCount,
       pendingReviewCount: status.pendingReviewCount,
@@ -155,6 +180,7 @@ function summarizeReviewQueue(queue: ReviewQueueResult, limit: number): AgentTas
 function buildNextActions(
   route: Awaited<ReturnType<typeof routeBehavior>>,
   preferenceCount: number,
+  learnedConceptCount: number,
   pendingReviewCount: number,
   pluginAttached: boolean,
   pluginInstallProfileReady: boolean,
@@ -163,7 +189,11 @@ function buildNextActions(
   const actions = [
     pluginAttached ? undefined : "Attach the plugin host config before relying on MCP in this harness.",
     pluginInstallProfileReady ? "Use pluginInstallProfile.profile for first-call, MCP env binding, command routing, and approval gates." : "Compile the plugin install profile before harness attachment.",
-    preferenceCount > 0 ? "Apply only returned preferences relevant to this task and paths." : "No strong active preferences returned; proceed from repo truth and record useful corrections later.",
+    preferenceCount > 0
+      ? "Apply only returned preferences relevant to this task and paths."
+      : learnedConceptCount > 0
+        ? "Apply only returned learned concepts relevant to this task and paths."
+        : "No strong active preferences or learned concepts returned; proceed from repo truth and record useful corrections later.",
     route.decision === "openworld-research" ? "Use OpenWorld research only through leakage-audited sources and review gates." : undefined,
     route.gates.includes("review") || pendingReviewCount > 0 || review.totalPendingCount > 0 ? "Review pending behavior before promoting or compiling broader instructions." : undefined,
     review.pendingProposalCount > 0 ? "Semantic proposals are review inputs only; run learning/update graph before applying review actions." : undefined,
@@ -172,7 +202,7 @@ function buildNextActions(
   return [...new Set(actions)];
 }
 
-function renderAgentTaskContextMarkdown(input: Pick<AgentTaskContextResult, "route" | "preferences" | "status" | "plugin" | "pluginInstallProfile" | "review" | "nextActions">): string {
+function renderAgentTaskContextMarkdown(input: Pick<AgentTaskContextResult, "route" | "preferences" | "learnV2Activation" | "learnedConcepts" | "status" | "plugin" | "pluginInstallProfile" | "review" | "nextActions">): string {
   return [
     "## OpenSkillKit Task Context",
     "",
@@ -188,6 +218,7 @@ function renderAgentTaskContextMarkdown(input: Pick<AgentTaskContextResult, "rou
     "",
     input.route.reasons.length ? ["### Route Reasons", "", ...input.route.reasons.map((reason) => `- ${reason}`), ""].join("\n") : "",
     input.preferences.compactMarkdown || "### Relevant Preferences\n\nNo active preferences matched this task.",
+    renderLearnV2ActivationMarkdown(input.learnedConcepts),
     input.route.workflows.compactMarkdown ? `\n${input.route.workflows.compactMarkdown}` : "",
     input.review.items.length ? ["", "### Pending Review Items", "", ...input.review.items.map((item) => `- ${item.kind} ${item.id}${item.status ? ` [${item.status}]` : ""}: ${item.statement} (${item.actionHint})`), ""].join("\n") : "",
     "",
@@ -195,6 +226,59 @@ function renderAgentTaskContextMarkdown(input: Pick<AgentTaskContextResult, "rou
     "",
     ...input.nextActions.map((action) => `- ${action}`)
   ].filter((line) => line !== "").join("\n");
+}
+
+function dedupeLearnV2ActivationMatches(
+  activation: LearnV2ConceptActivationResult,
+  preferences: Awaited<ReturnType<typeof retrieveRelevantPreferences>>
+): AgentTaskContextResult["learnedConcepts"] {
+  const preferenceIds = new Set(preferences.items.map((item) => item.node.id));
+  const coveredConceptIds = new Set(preferences.items.flatMap((item) => [
+    ...item.node.evidence.flatMap((evidence) => evidence.cardIds),
+    ...item.node.evidence
+      .map((evidence) => evidence.signalId.startsWith("learn-v2:") ? evidence.signalId.slice("learn-v2:".length) : undefined)
+      .filter((id): id is string => Boolean(id)),
+    item.node.id.startsWith("pref_") ? item.node.id.slice("pref_".length) : undefined
+  ].filter((id): id is string => Boolean(id))));
+  const dedupedByPreference: LearnV2ConceptActivationResult["matches"] = [];
+  const shown: LearnV2ConceptActivationResult["matches"] = [];
+  for (const match of activation.matches) {
+    if (preferenceIds.has(`pref_${match.conceptId}`) || coveredConceptIds.has(match.conceptId)) {
+      dedupedByPreference.push(match);
+    } else {
+      shown.push(match);
+    }
+  }
+  return { shown, dedupedByPreference, suppressed: activation.suppressed };
+}
+
+function renderLearnV2ActivationMarkdown(learnedConcepts: AgentTaskContextResult["learnedConcepts"]): string {
+  const lines: string[] = ["### Relevant Learned Concepts", ""];
+  if (!learnedConcepts.shown.length && !learnedConcepts.dedupedByPreference.length && !learnedConcepts.suppressed.length) {
+    lines.push("No reviewed Learn v2 concepts matched this task.");
+    return lines.join("\n");
+  }
+  for (const match of learnedConcepts.shown) {
+    lines.push(`- ${match.title}: score ${match.score}; confidence ${match.confidence}; reasons ${match.reasons.join(", ") || "matched"}`);
+  }
+  if (learnedConcepts.dedupedByPreference.length) {
+    lines.push(`- ${learnedConcepts.dedupedByPreference.length} Learn v2 concept(s) already covered by relevant preference nodes.`);
+  }
+  if (learnedConcepts.suppressed.length) {
+    lines.push(`- ${learnedConcepts.suppressed.length} Learn v2 concept(s) suppressed by negative triggers or outcome telemetry.`);
+  }
+  return lines.join("\n");
+}
+
+function inferLearnV2TaskTypes(query: string | undefined, paths: string[], commands: string[]): string[] {
+  const text = [query, ...paths, ...commands].filter(Boolean).join(" ").toLowerCase();
+  const taskTypes = new Set<string>();
+  if (/\b(parser|parse|syntax|grammar|lexer|token)\b/.test(text)) taskTypes.add("parser-change");
+  if (/\b(test|spec|fixture|regression|vitest|jest|pytest)\b/.test(text)) taskTypes.add("test-change");
+  if (/\b(doc|docs|readme|markdown)\b/.test(text)) taskTypes.add("docs-change");
+  if (/\b(security|secret|credential|auth|token)\b/.test(text)) taskTypes.add("security-change");
+  if (/\b(refactor|rewrite|architecture|dependency|package)\b/.test(text)) taskTypes.add("architecture-change");
+  return [...taskTypes].sort();
 }
 
 function normalizeList(values: string[]): string[] {

@@ -148,6 +148,7 @@ const taskContextInputSchema = z.object({
   paths: z.array(z.string()).default([]),
   changedFiles: z.array(z.string()).default([]),
   commands: z.array(z.string()).default([]),
+  negativeSignals: z.array(z.string()).default([]),
   limit: z.number().int().min(1).max(20).default(8)
 });
 const taskFinishInputSchema = z.object({
@@ -989,9 +990,9 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
       inputSchema: taskContextInputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
     },
-    async ({ projectRoot, query, paths, changedFiles, commands, limit }) => {
+    async ({ projectRoot, query, paths, changedFiles, commands, negativeSignals, limit }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await withMcpCommandTelemetry(root, "task", () => getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, limit })), root);
+      return toolResult(await withMcpCommandTelemetry(root, "task", () => getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, negativeSignals, limit })), root);
     }
   );
 
@@ -1003,9 +1004,9 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
       inputSchema: taskContextInputSchema,
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
     },
-    async ({ projectRoot, query, paths, changedFiles, commands, limit }) => {
+    async ({ projectRoot, query, paths, changedFiles, commands, negativeSignals, limit }) => {
       const root = resolveProjectRoot(projectRoot);
-      return toolResult(await getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, limit }), root);
+      return toolResult(await getAgentTaskContext({ projectRoot: root, query, paths, changedFiles, commands, negativeSignals, limit }), root);
     }
   );
 

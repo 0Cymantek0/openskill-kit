@@ -10,6 +10,7 @@ import {
   extractLearnV2BehaviorAtoms,
   applyLearnV2ConceptReview,
   activateLearnV2Concepts,
+  getAgentTaskContext,
   initAdaptiveProject,
   mergeLearnV2ConceptCards,
   normalizeLearnV2Evidence,
@@ -27,6 +28,8 @@ import {
   recordLearnV2ConceptOutcome,
   readLearnV2ConceptStore,
   writeLearnV2ConceptStore,
+  learnV2ConceptStorePath,
+  syncLearnV2ActiveConcepts,
   readWorkflowGraph,
   writeLearnV2ReviewQueue,
   reconstructPersistedLearnV2Episodes,
@@ -1609,9 +1612,49 @@ describe("learn-v2 substrate", () => {
     expect(preview.declassificationReport.issues.join(" ")).toContain("project-root");
     expect(preview.declassificationReport.issues.join(" ")).toContain("raw-ref");
 
-    await writeLearnV2ConceptStore(root, [unsafe], now);
+    await mkdir(path.dirname(learnV2ConceptStorePath(root)), { recursive: true });
+    await writeFile(learnV2ConceptStorePath(root), JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
+      projectId: (await readProjectConfig(root)).projectId,
+      updatedAt: now.toISOString(),
+      cards: [unsafe]
+    }), "utf8");
     await expect(compileBehaviorLayer(root, { targets: ["project-rules"] })).rejects.toThrow("Compile-time declassification checks failed");
     await expect(compileBehaviorLayer(root, { targets: ["mcp-resources"] })).rejects.toThrow("Compile-time declassification checks failed");
+  });
+
+  it("hard-blocks unsafe active concept graph sync without letting unsafe candidates block safe active concepts", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:02:00Z");
+    const [safeBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("safe_active_sync", "Prefer parser regression tests before parser changes.", "positive")
+    ], now);
+    const [unsafeBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("unsafe_candidate_sync", "Prefer focused parser tests before parser changes.", "positive")
+    ], now);
+    const safeActive = { ...safeBase!, status: "active" as const };
+    const unsafeCandidate = {
+      ...unsafeBase!,
+      status: "candidate" as const,
+      canonicalBehavior: `Do not leak ${root} or raw_unsafe_candidate_sync into compiled behavior.`,
+      behaviorDelta: "Unsafe candidate remains review-only and must not block active-safe graph sync."
+    };
+
+    await syncLearnV2ActiveConcepts(root, [safeActive, unsafeCandidate], now);
+    const graph = await readPreferenceGraph(root);
+    expect(graph.nodes.some((node) => node.id === `pref_${safeActive.id}`)).toBe(true);
+    expect(JSON.stringify(graph)).not.toContain("raw_unsafe_candidate_sync");
+    expect(JSON.stringify(graph)).not.toContain(root);
+
+    await expect(syncLearnV2ActiveConcepts(root, [{ ...unsafeCandidate, status: "active" }], now))
+      .rejects.toThrow("Learn v2 active concept sync blocked by declassification report");
+    await expect(writeLearnV2ConceptStore(root, [{ ...unsafeCandidate, status: "active" }], now))
+      .rejects.toThrow("Learn v2 active concept sync blocked by declassification report");
+    const activated = await activateLearnV2Concepts(root, {
+      query: "unsafe candidate sync",
+      paths: ["packages/core/src/parser.ts"]
+    }, now);
+    expect(activated.matches.some((match) => match.conceptId === unsafeCandidate.id)).toBe(false);
   });
 
   it("runs raw-local facade with v2 artifacts and excludes new private state from packs", async () => {
@@ -3605,6 +3648,67 @@ describe("learn-v2 substrate", () => {
     }, new Date("2026-06-30T00:07:00Z"));
     expect(suppressed.matches.some((match) => match.conceptId === concept.id)).toBe(false);
     expect(suppressed.suppressed.find((match) => match.conceptId === concept.id)?.reasons).toContain("outcome:harmful");
+  });
+
+  it("includes active Learn v2 activation in normal task context and suppresses explicit negative triggers", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:00Z");
+    const [activeBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("task_context_active", "Prefer focused parser regression tests before parser changes.", "positive")
+    ], now);
+    const [candidateBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("task_context_candidate", "Prefer parser smoke checks from candidate concepts.", "positive")
+    ], now);
+    const active = {
+      ...activeBase!,
+      status: "active" as const,
+      activation: {
+        phrases: ["focused parser regression", "parser change"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: []
+      },
+      scope: {
+        ...activeBase!.scope,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: ["skip-parser-learned-concept"]
+      }
+    };
+    const candidate = {
+      ...candidateBase!,
+      status: "candidate" as const,
+      activation: {
+        phrases: ["parser smoke candidate"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: []
+      }
+    };
+    await writeLearnV2ConceptStore(root, [active, candidate], now);
+
+    const context = await getAgentTaskContext({
+      projectRoot: root,
+      query: "parser change needs focused regression",
+      paths: ["packages/core/src/parser.ts"],
+      limit: 8
+    });
+
+    expect(context.learnV2Activation.matches.some((match) => match.conceptId === active.id)).toBe(true);
+    expect(context.learnV2Activation.matches.some((match) => match.conceptId === candidate.id)).toBe(false);
+    expect(context.learnedConcepts.shown.some((match) => match.conceptId === active.id)).toBe(true);
+    expect(context.compactMarkdown).toContain("Relevant Learned Concepts");
+    expect(context.compactMarkdown).toContain("focused parser regression");
+
+    const suppressedContext = await getAgentTaskContext({
+      projectRoot: root,
+      query: "parser change needs focused regression",
+      paths: ["packages/core/src/parser.ts"],
+      negativeSignals: ["skip-parser-learned-concept"],
+      limit: 8
+    });
+    expect(suppressedContext.learnV2Activation.matches.some((match) => match.conceptId === active.id)).toBe(false);
+    expect(suppressedContext.learnV2Activation.suppressed.find((match) => match.conceptId === active.id)?.reasons)
+      .toContain("negative-trigger:skip-parser-learned-concept");
+    expect(suppressedContext.learnedConcepts.suppressed.some((match) => match.conceptId === active.id)).toBe(true);
   });
 
   it("ranks activation entries with deterministic BM25-style lexical evidence", async () => {

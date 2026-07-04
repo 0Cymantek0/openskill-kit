@@ -6,7 +6,7 @@ import { PreferenceGraphSchema, type PreferenceGraph, type PreferenceNode } from
 import { WorkflowGraphSchema, type WorkflowGraph, type WorkflowNode } from "../workflows/schema.js";
 import { readWorkflowGraph, workflowGraphFile, writeWorkflowGraph } from "../workflows/store.js";
 import { writeJsonAtomic, withFileLock } from "../storage/atomic.js";
-import { compileLearnV2ConceptPreview } from "./compile.js";
+import { compileLearnV2ActiveConceptsOrThrow } from "./compile.js";
 import {
   learnV2ConceptSemanticKeyForAtoms,
   learnV2ConceptSemanticKeyForCard,
@@ -121,6 +121,7 @@ export async function writeLearnV2ConceptStore(projectRoot: string, cards: Learn
     updatedAt: now.toISOString(),
     cards: policyApplied
   };
+  await compileLearnV2ActiveConceptsOrThrow(root, config, store.cards, now);
   await writeJsonAtomic(learnV2ConceptStorePath(root), store);
   await syncLearnV2ConceptStoreRawPins(root, store.cards, now);
   await writeLearnV2ActivationIndex(root, store, now);
@@ -308,6 +309,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
     if (activationGateFailures.length) {
       throw new Error(renderLearnV2ActivationGateError(activationGateFailures));
     }
+    await compileLearnV2ActiveConceptsOrThrow(root, config, nextStore.cards, now);
     await writeJsonAtomic(learnV2ConceptStorePath(root), nextStore);
     await syncLearnV2ConceptStoreRawPins(root, nextStore.cards, now);
     const activationIndex = await writeLearnV2ActivationIndex(root, nextStore, now);
@@ -389,7 +391,7 @@ export async function syncLearnV2ActiveConcepts(projectRoot: string, cards: Lear
 }> {
   const root = path.resolve(projectRoot);
   const config = await readProjectConfig(root);
-  const preview = await compileLearnV2ConceptPreview(root, config, cards, now);
+  const preview = await compileLearnV2ActiveConceptsOrThrow(root, config, cards, now);
   const preferenceSync = await mergePreferenceNodes(root, config.projectId, preview.preferenceNodes, now);
   const workflowSync = await mergeWorkflowNodes(root, config.projectId, preview.workflowNodes, now);
   const activeConceptIds = cards

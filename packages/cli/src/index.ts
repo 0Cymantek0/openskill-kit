@@ -288,6 +288,7 @@ oskTask.command("context")
   .option("--path <path>", "Relevant path", collectOption, [])
   .option("--changed-file <path>", "Changed file path", collectOption, [])
   .option("--command <command>", "Relevant command", collectOption, [])
+  .option("--negative-signal <signal>", "Learn v2 concept negative trigger/suppression signal", collectOption, [])
   .option("--limit <number>", "Preference limit", parseIntegerOption, 8)
   .option("--json", "Print JSON")
   .action(async (queryParts: string[], options) => {
@@ -297,6 +298,7 @@ oskTask.command("context")
       paths: options.path,
       changedFiles: options.changedFile,
       commands: options.command,
+      negativeSignals: options.negativeSignal,
       limit: options.limit
     });
     output(options.json, result, result.compactMarkdown);
@@ -1527,6 +1529,7 @@ program.command("context")
   .option("--path <path>", "Relevant path", collectOption, [])
   .option("--changed-file <path>", "Changed file", collectOption, [])
   .option("--command <command>", "Relevant command", collectOption, [])
+  .option("--negative-signal <signal>", "Learn v2 concept negative trigger/suppression signal", collectOption, [])
   .option("--limit <number>", "Maximum preferences", parseIntegerOption, 8)
   .option("--json", "Print JSON")
   .action(async (options) => {
@@ -1536,6 +1539,7 @@ program.command("context")
       paths: options.path,
       changedFiles: options.changedFile,
       commands: options.command,
+      negativeSignals: options.negativeSignal,
       limit: options.limit
     });
     output(options.json, context, context.compactMarkdown);

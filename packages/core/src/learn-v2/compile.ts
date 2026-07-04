@@ -57,6 +57,15 @@ export async function compileLearnV2ConceptPreview(rootInput: string, config: Pr
   return preview;
 }
 
+export async function compileLearnV2ActiveConceptsOrThrow(rootInput: string, config: ProjectConfig, cards: LearnV2ConceptCard[], now: Date): Promise<LearnV2CompilePreview> {
+  const active = cards.filter((card) => card.status === "active" || card.status === "locked");
+  const preview = await compileLearnV2ConceptPreview(rootInput, config, active, now);
+  if (preview.declassificationReport.status === "fail") {
+    throw new Error(`Learn v2 active concept sync blocked by declassification report: ${preview.declassificationReport.issues.join(", ") || "unknown issue"}`);
+  }
+  return preview;
+}
+
 function conceptToPreference(projectId: string, card: LearnV2ConceptCard, now: Date): PreferenceNode {
   const atom = card.atoms[0]!;
   return {
