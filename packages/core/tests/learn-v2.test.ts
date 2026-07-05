@@ -178,6 +178,78 @@ describe("learn-v2 substrate", () => {
     expect(episodes[0]!.sessionIds).toEqual(["osk_session_trace_test"]);
   });
 
+  it("normalizes structured Codex Claude Cursor and OpenCode session export shapes", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_session_exports");
+    const claude = path.join(root, "claude-session.json");
+    const cursor = path.join(root, "cursor-chat.json");
+    const codex = path.join(root, "codex-transcript.jsonl");
+    const opencode = path.join(root, "opencode-session.jsonl");
+    await writeFile(claude, JSON.stringify({
+      messages: [{
+        role: "assistant",
+        sessionID: "claude_session_1",
+        content: [
+          { type: "text", text: "Prefer focused parser regression tests in packages/core/src/parser.ts." },
+          { type: "tool_use", name: "Bash", input: { command: "npm test -- parser" } }
+        ]
+      }]
+    }), "utf8");
+    await writeFile(cursor, JSON.stringify({
+      conversationId: "cursor_conversation_1",
+      messages: [{
+        role: "user",
+        content: [{ type: "text", text: "Avoid broad parser rewrites." }],
+        contextFiles: ["packages/core/src/parser.ts"],
+        attachments: [{ path: "packages/core/tests/parser.test.ts" }]
+      }]
+    }), "utf8");
+    await writeFile(codex, `${JSON.stringify({
+      type: "function_call",
+      role: "assistant",
+      name: "shell",
+      arguments: JSON.stringify({ cmd: "npm run test -- parser" }),
+      output: "PASS packages/core/tests/parser.test.ts"
+    })}\n`, "utf8");
+    await writeFile(opencode, `${JSON.stringify({
+      eventType: "tool.execute",
+      tool: "bash",
+      input: { command: "npm test -- parser" },
+      metadata: { oskSessionId: "osk_session_from_metadata" },
+      text: "PASS parser suite"
+    })}\n`, "utf8");
+
+    const claudeEvidence = normalizeLearnV2Evidence(await readLearnV2Surface(claude), record, await readText(claude));
+    const cursorEvidence = normalizeLearnV2Evidence(await readLearnV2Surface(cursor), record, await readText(cursor));
+    const codexEvidence = normalizeLearnV2Evidence(await readLearnV2Surface(codex), record, await readText(codex));
+    const opencodeEvidence = normalizeLearnV2Evidence(await readLearnV2Surface(opencode), record, await readText(opencode));
+
+    expect(claudeEvidence[0]!).toMatchObject({
+      actor: "assistant",
+      toolName: "Bash",
+      commands: ["npm test -- parser"],
+      sessionId: "claude_session_1"
+    });
+    expect(claudeEvidence[0]!.text).toContain("Prefer focused parser regression tests");
+    expect(cursorEvidence[0]!.actor).toBe("user");
+    expect(cursorEvidence[0]!.paths).toEqual(expect.arrayContaining([
+      "packages/core/src/parser.ts",
+      "packages/core/tests/parser.test.ts"
+    ]));
+    expect(cursorEvidence[0]!.sessionId).toBe("cursor_conversation_1");
+    expect(codexEvidence[0]!).toMatchObject({
+      kind: "tool-call",
+      toolName: "shell",
+      commands: ["npm run test -- parser"]
+    });
+    expect(opencodeEvidence[0]!).toMatchObject({
+      kind: "tool-call",
+      toolName: "bash",
+      commands: ["npm test -- parser"],
+      sessionId: "osk_session_from_metadata"
+    });
+  });
+
   it("detects raw surface adapters from file identity without parent-path false positives", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-parent-should-not-win-"));
     const codex = path.join(root, "codex-transcript.md");

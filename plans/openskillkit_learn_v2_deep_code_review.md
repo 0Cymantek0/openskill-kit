@@ -1125,3 +1125,35 @@ rtk npx vitest --run packages/cli/tests/osk-facade.test.ts
 ```
 
 Final verification passed: full Vitest suite reported 40 files and 299 tests passing. One full CLI facade run timed out at 124s before result; rerun with longer timeout passed 32 tests. Follow-up config-default regression also passed focused boundary test and full CLI facade.
+
+### Slice 12 completed locally: structured session export normalization
+
+Finding:
+
+- The raw surface adapter registry already detected Codex, Claude Code, Cursor, OpenCode, and related transcript files, but structured normalization still handled mostly flat `role/content` records.
+- Common real exports carry useful learning signal in nested containers: parent `messages` arrays with conversation ids, Claude-style `content` parts with `tool_use.input.command`, Cursor-style `contextFiles` and attachment paths, Codex/OpenCode tool arguments as JSON strings, and metadata trace/session ids.
+- Without normalizing those shapes, users could explicitly provide a real session export and still lose commands, paths, or episode stitching ids.
+
+Done locally:
+
+- Improved structured evidence normalization to extract text from nested content arrays and object parts.
+- Added command extraction from top-level fields, nested `input`/`args`/`arguments`/`parameters`, JSON-string tool arguments, and content-part tool inputs.
+- Added tool-name extraction from top-level fields, function objects, nested inputs, and content-part tool names.
+- Added path extraction from `paths`, `files`, `filePaths`, `contextFiles`, `relevantFiles`, and object-array `attachments`/`references`.
+- Propagated parent container context into child messages for session id, conversation id, trace id, episode id, branch, cwd/workspace, trace context, and metadata.
+- Adjusted structured kind precedence so tool identity wins over PASS/FAIL output text for tool-call records.
+- Added fixture-backed regression coverage for Claude content parts, Cursor context/attachment references, Codex JSON-string tool args, and OpenCode nested input/metadata session ids.
+- Documented structured session export normalization in `/osk learn` output contract.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "structured Codex Claude Cursor"
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "normalizes JSONL|OpenCode trace context|structured Codex Claude Cursor|raw surface adapters|adapter contract"
+rtk npx vitest --run packages/core/tests/docs-coverage.test.ts
+rtk npm run typecheck
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts
+rtk npm test
+```
+
+Final verification passed: Learn v2 test file reported 86 tests passing; full Vitest suite reported 40 files and 300 tests passing.

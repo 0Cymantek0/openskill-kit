@@ -21,29 +21,30 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
   if (!isObject(value)) return [];
   const traceContext = objectValue(value.traceContext);
   const metadataObject = objectValue(value.metadata);
-  const text = stringValue(value.content)
-    ?? stringValue(value.text)
+  const toolInput = firstObject(value.input, value.args, value.arguments, value.parameters, value.toolInput, value.metadata);
+  const text = textValue(value.content)
+    ?? textValue(value.text)
     ?? stringValue(value.message)
     ?? stringValue(value.body)
     ?? stringValue(value.summary)
     ?? stringValue(value.output)
     ?? stringValue(value.diff)
     ?? "";
-  const command = stringValue(value.command) ?? stringValue(value.cmd) ?? stringValue(value.commandLine);
-  const toolName = stringValue(value.toolName) ?? stringValue(value.tool) ?? stringValue(value.name);
+  const command = commandValue(value, toolInput);
+  const toolName = toolNameValue(value) ?? toolNameValue(toolInput);
   if (!text && !command && !toolName) return [];
   const fullText = text || command || toolName || `structured evidence ${index}`;
-  const explicitPaths = arrayStrings(value.paths).concat(arrayStrings(value.files));
+  const explicitPaths = pathsFromStructuredValue(value);
   const commands = command ? [command] : learnV2CommandLinesFromText(fullText);
   return [makeEvidence(rawRecord, index, {
     kind: inferKind(value, fullText, toolName, commands),
     actor: normalizeActor(stringValue(value.role) ?? stringValue(value.type) ?? stringValue(value.actor)),
     timestamp: normalizeTimestamp(stringValue(value.timestamp) ?? stringValue(value.createdAt) ?? stringValue(value.created_at)),
-    sessionId: stringValue(value.sessionId) ?? stringValue(value.session_id) ?? safeTraceId(traceContext?.oskSessionId, "osk_session") ?? safeTraceId(traceContext?.sessionId, "osk_session") ?? safeTraceId(metadataObject?.oskSessionId, "osk_session") ?? rawRecord.trace.sessionIds[0],
-    traceId: stringValue(value.traceId) ?? stringValue(value.trace_id) ?? safeTraceId(traceContext?.oskTraceId, "osk_trace") ?? safeTraceId(traceContext?.traceId, "osk_trace") ?? safeTraceId(metadataObject?.oskTraceId, "osk_trace") ?? rawRecord.trace.oskTraceId,
-    episodeId: stringValue(value.episodeId) ?? stringValue(value.episode_id) ?? safeTraceId(traceContext?.oskEpisodeId, "osk_episode") ?? safeTraceId(traceContext?.episodeId, "osk_episode") ?? safeTraceId(metadataObject?.oskEpisodeId, "osk_episode") ?? rawRecord.trace.oskEpisodeId,
+    sessionId: stringValue(value.sessionId) ?? stringValue(value.session_id) ?? stringValue(value.sessionID) ?? stringValue(value.conversationId) ?? stringValue(value.conversation_id) ?? stringValue(value.chatId) ?? stringValue(value.threadId) ?? safeTraceId(traceContext?.oskSessionId, "osk_session") ?? safeTraceId(traceContext?.sessionId, "osk_session") ?? safeTraceId(metadataObject?.oskSessionId, "osk_session") ?? rawRecord.trace.sessionIds[0],
+    traceId: stringValue(value.traceId) ?? stringValue(value.trace_id) ?? stringValue(value.runId) ?? safeTraceId(traceContext?.oskTraceId, "osk_trace") ?? safeTraceId(traceContext?.traceId, "osk_trace") ?? safeTraceId(metadataObject?.oskTraceId, "osk_trace") ?? rawRecord.trace.oskTraceId,
+    episodeId: stringValue(value.episodeId) ?? stringValue(value.episode_id) ?? stringValue(value.turnId) ?? safeTraceId(traceContext?.oskEpisodeId, "osk_episode") ?? safeTraceId(traceContext?.episodeId, "osk_episode") ?? safeTraceId(metadataObject?.oskEpisodeId, "osk_episode") ?? rawRecord.trace.oskEpisodeId,
     branch: stringValue(value.branch) ?? stringValue(traceContext?.gitBranch) ?? rawRecord.trace.branch,
-    cwdHint: stringValue(value.cwd),
+    cwdHint: stringValue(value.cwd) ?? stringValue(value.workspace) ?? stringValue(value.projectRoot),
     text: fullText,
     toolName,
     status: learnV2StatusFromText(value.status ?? fullText),
@@ -287,7 +288,7 @@ function parseStructuredObjects(text: string): unknown[] {
     if (Array.isArray(parsed)) return parsed;
     if (isObject(parsed)) {
       for (const key of ["events", "messages", "turns", "conversation", "transcript", "items", "entries"]) {
-        if (Array.isArray(parsed[key])) return parsed[key] as unknown[];
+        if (Array.isArray(parsed[key])) return [parsed];
       }
     }
     return [parsed];
@@ -298,17 +299,19 @@ function parseStructuredObjects(text: string): unknown[] {
 
 function flattenStructuredObjects(values: unknown[]): unknown[] {
   const out: unknown[] = [];
-  const visit = (value: unknown): void => {
+  const visit = (value: unknown, inherited: Record<string, unknown> = {}): void => {
     if (Array.isArray(value)) {
-      for (const item of value) visit(item);
+      for (const item of value) visit(item, inherited);
       return;
     }
     if (isObject(value)) {
       const nested = ["events", "messages", "turns", "conversation", "transcript", "items", "entries"].find((key) => Array.isArray(value[key]));
       if (nested) {
-        visit(value[nested]);
+        visit(value[nested], { ...inherited, ...structuredParentContext(value) });
         return;
       }
+      out.push(Object.keys(inherited).length ? { ...inherited, ...value } : value);
+      return;
     }
     out.push(value);
   };
@@ -316,12 +319,40 @@ function flattenStructuredObjects(values: unknown[]): unknown[] {
   return out;
 }
 
+function structuredParentContext(value: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of [
+    "sessionId",
+    "session_id",
+    "sessionID",
+    "conversationId",
+    "conversation_id",
+    "chatId",
+    "threadId",
+    "traceId",
+    "trace_id",
+    "runId",
+    "episodeId",
+    "episode_id",
+    "turnId",
+    "branch",
+    "cwd",
+    "workspace",
+    "projectRoot",
+    "traceContext",
+    "metadata"
+  ]) {
+    if (value[key] !== undefined) out[key] = value[key];
+  }
+  return out;
+}
+
 function inferKind(value: Record<string, unknown>, text: string, toolName: string | undefined, commands: string[]): LearnV2NormalizedEvidence["kind"] {
   const type = String(value.kind ?? value.type ?? "").toLowerCase();
   if (/review|comment/.test(type)) return "review";
+  if (toolName) return "tool-call";
   if (/test/.test(type) || /\b(pass|fail|vitest|pytest|junit)\b/i.test(text)) return "test-result";
   if (/diff|patch|file/.test(type) || /^diff --git /m.test(text)) return "file-change";
-  if (toolName) return "tool-call";
   if (commands.length) return "command";
   return "message";
 }
@@ -352,6 +383,101 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
   return isObject(value) ? value : undefined;
 }
 
+function firstObject(...values: unknown[]): Record<string, unknown> | undefined {
+  for (const value of values) {
+    if (isObject(value)) return value;
+    if (typeof value === "string") {
+      const parsed = parseJsonObject(value);
+      if (parsed) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function textValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => textValue(item))
+      .filter((item): item is string => Boolean(item?.trim()));
+    return parts.length ? parts.join("\n") : undefined;
+  }
+  if (!isObject(value)) return undefined;
+  return stringValue(value.text)
+    ?? stringValue(value.content)
+    ?? stringValue(value.message)
+    ?? stringValue(value.body)
+    ?? stringValue(value.output)
+    ?? stringValue(value.result)
+    ?? textValue(value.parts);
+}
+
+function commandValue(value: Record<string, unknown>, nestedInput?: Record<string, unknown>): string | undefined {
+  return stringValue(value.command)
+    ?? stringValue(value.cmd)
+    ?? stringValue(value.commandLine)
+    ?? stringValue(value.command_line)
+    ?? stringValue(nestedInput?.command)
+    ?? stringValue(nestedInput?.cmd)
+    ?? stringValue(nestedInput?.commandLine)
+    ?? commandFromContentParts(value.content)
+    ?? commandFromContentParts(value.messages);
+}
+
+function toolNameValue(value: Record<string, unknown> | undefined): string | undefined {
+  if (!value) return undefined;
+  return stringValue(value.toolName)
+    ?? stringValue(value.tool)
+    ?? stringValue(value.name)
+    ?? stringValue(value.functionName)
+    ?? stringValue(value.function_name)
+    ?? stringValue(objectValue(value.function)?.name)
+    ?? toolNameFromContentParts(value.content)
+    ?? toolNameFromContentParts(value.messages);
+}
+
+function commandFromContentParts(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  for (const part of value) {
+    if (!isObject(part)) continue;
+    const input = firstObject(part.input, part.args, part.arguments, part.parameters);
+    const command = stringValue(input?.command) ?? stringValue(input?.cmd) ?? stringValue(input?.commandLine);
+    if (command) return command;
+  }
+  return undefined;
+}
+
+function toolNameFromContentParts(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  for (const part of value) {
+    if (!isObject(part)) continue;
+    const name = stringValue(part.name) ?? stringValue(part.toolName) ?? stringValue(part.tool);
+    if (name) return name;
+  }
+  return undefined;
+}
+
+function pathsFromStructuredValue(value: Record<string, unknown>): string[] {
+  return [
+    ...arrayStrings(value.paths),
+    ...arrayStrings(value.files),
+    ...arrayStrings(value.filePaths),
+    ...arrayStrings(value.contextFiles),
+    ...arrayStrings(value.relevantFiles),
+    ...arrayObjectStrings(value.attachments, "path"),
+    ...arrayObjectStrings(value.references, "path")
+  ];
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isObject(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function safeTraceId(value: unknown, prefix: string): string | undefined {
   if (typeof value !== "string" || value.length > 128 || !/^[A-Za-z0-9:_-]+$/.test(value)) return undefined;
   return value.startsWith(`${prefix}_`) || value.startsWith(`${prefix}:`) ? value : undefined;
@@ -375,6 +501,12 @@ function safeTraceMetadata(value: Record<string, unknown> | undefined): Record<s
 
 function arrayStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function arrayObjectStrings(value: unknown, key: string): string[] {
+  return Array.isArray(value)
+    ? value.flatMap((item) => isObject(item) && typeof item[key] === "string" ? [item[key] as string] : [])
+    : [];
 }
 
 function terminalCommand(line: string): string | undefined {
