@@ -849,6 +849,9 @@ describe("osk CLI facade", () => {
     const verified = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "verify", packPath, "--json"], { cwd: target, windowsHide: true });
     expect(JSON.parse(verified.stdout).status).toBe("pass");
 
+    const inspected = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "inspect", packPath], { cwd: target, windowsHide: true });
+    expect(inspected.stdout).toContain("Learn v2 concepts: 0");
+
     const planned = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "import", packPath, "--json"], { cwd: target, windowsHide: true });
     const plannedParsed = JSON.parse(planned.stdout);
     expect(plannedParsed.status).toBe("planned");

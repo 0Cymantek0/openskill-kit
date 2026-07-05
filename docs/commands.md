@@ -230,7 +230,7 @@ Export, verify, diff, sign, or import behavior packs through trust gates.
 - MCP first call: `osk_pack_behavior`
 - Skills: `osk-review-gate`
 - Subagents: `osk-reviewer`
-- Output: Pack path, signature state, included/excluded classes, and review next action.
+- Output: Pack path, signature state, included/excluded classes, Learn v2 concept summary, and review next action.
 
 Workflow:
 

@@ -13,6 +13,7 @@ import {
   getAdaptiveStatus,
   importProjectBehaviorPack,
   initAdaptiveProject,
+  inspectProjectBehaviorPack,
   installInstructionManifests,
   migrateProjectConfig,
   redactValue,
@@ -292,6 +293,17 @@ describe("phase 1 hardening", () => {
     });
 
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-import-learn-v2-review-"));
+    const inspected = await inspectProjectBehaviorPack(pack);
+    expect(inspected.learnV2ConceptSummary).toEqual({
+      schemaVersion: "openskill-kit.learn-v2-pack-concept-summary.v1",
+      resourceCount: 1,
+      activeCount: 1,
+      lockedCount: 0,
+      highRiskCount: 0,
+      commandCount: 1,
+      pathScopedCount: 1,
+      conceptIds: ["concept_shared_parser"]
+    });
     const result = await importProjectBehaviorPack(root, pack, { review: true });
 
     expect(result.status).toBe("planned");

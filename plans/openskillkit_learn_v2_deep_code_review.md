@@ -1066,3 +1066,30 @@ rtk npm test
 ```
 
 Final verification passed: full Vitest suite reported 40 files and 298 tests passing.
+
+### Slice 10 completed locally: pack inspect Learn v2 resource summary
+
+Finding:
+
+- Slice 9 made Learn v2 pack resource visibility available during import review, but pack inspection still only reported file count, privacy, signature, and issues.
+- Users should be able to inspect Learn v2 concept payload shape before starting an import, and CLI text output should remain stable when source/dist core versions are temporarily skewed during local development.
+
+Done locally:
+
+- Added `learnV2ConceptSummary` to `inspectProjectBehaviorPack`.
+- Reused the same declassified concept summary contract as pack import: resource count, active/locked/high-risk counts, command activations, path-scoped count, and concept ids.
+- Updated both `inspect-pack` and `/osk pack inspect` text output to show Learn v2 concept summary lines.
+- Added CLI fallback formatting for older core results missing `learnV2ConceptSummary`, avoiding source/dist skew crashes.
+- Extended regression coverage so a pack with a safe Learn v2 concept is summarized by core inspect, and `/osk pack inspect` text shows a Learn v2 summary line.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/phase1-hardening.test.ts -t "summarizes shareable learn-v2 concepts"
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "runs /osk pack export"
+rtk npm run typecheck
+rtk npm test
+rtk npx vitest --run packages/core/tests/docs-coverage.test.ts
+```
+
+Final verification passed: full Vitest suite reported 40 files and 298 tests passing; docs coverage passed after the command reference update.

@@ -315,12 +315,14 @@ export interface InspectProjectBehaviorPackResult {
   privacy: unknown;
   signature: VerifyProjectBehaviorPackResult["signature"];
   issues: string[];
+  learnV2ConceptSummary: LearnV2PackConceptSummary;
 }
 
 export async function inspectProjectBehaviorPack(packPathInput: string): Promise<InspectProjectBehaviorPackResult> {
   const packPath = path.resolve(packPathInput);
   const manifest = await readManifest(packPath);
   const verification = await verifyProjectBehaviorPack(packPath);
+  const learnV2ConceptSummary = await readLearnV2PackConceptSummary(packPath, verification.files);
   return {
     schemaVersion: "openskill-kit.project-pack-inspect.v1",
     packPath,
@@ -329,7 +331,8 @@ export async function inspectProjectBehaviorPack(packPathInput: string): Promise
     includes: manifest.includes ?? [],
     privacy: manifest.privacy,
     signature: verification.signature,
-    issues: verification.issues
+    issues: verification.issues,
+    learnV2ConceptSummary
   };
 }
 
@@ -478,7 +481,9 @@ async function readLearnV2PackConceptSummary(packPath: string, files: string[]):
     conceptIds: []
   };
   if (!files.includes(LEARN_V2_CONCEPT_RESOURCE_REL)) return empty;
-  const parsed = JSON.parse(await fs.readFile(path.join(packPath, LEARN_V2_CONCEPT_RESOURCE_REL), "utf8"));
+  const parsed = await fs.readFile(path.join(packPath, LEARN_V2_CONCEPT_RESOURCE_REL), "utf8")
+    .then((text) => JSON.parse(text))
+    .catch(() => undefined);
   if (parsed?.schemaVersion !== "openskill-kit.mcp.learn-v2-concept-resources.v1" || !Array.isArray(parsed.resources)) return empty;
   const summary = { ...empty };
   const conceptIds = new Set<string>();

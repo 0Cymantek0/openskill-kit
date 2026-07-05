@@ -1669,7 +1669,7 @@ program.command("inspect-pack")
   .option("--json", "Print JSON")
   .action(async (packPath, options) => {
     const result = await inspectProjectBehaviorPack(packPath);
-    output(options.json, result, `${result.status}: ${result.fileCount} file(s), signature ${result.signature.status}`);
+    output(options.json, result, formatPackInspectText(result));
     process.exitCode = result.status === "fail" ? 1 : 0;
   });
 
@@ -2680,7 +2680,7 @@ async function runOskPackAction(
   }
   if (action === "inspect") {
     const result = await inspectProjectBehaviorPack(packPath);
-    return { data: result, text: `${result.status}: ${result.fileCount} file(s), signature ${result.signature.status}`, exitCode: result.status === "fail" ? 1 : 0 };
+    return { data: result, text: formatPackInspectText(result), exitCode: result.status === "fail" ? 1 : 0 };
   }
   if (action === "sign") {
     const result = await signProjectBehaviorPack(packPath, options.keyDir);
@@ -2707,6 +2707,22 @@ async function runOskPackAction(
     };
   }
   throw new Error(`Unknown /osk pack action: ${actionInput}. Expected export, verify, inspect, sign, diff, import, or apply.`);
+}
+
+function formatPackInspectText(result: Awaited<ReturnType<typeof inspectProjectBehaviorPack>>): string {
+  const summary = result.learnV2ConceptSummary ?? {
+    resourceCount: 0,
+    activeCount: 0,
+    lockedCount: 0,
+    highRiskCount: 0,
+    commandCount: 0,
+    pathScopedCount: 0
+  };
+  return [
+    `${result.status}: ${result.fileCount} file(s), signature ${result.signature.status}`,
+    `Learn v2 concepts: ${summary.resourceCount} (${summary.activeCount} active, ${summary.lockedCount} locked, ${summary.highRiskCount} high-risk)`,
+    `Learn v2 scoped/commands: ${summary.pathScopedCount} path-scoped, ${summary.commandCount} command activation(s)`
+  ].join("\n");
 }
 
 async function runInteractiveLearnPicker(projectRoot: string, maxEvents: number): Promise<LearnSourcePlan | LearnRun> {
