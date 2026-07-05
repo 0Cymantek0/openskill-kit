@@ -1039,3 +1039,30 @@ rtk npm test
 ```
 
 Final verification passed: full Vitest suite reported 40 files and 297 tests passing.
+
+### Slice 9 completed locally: pack import Learn v2 resource visibility
+
+Finding:
+
+- Behavior pack export and verification already include a publish-boundary audit for the declassified compiled Learn v2 concept resource.
+- Pack import dry-run review did not summarize the shareable Learn v2 concepts inside a verified pack, so a reviewer could see planned files but not the reviewed concept payload shape before apply.
+- Auto-importing concepts into the local concept store would be too aggressive for a cross-project trust boundary; the safer production contract is visibility first, then normal review/compile activation.
+
+Done locally:
+
+- Added a declassified `learnV2ConceptSummary` to successful pack import results.
+- Import review Markdown now summarizes resource count, active/locked/high-risk counts, command activations, path-scoped count, and concept ids.
+- Import review explicitly states that Learn v2 concepts are not auto-activated by import/apply.
+- Added regression coverage that a verified pack with a safe Learn v2 concept gets summarized during dry-run review without writing the compiled resource into the target project.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/phase1-hardening.test.ts -t "summarizes shareable learn-v2 concepts"
+rtk npx vitest --run packages/core/tests/phase1-hardening.test.ts
+rtk npx vitest --run packages/core/tests/docs-coverage.test.ts
+rtk npm run typecheck
+rtk npm test
+```
+
+Final verification passed: full Vitest suite reported 40 files and 298 tests passing.

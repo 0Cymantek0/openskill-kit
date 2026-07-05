@@ -236,7 +236,8 @@ Workflow:
 
 1. Export only share-safe behavior.
 2. Verify signatures and privacy.
-3. Import as staged review items only.
+3. Review Learn v2 concept resource summaries before import; pack import/apply does not auto-activate imported Learn v2 concepts.
+4. Import as staged review items only.
 
 CLI actions:
 

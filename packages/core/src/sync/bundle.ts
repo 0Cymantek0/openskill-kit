@@ -6,6 +6,7 @@ import { readProjectConfig } from "../events/store.js";
 import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { LEARN_V2_GENERATED_DIRS, LEARN_V2_GENERATED_FILES } from "../learn-v2/paths.js";
 
+const LEARN_V2_CONCEPT_RESOURCE_REL = ".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json";
 
 export interface ProjectBehaviorPackResult {
   schemaVersion: "openskill-kit.project-pack.v1";
@@ -62,7 +63,7 @@ export async function exportProjectBehaviorPack(projectRoot: string): Promise<Pr
       ".openskill-kit/compiled/behavior/review-checklist.md",
       ".openskill-kit/compiled/hooks/hooks.json",
       ".openskill-kit/compiled/mcp/server-config.json",
-      ".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json"
+      LEARN_V2_CONCEPT_RESOURCE_REL
     ];
     for (const rel of files) {
       const source = path.join(root, rel);
@@ -366,6 +367,18 @@ export interface ImportProjectBehaviorPackResult {
   files: Array<{ source: string; destination: string; status: "added" | "changed" | "unchanged" }>;
   issues: string[];
   reviewPath?: string;
+  learnV2ConceptSummary?: LearnV2PackConceptSummary;
+}
+
+export interface LearnV2PackConceptSummary {
+  schemaVersion: "openskill-kit.learn-v2-pack-concept-summary.v1";
+  resourceCount: number;
+  activeCount: number;
+  lockedCount: number;
+  highRiskCount: number;
+  commandCount: number;
+  pathScopedCount: number;
+  conceptIds: string[];
 }
 
 export async function importProjectBehaviorPack(projectRootInput: string, packPathInput: string, options: { dryRun?: boolean; trustHooks?: boolean; review?: boolean; maxChangedFiles?: number } = {}): Promise<ImportProjectBehaviorPackResult> {
@@ -377,6 +390,7 @@ export async function importProjectBehaviorPack(projectRootInput: string, packPa
     if (verification.status === "fail") {
       return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "blocked", packPath, projectRoot, files: [], issues: verification.issues };
     }
+    const learnV2ConceptSummary = await readLearnV2PackConceptSummary(packPath, verification.files);
     const files = verification.files
       .filter((file) => options.trustHooks === true || !file.startsWith(".openskill-kit/compiled/hooks/"))
       .map((file) => ({ source: path.join(packPath, file), destination: path.join(projectRoot, file) }));
@@ -389,18 +403,18 @@ export async function importProjectBehaviorPack(projectRootInput: string, packPa
       ...(options.trustHooks ? [] : ["Hooks excluded until trustHooks is true"]),
       ...(typeof options.maxChangedFiles === "number" && changedCount > options.maxChangedFiles ? [`Changed file count ${changedCount} exceeds maxChangedFiles ${options.maxChangedFiles}`] : [])
     ];
-    const reviewPath = options.review ? await writeImportReview(projectRoot, packPath, manifest, verification, plannedFiles, options.trustHooks === true) : undefined;
+    const reviewPath = options.review ? await writeImportReview(projectRoot, packPath, manifest, verification, plannedFiles, options.trustHooks === true, learnV2ConceptSummary) : undefined;
     if (typeof options.maxChangedFiles === "number" && changedCount > options.maxChangedFiles) {
-      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "blocked", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath };
+      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "blocked", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath, learnV2ConceptSummary };
     }
     if (options.dryRun !== false) {
-      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "planned", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath };
+      return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "planned", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath, learnV2ConceptSummary };
     }
     for (const file of plannedFiles) {
       await fs.mkdir(path.dirname(file.destination), { recursive: true });
       await fs.copyFile(file.source, file.destination);
     }
-    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "imported", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath };
+    return { schemaVersion: "openskill-kit.project-pack-import.v1", status: "imported", packPath, projectRoot, files: plannedFiles, issues: gateIssues, reviewPath, learnV2ConceptSummary };
   });
 }
 
@@ -410,7 +424,8 @@ async function writeImportReview(
   manifest: any,
   verification: VerifyProjectBehaviorPackResult,
   files: Array<{ source: string; destination: string; status: "added" | "changed" | "unchanged" }>,
-  trustHooks: boolean
+  trustHooks: boolean,
+  learnV2ConceptSummary: LearnV2PackConceptSummary
 ): Promise<string> {
   const id = createHash("sha256").update(`${packPath}:${JSON.stringify(manifest.hashes ?? {})}`).digest("hex").slice(0, 12);
   const reviewPath = path.join(projectRoot, ".openskill-kit", "reviews", "imports", `import-${id}.md`);
@@ -431,6 +446,17 @@ async function writeImportReview(
     "",
     ...(verification.issues.length ? verification.issues.map((issue) => `- ${issue}`) : ["- none"]),
     "",
+    "## Learn v2 Concepts",
+    "",
+    `- Resources: ${learnV2ConceptSummary.resourceCount}`,
+    `- Active: ${learnV2ConceptSummary.activeCount}`,
+    `- Locked: ${learnV2ConceptSummary.lockedCount}`,
+    `- High risk: ${learnV2ConceptSummary.highRiskCount}`,
+    `- Command activations: ${learnV2ConceptSummary.commandCount}`,
+    `- Path scoped: ${learnV2ConceptSummary.pathScopedCount}`,
+    `- Concept ids: ${learnV2ConceptSummary.conceptIds.length ? learnV2ConceptSummary.conceptIds.join(", ") : "none"}`,
+    "- Import review does not auto-activate Learn v2 concepts; apply only copies the reviewed pack artifacts.",
+    "",
     "## Files Planned",
     "",
     ...(files.length ? files.map((file) => `- ${file.status}: ${path.relative(projectRoot, file.destination).replace(/\\/g, "/")}`) : ["- none"]),
@@ -438,6 +464,45 @@ async function writeImportReview(
   ];
   await writeFileAtomic(reviewPath, lines.join("\n"));
   return reviewPath;
+}
+
+async function readLearnV2PackConceptSummary(packPath: string, files: string[]): Promise<LearnV2PackConceptSummary> {
+  const empty: LearnV2PackConceptSummary = {
+    schemaVersion: "openskill-kit.learn-v2-pack-concept-summary.v1",
+    resourceCount: 0,
+    activeCount: 0,
+    lockedCount: 0,
+    highRiskCount: 0,
+    commandCount: 0,
+    pathScopedCount: 0,
+    conceptIds: []
+  };
+  if (!files.includes(LEARN_V2_CONCEPT_RESOURCE_REL)) return empty;
+  const parsed = JSON.parse(await fs.readFile(path.join(packPath, LEARN_V2_CONCEPT_RESOURCE_REL), "utf8"));
+  if (parsed?.schemaVersion !== "openskill-kit.mcp.learn-v2-concept-resources.v1" || !Array.isArray(parsed.resources)) return empty;
+  const summary = { ...empty };
+  const conceptIds = new Set<string>();
+  for (const resource of parsed.resources) {
+    const concept = resource && typeof resource === "object" ? (resource as { concept?: unknown }).concept : undefined;
+    if (!concept || typeof concept !== "object") continue;
+    const item = concept as {
+      id?: unknown;
+      status?: unknown;
+      risk?: unknown;
+      scope?: { level?: unknown; paths?: unknown };
+      activation?: { commands?: unknown };
+    };
+    summary.resourceCount += 1;
+    if (item.status === "active") summary.activeCount += 1;
+    if (item.status === "locked") summary.lockedCount += 1;
+    if (item.risk === "high") summary.highRiskCount += 1;
+    if (Array.isArray(item.activation?.commands) && item.activation.commands.length > 0) summary.commandCount += 1;
+    const paths = Array.isArray(item.scope?.paths) ? item.scope.paths : [];
+    if (item.scope?.level === "path" || paths.length > 0) summary.pathScopedCount += 1;
+    if (typeof item.id === "string" && item.id.trim()) conceptIds.add(item.id);
+  }
+  summary.conceptIds = [...conceptIds].sort();
+  return summary;
 }
 
 async function fileImportStatus(source: string, destination: string): Promise<"added" | "changed" | "unchanged"> {
@@ -569,7 +634,7 @@ function auditPackContent(file: string, text: string): ProjectBehaviorPackPublis
 }
 
 function auditStructuredPackContent(file: string, text: string): ProjectBehaviorPackPublishAuditFinding[] {
-  if (file !== ".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json") return [];
+  if (file !== LEARN_V2_CONCEPT_RESOURCE_REL) return [];
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

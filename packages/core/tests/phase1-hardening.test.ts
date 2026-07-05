@@ -252,6 +252,67 @@ describe("phase 1 hardening", () => {
     await expect(stat(path.join(root, "policy.md"))).rejects.toThrow();
   });
 
+  it("summarizes shareable learn-v2 concepts in pack import review without auto-activating them", async () => {
+    const pack = await mkdtemp(path.join(os.tmpdir(), "osk-pack-learn-v2-review-"));
+    const resourceRel = ".openskill-kit/compiled/mcp/resources/learn-v2-concepts.json";
+    const resourcePath = path.join(pack, resourceRel);
+    await writeFile(path.join(pack, "policy.md"), "# Policy\n", "utf8");
+    await writeJson(resourcePath, {
+      schemaVersion: "openskill-kit.mcp.learn-v2-concept-resources.v1",
+      generatedAt: "2026-06-30T00:00:00.000Z",
+      resources: [{
+        uri: "openskill-kit://learn-v2/concepts/concept_shared_parser",
+        name: "learn-v2 concept concept_shared_parser",
+        title: "Shared parser regression behavior",
+        mimeType: "application/json",
+        annotations: { audience: ["assistant"], priority: 0.9, lastModified: "2026-06-30T00:00:00.000Z" },
+        concept: {
+          id: "concept_shared_parser",
+          behavior: "Prefer focused parser regression tests when parser code changes.",
+          behaviorDelta: "Adds parser regression test focus.",
+          scope: { level: "path", paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"], negativeTriggers: [] },
+          activation: { phrases: ["parser regression"], pathGlobs: ["packages/core/src/parser.ts"], commands: ["npm test -- parser"], negativeTriggers: [] },
+          confidence: 0.91,
+          risk: "low",
+          status: "active",
+          evidenceCount: 2,
+          sourceReliability: 0.9
+        },
+        privacy: { class: "project-private", rawRefsExported: false, rationale: "compiled reviewed behavior only" }
+      }]
+    });
+    await writeJson(path.join(pack, "manifest.json"), {
+      schemaVersion: "openskill-kit.project-pack.v1",
+      privacy: { rawEventsIncluded: false, rawSignalsIncluded: false },
+      files: ["policy.md", resourceRel],
+      hashes: {
+        "policy.md": await sha256(path.join(pack, "policy.md")),
+        [resourceRel]: await sha256(resourcePath)
+      }
+    });
+
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-import-learn-v2-review-"));
+    const result = await importProjectBehaviorPack(root, pack, { review: true });
+
+    expect(result.status).toBe("planned");
+    expect(result.learnV2ConceptSummary).toEqual({
+      schemaVersion: "openskill-kit.learn-v2-pack-concept-summary.v1",
+      resourceCount: 1,
+      activeCount: 1,
+      lockedCount: 0,
+      highRiskCount: 0,
+      commandCount: 1,
+      pathScopedCount: 1,
+      conceptIds: ["concept_shared_parser"]
+    });
+    expect(result.reviewPath).toBeTruthy();
+    const review = await readFile(result.reviewPath!, "utf8");
+    expect(review).toContain("## Learn v2 Concepts");
+    expect(review).toContain("- Concept ids: concept_shared_parser");
+    expect(review).toContain("does not auto-activate Learn v2 concepts");
+    await expect(stat(path.join(root, resourceRel))).rejects.toThrow();
+  });
+
   it("redacts nested values plus intent and raw refs before event storage", async () => {
     const root = await tempProject();
     const secret = ["phase", "one", "secret"].join("-");
