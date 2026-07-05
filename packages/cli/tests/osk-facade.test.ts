@@ -57,6 +57,48 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--eval-output <path>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
+    expect(stdout).toContain("deterministic-only|opencode-host-sanitized-only");
+    expect(stdout).toContain("--experimental-raw-model-dispatch");
+  });
+
+  it("blocks reserved raw model dispatch unless explicitly acknowledged, and still does not execute it", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-raw-model-boundary-"));
+    await execCliJson(["init", "--json"], root);
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, "user: prefer focused parser tests in packages/core/src/parser.ts.", "utf8");
+
+    const rawMode = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "learn",
+      "--raw",
+      "--surface-file",
+      transcript,
+      "--model-mode",
+      "opencode-host-raw-allowed",
+      "--json"
+    ], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(rawMode.code).toBe(1);
+    expect(rawMode.stderr).toContain("requires --experimental-raw-model-dispatch");
+    expect(rawMode.stderr).toContain("still will not run raw-to-model dispatch");
+
+    const acknowledged = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "learn",
+      "--raw",
+      "--surface-file",
+      transcript,
+      "--model-mode",
+      "opencode-host-raw-allowed",
+      "--experimental-raw-model-dispatch",
+      "--json"
+    ], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(acknowledged.code).toBe(1);
+    expect(acknowledged.stderr).toContain("--experimental-raw-model-dispatch acknowledged");
+    expect(acknowledged.stderr).toContain("raw-to-model dispatch remains blocked");
   });
 
   it("documents --activation-query local hashed telemetry side effect in help", async () => {

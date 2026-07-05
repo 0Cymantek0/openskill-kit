@@ -1093,3 +1093,33 @@ rtk npx vitest --run packages/core/tests/docs-coverage.test.ts
 ```
 
 Final verification passed: full Vitest suite reported 40 files and 298 tests passing; docs coverage passed after the command reference update.
+
+### Slice 11 completed locally: reserved raw model dispatch CLI boundary
+
+Finding:
+
+- Review correctly said raw-to-model execution must stay rejected until UX consent, route display, provider clarity, and privacy review exist.
+- CLI help still presented `opencode-host-raw-allowed` beside supported policies, which made a reserved future mode look usable.
+- Core already hard-failed raw dispatch, but CLI should fail earlier with a clearer user-facing boundary and should also catch project config defaults set to the reserved policy.
+
+Done locally:
+
+- Split CLI Learn v2 model policies into supported public modes (`deterministic-only`, `opencode-host-sanitized-only`) and reserved raw mode (`opencode-host-raw-allowed`).
+- Added `--experimental-raw-model-dispatch` as an explicit acknowledgement flag. The flag does not enable execution; it only changes the error from "flag required" to "acknowledged but still blocked".
+- Added a CLI guard before raw learning starts, covering both `--model-mode opencode-host-raw-allowed` and config default `learning.rawEvidence.extractionExecution = "opencode-host-raw-allowed"`.
+- Kept core `runRawLocalLearning` hard-fail as the lower-level safety backstop.
+- Updated Learn/model-routing docs to describe supported modes, reserved raw mode, and the acknowledgement-only flag.
+- Added CLI regression coverage for help text, no-flag raw-mode failure, and acknowledged-but-still-blocked failure.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "documents Learn v2 model mode|blocks reserved raw model"
+rtk npx vitest --run packages/core/tests/docs-coverage.test.ts
+rtk npm run typecheck
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "model-mode"
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts
+rtk npm test
+```
+
+Final verification passed: full Vitest suite reported 40 files and 299 tests passing. One full CLI facade run timed out at 124s before result; rerun with longer timeout passed 32 tests.

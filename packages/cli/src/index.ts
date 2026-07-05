@@ -137,10 +137,17 @@ const program = new Command();
 
 const RawLearningPublicModelModes = [
   "deterministic-only",
-  "opencode-host-sanitized-only",
+  "opencode-host-sanitized-only"
+] as const;
+const RawLearningReservedModelModes = [
   "opencode-host-raw-allowed"
 ] as const;
-const RawLearningLegacyModelModeAliases: Record<string, typeof RawLearningPublicModelModes[number]> = {
+const RawLearningAcceptedModelModes = [
+  ...RawLearningPublicModelModes,
+  ...RawLearningReservedModelModes
+] as const;
+type RawLearningAcceptedModelMode = typeof RawLearningAcceptedModelModes[number];
+const RawLearningLegacyModelModeAliases: Record<string, RawLearningAcceptedModelMode> = {
   "heuristic-only": "deterministic-only",
   "remote-redacted": "opencode-host-sanitized-only",
   "remote-explicit": "opencode-host-sanitized-only",
@@ -383,7 +390,8 @@ osk.command("learn")
   .option("--concept-outcome-reason <text>", "Short safe reason for --record-concept-outcome")
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--learn-v2-goldens <path>", "Learn-v2 eval golden JSON file with extraction and optional behavior-delta scenarios")
-  .option("--model-mode <mode>", `Learn v2 execution policy: ${RawLearningPublicModelModes.join("|")}; sanitized OpenCode execution uses --execute-model-requests; raw-to-model dispatch remains rejected`, parseRawLearningModelMode)
+  .option("--model-mode <mode>", `Learn v2 execution policy: ${RawLearningPublicModelModes.join("|")}; sanitized OpenCode execution uses --execute-model-requests; reserved raw-to-model dispatch requires --experimental-raw-model-dispatch and remains rejected`, parseRawLearningModelMode)
+  .option("--experimental-raw-model-dispatch", "Acknowledge reserved raw OpenCode dispatch policy; currently still blocked pending UX, route display, and privacy review")
   .option("--all-detected", "Select all safe detected sources")
   .option("--apply", "Apply selected sources after preview approval")
   .option("--max-events <number>", "Maximum events", parseIntegerOption, 250)
@@ -511,6 +519,7 @@ osk.command("learn")
       return;
     }
     if (options.raw === true) {
+      await rejectUnsupportedRawModelDispatch(process.cwd(), options.modelMode, options.experimentalRawModelDispatch === true);
       const result = await runRawLocalLearning(process.cwd(), {
         sourceFiles: options.surfaceFile,
         previewOnly: options.apply !== true,
@@ -2817,10 +2826,21 @@ function parseCompileTarget(value: string): CompileTarget {
 }
 
 function parseRawLearningModelMode(value: string): typeof RawLearningModelModes[number] {
-  if ((RawLearningPublicModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
+  if ((RawLearningAcceptedModelModes as readonly string[]).includes(value)) return value as typeof RawLearningModelModes[number];
   const alias = RawLearningLegacyModelModeAliases[value];
   if (alias) return alias as typeof RawLearningModelModes[number];
-  throw new Error(`Invalid Learn v2 execution policy: ${value}. Expected one of: ${RawLearningPublicModelModes.join(", ")}. Legacy aliases heuristic-only, remote-redacted, remote-explicit, and local-raw normalize to canonical policies; sanitized OpenCode execution uses --execute-model-requests and raw-to-model dispatch remains rejected.`);
+  throw new Error(`Invalid Learn v2 execution policy: ${value}. Supported policies: ${RawLearningPublicModelModes.join(", ")}. Reserved policy ${RawLearningReservedModelModes.join(", ")} requires --experimental-raw-model-dispatch and remains rejected. Legacy aliases heuristic-only, remote-redacted, remote-explicit, and local-raw normalize to canonical policies; sanitized OpenCode execution uses --execute-model-requests.`);
+}
+
+async function rejectUnsupportedRawModelDispatch(projectRoot: string, optionModelMode: typeof RawLearningModelModes[number] | undefined, experimentalAcknowledged: boolean): Promise<void> {
+  const configuredMode = optionModelMode ?? (await readProjectConfig(projectRoot)).learning.rawEvidence.extractionExecution;
+  const mode = RawLearningLegacyModelModeAliases[configuredMode] ?? configuredMode;
+  if (mode !== "opencode-host-raw-allowed") return;
+  const reason = "Learn v2 raw OpenCode dispatch is reserved and not implemented: required UX consent, route display, provider clarity, and privacy review do not exist yet. Use deterministic-only or opencode-host-sanitized-only with --execute-model-requests.";
+  if (!experimentalAcknowledged) {
+    throw new Error(`${reason} Reserved raw policy requires --experimental-raw-model-dispatch only to acknowledge this boundary; it still will not run raw-to-model dispatch.`);
+  }
+  throw new Error(`${reason} --experimental-raw-model-dispatch acknowledged, but raw-to-model dispatch remains blocked.`);
 }
 
 function parseConceptOutcome(value: string | undefined): Parameters<typeof recordLearnV2ConceptOutcome>[1]["outcome"] {

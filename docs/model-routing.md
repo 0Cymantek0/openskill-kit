@@ -176,7 +176,8 @@ only apply when the deterministic conflict ledger already grants
 `auto-supersede` or `auto-narrow` authority; broader scopes, protected concepts,
 invalid concept/evidence ids, human-review findings, and unsafe content are
 rejected. Raw-to-model execution remains rejected; `opencode-host-raw-allowed`
-is reserved for a future policy.
+is reserved for a future policy, requires `--experimental-raw-model-dispatch`
+only to acknowledge the boundary, and still does not execute raw dispatch.
 
 ## Validation
 
