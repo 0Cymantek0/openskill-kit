@@ -184,7 +184,7 @@ describe("learn-v2 substrate", () => {
     const claude = path.join(root, "claude-session.json");
     const cursor = path.join(root, "cursor-chat.json");
     const codex = path.join(root, "codex-transcript.jsonl");
-    const opencode = path.join(root, "opencode-session.jsonl");
+    const opencode = path.join(root, "opencode-session.json");
     await writeFile(claude, JSON.stringify({
       messages: [{
         role: "assistant",
@@ -211,13 +211,16 @@ describe("learn-v2 substrate", () => {
       arguments: JSON.stringify({ cmd: "npm run test -- parser" }),
       output: "PASS packages/core/tests/parser.test.ts"
     })}\n`, "utf8");
-    await writeFile(opencode, `${JSON.stringify({
-      eventType: "tool.execute",
-      tool: "bash",
-      input: { command: "npm test -- parser" },
-      metadata: { oskSessionId: "osk_session_from_metadata" },
-      text: "PASS parser suite"
-    })}\n`, "utf8");
+    await writeFile(opencode, JSON.stringify({
+      metadata: { oskSessionId: "osk_session_from_parent_metadata" },
+      events: [{
+        eventType: "tool.execute",
+        tool: "bash",
+        input: { command: "npm test -- parser" },
+        metadata: { commandKind: "package-manager" },
+        text: "PASS parser suite"
+      }]
+    }), "utf8");
 
     const claudeEvidence = normalizeLearnV2Evidence(await readLearnV2Surface(claude), record, await readText(claude));
     const cursorEvidence = normalizeLearnV2Evidence(await readLearnV2Surface(cursor), record, await readText(cursor));
@@ -246,7 +249,7 @@ describe("learn-v2 substrate", () => {
       kind: "tool-call",
       toolName: "bash",
       commands: ["npm test -- parser"],
-      sessionId: "osk_session_from_metadata"
+      sessionId: "osk_session_from_parent_metadata"
     });
   });
 

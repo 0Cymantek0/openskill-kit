@@ -1141,6 +1141,7 @@ Done locally:
 - Added tool-name extraction from top-level fields, function objects, nested inputs, and content-part tool names.
 - Added path extraction from `paths`, `files`, `filePaths`, `contextFiles`, `relevantFiles`, and object-array `attachments`/`references`.
 - Propagated parent container context into child messages for session id, conversation id, trace id, episode id, branch, cwd/workspace, trace context, and metadata.
+- Deep-merged parent and child `metadata`/`traceContext` while flattening nested containers so child-local metadata does not erase parent session/trace ids.
 - Adjusted structured kind precedence so tool identity wins over PASS/FAIL output text for tool-call records.
 - Added fixture-backed regression coverage for Claude content parts, Cursor context/attachment references, Codex JSON-string tool args, and OpenCode nested input/metadata session ids.
 - Documented structured session export normalization in `/osk learn` output contract.
@@ -1154,6 +1155,9 @@ rtk npx vitest --run packages/core/tests/docs-coverage.test.ts
 rtk npm run typecheck
 rtk npx vitest --run packages/core/tests/learn-v2.test.ts
 rtk npm test
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "structured Codex Claude Cursor"
+rtk npm run typecheck
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts
 ```
 
-Final verification passed: Learn v2 test file reported 86 tests passing; full Vitest suite reported 40 files and 300 tests passing.
+Final verification passed: Learn v2 test file reported 86 tests passing; full Vitest suite reported 40 files and 300 tests passing. Follow-up parent/child metadata merge regression also passed focused and full Learn v2 tests.

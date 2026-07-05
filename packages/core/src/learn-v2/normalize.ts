@@ -310,13 +310,30 @@ function flattenStructuredObjects(values: unknown[]): unknown[] {
         visit(value[nested], { ...inherited, ...structuredParentContext(value) });
         return;
       }
-      out.push(Object.keys(inherited).length ? { ...inherited, ...value } : value);
+      out.push(Object.keys(inherited).length ? mergeStructuredContext(inherited, value) : value);
       return;
     }
     out.push(value);
   };
   visit(values);
   return out;
+}
+
+function mergeStructuredContext(parent: Record<string, unknown>, child: Record<string, unknown>): Record<string, unknown> {
+  const merged = { ...parent, ...child };
+  if (isObject(parent.metadata) || isObject(child.metadata)) {
+    merged.metadata = {
+      ...(isObject(parent.metadata) ? parent.metadata : {}),
+      ...(isObject(child.metadata) ? child.metadata : {})
+    };
+  }
+  if (isObject(parent.traceContext) || isObject(child.traceContext)) {
+    merged.traceContext = {
+      ...(isObject(parent.traceContext) ? parent.traceContext : {}),
+      ...(isObject(child.traceContext) ? child.traceContext : {})
+    };
+  }
+  return merged;
 }
 
 function structuredParentContext(value: Record<string, unknown>): Record<string, unknown> {
