@@ -20,6 +20,7 @@ export interface LearnV2ActivationIndexEntry {
   subsystemLabels: string[];
   confidence: number;
   risk: LearnV2ConceptCard["risk"];
+  counterevidenceCount?: number;
 }
 
 const semanticFamilies: Array<{ id: string; terms: string[] }> = [
@@ -104,7 +105,8 @@ export function buildLearnV2ActivationIndexEntry(card: LearnV2ConceptCard): Lear
     keywordFingerprint: activationSignals.keywordFingerprint,
     subsystemLabels: activationSignals.subsystemLabels,
     confidence: card.confidence,
-    risk: card.risk
+    risk: card.risk,
+    counterevidenceCount: card.counterevidence.length
   };
 }
 

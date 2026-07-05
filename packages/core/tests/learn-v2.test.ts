@@ -1682,6 +1682,42 @@ describe("learn-v2 substrate", () => {
     expect(replay.checks[0]!.details).toContain("1/1 concept(s) retrieved");
   });
 
+  it("surfaces counterevidence in activation and suppresses active counterevidenced concepts", () => {
+    const baseEntry = {
+      conceptId: "concept_counterevidence_activation",
+      status: "active" as const,
+      title: "Focused parser regression tests",
+      phrases: ["parser regression"],
+      pathGlobs: ["packages/core/src/**"],
+      commands: [],
+      taskTypes: ["parser-change"],
+      negativeTriggers: [],
+      confidence: 0.9,
+      risk: "low" as const,
+      counterevidenceCount: 1
+    };
+
+    const activeMatches = scoreLearnV2ActivationEntries([baseEntry], {
+      query: "parser regression",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    });
+    expect(activeMatches[0]!.suppressed).toBe(true);
+    expect(activeMatches[0]!.score).toBe(0);
+    expect(activeMatches[0]!.reasons).toContain("counterevidence:1");
+    expect(activeMatches[0]!.counterevidenceCount).toBe(1);
+
+    const candidateMatches = scoreLearnV2ActivationEntries([{ ...baseEntry, status: "candidate" as const }], {
+      includeCandidates: true,
+      query: "parser regression",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    });
+    expect(candidateMatches[0]!.suppressed).toBe(false);
+    expect(candidateMatches[0]!.score).toBeGreaterThan(0);
+    expect(candidateMatches[0]!.counterevidenceCount).toBe(1);
+  });
+
   it("fails eval for overbroad or underspecified concept quality", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:02:00Z");

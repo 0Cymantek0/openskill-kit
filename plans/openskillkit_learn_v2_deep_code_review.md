@@ -937,3 +937,25 @@ Next review target:
 
 1. Reassess whether counterevidence should also feed activation explainability output, not only review artifacts.
 2. Re-run full Learn v2 quality gates after typecheck/test completion.
+
+### Slice 5 completed locally: activation counterevidence explainability
+
+Done locally:
+
+- Added `counterevidenceCount` to generated Learn v2 activation-index entries and activation matches.
+- Kept the activation result privacy boundary count-only; raw counterevidence reasons are not emitted in activation output or telemetry.
+- Added a defensive activation suppression path for active or locked concepts that still carry counterevidence, matching the review quality gate's intent for older/stale stores.
+- Updated CLI activation rendering to show `counterevidence=N` for matched or suppressed concepts.
+- Documented the activation output contract and added scoring regression coverage for active suppression plus candidate inspection.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "counterevidence in activation"
+rtk npm run typecheck
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "sanitizes raw Learn v2 JSON paths"
+rtk npm test
+```
+
+Note: one full-suite run timed out in the CLI raw JSON sanitization test under suite load; the same test passed directly, and the final full-suite retry passed with 40 files and 296 tests.

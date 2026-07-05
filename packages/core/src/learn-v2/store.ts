@@ -45,6 +45,7 @@ export interface LearnV2ActivationIndex {
     subsystemLabels?: string[];
     confidence: number;
     risk: LearnV2ConceptCard["risk"];
+    counterevidenceCount?: number;
   }>;
 }
 

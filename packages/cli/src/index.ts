@@ -2575,12 +2575,16 @@ function renderLearnV2Activation(result: Awaited<ReturnType<typeof activateLearn
     }
   }
   for (const match of result.matches) {
-    lines.push(`  [${match.score.toFixed(3)}] ${match.conceptId} ${match.title} (${match.status}; ${match.reasons.join(", ")})`);
+    lines.push(`  [${match.score.toFixed(3)}] ${match.conceptId} ${match.title} (${match.status}${renderActivationCounterevidence(match.counterevidenceCount)}; ${match.reasons.join(", ")})`);
   }
   for (const match of result.suppressed.slice(0, 8)) {
-    lines.push(`  SUPPRESSED ${match.conceptId} (${match.reasons.join(", ")})`);
+    lines.push(`  SUPPRESSED ${match.conceptId}${renderActivationCounterevidence(match.counterevidenceCount)} (${match.reasons.join(", ")})`);
   }
   return lines.join("\n");
+}
+
+function renderActivationCounterevidence(count: number | undefined): string {
+  return count && count > 0 ? `; counterevidence=${count}` : "";
 }
 
 function formatProjectLocalPath(file: string): string {

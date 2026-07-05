@@ -64,6 +64,7 @@ export interface LearnV2ConceptActivationMatch {
   score: number;
   reasons: string[];
   suppressed: boolean;
+  counterevidenceCount: number;
   outcomeFeedback?: LearnV2ConceptOutcomeFeedback;
 }
 
@@ -330,6 +331,10 @@ function scoreEntry(
 ): LearnV2ConceptActivationMatch {
   const reasons: string[] = [];
   const feedback = query.outcomeFeedback.get(entry.conceptId);
+  const counterevidenceCount = entry.counterevidenceCount ?? 0;
+  if (counterevidenceCount > 0 && (entry.status === "active" || entry.status === "locked")) {
+    return baseMatch(entry, 0, [`counterevidence:${counterevidenceCount}`], true, feedback);
+  }
   const suppressedBy = entry.negativeTriggers.map(normalizeText).filter((trigger) => query.negativeSignals.has(trigger));
   if (suppressedBy.length) {
     return baseMatch(entry, 0, suppressedBy.map((trigger) => `negative-trigger:${trigger}`), true, feedback);
@@ -438,6 +443,7 @@ function baseMatch(
     score,
     reasons,
     suppressed,
+    counterevidenceCount: entry.counterevidenceCount ?? 0,
     outcomeFeedback
   };
 }

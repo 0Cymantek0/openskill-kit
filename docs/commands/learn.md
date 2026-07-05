@@ -174,6 +174,10 @@ for inspection; it does not activate them. Accepting or locking concepts still
 requires `/osk review`. Activation telemetry records only hashed query/path/
 command fields and matched concept ids, so the sample output above is
 representative and never includes raw query text, raw paths, or raw commands.
+Activation matches include only a counterevidence count, never raw
+counterevidence reason text. Active or locked concepts with remaining
+counterevidence are defensively suppressed until review resolves or removes the
+objection; candidate inspection can still show the count for reviewer context.
 
 ## Output Contract
 
