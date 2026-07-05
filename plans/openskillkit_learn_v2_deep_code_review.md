@@ -1109,7 +1109,7 @@ Done locally:
 - Added a CLI guard before raw learning starts, covering both `--model-mode opencode-host-raw-allowed` and config default `learning.rawEvidence.extractionExecution = "opencode-host-raw-allowed"`.
 - Kept core `runRawLocalLearning` hard-fail as the lower-level safety backstop.
 - Updated Learn/model-routing docs to describe supported modes, reserved raw mode, and the acknowledgement-only flag.
-- Added CLI regression coverage for help text, no-flag raw-mode failure, and acknowledged-but-still-blocked failure.
+- Added CLI regression coverage for help text, no-flag raw-mode failure, acknowledged-but-still-blocked failure, and config-default raw-mode failure.
 
 Verification run:
 
@@ -1120,6 +1120,8 @@ rtk npm run typecheck
 rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "model-mode"
 rtk npx vitest --run packages/cli/tests/osk-facade.test.ts
 rtk npm test
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "blocks reserved raw model"
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts
 ```
 
-Final verification passed: full Vitest suite reported 40 files and 299 tests passing. One full CLI facade run timed out at 124s before result; rerun with longer timeout passed 32 tests.
+Final verification passed: full Vitest suite reported 40 files and 299 tests passing. One full CLI facade run timed out at 124s before result; rerun with longer timeout passed 32 tests. Follow-up config-default regression also passed focused boundary test and full CLI facade.

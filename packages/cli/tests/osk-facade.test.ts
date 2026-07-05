@@ -99,6 +99,24 @@ describe("osk CLI facade", () => {
     expect(acknowledged.code).toBe(1);
     expect(acknowledged.stderr).toContain("--experimental-raw-model-dispatch acknowledged");
     expect(acknowledged.stderr).toContain("raw-to-model dispatch remains blocked");
+
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.learning.rawEvidence.extractionExecution = "opencode-host-raw-allowed";
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const configDefault = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "learn",
+      "--raw",
+      "--surface-file",
+      transcript,
+      "--json"
+    ], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(configDefault.code).toBe(1);
+    expect(configDefault.stderr).toContain("requires --experimental-raw-model-dispatch");
   });
 
   it("documents --activation-query local hashed telemetry side effect in help", async () => {
