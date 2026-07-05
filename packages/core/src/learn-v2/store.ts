@@ -15,6 +15,7 @@ import {
 } from "./concepts.js";
 import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
 import { findLearnV2ActivationGateFailures } from "./concept-quality-gates.js";
+import { detectLearnV2ConceptDrift } from "./drift.js";
 import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring } from "./scoring.js";
 import { LearnV2ConceptCardSchema, type LearnV2ConceptCard } from "./schemas.js";
 import { learnV2NormalizeStatement, learnV2ShortHash, learnV2Title } from "./utils.js";
@@ -295,9 +296,12 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       return LearnV2ConceptCardSchema.parse(next);
     });
     const restructured = applyConceptRestructure(reviewed, options, now, modifiedIds, restructureMessages);
-    const policyApplied = options.autoPolicy === true
-      ? applyLearnV2AutoPolicies(restructured, config, now, modifiedIds, restructureMessages)
+    const outcomePolicyApplied = options.autoPolicy === true
+      ? await applyLearnV2OutcomeAutoDemotion(root, restructured, now, modifiedIds, restructureMessages)
       : restructured;
+    const policyApplied = options.autoPolicy === true
+      ? applyLearnV2AutoPolicies(outcomePolicyApplied, config, now, modifiedIds, restructureMessages)
+      : outcomePolicyApplied;
     const nextStore: LearnV2ConceptStore = {
       schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
       projectId: store.projectId,
@@ -528,6 +532,47 @@ export function applyLearnV2AutoPolicies(
     messages.push(`${status === "active" ? "Auto-activated" : "Auto-staged"} safe low-risk concept ${card.id}.`);
   }
   return sortConceptCards(values());
+}
+
+async function applyLearnV2OutcomeAutoDemotion(
+  root: string,
+  cards: LearnV2ConceptCard[],
+  now: Date,
+  modifiedIds: Set<string>,
+  messages: string[]
+): Promise<LearnV2ConceptCard[]> {
+  const activeCards = cards.filter((card) => card.status === "active");
+  if (!activeCards.length) return cards;
+
+  const drift = await detectLearnV2ConceptDrift(root, cards, { now });
+  const staleById = new Map(
+    drift.report.staleCandidates
+      .filter((item) => item.reason === "recent-negative-outcomes" && item.negativeOutcomeCount >= 2)
+      .map((item) => [item.conceptId, item])
+  );
+  if (!staleById.size) return cards;
+
+  return sortConceptCards(cards.map((card) => {
+    if (card.status !== "active") return card;
+    const stale = staleById.get(card.id);
+    if (!stale) return card;
+    const negativeOutcomeCount = Math.max(2, stale.negativeOutcomeCount);
+    const demoted = LearnV2ConceptCardSchema.parse(withLearnV2ConceptScoring({
+      ...card,
+      status: "conflict" as const,
+      counterevidence: [
+        ...card.counterevidence,
+        {
+          evidenceId: `outcome:${card.id}`,
+          reason: `Auto-demoted active concept after ${negativeOutcomeCount} recent negative outcome(s). Review the concept drift report before reactivation.`
+        }
+      ],
+      lifecycle: { ...card.lifecycle, updatedAt: now.toISOString() }
+    }));
+    modifiedIds.add(card.id);
+    messages.push(`Auto-demoted active concept ${card.id} after ${negativeOutcomeCount} recent negative outcome(s).`);
+    return demoted;
+  }));
 }
 
 function markModified(card: LearnV2ConceptCard, modifiedIds: Set<string>): LearnV2ConceptCard {

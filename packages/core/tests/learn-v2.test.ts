@@ -3673,6 +3673,75 @@ describe("learn-v2 substrate", () => {
     expect(reconciliation.prunedWorkflowNodeIds).toEqual([`workflow_${concept!.id}`]);
   });
 
+  it("auto-demotes repeatedly harmful active concepts and prunes their generated graph nodes", async () => {
+    const root = await tempProject();
+    const createdAt = new Date("2026-06-30T00:00:00Z");
+    const [activeConcept] = mergeLearnV2ConceptCards([
+      behaviorAtom("outcome_demote_parser_tests", "Prefer parser regression fixtures before parser behavior changes.", "positive")
+    ], createdAt);
+    const lockedAtom = {
+      ...behaviorAtom("outcome_demote_locked_lexer_tests", "Prefer lexer smoke fixtures before lexer behavior changes.", "positive"),
+      scope: {
+        level: "path" as const,
+        paths: ["packages/core/src/lexer.ts"],
+        taskTypes: ["lexer-change"]
+      }
+    };
+    const [lockedConcept] = mergeLearnV2ConceptCards([lockedAtom], createdAt);
+    await writeLearnV2ConceptStore(root, [activeConcept!, lockedConcept!], createdAt);
+
+    await applyLearnV2ConceptReview(root, {
+      accept: [activeConcept!.id],
+      lock: [lockedConcept!.id],
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+    const config = await readProjectConfig(root);
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${activeConcept!.id}`)).toBe(true);
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${lockedConcept!.id}`)).toBe(true);
+    expect((await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:01:00Z"))).nodes.some((node) => node.id === `workflow_${activeConcept!.id}`)).toBe(true);
+
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: activeConcept!.id,
+      outcome: "harmful",
+      reason: "activated during unrelated parser task"
+    }, new Date("2026-06-30T00:02:00Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: activeConcept!.id,
+      outcome: "wrong",
+      reason: "reviewer rejected activation"
+    }, new Date("2026-06-30T00:03:00Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: lockedConcept!.id,
+      outcome: "harmful",
+      reason: "locked concept needs human review"
+    }, new Date("2026-06-30T00:02:00Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: lockedConcept!.id,
+      outcome: "wrong",
+      reason: "locked concept remains locked"
+    }, new Date("2026-06-30T00:03:00Z"));
+
+    const reviewed = await applyLearnV2ConceptReview(root, {
+      autoPolicy: true,
+      now: new Date("2026-06-30T00:04:00Z")
+    });
+    const store = await readLearnV2ConceptStore(root);
+    const demoted = store.cards.find((card) => card.id === activeConcept!.id)!;
+    const locked = store.cards.find((card) => card.id === lockedConcept!.id)!;
+
+    expect(demoted.status).toBe("conflict");
+    expect(demoted.counterevidence.some((item) => item.reason.includes("Auto-demoted active concept"))).toBe(true);
+    expect(locked.status).toBe("locked");
+    expect(reviewed.messages.join("\n")).toContain(`Auto-demoted active concept ${activeConcept!.id}`);
+    expect(reviewed.prunedPreferenceNodeIds).toEqual([`pref_${activeConcept!.id}`]);
+    expect(reviewed.prunedWorkflowNodeIds).toEqual([`workflow_${activeConcept!.id}`]);
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${activeConcept!.id}`)).toBe(false);
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${lockedConcept!.id}`)).toBe(true);
+    const workflowGraph = await readWorkflowGraph(root, config.projectId, new Date("2026-06-30T00:04:00Z"));
+    expect(workflowGraph.nodes.some((node) => node.id === `workflow_${activeConcept!.id}`)).toBe(false);
+    expect(workflowGraph.nodes.some((node) => node.id === `workflow_${lockedConcept!.id}`)).toBe(true);
+  });
+
   it("prunes stale Learn v2 graph nodes even when active concept compilation is skipped", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:00:00Z");

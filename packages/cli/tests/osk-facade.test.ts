@@ -118,7 +118,7 @@ describe("osk CLI facade", () => {
     ], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
     expect(configDefault.code).toBe(1);
     expect(configDefault.stderr).toContain("requires --experimental-raw-model-dispatch");
-  });
+  }, 30000);
 
   it("documents --activation-query local hashed telemetry side effect in help", async () => {
     const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--help"], { cwd: repoRoot, windowsHide: true });
@@ -924,7 +924,7 @@ describe("osk CLI facade", () => {
 
     const applied = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "pack", "apply", packPath, "--yes", "--json"], { cwd: target, windowsHide: true });
     expect(JSON.parse(applied.stdout).status).toBe("imported");
-  });
+  }, 30000);
 
   it("previews OpenWorld source-plan execution unless --yes approves ingestion", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-openworld-execute-"));

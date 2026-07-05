@@ -9,6 +9,14 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 harmful outcome auto-demotion slice
+
+- Finding verified: activation scoring suppresses concepts after harmful/superseded outcome telemetry, and drift reports repeated recent negative outcomes, but review auto-policy did not yet close the loop by changing durable concept state.
+- Done: `--concept-auto-policy` now reuses the drift detector inside the locked review transaction and auto-demotes active, non-locked concepts with at least two recent harmful/wrong/superseded outcomes to `conflict`.
+- Done: auto-demoted concepts receive explicit outcome-derived counterevidence, remain retained for review, lose active/locked retrieval status, and trigger compatibility Preference/Workflow graph pruning through the existing review sync path.
+- Done: locked concepts with the same negative outcome telemetry remain locked; the policy surfaces them through drift but does not override a human lock.
+- Verified: focused harmful-outcome auto-demotion regression, neighboring outcome/drift/graph-sync tests, full Learn v2 test file, docs coverage, `rtk npm run typecheck`, and full `rtk npm test` (40 files, 303 tests).
+
 ### 2026-07-05 eval visibility and artifact privacy slice
 
 - Done: Learn v2 eval reports now expose structured summary metrics for result rows, activation replay retrieval, counterfactual trace activation, and behavior-delta scenarios.
@@ -534,7 +542,7 @@ Regex/heuristic concept extraction can turn textual statements into durable proj
 4. Add team-sharing/export flow for reviewed/declassified concepts.
 5. Add red-team fixtures for raw transcript prompt injection, malicious review comments, path leakage, customer IDs, and branch names containing sensitive data.
 6. Add golden fixtures for all nine scenarios in the plan.
-7. Add longitudinal outcome telemetry loops that can demote harmful active concepts.
+7. Add longitudinal outcome telemetry loops that can demote harmful active concepts. Partially done: review auto-policy now demotes repeatedly harmful active non-locked concepts; still need calibrated thresholds, reviewer UI explanations, and team-level outcome metrics before calling this frontier.
 
 ---
 
