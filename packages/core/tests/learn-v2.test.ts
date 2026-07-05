@@ -658,6 +658,8 @@ describe("learn-v2 substrate", () => {
     expect(patches[1]!.comparison?.sharedPaths).toEqual(["packages/core/src/parser.ts"]);
     expect(patches[1]!.comparison?.finalOnlyPaths).toEqual(["packages/core/tests/parser.test.ts"]);
     expect(patches[1]!.comparison?.finalOnlyStructuralClasses).toContain("test");
+    expect(patches[1]!.comparison?.evidenceStrength).toBe("strong");
+    expect(patches[1]!.comparison?.reasons).toContain("pair-evidence-strong");
     expect(patches[1]!.comparison?.confidence).toBeGreaterThanOrEqual(0.5);
 
     const [episode] = reconstructLearnV2Episodes(evidence);
@@ -676,6 +678,46 @@ describe("learn-v2 substrate", () => {
     ]));
     expect(correctionAtom!.activationHints?.negativeTriggers).toEqual(expect.arrayContaining(["generated-only", "lockfile-only"]));
     expect(correctionAtom!.counterevidence?.[0]?.evidenceId).toBe("ev_agent_patch");
+  });
+
+  it("does not infer user patch taste from unrelated same-class parser edits", () => {
+    const proposedPatch = [
+      "diff --git a/packages/core/src/parser.ts b/packages/core/src/parser.ts",
+      "--- a/packages/core/src/parser.ts",
+      "+++ b/packages/core/src/parser.ts",
+      "@@",
+      "-export function parseSkill(input: string) { return oldParse(input); }",
+      "+export function parseSkill(input: string) { return parseWithRegression(input); }"
+    ].join("\n");
+    const unrelatedFinalPatch = [
+      "diff --git a/examples/demo/parser.ts b/examples/demo/parser.ts",
+      "--- a/examples/demo/parser.ts",
+      "+++ b/examples/demo/parser.ts",
+      "@@",
+      "-export function parseExample(input: string) { return oldExample(input); }",
+      "+export function parseExample(input: string) { return newExample(input); }"
+    ].join("\n");
+    const patches = summarizeLearnV2Patches([
+      normalizedFileChange("ev_agent_unrelated_parser_patch", proposedPatch, {
+        sessionId: "sess_unrelated_pair",
+        timestamp: "2026-06-30T00:00:00.000Z",
+        metadata: { patchKind: "proposed patch" },
+        paths: ["packages/core/src/parser.ts"]
+      }),
+      normalizedFileChange("ev_final_unrelated_parser_patch", unrelatedFinalPatch, {
+        actor: "user",
+        sessionId: "sess_unrelated_pair",
+        timestamp: "2026-06-30T00:01:00.000Z",
+        metadata: { patchKind: "final patch" },
+        paths: ["examples/demo/parser.ts"]
+      })
+    ]);
+
+    expect(patches).toHaveLength(2);
+    expect(patches[0]!.comparison).toBeUndefined();
+    expect(patches[1]!.comparison).toBeUndefined();
+    expect(patches[0]!.pairedWithIds).toEqual([]);
+    expect(patches[1]!.pairedWithIds).toEqual([]);
   });
 
   it("writes declassified pipeline observability metrics for patch filters", async () => {

@@ -210,6 +210,7 @@ export const LearnV2PatchComparisonSchema = z.object({
       "user-reworked-patch",
       "unknown"
     ]),
+    evidenceStrength: z.enum(["strong", "medium", "weak"]).default("weak"),
     confidence: z.number().min(0).max(1),
     reasons: z.array(z.string()).default([])
   }).optional()

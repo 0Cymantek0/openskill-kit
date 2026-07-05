@@ -236,20 +236,52 @@ function bestPatchPairCandidate(patches: LearnV2PatchComparison[], proposedIndex
 }
 
 function patchPairScore(proposed: LearnV2PatchComparison, finalPatch: LearnV2PatchComparison, distance: number): number {
+  const evidence = patchPairEvidence(proposed, finalPatch);
+  if (evidence.strength === "none") return 0;
+  return (evidence.sharedPathCount * 4)
+    + (evidence.sharedDirectory ? 2 : 0)
+    + evidence.sharedClassCount
+    + Math.min(2, evidence.symbolOverlap)
+    + Math.min(1, evidence.importOverlap)
+    + (evidence.fallbackSinglePair ? 1 : 0)
+    - Math.min(2, Math.max(0, distance - 1) * 0.25);
+}
+
+function patchPairEvidence(proposed: LearnV2PatchComparison, finalPatch: LearnV2PatchComparison): {
+  strength: "strong" | "medium" | "weak" | "none";
+  sharedPathCount: number;
+  sharedDirectory: boolean;
+  sharedClassCount: number;
+  symbolOverlap: number;
+  importOverlap: number;
+  fallbackSinglePair: boolean;
+} {
   const sharedPathCount = intersectStrings(proposed.paths, finalPatch.paths).length;
   const sharedDirectory = proposed.paths.some((left) => finalPatch.paths.some((right) => pathFamily(left) === pathFamily(right)));
   const sharedClassCount = intersectStrings(proposed.structuralClasses, finalPatch.structuralClasses).length;
   const symbolOverlap = intersectStrings(proposed.structuralSummary.changedSymbols, finalPatch.structuralSummary.changedSymbols).length;
+  const importOverlap = intersectStrings(proposed.structuralSummary.changedImports, finalPatch.structuralSummary.changedImports).length;
   const fallbackSinglePair = !proposed.paths.length && !finalPatch.paths.length && sharedClassCount > 0;
-  return (sharedPathCount * 4)
-    + (sharedDirectory ? 2 : 0)
-    + sharedClassCount
-    + Math.min(2, symbolOverlap)
-    + (fallbackSinglePair ? 1 : 0)
-    - Math.min(2, Math.max(0, distance - 1) * 0.25);
+  const strength = sharedPathCount > 0 && (symbolOverlap > 0 || importOverlap > 0 || sharedClassCount > 0)
+    ? "strong"
+    : sharedPathCount > 0 || (sharedDirectory && (symbolOverlap > 0 || importOverlap > 0 || sharedClassCount > 0)) || (symbolOverlap > 0 && sharedClassCount > 0)
+      ? "medium"
+      : fallbackSinglePair
+        ? "weak"
+        : "none";
+  return {
+    strength,
+    sharedPathCount,
+    sharedDirectory,
+    sharedClassCount,
+    symbolOverlap,
+    importOverlap,
+    fallbackSinglePair
+  };
 }
 
 function comparePatchPair(proposed: LearnV2PatchComparison, finalPatch: LearnV2PatchComparison): NonNullable<LearnV2PatchComparison["comparison"]> {
+  const evidence = patchPairEvidence(proposed, finalPatch);
   const sharedPaths = intersectStrings(proposed.paths, finalPatch.paths);
   const proposedOnlyPaths = differenceStrings(proposed.paths, finalPatch.paths);
   const finalOnlyPaths = differenceStrings(finalPatch.paths, proposed.paths);
@@ -284,10 +316,12 @@ function comparePatchPair(proposed: LearnV2PatchComparison, finalPatch: LearnV2P
     finalOnlyPaths,
     finalOnlyStructuralClasses,
     reasons,
-    behaviorSignal
+    behaviorSignal,
+    evidenceStrength: evidence.strength === "none" ? "weak" : evidence.strength
   });
   const confidenceCap = Math.min(patchStructuralConfidenceCap(proposed.structuralSummary), patchStructuralConfidenceCap(finalPatch.structuralSummary));
-  const confidence = Math.min(rawConfidence, confidenceCap);
+  const evidenceCap = patchPairEvidenceConfidenceCap(evidence.strength);
+  const confidence = Math.min(rawConfidence, confidenceCap, evidenceCap);
   return {
     schemaVersion: "openskill-kit.learn-v2.patch-comparison.v1",
     role: "standalone",
@@ -305,8 +339,9 @@ function comparePatchPair(proposed: LearnV2PatchComparison, finalPatch: LearnV2P
     addedLineDelta,
     removedLineDelta,
     behaviorSignal,
+    evidenceStrength: evidence.strength === "none" ? "weak" : evidence.strength,
     confidence,
-    reasons
+    reasons: [...reasons, `pair-evidence-${evidence.strength}`]
   };
 }
 
@@ -370,13 +405,22 @@ function patchComparisonConfidence(input: {
   finalOnlyStructuralClasses: LearnV2PatchComparison["structuralClasses"];
   reasons: string[];
   behaviorSignal: NonNullable<LearnV2PatchComparison["comparison"]>["behaviorSignal"];
+  evidenceStrength: NonNullable<LearnV2PatchComparison["comparison"]>["evidenceStrength"];
 }): number {
   const sharedPathBoost = Math.min(0.22, input.sharedPaths.length * 0.08);
   const sharedClassBoost = Math.min(0.14, input.sharedStructuralClasses.length * 0.04);
   const finalScopeBoost = Math.min(0.12, (input.finalOnlyPaths.length + input.finalOnlyStructuralClasses.length) * 0.03);
   const signalBoost = input.behaviorSignal === "user-kept-proposal" || input.behaviorSignal === "unknown" ? 0 : 0.08;
   const reasonBoost = Math.min(0.06, input.reasons.length * 0.03);
-  return Number(Math.min(0.9, 0.42 + sharedPathBoost + sharedClassBoost + finalScopeBoost + signalBoost + reasonBoost).toFixed(2));
+  const evidenceBoost = input.evidenceStrength === "strong" ? 0.08 : input.evidenceStrength === "medium" ? 0.04 : 0;
+  return Number(Math.min(0.9, 0.42 + sharedPathBoost + sharedClassBoost + finalScopeBoost + signalBoost + reasonBoost + evidenceBoost).toFixed(2));
+}
+
+function patchPairEvidenceConfidenceCap(strength: "strong" | "medium" | "weak" | "none"): number {
+  if (strength === "strong") return 0.9;
+  if (strength === "medium") return 0.78;
+  if (strength === "weak") return 0.6;
+  return 0.45;
 }
 
 function patchStructuralConfidenceCap(summary: LearnV2PatchComparison["structuralSummary"]): number {

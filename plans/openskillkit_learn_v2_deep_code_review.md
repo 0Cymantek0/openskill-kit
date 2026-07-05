@@ -43,6 +43,13 @@
 - Decision: keep `opencode-host-raw-allowed` rejected for now. The safe production path is prompt-safe request artifacts plus explicit sanitized OpenCode execution; raw-to-model needs a separate boundary design before implementation.
 - Verified: focused Learn v2 model-policy/observability tests, focused CLI raw JSON/observability/model execution tests, and `rtk npm run typecheck`.
 
+### 2026-07-05 patch-pair evidence strength slice
+
+- Done: proposed-vs-final patch comparisons now carry `evidenceStrength: strong|medium|weak`, derived from shared path, directory, symbol, import, structural-class, or fallback-only evidence.
+- Done: comparison confidence now respects evidence strength caps, so weak pairings cannot inflate into high-confidence correction signals even when structural classes overlap.
+- Done: unrelated same-class patches with real but different paths now stay unpaired unless they share stronger path/directory/symbol/import evidence, reducing false user-taste inference from coincidental episode ordering.
+- Verified: focused Learn v2 patch comparison tests and `rtk npm run typecheck`.
+
 ### 2026-07-04 trace context slice
 
 - Done: OpenCode plugin source bundle now emits `traceContext` on safe ambient records, matching the generated compiler template.
