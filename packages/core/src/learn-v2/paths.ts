@@ -38,6 +38,7 @@ export const LEARN_V2_GENERATED_DIRS = [
   // Declassified but still local learning artifacts
   ".openskill-kit/learn-v2/concepts/",
   ".openskill-kit/learn-v2/declassified-snippets/",
+  ".openskill-kit/learn-v2/counterevidence/",
   ".openskill-kit/learn-v2/conflicts/",
   ".openskill-kit/learn-v2/drift/",
   ".openskill-kit/learn-v2/observability/",

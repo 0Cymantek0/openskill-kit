@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2ReviewQueue } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2CounterevidenceLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2ReviewQueue } from "./schemas.js";
 import { LearnV2ReviewQueueSchema } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { learnV2SafeLocalPath } from "./utils.js";
@@ -13,6 +13,7 @@ export async function writeLearnV2ReviewQueue(
     ledger?: LearnV2ConflictLedger;
     markdownPath?: string;
     declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
+    counterevidenceLedger?: { ledger: LearnV2CounterevidenceLedger; markdownPath: string };
     conceptDrift?: { report: LearnV2ConceptDriftReport; artifactPath: string };
   }
 ): Promise<LearnV2ReviewQueue> {
@@ -42,6 +43,15 @@ export async function writeLearnV2ReviewQueue(
       artifactPath: context?.declassifiedSnippets?.artifacts.markdown ? learnV2SafeLocalPath(context.declassifiedSnippets.artifacts.markdown, root) : undefined
     },
     evidenceSnippets,
+    counterevidenceSummary: {
+      itemCount: context?.counterevidenceLedger?.ledger.totalItems ?? cards.reduce((sum, card) => sum + card.counterevidence.length, 0),
+      conceptCount: context?.counterevidenceLedger?.ledger.conceptCount ?? cards.filter((card) => card.counterevidence.length).length,
+      activationBlockingCount: context?.counterevidenceLedger?.ledger.activationBlockingCount ?? cards
+        .filter((card) => card.status !== "rejected" && card.status !== "superseded" && card.status !== "one-off")
+        .reduce((sum, card) => sum + card.counterevidence.length, 0),
+      reasonCounts: context?.counterevidenceLedger?.ledger.reasonCounts ?? {},
+      artifactPath: context?.counterevidenceLedger?.markdownPath ? learnV2SafeLocalPath(context.counterevidenceLedger.markdownPath, root) : undefined
+    },
     driftSummary: {
       healthScore: context?.conceptDrift?.report.healthScore ?? 1,
       staleCandidateCount: context?.conceptDrift?.report.staleCandidates.length ?? 0,
@@ -52,6 +62,7 @@ export async function writeLearnV2ReviewQueue(
       markdown,
       conflictLedger: context?.markdownPath,
       declassifiedSnippets: context?.declassifiedSnippets?.artifacts.markdown,
+      counterevidenceLedger: context?.counterevidenceLedger?.markdownPath,
       conceptDrift: context?.conceptDrift?.artifactPath
     }
   });
@@ -99,6 +110,14 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     `Blocked from compile: ${queue.evidenceSnippetSummary.blockedFromCompileCount}`,
     `Residual risk: ${renderCounts(queue.evidenceSnippetSummary.residualRiskCounts)}`,
     queue.evidenceSnippetSummary.artifactPath ? `Artifact: ${queue.evidenceSnippetSummary.artifactPath}` : "Artifact: not written",
+    "",
+    "## Counterevidence Summary",
+    "",
+    `Items: ${queue.counterevidenceSummary.itemCount}`,
+    `Concepts: ${queue.counterevidenceSummary.conceptCount}`,
+    `Activation-blocking items: ${queue.counterevidenceSummary.activationBlockingCount}`,
+    `Reasons: ${renderCounts(queue.counterevidenceSummary.reasonCounts)}`,
+    queue.counterevidenceSummary.artifactPath ? `Counterevidence ledger: ${queue.counterevidenceSummary.artifactPath}` : "Counterevidence ledger: not written",
     "",
     "## Drift Summary",
     "",

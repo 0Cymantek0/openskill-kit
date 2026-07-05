@@ -114,6 +114,7 @@ export interface RawLocalLearningResult {
     learnV2ObservabilityReportPath?: string;
     learnV2EvidenceQualityPath?: string;
     learnV2ConflictLedgerPath?: string;
+    learnV2CounterevidenceLedgerPath?: string;
     learnV2DeclassifiedSnippetsPath?: string;
     learnV2ConceptDriftPath?: string;
   };

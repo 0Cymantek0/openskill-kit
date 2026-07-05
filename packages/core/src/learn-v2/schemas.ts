@@ -610,6 +610,18 @@ export const LearnV2ReviewQueueSchema = z.object({
     residualRisk: z.enum(["low", "medium", "high"]),
     blockedFromCompile: z.boolean().default(false)
   })).default([]),
+  counterevidenceSummary: z.object({
+    itemCount: z.number().int().min(0),
+    conceptCount: z.number().int().min(0),
+    activationBlockingCount: z.number().int().min(0),
+    reasonCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    artifactPath: z.string().optional()
+  }).default({
+    itemCount: 0,
+    conceptCount: 0,
+    activationBlockingCount: 0,
+    reasonCounts: {}
+  }),
   driftSummary: z.object({
     healthScore: z.number().min(0).max(1),
     staleCandidateCount: z.number().int().min(0),
@@ -624,10 +636,36 @@ export const LearnV2ReviewQueueSchema = z.object({
     markdown: z.string(),
     conflictLedger: z.string().optional(),
     declassifiedSnippets: z.string().optional(),
+    counterevidenceLedger: z.string().optional(),
     conceptDrift: z.string().optional()
   })
 });
 export type LearnV2ReviewQueue = z.infer<typeof LearnV2ReviewQueueSchema>;
+
+export const LearnV2CounterevidenceLedgerSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.counterevidence-ledger.v1"),
+  generatedAt: z.string().datetime(),
+  totalItems: z.number().int().min(0),
+  conceptCount: z.number().int().min(0),
+  activationBlockingCount: z.number().int().min(0),
+  statusCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+  riskCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+  reasonCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+  entries: z.array(z.object({
+    conceptId: z.string().min(1),
+    title: z.string().min(1),
+    status: LearnV2ConceptCardSchema.shape.status,
+    risk: LearnV2ConceptCardSchema.shape.risk,
+    evidenceId: z.string().min(1),
+    reason: z.string().min(1),
+    activationBlocking: z.boolean()
+  })).default([]),
+  artifacts: z.object({
+    json: z.string(),
+    markdown: z.string()
+  })
+});
+export type LearnV2CounterevidenceLedger = z.infer<typeof LearnV2CounterevidenceLedgerSchema>;
 
 export const LearnV2EvalReportSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.eval-report.v1"),

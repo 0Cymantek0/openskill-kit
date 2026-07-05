@@ -192,6 +192,7 @@ representative and never includes raw query text, raw paths, or raw commands.
 - MCP advanced profile exposes the declassified observability report through `osk_get_learn_v2_observability`, using the latest report by default or an explicit report path when supplied.
 - Learn v2 writes declassified evidence-quality artifacts that score normalized records for prioritization and model-routing ROI without dropping raw-local learning evidence.
 - Learn v2 writes a concept conflict ledger and links it from the review queue so contradictory, superseding, or overlapping concepts stay reviewable instead of hidden in scoring side effects.
+- Learn v2 writes a counterevidence ledger and links it from the review queue so activation-blocking objections are visible by concept, status, risk, and reason bucket before review or bulk activation.
 - Learn v2 writes declassified evidence snippets and links them from review cards so reviewers see safe, bounded support text instead of only opaque evidence IDs.
 - Behavior pack export/verify runs a publish-boundary audit over shareable payload files; raw learning stays permissive, but packs fail if compiled artifacts contain secrets, raw refs, local paths, private Learn v2 artifact references, inactive/stale Learn v2 resources, unsupported concepts, weak evidence counts, overbroad low-support scope, weak source reliability, or unsafe command activation.
 - Learn v2 writes a concept drift report from stored concept/outcome telemetry and links stale or negatively reinforced active concepts into the review queue.

@@ -25,6 +25,7 @@ export * from "./operations.js";
 export * from "./pipeline.js";
 export * from "./command-policy.js";
 export * from "./conflicts.js";
+export * from "./counterevidence-ledger.js";
 export * from "./declassify.js";
 export * from "./trace.js";
 export * from "./quality.js";

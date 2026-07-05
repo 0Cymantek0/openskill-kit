@@ -909,3 +909,31 @@ rtk npm test
 ```
 
 Final verification passed: full Vitest suite reported 40 files and 290 tests passing.
+
+### Slice 4 completed locally: counterevidence ledger visibility
+
+Done locally:
+
+- Added a first-class Learn v2 counterevidence ledger artifact under `.openskill-kit/learn-v2/counterevidence/`.
+- Linked the ledger from raw-learning artifacts, CLI raw output, observability artifact paths, and the concept review queue.
+- Added review-queue summary counts for total counterevidence, affected concepts, activation-blocking items, and reason buckets.
+- Redacted project/home absolute path prefixes from ledger reason text before writing review-facing artifacts.
+- Added raw-learning regression coverage for markdown visibility, JSON schema, activation-blocking counts, and local path redaction.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "raw-learning review artifacts"
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "raw-learning review artifacts|counterevidence ledger"
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts
+rtk npx vitest --run packages/core/tests/learn-v2-hygiene.test.ts
+rtk npm run typecheck
+rtk npm test
+```
+
+Final verification passed: full Vitest suite reported 40 files and 295 tests passing.
+
+Next review target:
+
+1. Reassess whether counterevidence should also feed activation explainability output, not only review artifacts.
+2. Re-run full Learn v2 quality gates after typecheck/test completion.

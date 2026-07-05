@@ -2191,6 +2191,7 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     `Digest: ${result.artifacts.reviewMarkdownPath}`,
     result.artifacts.learnV2EvidenceQualityPath ? `Evidence quality: ${result.artifacts.learnV2EvidenceQualityPath}` : undefined,
     result.artifacts.learnV2ConflictLedgerPath ? `Conflict ledger: ${result.artifacts.learnV2ConflictLedgerPath}` : undefined,
+    result.artifacts.learnV2CounterevidenceLedgerPath ? `Counterevidence ledger: ${result.artifacts.learnV2CounterevidenceLedgerPath}` : undefined,
     result.artifacts.learnV2DeclassifiedSnippetsPath ? `Declassified snippets: ${result.artifacts.learnV2DeclassifiedSnippetsPath}` : undefined,
     result.artifacts.learnV2ConceptDriftPath ? `Concept drift: ${result.artifacts.learnV2ConceptDriftPath}` : undefined,
     result.artifacts.learnV2ObservabilityReportPath ? `Observability: ${result.artifacts.learnV2ObservabilityReportPath}` : undefined,

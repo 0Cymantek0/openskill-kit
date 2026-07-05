@@ -13,6 +13,7 @@ import {
   LearnV2ConceptCardSchema,
   LearnV2ConceptDriftReportSchema,
   LearnV2ConflictLedgerSchema,
+  LearnV2CounterevidenceLedgerSchema,
   LearnV2DeclassifiedEvidenceSnippetArtifactSchema,
   LearnV2EvalReportSchema,
   LearnV2RawEvidenceRecordSchema,
@@ -21,6 +22,7 @@ import {
   type LearnV2ConceptCard,
   type LearnV2ConceptDriftReport,
   type LearnV2ConflictLedger,
+  type LearnV2CounterevidenceLedger,
   type LearnV2DeclassifiedEvidenceSnippetArtifact,
   type LearnV2EvalReport,
   type LearnV2NormalizedEvidence,
@@ -33,6 +35,7 @@ import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { writeLearnV2ConflictLedger } from "./conflicts.js";
+import { writeLearnV2CounterevidenceLedger } from "./counterevidence-ledger.js";
 import { writeLearnV2ReviewQueue } from "./review.js";
 import { compileLearnV2ConceptPreview, type LearnV2CompilePreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
@@ -166,6 +169,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2ObservabilityReportPath: string;
     learnV2EvidenceQualityPath: string;
     learnV2ConflictLedgerPath: string;
+    learnV2CounterevidenceLedgerPath: string;
     learnV2DeclassifiedSnippetsPath: string;
     learnV2ConceptDriftPath: string;
     learnV2SourceGateReviewJsonPath: string;
@@ -473,6 +477,15 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
           markdown: path.join(root, ".openskill-kit", "learn-v2", "conflicts", "conflict-ledger.md")
         }
       };
+  const counterevidenceLedger = shouldWriteDerivedArtifacts
+    ? await writeLearnV2CounterevidenceLedger(root, conceptCardsForArtifacts, now)
+    : {
+        ledger: emptyCounterevidenceLedger(root, now),
+        artifactPaths: {
+          json: path.join(root, ".openskill-kit", "learn-v2", "counterevidence", "counterevidence-ledger.json"),
+          markdown: path.join(root, ".openskill-kit", "learn-v2", "counterevidence", "counterevidence-ledger.md")
+        }
+      };
   const modelRouting = await ensureLearnV2ModelRoutingArtifacts(root, now);
   for (const source of sourceDigests) {
     const rawRef = source.learnV2.rawRef;
@@ -485,6 +498,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         ledger: conflictLedger.ledger,
         markdownPath: conflictLedger.artifactPaths.markdown,
         declassifiedSnippets,
+        counterevidenceLedger: {
+          ledger: counterevidenceLedger.ledger,
+          markdownPath: counterevidenceLedger.artifactPaths.markdown
+        },
         conceptDrift
       })
     : emptyReviewQueue(root, now);
@@ -541,6 +558,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ModelRequestDir: learnV2ModelRequestsRoot(root),
       learnV2EvidenceQualityPath: evidenceQualityPath,
       learnV2ConflictLedgerPath: conflictLedger.artifactPaths.markdown,
+      learnV2CounterevidenceLedgerPath: counterevidenceLedger.artifactPaths.markdown,
       learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
       learnV2ConceptDriftPath: conceptDrift.artifactPath,
       learnV2SourceGateReviewJsonPath: sourceGateReview.paths.json,
@@ -578,6 +596,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ObservabilityReportPath: path.resolve(root, observability.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, "")),
       learnV2EvidenceQualityPath: evidenceQualityPath,
       learnV2ConflictLedgerPath: conflictLedger.artifactPaths.markdown,
+      learnV2CounterevidenceLedgerPath: counterevidenceLedger.artifactPaths.markdown,
       learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
       learnV2ConceptDriftPath: conceptDrift.artifactPath,
       learnV2SourceGateReviewJsonPath: sourceGateReview.paths.json,
@@ -732,6 +751,24 @@ function emptyConflictLedger(projectId: string, now: Date): LearnV2ConflictLedge
     updatedAt: now.toISOString(),
     conflicts: [],
     unresolvedCount: 0
+  });
+}
+
+function emptyCounterevidenceLedger(root: string, now: Date): LearnV2CounterevidenceLedger {
+  return LearnV2CounterevidenceLedgerSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.counterevidence-ledger.v1",
+    generatedAt: now.toISOString(),
+    totalItems: 0,
+    conceptCount: 0,
+    activationBlockingCount: 0,
+    statusCounts: {},
+    riskCounts: {},
+    reasonCounts: {},
+    entries: [],
+    artifacts: {
+      json: learnV2SafeLocalPath(path.join(root, ".openskill-kit", "learn-v2", "counterevidence", "counterevidence-ledger.json"), root),
+      markdown: learnV2SafeLocalPath(path.join(root, ".openskill-kit", "learn-v2", "counterevidence", "counterevidence-ledger.md"), root)
+    }
   });
 }
 
@@ -1168,6 +1205,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Episode store: ${result.artifacts.learnV2EpisodeStorePath}`,
     `- Evidence quality: ${result.artifacts.learnV2EvidenceQualityPath}`,
     `- Conflict ledger: ${result.artifacts.learnV2ConflictLedgerPath}`,
+    `- Counterevidence ledger: ${result.artifacts.learnV2CounterevidenceLedgerPath}`,
     `- Declassified snippets: ${result.artifacts.learnV2DeclassifiedSnippetsPath}`,
     `- Concept drift: ${result.artifacts.learnV2ConceptDriftPath}`,
     `- Source gate review: ${result.artifacts.learnV2SourceGateReviewPath}`,

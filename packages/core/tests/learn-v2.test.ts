@@ -53,6 +53,7 @@ import {
   applyLearnV2EvalPlannerOutputs,
   writeLearnV2EpisodeStore,
   writeLearnV2ConflictLedger,
+  writeLearnV2CounterevidenceLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
   storeLearnV2RawEvidence,
   detectLearnV2ConceptDrift,
@@ -2140,7 +2141,11 @@ describe("learn-v2 substrate", () => {
       ...existing!,
       status: "active",
       scope: { ...existing!.scope, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] },
-      activation: { ...existing!.activation, pathGlobs: ["packages/core/src/**"] }
+      activation: { ...existing!.activation, pathGlobs: ["packages/core/src/**"] },
+      counterevidence: [{
+        evidenceId: existing!.evidenceIds[0]!,
+        reason: "Contradictory local review note requires human confirmation."
+      }]
     }], now);
     const transcript = path.join(root, "session.md");
     await writeFile(transcript, [
@@ -2160,7 +2165,43 @@ describe("learn-v2 substrate", () => {
     expect(conflictLedger).toContain("Unresolved: 1");
     const reviewQueue = await readText(result.artifacts.learnV2ReviewQueuePath);
     expect(reviewQueue).toContain("Unresolved conflicts:");
+    expect(reviewQueue).toContain("## Counterevidence Summary");
+    expect(reviewQueue).toContain("Counterevidence ledger:");
+    const counterevidenceLedgerMarkdown = await readText(result.artifacts.learnV2CounterevidenceLedgerPath);
+    expect(counterevidenceLedgerMarkdown).toContain("# Learn v2 Counterevidence Ledger");
+    expect(counterevidenceLedgerMarkdown).toContain(existing!.id);
+    expect(counterevidenceLedgerMarkdown).not.toContain(root);
+    const counterevidenceLedger = JSON.parse(await readText(result.artifacts.learnV2CounterevidenceLedgerPath.replace(/\.md$/, ".json")));
+    expect(counterevidenceLedger.schemaVersion).toBe("openskill-kit.learn-v2.counterevidence-ledger.v1");
+    expect(counterevidenceLedger.totalItems).toBeGreaterThanOrEqual(1);
+    expect(counterevidenceLedger.conceptCount).toBeGreaterThanOrEqual(1);
+    expect(counterevidenceLedger.activationBlockingCount).toBeGreaterThanOrEqual(1);
+    expect(counterevidenceLedger.entries.some((entry: { conceptId: string; reason: string }) => entry.conceptId === existing!.id && entry.reason.length > 0)).toBe(true);
+    expect(JSON.stringify(counterevidenceLedger)).not.toContain(root);
     expect(result.learnV2.concepts.some((card) => card.id === existing!.id)).toBe(true);
+  });
+
+  it("writes counterevidence ledger with local path redaction", async () => {
+    const root = await tempProject();
+    const [card] = mergeLearnV2ConceptCards([
+      { ...behaviorAtom("counterevidence_local_path", "Prefer focused parser tests for parser changes.", "positive"), kind: "workflow" }
+    ], new Date("2026-06-30T00:00:00Z"));
+    const written = await writeLearnV2CounterevidenceLedger(root, [{
+      ...card!,
+      status: "candidate",
+      counterevidence: [{
+        evidenceId: card!.evidenceIds[0]!,
+        reason: `Review note contradicted this behavior in ${root}.`
+      }]
+    }], new Date("2026-06-30T00:01:00Z"));
+
+    expect(written.ledger.totalItems).toBe(1);
+    expect(written.ledger.activationBlockingCount).toBe(1);
+    expect(written.ledger.entries[0]!.reason).toContain("[LOCAL_PATH]");
+    expect(JSON.stringify(written.ledger)).not.toContain(root);
+    const markdown = await readText(written.artifactPaths.markdown);
+    expect(markdown).toContain("[LOCAL_PATH]");
+    expect(markdown).not.toContain(root);
   });
 
   it("reconstructs extracts and evaluates from persisted learn-v2 artifacts without raw source reread", async () => {
