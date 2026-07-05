@@ -50,6 +50,12 @@
 - Done: unrelated same-class patches with real but different paths now stay unpaired unless they share stronger path/directory/symbol/import evidence, reducing false user-taste inference from coincidental episode ordering.
 - Verified: focused Learn v2 patch comparison tests and `rtk npm run typecheck`.
 
+### 2026-07-05 structural parser coverage visibility slice
+
+- Done: Learn v2 observability now reports structural parser backend counts, structural confidence counts, and minimum parser confidence cap across patch file summaries.
+- Done: CLI and Markdown observability surfaces show whether a run relied on the TypeScript compiler parser, heuristic fallback, or no structural parser, making the remaining Tree-sitter/equivalent gap visible instead of hidden in patch summaries.
+- Verified: focused Learn v2 observability tests, focused CLI observability tests, and `rtk npm run typecheck`.
+
 ### 2026-07-04 trace context slice
 
 - Done: OpenCode plugin source bundle now emits `traceContext` on safe ambient records, matching the generated compiler template.

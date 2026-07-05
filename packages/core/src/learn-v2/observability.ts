@@ -115,7 +115,10 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     behaviorEligiblePatches: z.number().int().min(0),
     auditOnlyPatches: z.number().int().min(0),
     patchFilterReasonCounts: z.record(z.string(), z.number().int().min(0)).default({}),
-    structuralClassCounts: z.record(z.string(), z.number().int().min(0)).default({})
+    structuralClassCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    parserBackendCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    structuralConfidenceCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    structuralConfidenceCapMin: z.number().min(0).max(1).default(1)
   }),
   concepts: z.object({
     cards: z.number().int().min(0),
@@ -240,6 +243,7 @@ export async function writeLearnV2PipelineObservabilityReport(
   const tools = input.episodes.flatMap((episode) => episode.toolSummaries);
   const patches = input.episodes.flatMap((episode) => episode.patchComparisons);
   const auditOnlyPatches = patches.filter((patch) => patch.behaviorEligible === false);
+  const structuralFiles = patches.flatMap((patch) => patch.structuralSummary.fileSummaries);
   const evidenceQualityScores = input.evidenceQualityScores ?? [];
   const conflictLedger = input.conflictLedger;
   const conceptDrift = input.conceptDrift;
@@ -306,7 +310,12 @@ export async function writeLearnV2PipelineObservabilityReport(
       behaviorEligiblePatches: patches.length - auditOnlyPatches.length,
       auditOnlyPatches: auditOnlyPatches.length,
       patchFilterReasonCounts: countBy(patches.flatMap((patch) => patch.filterReasons ?? [])),
-      structuralClassCounts: countBy(patches.flatMap((patch) => patch.structuralClasses))
+      structuralClassCounts: countBy(patches.flatMap((patch) => patch.structuralClasses)),
+      parserBackendCounts: countBy(structuralFiles.map((file) => file.parserBackend)),
+      structuralConfidenceCounts: countBy(structuralFiles.map((file) => file.structuralConfidence)),
+      structuralConfidenceCapMin: structuralFiles.length
+        ? Number(Math.min(...structuralFiles.map((file) => file.confidenceCap)).toFixed(2))
+        : 1
     },
     concepts: {
       cards: input.concepts.length,
@@ -420,6 +429,8 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Patches: ${report.compression.behaviorEligiblePatches} behavior-eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches} total`,
     `- Patch filters: ${renderCounts(report.compression.patchFilterReasonCounts)}`,
     `- Structural classes: ${renderCounts(report.compression.structuralClassCounts)}`,
+    `- Structural parser backends: ${renderCounts(report.compression.parserBackendCounts)}`,
+    `- Structural parser confidence: ${renderCounts(report.compression.structuralConfidenceCounts)} (min cap ${report.compression.structuralConfidenceCapMin})`,
     "",
     "## Concepts And Gates",
     "",

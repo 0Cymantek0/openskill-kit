@@ -2249,6 +2249,7 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     `Stitching: ${renderLearnV2CountLine(report.evidence.stitchingMethodCounts)}`,
     `Tools: ${report.compression.tools} summaries, ${report.compression.totalToolOmittedBytes} omitted bytes, strategies ${renderLearnV2CountLine(report.compression.toolCompressionStrategyCounts)}`,
     `Patches: ${report.compression.behaviorEligiblePatches} behavior-eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches}; filters ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`,
+    `Structural parsers: ${renderLearnV2CountLine(report.compression.parserBackendCounts)}, confidence ${renderLearnV2CountLine(report.compression.structuralConfidenceCounts)}, min cap ${report.compression.structuralConfidenceCapMin}`,
     `Concepts: ${report.concepts.cards} cards, ${report.concepts.reviewReadyCards} review-ready, status ${renderLearnV2CountLine(report.concepts.statusCounts)}, risk ${renderLearnV2CountLine(report.concepts.riskCounts)}`,
     `Review focus: ${report.concepts.reviewFocusCards} focus, ${report.concepts.reviewAppendixCards} appendix`,
     `Conflicts: ${report.concepts.unresolvedConflicts} unresolved, types ${renderLearnV2CountLine(report.concepts.conflictTypeCounts)}`,
@@ -2290,7 +2291,9 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
     `Compression: ${renderLearnV2CountLine(report.compression.toolCompressionStrategyCounts)}`,
     `Omitted bytes: ${report.compression.totalToolOmittedBytes}`,
     `Patches: ${report.compression.behaviorEligiblePatches} eligible, ${report.compression.auditOnlyPatches} audit-only / ${report.compression.patches}`,
-    `Patch filters: ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`
+    `Patch filters: ${renderLearnV2CountLine(report.compression.patchFilterReasonCounts)}`,
+    `Structural parsers: ${renderLearnV2CountLine(report.compression.parserBackendCounts)}`,
+    `Structural confidence: ${renderLearnV2CountLine(report.compression.structuralConfidenceCounts)} (min cap ${report.compression.structuralConfidenceCapMin})`
   ].join("\n"), "Compression");
   clackNote([
     `Cards: ${report.concepts.cards}`,
@@ -2319,7 +2322,7 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
 }
 
 function renderLearnV2CountLine(counts: Record<string, number>): string {
-  const entries = Object.entries(counts);
+  const entries = Object.entries(counts ?? {});
   return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join(", ") : "none";
 }
 

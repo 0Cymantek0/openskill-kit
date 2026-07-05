@@ -296,6 +296,7 @@ describe("osk CLI facade", () => {
     expect(textResult.stdout).toContain("Adapter detection: filename=1, confidence high=1");
     expect(textResult.stdout).toContain("Source policy: explicit-only 1, raw-local-file 1, declassified-only model 1, sensitivity high=1");
     expect(textResult.stdout).toContain("Patches: 1 behavior-eligible, 1 audit-only / 2");
+    expect(textResult.stdout).toContain("Structural parsers: typescript-compiler=1, confidence parser=1, min cap 1");
     expect(textResult.stdout).toContain("Review focus: 1 focus, 2 appendix");
     expect(textResult.stdout).toContain("Health: warn (0.84), blockers 0, warnings 2");
     expect(textResult.stdout).toContain("Health focus: Resolve concept conflicts before activation.");
@@ -1005,7 +1006,10 @@ function sampleLearnV2ObservabilityReport() {
       behaviorEligiblePatches: 1,
       auditOnlyPatches: 1,
       patchFilterReasonCounts: { "generated-only": 1 },
-      structuralClassCounts: { api: 1, generated: 1 }
+      structuralClassCounts: { api: 1, generated: 1 },
+      parserBackendCounts: { "typescript-compiler": 1 },
+      structuralConfidenceCounts: { parser: 1 },
+      structuralConfidenceCapMin: 1
     },
     concepts: {
       cards: 1,

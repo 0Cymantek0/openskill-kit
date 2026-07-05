@@ -796,6 +796,9 @@ describe("learn-v2 substrate", () => {
     expect(report.compression.behaviorEligiblePatches).toBe(1);
     expect(report.compression.auditOnlyPatches).toBe(1);
     expect(report.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
+    expect(report.compression.parserBackendCounts["typescript-compiler"]).toBe(1);
+    expect(report.compression.structuralConfidenceCounts.parser).toBe(1);
+    expect(report.compression.structuralConfidenceCapMin).toBe(1);
     expect(report.qualityGates.behaviorDeltaStatus).toBe("not-configured");
     expect(report.qualityGates.activationReplayRate).toBe(1);
     expect(report.qualityGates.counterfactualTraceRate).toBe(1);
@@ -810,11 +813,13 @@ describe("learn-v2 substrate", () => {
     const reportText = await readText(reportPath);
     expect(reportText).toContain("\"health\"");
     expect(reportText).toContain("\"behaviorDeltaStatus\"");
+    expect(reportText).toContain("\"parserBackendCounts\"");
     expect(reportText).not.toContain(root);
     expect(reportText).not.toContain("raw_ev_observable");
     const reportMarkdown = await readText(path.join(root, report.artifactsWritten.markdown.replace(/^\[PROJECT_ROOT\]\//, "")));
     expect(reportMarkdown).toContain("Behavior delta: not-configured");
     expect(reportMarkdown).toContain("Activation replay rate:");
+    expect(reportMarkdown).toContain("Structural parser backends:");
 
     const latest = await readLearnV2PipelineObservabilityReport(root);
     expect(latest.generatedAt).toBe(report.generatedAt);
