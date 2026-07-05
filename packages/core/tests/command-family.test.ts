@@ -253,6 +253,30 @@ describe("OSK command family registry", () => {
     })).rejects.toThrow(/Blocked learning source\(s\): blocked:/);
   });
 
+  it("plans hidden raw export candidates with explicit adapter command while keeping memory stores blocked", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-learn-hidden-exports-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "osk-learn-hidden-exports-home-"));
+    await initAdaptiveProject({ projectRoot: root, projectName: "learn-hidden-exports", now: new Date("2026-06-27T00:00:00.000Z") });
+    await mkdir(path.join(root, ".codex", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".codex", "memories"), { recursive: true });
+    await mkdir(path.join(home, ".codex", "memories"), { recursive: true });
+    await writeFile(path.join(root, ".codex", "sessions", "2026-07-05.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer focused parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".codex", "memories", "private.md"), "Do not plan this memory as raw learning.", "utf8");
+
+    const plan = await planLearningSources(root, { sourceMode: "ask", homeDir: home, now: new Date("2026-06-27T00:07:00.000Z") });
+    const rawCandidate = plan.options.find((option) => option.id.startsWith("raw-local:") && option.path?.endsWith(path.join(".codex", "sessions", "2026-07-05.jsonl")))!;
+
+    expect(rawCandidate.policy).toBe("blocked");
+    expect(rawCandidate.learnV2Surface).toMatchObject({
+      adapterId: "codex",
+      normalizationProfile: "structured-events",
+      suggestedCommand: "openskill-kit osk learn --raw --surface-file .codex/sessions/2026-07-05.jsonl --surface-adapter codex"
+    });
+    expect(rawCandidate.privacy.notes.join("\n")).toContain("--surface-adapter codex");
+    expect(plan.options.some((option) => option.path?.includes(`${path.sep}.codex${path.sep}memories${path.sep}private.md`))).toBe(false);
+    expect(plan.options.some((option) => option.policy === "blocked" && option.path?.includes(`${path.sep}.codex${path.sep}memories`))).toBe(true);
+  });
+
   it("preview with opencode-ambient shows transient signals and candidate behavior", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-preview-ambient-"));
     await initAdaptiveProject({ projectRoot: root, projectName: "preview-ambient", now: new Date("2026-06-27T00:00:00.000Z") });

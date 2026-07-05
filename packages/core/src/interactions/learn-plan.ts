@@ -37,7 +37,8 @@ export const LearnSourceOptionSchema = z.object({
       detectedFormat: z.string().optional(),
       matchedBy: z.string().min(1),
       confidence: z.string().min(1),
-      score: z.number().min(0).max(1)
+      score: z.number().min(0).max(1),
+      suggestedCommand: z.string().min(1).optional()
     }).optional(),
     privacy: z.object({
     rawPromptRead: z.boolean(),
@@ -834,7 +835,7 @@ function rawLocalCandidateSource(
       `Adapter contract: ${candidate.adapterId} / ${candidate.normalizationProfile} / ${candidate.contentKind}.`,
       `Detection: ${candidate.detection.matchedBy} (${candidate.detection.confidence}); reasons=${candidate.detection.reasons.join(", ") || "none"}.`,
       `Raw policy: ${candidate.policy.selection}, learner=${candidate.policy.learnerInput}, model=${candidate.policy.modelBoundary}.`,
-      "Raw local evidence is only processed through `openskill-kit osk learn --raw --surface-file <path>`.",
+      `Raw local evidence is only processed through \`${rawLocalCandidateCommand(candidate)}\`.`,
       "Review output remains concept-gated before activation."
     ]),
     learnV2Surface: {
@@ -846,7 +847,19 @@ function rawLocalCandidateSource(
       detectedFormat: candidate.detectedFormat,
       matchedBy: candidate.detection.matchedBy,
       confidence: candidate.detection.confidence,
-      score: candidate.score
+      score: candidate.score,
+      suggestedCommand: rawLocalCandidateCommand(candidate)
     }
   };
+}
+
+function rawLocalCandidateCommand(candidate: LearnV2SurfaceCandidate): string {
+  const surfaceFile = shellQuote(candidate.relativePath);
+  const adapterArg = candidate.adapterId === "generic-transcript" ? "" : ` --surface-adapter ${shellQuote(candidate.adapterId)}`;
+  return `openskill-kit osk learn --raw --surface-file ${surfaceFile}${adapterArg}`;
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9._/@:-]+$/.test(value)) return value;
+  return `"${value.replace(/(["\\])/g, "\\$1")}"`;
 }

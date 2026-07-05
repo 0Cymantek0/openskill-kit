@@ -112,6 +112,25 @@ const RAW_LOCAL_SOURCE_SKIP_DIRS = new Set([
   ".cache",
   ".vite"
 ]);
+const RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS = [
+  ".codex-log",
+  ".codex/sessions",
+  ".codex/transcripts",
+  ".claude/projects",
+  ".claude/sessions",
+  ".cursor/chats",
+  ".cursor/sessions",
+  ".opencode/sessions",
+  ".opencode/traces"
+];
+const RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS = [
+  ".codex/memories",
+  ".codex/memory",
+  ".claude/memories",
+  ".claude/memory",
+  ".cursor/memories",
+  ".cursor/memory"
+];
 
 export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
   makeAdapter("opencode", "OpenCode session or trace", "structured-events", /opencode|opencode-events|opencode-session|opencode-trace|tool\.execute|provider:\s*opencode/i, undefined, "high", ["Conversation/tool traces may include prompts, paths, commands, and outputs."]),
@@ -239,7 +258,7 @@ export async function discoverLearnV2SurfaceCandidates(
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (shouldSkipRawLocalSourceDir(entry.name)) continue;
+        if (shouldSkipRawLocalSourceDir(projectRoot, fullPath, entry.name)) continue;
         await walk(fullPath, depth + 1);
         if (visitedFiles >= maxFiles) return;
         continue;
@@ -267,9 +286,11 @@ export function discoverLearnV2SurfaceCandidate(projectRootInput: string, source
   const extension = path.extname(sourcePath).toLowerCase();
   if (!RAW_LOCAL_SOURCE_EXTENSIONS.has(extension)) return undefined;
   if (isLowValueRawLocalCandidate(relativePath)) return undefined;
-  const adapter = detectLearnV2SurfaceAdapterByPath(sourcePath);
+  const pathAdapter = detectLearnV2SurfaceAdapterByPath(sourcePath);
+  const relativeAdapter = detectLearnV2SurfaceAdapterByProjectRelativePath(relativePath);
+  const adapter = pathAdapter?.id === "generic-transcript" ? relativeAdapter ?? pathAdapter : pathAdapter ?? relativeAdapter;
   if (!adapter) return undefined;
-  const detection = adapter.detect(sourcePath, "") ?? {
+  const detection = adapter.detect(sourcePath, "") ?? exportDirDetection(relativePath, adapter.id) ?? {
     matchedBy: "filename" as const,
     confidence: "low" as const,
     reasons: [`extension:${extension || "none"}`]
@@ -302,6 +323,32 @@ export function detectLearnV2SurfaceAdapterByPath(sourcePathInput: string): Lear
   const extension = path.extname(sourcePath).toLowerCase();
   if (RAW_LOCAL_SOURCE_EXTENSIONS.has(extension)) return learnV2SurfaceAdapters.find((adapter) => adapter.id === "generic-transcript");
   return undefined;
+}
+
+function detectLearnV2SurfaceAdapterByProjectRelativePath(relativePathInput: string): LearnV2SurfaceAdapter | undefined {
+  const relativePath = relativePathInput.replace(/\\/g, "/").toLowerCase();
+  const adapterId =
+    relativePath.startsWith(".codex-log/") || relativePath.startsWith(".codex/sessions/") || relativePath.startsWith(".codex/transcripts/")
+      ? "codex"
+      : relativePath.startsWith(".claude/projects/") || relativePath.startsWith(".claude/sessions/")
+        ? "claude-code"
+        : relativePath.startsWith(".cursor/chats/") || relativePath.startsWith(".cursor/sessions/")
+          ? "cursor"
+          : relativePath.startsWith(".opencode/sessions/") || relativePath.startsWith(".opencode/traces/")
+            ? "opencode"
+            : undefined;
+  return adapterId ? learnV2SurfaceAdapters.find((adapter) => adapter.id === adapterId) : undefined;
+}
+
+function exportDirDetection(relativePathInput: string, adapterId: string): LearnV2SurfaceAdapterDetection | undefined {
+  const relativePath = relativePathInput.replace(/\\/g, "/").toLowerCase();
+  const prefix = RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS.find((dir) => relativePath.startsWith(`${dir}/`) || relativePath === dir);
+  if (!prefix) return undefined;
+  return {
+    matchedBy: "filename",
+    confidence: "high",
+    reasons: [`project-export-dir:${adapterId}:${prefix}`]
+  };
 }
 
 function makeAdapter(
@@ -367,9 +414,23 @@ function rawSurfacePolicy(sensitivity: LearnV2SurfaceAdapterPolicy["sensitivity"
   };
 }
 
-function shouldSkipRawLocalSourceDir(name: string): boolean {
+function shouldSkipRawLocalSourceDir(projectRoot: string, fullPath: string, name: string): boolean {
   if (RAW_LOCAL_SOURCE_SKIP_DIRS.has(name) || name.startsWith(".pnpm")) return true;
-  return name.startsWith(".") && name !== ".codex-log";
+  const relativePath = path.relative(projectRoot, fullPath).replace(/\\/g, "/").toLowerCase();
+  if (RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS.some((dir) => relativePath === dir || relativePath.startsWith(`${dir}/`))) return true;
+  if (relativePath.startsWith(".")) return !isAllowedRawLocalHiddenPathOrAncestor(relativePath);
+  if (relativePath.includes("/")) {
+    return RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS.some((dir) => relativePath === dir || relativePath.startsWith(`${dir}/`));
+  }
+  return false;
+}
+
+function isAllowedRawLocalHiddenPathOrAncestor(relativePath: string): boolean {
+  return RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS.some((dir) =>
+    dir === relativePath
+    || dir.startsWith(`${relativePath}/`)
+    || relativePath.startsWith(`${dir}/`)
+  );
 }
 
 function isLowValueRawLocalCandidate(relativePath: string): boolean {

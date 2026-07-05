@@ -1161,3 +1161,36 @@ rtk npx vitest --run packages/core/tests/learn-v2.test.ts
 ```
 
 Final verification passed: Learn v2 test file reported 86 tests passing; full Vitest suite reported 40 files and 300 tests passing. Follow-up parent/child metadata merge regression also passed focused and full Learn v2 tests.
+
+### Slice 13 completed locally: project-local hidden export discovery boundary
+
+Finding:
+
+- Learn v2 could normalize real nested session exports once explicitly supplied, but normal source planning still missed many project-local exports because raw candidate discovery skipped hidden directories by default.
+- Opening all hidden agent directories would be unsafe because memory stores such as `.codex/memories` must remain metadata-only/blocked.
+- Source-plan suggestions also lacked an adapter override, so an export found by project-relative directory hint could later be read as a generic transcript if its filename/content did not include the agent name.
+
+Done locally:
+
+- Allowed raw candidate discovery to descend only into known project-local hidden export directories: `.codex-log`, `.codex/sessions`, `.codex/transcripts`, `.claude/projects`, `.claude/sessions`, `.cursor/chats`, `.cursor/sessions`, `.opencode/sessions`, and `.opencode/traces`.
+- Kept hidden memory-store directories blocked from raw candidate discovery, including `.codex/memories`, `.codex/memory`, `.claude/memories`, `.claude/memory`, `.cursor/memories`, and `.cursor/memory`.
+- Added project-relative export-directory adapter inference for Codex, Claude Code, Cursor, and OpenCode without using absolute parent path names.
+- Ensured export-directory inference only overrides the generic extension fallback, preserving filename/content-specific adapter detection elsewhere.
+- Exposed `--surface-adapter <adapter>` in `/osk learn --raw` CLI and passed it through to the existing core adapter override.
+- Added `learnV2Surface.suggestedCommand` to source-plan raw candidates so UI/JSON callers can show the exact explicit raw command, including adapter override when useful.
+- Updated `/osk learn` docs with hidden export directory boundaries and suggested adapter command behavior.
+- Added regression coverage proving hidden session exports are discovered, memory directories are not raw candidates, source planning keeps raw candidates blocked, and suggested commands include `--surface-adapter codex`.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "hidden export directories|raw surface adapters"
+rtk npx vitest --run packages/core/tests/command-family.test.ts -t "hidden raw export|blocked learning source"
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "documents Learn v2 model mode"
+rtk npx vitest --run packages/core/tests/docs-coverage.test.ts
+rtk npm run typecheck
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts packages/core/tests/command-family.test.ts packages/cli/tests/osk-facade.test.ts packages/core/tests/docs-coverage.test.ts
+rtk npm test
+```
+
+Final verification passed: focused/broad files reported 134 tests passing; full Vitest suite reported 40 files and 302 tests passing.

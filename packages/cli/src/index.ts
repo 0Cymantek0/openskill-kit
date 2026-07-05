@@ -389,6 +389,7 @@ osk.command("learn")
   .option("--concept-outcome <outcome>", "Concept outcome: helpful|ignored|wrong|harmful|superseded")
   .option("--concept-outcome-reason <text>", "Short safe reason for --record-concept-outcome")
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
+  .option("--surface-adapter <adapter>", "Learn v2 raw surface adapter override for --raw --surface-file")
   .option("--learn-v2-goldens <path>", "Learn-v2 eval golden JSON file with extraction and optional behavior-delta scenarios")
   .option("--model-mode <mode>", `Learn v2 execution policy: ${RawLearningPublicModelModes.join("|")}; sanitized OpenCode execution uses --execute-model-requests; reserved raw-to-model dispatch requires --experimental-raw-model-dispatch and remains rejected`, parseRawLearningModelMode)
   .option("--experimental-raw-model-dispatch", "Acknowledge reserved raw OpenCode dispatch policy; currently still blocked pending UX, route display, and privacy review")
@@ -524,6 +525,7 @@ osk.command("learn")
         sourceFiles: options.surfaceFile,
         previewOnly: options.apply !== true,
         maxTurns: options.maxEvents,
+        adapter: options.surfaceAdapter,
         modelMode: options.modelMode,
         learnV2GoldensPath: options.learnV2Goldens
       });

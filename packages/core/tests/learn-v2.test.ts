@@ -334,6 +334,40 @@ describe("learn-v2 substrate", () => {
     expect(genericSurface.normalizationProfile).toBe("generic-transcript");
   });
 
+  it("discovers project-local hidden export directories without scanning memory stores", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-hidden-export-discovery-"));
+    await mkdir(path.join(root, ".codex", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".codex", "memories"), { recursive: true });
+    await mkdir(path.join(root, ".claude", "projects", "openskill"), { recursive: true });
+    await mkdir(path.join(root, ".cursor", "chats"), { recursive: true });
+    await mkdir(path.join(root, ".opencode", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".opencode", "commands"), { recursive: true });
+    await writeFile(path.join(root, ".codex", "sessions", "2026-07-05.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".codex", "memories", "private.md"), "Do not discover this private memory.", "utf8");
+    await writeFile(path.join(root, ".claude", "projects", "openskill", "session.json"), "{\"messages\":[{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}]}\n", "utf8");
+    await writeFile(path.join(root, ".cursor", "chats", "chat.json"), "{\"messages\":[{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}]}\n", "utf8");
+    await writeFile(path.join(root, ".opencode", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".opencode", "commands", "learn.md"), "Command docs are not raw session exports.", "utf8");
+
+    const discovered = await discoverLearnV2SurfaceCandidates(root, { limit: 20 });
+    const byPath = new Map(discovered.map((candidate) => [candidate.relativePath, candidate]));
+
+    expect(byPath.get(".codex/sessions/2026-07-05.jsonl")).toMatchObject({
+      adapterId: "codex",
+      normalizationProfile: "structured-events",
+      detection: {
+        matchedBy: "filename",
+        confidence: "high",
+        reasons: expect.arrayContaining(["project-export-dir:codex:.codex/sessions"])
+      }
+    });
+    expect(byPath.get(".claude/projects/openskill/session.json")?.adapterId).toBe("claude-code");
+    expect(byPath.get(".cursor/chats/chat.json")?.adapterId).toBe("cursor");
+    expect(byPath.get(".opencode/sessions/session.jsonl")?.adapterId).toBe("opencode");
+    expect([...byPath.keys()].some((item) => item.includes(".codex/memories"))).toBe(false);
+    expect([...byPath.keys()].some((item) => item.includes(".opencode/commands"))).toBe(false);
+  });
+
   it("exposes a validated raw surface adapter contract with normalization profiles", async () => {
     const contracts = validateLearnV2SurfaceAdapterContracts();
     const descriptorContracts = learnV2SurfaceAdapterContracts();

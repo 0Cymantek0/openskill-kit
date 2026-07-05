@@ -51,6 +51,7 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--execute-model-requests");
     expect(stdout).toContain("--apply-model-responses");
     expect(stdout).toContain("--model-request <path>");
+    expect(stdout).toContain("--surface-adapter <adapter>");
     expect(stdout).toContain("--prepare-contradiction-requests");
     expect(stdout).toContain("--contradiction-output <path>");
     expect(stdout).toContain("--prepare-eval-requests");
