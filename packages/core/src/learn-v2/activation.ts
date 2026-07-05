@@ -65,6 +65,7 @@ export interface LearnV2ConceptActivationMatch {
   reasons: string[];
   suppressed: boolean;
   counterevidenceCount: number;
+  behaviorKey?: string;
   outcomeFeedback?: LearnV2ConceptOutcomeFeedback;
 }
 
@@ -444,6 +445,7 @@ function baseMatch(
     reasons,
     suppressed,
     counterevidenceCount: entry.counterevidenceCount ?? 0,
+    behaviorKey: entry.behaviorKey,
     outcomeFeedback
   };
 }

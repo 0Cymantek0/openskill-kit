@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { LearnV2ConceptCard } from "./schemas.js";
 
 export interface LearnV2ActivationSignals {
@@ -21,6 +22,7 @@ export interface LearnV2ActivationIndexEntry {
   confidence: number;
   risk: LearnV2ConceptCard["risk"];
   counterevidenceCount?: number;
+  behaviorKey?: string;
 }
 
 const semanticFamilies: Array<{ id: string; terms: string[] }> = [
@@ -106,8 +108,14 @@ export function buildLearnV2ActivationIndexEntry(card: LearnV2ConceptCard): Lear
     subsystemLabels: activationSignals.subsystemLabels,
     confidence: card.confidence,
     risk: card.risk,
-    counterevidenceCount: card.counterevidence.length
+    counterevidenceCount: card.counterevidence.length,
+    behaviorKey: learnV2ActivationBehaviorKey(card.canonicalBehavior)
   };
+}
+
+export function learnV2ActivationBehaviorKey(value: string): string {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+  return `behavior:${createHash("sha256").update(normalized).digest("hex").slice(0, 16)}`;
 }
 
 export function deriveActivationSignalsFromText(text: string): LearnV2ActivationSignals {

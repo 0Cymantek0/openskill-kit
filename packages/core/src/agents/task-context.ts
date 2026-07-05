@@ -4,6 +4,7 @@ import { buildReviewQueue, type ReviewQueueResult } from "../preferences/proposa
 import { retrieveRelevantPreferences } from "../preferences/retrieval.js";
 import { routeBehavior } from "../routing/router.js";
 import { activateLearnV2Concepts, type LearnV2ConceptActivationResult } from "../learn-v2/activation.js";
+import { learnV2ActivationBehaviorKey } from "../learn-v2/activation-signals.js";
 import { getAgentPluginAttachStatus, getAgentPluginInstallProfile } from "./plugin-attach.js";
 
 export interface AgentTaskContextInput {
@@ -29,6 +30,11 @@ export interface AgentTaskContextResult {
   learnedConcepts: {
     shown: LearnV2ConceptActivationResult["matches"];
     dedupedByPreference: LearnV2ConceptActivationResult["matches"];
+    dedupeReasons: Array<{
+      conceptId: string;
+      preferenceIds: string[];
+      reasons: string[];
+    }>;
     suppressed: LearnV2ConceptActivationResult["suppressed"];
   };
   status: {
@@ -232,24 +238,53 @@ function dedupeLearnV2ActivationMatches(
   activation: LearnV2ConceptActivationResult,
   preferences: Awaited<ReturnType<typeof retrieveRelevantPreferences>>
 ): AgentTaskContextResult["learnedConcepts"] {
-  const preferenceIds = new Set(preferences.items.map((item) => item.node.id));
-  const coveredConceptIds = new Set(preferences.items.flatMap((item) => [
-    ...item.node.evidence.flatMap((evidence) => evidence.cardIds),
-    ...item.node.evidence
-      .map((evidence) => evidence.signalId.startsWith("learn-v2:") ? evidence.signalId.slice("learn-v2:".length) : undefined)
-      .filter((id): id is string => Boolean(id)),
-    item.node.id.startsWith("pref_") ? item.node.id.slice("pref_".length) : undefined
-  ].filter((id): id is string => Boolean(id))));
+  const coverage = preferences.items.map((item) => preferenceLearnV2Coverage(item.node));
   const dedupedByPreference: LearnV2ConceptActivationResult["matches"] = [];
+  const dedupeReasons: AgentTaskContextResult["learnedConcepts"]["dedupeReasons"] = [];
   const shown: LearnV2ConceptActivationResult["matches"] = [];
   for (const match of activation.matches) {
-    if (preferenceIds.has(`pref_${match.conceptId}`) || coveredConceptIds.has(match.conceptId)) {
+    const coveredBy = coverage
+      .map((item) => ({
+        preferenceId: item.preferenceId,
+        reasons: [
+          ...(item.generatedConceptIds.has(match.conceptId) ? ["generated-preference-id"] : []),
+          ...(item.evidenceConceptIds.has(match.conceptId) ? ["learn-v2-evidence-link"] : []),
+          ...(match.behaviorKey && item.behaviorKey === match.behaviorKey ? ["behavior-key"] : [])
+        ]
+      }))
+      .filter((item) => item.reasons.length);
+    if (coveredBy.length) {
       dedupedByPreference.push(match);
+      dedupeReasons.push({
+        conceptId: match.conceptId,
+        preferenceIds: coveredBy.map((item) => item.preferenceId).sort(),
+        reasons: [...new Set(coveredBy.flatMap((item) => item.reasons))].sort()
+      });
     } else {
       shown.push(match);
     }
   }
-  return { shown, dedupedByPreference, suppressed: activation.suppressed };
+  return { shown, dedupedByPreference, dedupeReasons, suppressed: activation.suppressed };
+}
+
+function preferenceLearnV2Coverage(node: Awaited<ReturnType<typeof retrieveRelevantPreferences>>["items"][number]["node"]): {
+  preferenceId: string;
+  generatedConceptIds: Set<string>;
+  evidenceConceptIds: Set<string>;
+  behaviorKey: string;
+} {
+  const generatedConceptIds = new Set<string>();
+  if (node.id.startsWith("pref_")) generatedConceptIds.add(node.id.slice("pref_".length));
+  const evidenceConceptIds = new Set(node.evidence.flatMap((evidence) => [
+    ...evidence.cardIds,
+    evidence.signalId.startsWith("learn-v2:") ? evidence.signalId.slice("learn-v2:".length) : undefined
+  ].filter((id): id is string => Boolean(id))));
+  return {
+    preferenceId: node.id,
+    generatedConceptIds,
+    evidenceConceptIds,
+    behaviorKey: learnV2ActivationBehaviorKey(node.statement)
+  };
 }
 
 function renderLearnV2ActivationMarkdown(learnedConcepts: AgentTaskContextResult["learnedConcepts"]): string {
@@ -263,6 +298,9 @@ function renderLearnV2ActivationMarkdown(learnedConcepts: AgentTaskContextResult
   }
   if (learnedConcepts.dedupedByPreference.length) {
     lines.push(`- ${learnedConcepts.dedupedByPreference.length} Learn v2 concept(s) already covered by relevant preference nodes.`);
+    for (const item of learnedConcepts.dedupeReasons.slice(0, 5)) {
+      lines.push(`  - ${item.conceptId} covered by ${item.preferenceIds.join(", ")} (${item.reasons.join(", ")})`);
+    }
   }
   if (learnedConcepts.suppressed.length) {
     lines.push(`- ${learnedConcepts.suppressed.length} Learn v2 concept(s) suppressed by negative triggers or outcome telemetry.`);

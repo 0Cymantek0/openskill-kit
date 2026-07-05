@@ -4046,6 +4046,50 @@ describe("learn-v2 substrate", () => {
     expect(suppressedContext.learnedConcepts.suppressed.some((match) => match.conceptId === active.id)).toBe(true);
   });
 
+  it("dedupes task-context Learn v2 activation when generated preference already covers the concept", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:08:00Z");
+    const [activeBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("task_context_dedupe", "Prefer focused parser regression tests before parser changes.", "positive")
+    ], now);
+    const active = {
+      ...activeBase!,
+      status: "active" as const,
+      activation: {
+        phrases: ["focused parser regression", "parser change"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: []
+      },
+      scope: {
+        ...activeBase!.scope,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"]
+      }
+    };
+    await writeLearnV2ConceptStore(root, [active], now);
+    await syncLearnV2ActiveConcepts(root, [active], new Date("2026-06-30T00:09:00Z"));
+
+    const context = await getAgentTaskContext({
+      projectRoot: root,
+      query: "parser change needs focused regression",
+      paths: ["packages/core/src/parser.ts"],
+      limit: 8
+    });
+
+    expect(context.preferences.items.some((item) => item.node.id === `pref_${active.id}`)).toBe(true);
+    expect(context.learnV2Activation.matches.some((match) => match.conceptId === active.id)).toBe(true);
+    expect(context.learnedConcepts.shown.some((match) => match.conceptId === active.id)).toBe(false);
+    expect(context.learnedConcepts.dedupedByPreference.some((match) => match.conceptId === active.id)).toBe(true);
+    expect(context.learnedConcepts.dedupeReasons).toContainEqual({
+      conceptId: active.id,
+      preferenceIds: [`pref_${active.id}`],
+      reasons: ["behavior-key", "generated-preference-id", "learn-v2-evidence-link"]
+    });
+    expect(context.compactMarkdown).toContain("already covered by relevant preference nodes");
+    expect(context.compactMarkdown).toContain(`${active.id} covered by pref_${active.id}`);
+    expect(context.compactMarkdown).not.toContain(`- ${active.title}: score`);
+  });
+
   it("ranks activation entries with deterministic BM25-style lexical evidence", async () => {
     const matches = scoreLearnV2ActivationEntries([
       {

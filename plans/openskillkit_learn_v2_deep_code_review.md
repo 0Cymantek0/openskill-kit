@@ -1012,3 +1012,30 @@ rtk npm test
 ```
 
 Final verification passed after CLI compatibility fallback: full Vitest suite reported 40 files and 296 tests passing.
+
+### Slice 8 completed locally: task-context Learn v2 dedupe contract
+
+Finding:
+
+- Task context already attempted to hide direct Learn v2 activation matches when generated preference nodes covered the same concept, but there was no explicit contract test and no machine-readable explanation for why a match moved from actionable `learnedConcepts.shown` into diagnostic dedupe output.
+- The review plan also called out canonical behavior-key dedupe, not only generated id/evidence dedupe.
+
+Done locally:
+
+- Added a safe `behaviorKey` to generated Learn v2 activation-index entries and activation matches.
+- Task context now dedupes direct Learn v2 matches against relevant preferences by generated `pref_<conceptId>`, Learn v2 evidence links, and behavior key.
+- `learnedConcepts.dedupeReasons` now explains hidden direct matches with concept id, covering preference ids, and dedupe reasons.
+- Compact task-context Markdown lists covered concept ids and covering preference ids for first few deduped matches.
+- Added regression coverage for synced active Learn v2 concept where both `pref_<conceptId>` and direct activation match exist.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "dedupes task-context"
+rtk npx vitest --run packages/core/tests/docs-coverage.test.ts
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts
+rtk npm run typecheck
+rtk npm test
+```
+
+Final verification passed: full Vitest suite reported 40 files and 297 tests passing.

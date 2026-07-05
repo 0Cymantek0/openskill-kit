@@ -46,6 +46,7 @@ export interface LearnV2ActivationIndex {
     confidence: number;
     risk: LearnV2ConceptCard["risk"];
     counterevidenceCount?: number;
+    behaviorKey?: string;
   }>;
 }
 
