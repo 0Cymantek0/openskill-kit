@@ -674,6 +674,35 @@ export const LearnV2EvalReportSchema = z.object({
   behaviorDeltaGoldenCount: z.number().int().min(0).default(0),
   counterfactualTraceCaseCount: z.number().int().min(0).default(0),
   replayEpisodeCount: z.number().int().min(0),
+  proofBoundary: z.object({
+    method: z.literal("deterministic-local-replay"),
+    sandboxExecuted: z.literal(false),
+    agentExecuted: z.literal(false),
+    proves: z.array(z.string()).default([
+      "concept retrieval from stored episodes",
+      "deterministic activation scoring",
+      "configured behavior-delta golden checks"
+    ]),
+    doesNotProve: z.array(z.string()).default([
+      "real agent task success",
+      "sandbox execution success",
+      "external model judgment quality"
+    ])
+  }).default({
+    method: "deterministic-local-replay",
+    sandboxExecuted: false,
+    agentExecuted: false,
+    proves: [
+      "concept retrieval from stored episodes",
+      "deterministic activation scoring",
+      "configured behavior-delta golden checks"
+    ],
+    doesNotProve: [
+      "real agent task success",
+      "sandbox execution success",
+      "external model judgment quality"
+    ]
+  }),
   summary: z.object({
     resultCounts: z.object({
       total: z.number().int().min(0),

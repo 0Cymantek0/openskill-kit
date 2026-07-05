@@ -145,6 +145,7 @@ export async function runLearnV2Eval(
     behaviorDeltaGoldenCount: behaviorDeltaGoldens.length,
     counterfactualTraceCaseCount: counterfactualCases.length,
     replayEpisodeCount: episodes.length,
+    proofBoundary: learnV2EvalProofBoundary(),
     summary,
     leakCheck: {
       status: leakIssues.length ? "fail" : "pass",
@@ -638,9 +639,18 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     `Extraction goldens: ${report.extractionGoldenCount}`,
     `Behavior delta goldens: ${report.behaviorDeltaGoldenCount}`,
     `Counterfactual trace cases: ${report.counterfactualTraceCaseCount}`,
+    `Proof boundary: ${report.proofBoundary.method} (sandbox=${report.proofBoundary.sandboxExecuted}, agent=${report.proofBoundary.agentExecuted})`,
     `Leak check: ${report.leakCheck.status}`,
     `Compression ratio: ${report.tokenBudget.compressionRatio}`,
     `Result rows: ${report.summary.resultCounts.pass}/${report.summary.resultCounts.total} pass`,
+    "",
+    "## Proof Boundary",
+    "",
+    `Method: ${report.proofBoundary.method}`,
+    `Sandbox executed: ${report.proofBoundary.sandboxExecuted}`,
+    `Agent executed: ${report.proofBoundary.agentExecuted}`,
+    `Proves: ${report.proofBoundary.proves.join("; ")}`,
+    `Does not prove: ${report.proofBoundary.doesNotProve.join("; ")}`,
     "",
     "## Behavior Delta",
     "",
@@ -674,4 +684,22 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
       ""
     ])
   ].join("\n");
+}
+
+function learnV2EvalProofBoundary(): LearnV2EvalReport["proofBoundary"] {
+  return {
+    method: "deterministic-local-replay",
+    sandboxExecuted: false,
+    agentExecuted: false,
+    proves: [
+      "concept retrieval from stored episodes",
+      "deterministic activation scoring",
+      "configured behavior-delta golden checks"
+    ],
+    doesNotProve: [
+      "real agent task success",
+      "sandbox execution success",
+      "external model judgment quality"
+    ]
+  };
 }

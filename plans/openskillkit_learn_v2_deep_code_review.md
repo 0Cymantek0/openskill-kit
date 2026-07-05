@@ -984,3 +984,31 @@ rtk npm test
 ```
 
 Final verification passed: full Vitest suite reported 40 files and 296 tests passing.
+
+### Slice 7 completed locally: eval proof-boundary labeling
+
+Finding:
+
+- Eval output already used deterministic replay, activation scoring, and configured goldens, but JSON/CLI/Markdown did not expose a single proof-boundary field. A passing counterfactual trace could be misread as sandbox or real-agent proof by downstream automation or humans skimming CLI output.
+
+Done locally:
+
+- Added `proofBoundary` to Learn v2 eval reports.
+- Persisted eval command results now return the same boundary.
+- CLI eval output prints `deterministic-local-replay (sandbox=false, agent=false)`.
+- CLI eval output also injects the boundary when an older core package result lacks it, so JSON/text output remains explicit across source/dist skew during local development.
+- Markdown eval reports include a `Proof Boundary` section with what the eval proves and does not prove.
+- Added core and CLI regression assertions for JSON/text proof-boundary output.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/learn-v2.test.ts -t "eval report"
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "prints persisted Learn v2 eval summary metrics"
+rtk npm run build
+rtk npx vitest --run packages/cli/tests/osk-facade.test.ts -t "prints persisted Learn v2 eval summary metrics"
+rtk npm run typecheck
+rtk npm test
+```
+
+Final verification passed after CLI compatibility fallback: full Vitest suite reported 40 files and 296 tests passing.

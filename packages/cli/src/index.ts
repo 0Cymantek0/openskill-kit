@@ -419,7 +419,7 @@ osk.command("learn")
       return;
     }
     if (options.runLearnV2Eval === true) {
-      const result = await runPersistedLearnV2Eval(process.cwd(), { goldensPath: options.learnV2Goldens });
+      const result = withLearnV2EvalProofBoundary(await runPersistedLearnV2Eval(process.cwd(), { goldensPath: options.learnV2Goldens }));
       output(options.json, result, renderLearnV2PersistedEval(result));
       return;
     }
@@ -2402,11 +2402,13 @@ function renderLearnV2Extract(result: Awaited<ReturnType<typeof extractPersisted
 }
 
 function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersistedLearnV2Eval>>): string {
+  const proofBoundary = result.proofBoundary ?? learnV2EvalProofBoundaryFallback();
   return [
     `Learn v2 eval: ${result.evalStatus}`,
     `Episodes: ${result.episodeCount}`,
     `Concepts: ${result.conceptCount}`,
     `Results: ${result.summary.resultCounts.pass}/${result.summary.resultCounts.total} pass (${result.summary.resultCounts.fail} fail)`,
+    `Proof boundary: ${proofBoundary.method} (sandbox=${proofBoundary.sandboxExecuted}, agent=${proofBoundary.agentExecuted})`,
     `Behavior delta: ${result.summary.behaviorDelta.status} (${result.summary.behaviorDelta.passedScenarios}/${result.summary.behaviorDelta.scenarioCount} scenarios, ${result.summary.behaviorDelta.activatedConceptCount} activated concepts)`,
     `Activation replay: ${result.summary.activationReplay.status} (${result.summary.activationReplay.retrievedConcepts}/${result.summary.activationReplay.replayableConcepts}, rate ${result.summary.activationReplay.retrievalRate})`,
     `Counterfactual trace: ${result.summary.counterfactualTrace.status} (${result.summary.counterfactualTrace.activatedCases}/${result.summary.counterfactualTrace.caseCount}, rate ${result.summary.counterfactualTrace.activationRate})`,
@@ -2417,6 +2419,39 @@ function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersist
     ...(result.summary.counterfactualTrace.misses.length ? [`Counterfactual misses: ${result.summary.counterfactualTrace.misses.slice(0, 8).join(", ")}`] : []),
     `Eval report: ${formatProjectLocalPath(result.evalReportPath)}`
   ].join("\n");
+}
+
+type LearnV2EvalProofBoundary = {
+  method: "deterministic-local-replay";
+  sandboxExecuted: false;
+  agentExecuted: false;
+  proves: string[];
+  doesNotProve: string[];
+};
+
+function withLearnV2EvalProofBoundary<T extends { proofBoundary?: LearnV2EvalProofBoundary }>(result: T): T & { proofBoundary: LearnV2EvalProofBoundary } {
+  return {
+    ...result,
+    proofBoundary: result.proofBoundary ?? learnV2EvalProofBoundaryFallback()
+  };
+}
+
+function learnV2EvalProofBoundaryFallback(): LearnV2EvalProofBoundary {
+  return {
+    method: "deterministic-local-replay",
+    sandboxExecuted: false,
+    agentExecuted: false,
+    proves: [
+      "concept retrieval from stored episodes",
+      "deterministic activation scoring",
+      "configured behavior-delta golden checks"
+    ],
+    doesNotProve: [
+      "real agent task success",
+      "sandbox execution success",
+      "external model judgment quality"
+    ]
+  };
 }
 
 function renderLearnV2ModelRequestExecution(result: Awaited<ReturnType<typeof executeLearnV2ModelRequests>>): string {

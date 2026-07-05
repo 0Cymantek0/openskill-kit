@@ -36,6 +36,7 @@ export interface LearnV2PersistedEvalResult {
   conceptCount: number;
   evalReportPath: string;
   evalStatus: "pass" | "fail";
+  proofBoundary: LearnV2EvalReport["proofBoundary"];
   summary: LearnV2EvalReport["summary"];
   leakCheck: LearnV2EvalReport["leakCheck"];
   tokenBudget: LearnV2EvalReport["tokenBudget"];
@@ -89,6 +90,7 @@ export async function runPersistedLearnV2Eval(rootInput: string, options: LearnV
     conceptCount: conceptStore.cards.length,
     evalReportPath: report.artifacts.markdown,
     evalStatus: report.status,
+    proofBoundary: report.proofBoundary,
     summary: report.summary,
     leakCheck: report.leakCheck,
     tokenBudget: report.tokenBudget

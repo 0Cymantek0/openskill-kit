@@ -266,10 +266,16 @@ describe("osk CLI facade", () => {
     expect(parsed.summary.behaviorDelta.status).toBe("pass");
     expect(parsed.summary.activationReplay.retrievalRate).toBeGreaterThan(0);
     expect(parsed.summary.counterfactualTrace.activationRate).toBe(1);
+    expect(parsed.proofBoundary).toMatchObject({
+      method: "deterministic-local-replay",
+      sandboxExecuted: false,
+      agentExecuted: false
+    });
     expect(parsed.leakCheck.status).toBe("pass");
 
     const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--run-learn-v2-eval", "--learn-v2-goldens", goldensPath], { cwd: root, windowsHide: true });
     expect(textResult.stdout).toContain("Behavior delta: pass");
+    expect(textResult.stdout).toContain("Proof boundary: deterministic-local-replay (sandbox=false, agent=false)");
     expect(textResult.stdout).toContain("Activation replay: pass");
     expect(textResult.stdout).toContain("Counterfactual trace: pass");
     expect(textResult.stdout).toContain("Compression ratio:");

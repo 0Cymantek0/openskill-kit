@@ -1559,6 +1559,12 @@ describe("learn-v2 substrate", () => {
     });
     expect(report.summary.activationReplay.retrievalRate).toBeGreaterThan(0);
     expect(report.summary.counterfactualTrace.activationRate).toBe(1);
+    expect(report.proofBoundary).toMatchObject({
+      method: "deterministic-local-replay",
+      sandboxExecuted: false,
+      agentExecuted: false
+    });
+    expect(report.proofBoundary.doesNotProve).toEqual(expect.arrayContaining(["real agent task success", "sandbox execution success"]));
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "behavior-delta:parser-plan-delta" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
@@ -1572,6 +1578,9 @@ describe("learn-v2 substrate", () => {
     expect(behaviorDeltaCases).not.toContain("raw_");
     expect(behaviorDeltaCases).not.toContain(root);
     const markdown = await readText(report.artifacts.markdown);
+    expect(markdown).toContain("## Proof Boundary");
+    expect(markdown).toContain("Sandbox executed: false");
+    expect(markdown).toContain("Does not prove: real agent task success");
     expect(markdown).toContain("## Behavior Delta");
     expect(markdown).toContain("Result rows:");
     expect(markdown).toContain("Activated cases:");
