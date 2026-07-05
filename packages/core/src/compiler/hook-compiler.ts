@@ -38,13 +38,16 @@ const root = process.cwd();
 const configPath = path.join(root, ".openskill-kit", "config.json");
 const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
 const now = new Date().toISOString();
-const sessionId = String(payload.sessionId || payload.session_id || "hook-session");
+const rawSessionId = String(payload.sessionId || payload.session_id || "hook-session");
 const eventType = payload.eventType || payload.event_type || "user-prompt-submit";
+const traceContext = buildTraceContext(config.projectId, root, payload.traceContext, rawSessionId, now);
+const sessionId = traceContext.oskSessionId;
 const normalized = redact({
   text: payload.prompt || payload.text,
   tool: payload.tool,
   result: payload.result,
-  raw: payload.raw ? "[omitted]" : undefined
+  raw: payload.raw ? "[omitted]" : undefined,
+  traceContext
 });
 const event = {
   schemaVersion: "openskill-kit.event.v1",
@@ -105,6 +108,35 @@ function writeJsonAtomic(filePath, value) {
   const temp = filePath + "." + process.pid + "." + Date.now() + ".tmp";
   fs.writeFileSync(temp, JSON.stringify(value, null, 2) + "\\n", "utf8");
   fs.renameSync(temp, filePath);
+}
+function buildTraceContext(projectId, projectRoot, payloadTraceContext, fallbackSessionId, createdAt) {
+  const payloadTrace = payloadTraceContext && typeof payloadTraceContext === "object" && !Array.isArray(payloadTraceContext) ? payloadTraceContext : {};
+  const envSessionId = safeTraceId(process.env.OSK_SESSION_ID, "osk_session");
+  const envEpisodeId = safeTraceId(process.env.OSK_EPISODE_ID, "osk_episode");
+  const envTraceId = safeTraceId(process.env.OSK_TRACE_ID, "osk_trace");
+  const payloadSessionId = safeTraceId(payloadTrace.oskSessionId, "osk_session");
+  const payloadEpisodeId = safeTraceId(payloadTrace.oskEpisodeId, "osk_episode");
+  const payloadTraceId = safeTraceId(payloadTrace.oskTraceId, "osk_trace");
+  const payloadOpenCodeSessionId = safeTraceId(payloadTrace.opencodeSessionId, "opencode_session");
+  const envOpenCodeSessionId = safeTraceId(process.env.OPENCODE_SESSION_ID, "opencode_session");
+  const seed = projectId + ":" + projectRoot + ":" + fallbackSessionId;
+  return {
+    schemaVersion: "openskill-kit.learn-v2.trace-context.v1",
+    oskSessionId: envSessionId || payloadSessionId || "osk_session_" + hashBare(seed + ":session"),
+    oskEpisodeId: envEpisodeId || payloadEpisodeId || "osk_episode_" + hashBare(seed + ":episode"),
+    oskTraceId: envTraceId || payloadTraceId || "osk_trace_" + hashBare(seed + ":trace"),
+    opencodeSessionId: envOpenCodeSessionId || payloadOpenCodeSessionId,
+    source: envSessionId || envEpisodeId || envTraceId ? "env" : payloadSessionId || payloadEpisodeId || payloadTraceId ? "payload" : "generated",
+    projectRootHash: "sha256:" + hashBare(projectRoot),
+    createdAt
+  };
+}
+function safeTraceId(value, prefix) {
+  if (typeof value !== "string" || value.length > 128 || !/^[A-Za-z0-9:_-]+$/.test(value)) return undefined;
+  return value.startsWith(prefix + "_") || value.startsWith(prefix + ":") ? value : undefined;
+}
+function hashBare(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
 }
 function redact(value) {
   if (typeof value === "string") {

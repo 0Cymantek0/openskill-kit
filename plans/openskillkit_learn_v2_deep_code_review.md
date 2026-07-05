@@ -959,3 +959,28 @@ rtk npm test
 ```
 
 Note: one full-suite run timed out in the CLI raw JSON sanitization test under suite load; the same test passed directly, and the final full-suite retry passed with 40 files and 296 tests.
+
+### Slice 6 completed locally: compiled hook trace propagation
+
+Finding:
+
+- The OpenCode plugin already emits safe `traceContext`, but compiled generic lifecycle hooks still wrote safe events without Learn v2 trace anchors. That meant hook-originated task events relied on weaker session/time/path stitching unless a later OpenCode ambient event carried trace ids.
+
+Done locally:
+
+- Added standalone CJS trace-context generation to compiled hook scripts.
+- Hook scripts now recover `OSK_SESSION_ID`, `OSK_EPISODE_ID`, `OSK_TRACE_ID`, and `OPENCODE_SESSION_ID` from environment when present.
+- Hook scripts also accept safe payload `traceContext` ids and otherwise generate deterministic fallback OSK trace ids from project/session seed.
+- Hook events store `normalized.traceContext` with trace ids plus `projectRootHash`; they do not store raw project root in the trace context.
+- Added adaptive end-to-end hook regression coverage for env trace propagation and raw-root exclusion.
+
+Verification run:
+
+```text
+rtk npx vitest --run packages/core/tests/adaptive.test.ts -t "initializes, observes, learns, reviews, compiles, installs, and exports safely"
+rtk npm run typecheck
+rtk npx vitest --run packages/core/tests/adaptive.test.ts packages/core/tests/deep-architecture.test.ts packages/core/tests/opencode-ambient-privacy.test.ts
+rtk npm test
+```
+
+Final verification passed: full Vitest suite reported 40 files and 296 tests passing.

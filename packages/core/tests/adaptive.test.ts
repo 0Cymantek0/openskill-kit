@@ -84,12 +84,34 @@ describe("adaptive behavior layer", () => {
     const hook = spawnSync(process.execPath, [path.join(root, ".openskill-kit", "compiled", "hooks", "scripts", "osk-prompt-submit.cjs")], {
       cwd: root,
       input: JSON.stringify({ sessionId: "hook-s1", prompt: `Always keep hooks private. TOKEN=${sentinelSecret}` }),
+      env: {
+        ...process.env,
+        OSK_SESSION_ID: "osk_session_hook_env",
+        OSK_EPISODE_ID: "osk_episode_hook_env",
+        OSK_TRACE_ID: "osk_trace_hook_env"
+      },
       encoding: "utf8"
     });
     expect(hook.status).toBe(0);
     const hookLog = await readFile(event.eventPath, "utf8");
     expect(hookLog).not.toContain(sentinelSecret);
     expect(hookLog).toContain("openskill-kit-hook");
+    const hookEvents = hookLog
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((item) => item.source?.adapter === "openskill-kit-hook");
+    expect(hookEvents).toHaveLength(1);
+    expect(hookEvents[0]!.sessionId).toBe("osk_session_hook_env");
+    expect(hookEvents[0]!.normalized.traceContext).toMatchObject({
+      schemaVersion: "openskill-kit.learn-v2.trace-context.v1",
+      oskSessionId: "osk_session_hook_env",
+      oskEpisodeId: "osk_episode_hook_env",
+      oskTraceId: "osk_trace_hook_env",
+      source: "env"
+    });
+    expect(hookEvents[0]!.normalized.traceContext.projectRootHash).toMatch(/^sha256:/);
+    expect(JSON.stringify(hookEvents[0]!.normalized.traceContext)).not.toContain(root);
 
     const evalReport = await runBehaviorEval({ projectRoot: root, now: new Date("2026-06-24T00:04:00.000Z") });
     expect(evalReport.status).toBe("pass");
