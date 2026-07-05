@@ -3,7 +3,61 @@ import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ModelExecutionPolicyReport } from "./pipeline.js";
 import { learnV2SafeLocalPath } from "./utils.js";
+
+const LearnV2ModelExecutionPolicyReportSchema = z.object({
+  requestedPolicy: z.string(),
+  deterministicExtraction: z.object({
+    supported: z.literal(true),
+    status: z.literal("always-on")
+  }),
+  requestArtifacts: z.object({
+    status: z.enum(["written", "skipped-preview", "skipped-no-accepted-evidence", "skipped-no-routable-episodes"]),
+    requestCount: z.number().int().min(0),
+    requestDir: z.string(),
+    routingManifestPath: z.string(),
+    firstManifestPath: z.string().optional()
+  }),
+  sanitizedOpenCodeExecution: z.object({
+    supported: z.literal(true),
+    requiresExplicitApproval: z.literal(true),
+    command: z.string(),
+    applyCommand: z.string()
+  }),
+  rawToModelExecution: z.object({
+    supported: z.literal(false),
+    status: z.literal("rejected"),
+    reason: z.string(),
+    saferPolicy: z.literal("opencode-host-sanitized-only")
+  })
+});
+
+const DefaultLearnV2ModelExecutionPolicyReport = {
+  requestedPolicy: "deterministic-only",
+  deterministicExtraction: {
+    supported: true,
+    status: "always-on"
+  },
+  requestArtifacts: {
+    status: "skipped-no-routable-episodes",
+    requestCount: 0,
+    requestDir: ".openskill-kit/learn-v2/model-requests",
+    routingManifestPath: ".openskill-kit/learn-v2/model-requests/routing-manifest.json"
+  },
+  sanitizedOpenCodeExecution: {
+    supported: true,
+    requiresExplicitApproval: true,
+    command: "openskill-kit osk learn --execute-model-requests --model-request .openskill-kit/learn-v2/model-requests/<request>/request-manifest.json",
+    applyCommand: "openskill-kit osk learn --apply-model-responses --model-output .openskill-kit/learn-v2/model-requests/<request>/request-manifest.json"
+  },
+  rawToModelExecution: {
+    supported: false,
+    status: "rejected",
+    reason: "Raw evidence is never sent directly to model execution. Use prompt-safe request artifacts plus explicit sanitized OpenCode execution.",
+    saferPolicy: "opencode-host-sanitized-only"
+  }
+} as const;
 
 export const LearnV2PipelineObservabilityReportSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.pipeline-observability.v1"),
@@ -14,6 +68,7 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     eventsAppended: z.number().int().min(0),
     modelRequestCount: z.number().int().min(0)
   }),
+  modelExecution: LearnV2ModelExecutionPolicyReportSchema.default(DefaultLearnV2ModelExecutionPolicyReport),
   sources: z.object({
     considered: z.number().int().min(0),
     included: z.number().int().min(0),
@@ -149,6 +204,7 @@ export interface LearnV2PipelineObservabilityInput {
   evidenceQualityScores?: LearnV2EvidenceQualityScore[];
   eventsAppended: number;
   modelRequestCount: number;
+  modelExecution: LearnV2ModelExecutionPolicyReport;
   artifacts: Record<string, string | undefined>;
   nextActions: string[];
 }
@@ -203,6 +259,7 @@ export async function writeLearnV2PipelineObservabilityReport(
       eventsAppended: input.eventsAppended,
       modelRequestCount: input.modelRequestCount
     },
+    modelExecution: sanitizeModelExecutionForReport(root, input.modelExecution),
     sources: {
       considered: input.sources.length,
       included: input.sources.filter((source) => source.projectRelevance.decision === "include").length,
@@ -300,6 +357,20 @@ export async function writeLearnV2PipelineObservabilityReport(
   return report;
 }
 
+function sanitizeModelExecutionForReport(root: string, report: LearnV2ModelExecutionPolicyReport): LearnV2ModelExecutionPolicyReport {
+  return {
+    ...report,
+    requestArtifacts: {
+      ...report.requestArtifacts,
+      requestDir: learnV2SafeLocalPath(report.requestArtifacts.requestDir, root),
+      routingManifestPath: learnV2SafeLocalPath(report.requestArtifacts.routingManifestPath, root),
+      firstManifestPath: report.requestArtifacts.firstManifestPath
+        ? learnV2SafeLocalPath(report.requestArtifacts.firstManifestPath, root)
+        : undefined
+    }
+  };
+}
+
 function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityReport): string {
   return [
     "# Learn v2 Pipeline Observability",
@@ -307,6 +378,15 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `Generated: ${report.generatedAt}`,
     `Preview only: ${report.run.previewOnly}`,
     `Model mode: ${report.run.modelMode}`,
+    "",
+    "## Model Execution Policy",
+    "",
+    `- Deterministic extraction: ${report.modelExecution.deterministicExtraction.status}`,
+    `- Request artifacts: ${report.modelExecution.requestArtifacts.status} (${report.modelExecution.requestArtifacts.requestCount} request(s))`,
+    `- Request directory: ${report.modelExecution.requestArtifacts.requestDir}`,
+    `- Execute sanitized requests: ${report.modelExecution.sanitizedOpenCodeExecution.command}`,
+    `- Apply sanitized responses: ${report.modelExecution.sanitizedOpenCodeExecution.applyCommand}`,
+    `- Raw-to-model execution: ${report.modelExecution.rawToModelExecution.status}; ${report.modelExecution.rawToModelExecution.reason}`,
     "",
     "## Source Intake",
     "",

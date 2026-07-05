@@ -35,6 +35,14 @@
 - Done: tests guard both compiler-generated descriptors and the static package bundle so future MCP descriptor drift fails fast.
 - Verified: focused plugin manifest test, focused deep architecture plugin compile test, full `rtk npm test` (40 files, 293 tests), and `rtk npm run typecheck`.
 
+### 2026-07-05 model-policy visibility slice
+
+- Done: raw Learn v2 runs now return a structured `modelExecution` policy report covering deterministic extraction, request-artifact status, request count, sanitized OpenCode execute/apply commands, approval requirement, and raw-to-model rejection rationale.
+- Done: pipeline observability JSON and Markdown now include the same model-policy report with local paths redacted to `[PROJECT_ROOT]`, and old observability reports without the field still parse with a conservative default.
+- Done: plain CLI raw-learn output and observability output now show the sanitized model handoff commands directly, reducing the chance that users confuse `--model-mode` with raw model dispatch.
+- Decision: keep `opencode-host-raw-allowed` rejected for now. The safe production path is prompt-safe request artifacts plus explicit sanitized OpenCode execution; raw-to-model needs a separate boundary design before implementation.
+- Verified: focused Learn v2 model-policy/observability tests, focused CLI raw JSON/observability/model execution tests, and `rtk npm run typecheck`.
+
 ### 2026-07-04 trace context slice
 
 - Done: OpenCode plugin source bundle now emits `traceContext` on safe ambient records, matching the generated compiler template.

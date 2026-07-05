@@ -719,6 +719,31 @@ describe("learn-v2 substrate", () => {
       evalReport,
       eventsAppended: 0,
       modelRequestCount: 0,
+      modelExecution: {
+        requestedPolicy: "deterministic-only",
+        deterministicExtraction: {
+          supported: true,
+          status: "always-on"
+        },
+        requestArtifacts: {
+          status: "skipped-preview",
+          requestCount: 0,
+          requestDir: path.join(root, ".openskill-kit", "learn-v2", "model-requests"),
+          routingManifestPath: path.join(root, ".openskill-kit", "learn-v2", "model-requests", "routing-manifest.json")
+        },
+        sanitizedOpenCodeExecution: {
+          supported: true,
+          requiresExplicitApproval: true,
+          command: "openskill-kit osk learn --execute-model-requests --model-request .openskill-kit/learn-v2/model-requests/<request>/request-manifest.json",
+          applyCommand: "openskill-kit osk learn --apply-model-responses --model-output .openskill-kit/learn-v2/model-requests/<request>/request-manifest.json"
+        },
+        rawToModelExecution: {
+          supported: false,
+          status: "rejected",
+          reason: "Raw evidence is never sent directly to model execution.",
+          saferPolicy: "opencode-host-sanitized-only"
+        }
+      },
       artifacts: {
         evalReport: evalReport.artifacts.markdown
       },
@@ -737,6 +762,8 @@ describe("learn-v2 substrate", () => {
     expect(report.health.warnings).toEqual(expect.arrayContaining(["No behavior-delta eval goldens configured."]));
     expect(report.health.blockers).toEqual([]);
     expect(report.privacy.rawRefsExported).toBe(false);
+    expect(report.modelExecution.requestArtifacts.requestDir).toContain("[PROJECT_ROOT]");
+    expect(report.modelExecution.rawToModelExecution.status).toBe("rejected");
     const reportPath = path.join(root, report.artifactsWritten.json.replace(/^\[PROJECT_ROOT\]\//, ""));
     const reportText = await readText(reportPath);
     expect(reportText).toContain("\"health\"");
@@ -1831,6 +1858,21 @@ describe("learn-v2 substrate", () => {
     expect(result.artifacts.learnV2ModelRequestDir).toContain("model-requests");
     expect(await readText(result.artifacts.learnV2RelevanceCalibrationPath)).toContain("openskill-kit.project-relevance-calibration.v1");
     expect(result.learnV2.modelRequestCount).toBeGreaterThanOrEqual(1);
+    expect(result.modelExecution.requestArtifacts.status).toBe("written");
+    expect(result.modelExecution.requestArtifacts.requestCount).toBe(result.learnV2.modelRequestCount);
+    expect(result.modelExecution.sanitizedOpenCodeExecution.command).toContain("--execute-model-requests");
+    expect(result.modelExecution.sanitizedOpenCodeExecution.command).toContain("request-manifest.json");
+    expect(result.modelExecution.rawToModelExecution).toMatchObject({
+      supported: false,
+      status: "rejected",
+      saferPolicy: "opencode-host-sanitized-only"
+    });
+    const observability = JSON.parse(await readText(result.artifacts.learnV2ObservabilityReportPath));
+    expect(observability.modelExecution.requestArtifacts.status).toBe("written");
+    expect(observability.modelExecution.rawToModelExecution.status).toBe("rejected");
+    const observabilityMarkdown = await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`));
+    expect(observabilityMarkdown).toContain("## Model Execution Policy");
+    expect(observabilityMarkdown).toContain("Raw-to-model execution: rejected");
     expect(JSON.stringify(result.concepts)).not.toContain(root);
     expect(result.learnV2).toBeTruthy();
   });
@@ -1993,6 +2035,8 @@ describe("learn-v2 substrate", () => {
       now: new Date("2026-06-30T00:00:00Z")
     });
     expect(aliased.modelMode).toBe("deterministic-only");
+    expect(aliased.modelExecution.requestArtifacts.status).toBe("skipped-preview");
+    expect(aliased.modelExecution.rawToModelExecution.status).toBe("rejected");
     expect(aliased.privacy.join("\n")).toContain("Model execution policy is deterministic-only");
 
     const sanitized = await runRawLocalLearning(root, {
@@ -2002,6 +2046,8 @@ describe("learn-v2 substrate", () => {
       now: new Date("2026-06-30T00:01:00Z")
     });
     expect(sanitized.modelMode).toBe("opencode-host-sanitized-only");
+    expect(sanitized.modelExecution.requestArtifacts.status).toBe("skipped-preview");
+    expect(sanitized.modelExecution.sanitizedOpenCodeExecution.requiresExplicitApproval).toBe(true);
 
     await expect(runRawLocalLearning(root, {
       sourceFiles: [transcript],

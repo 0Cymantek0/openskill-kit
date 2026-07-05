@@ -67,6 +67,33 @@ export type LearnV2RawLearningLegacyModelMode = keyof typeof LearnV2RawLearningM
 export type LearnV2RawLearningModelModeInput = LearnV2RawLearningModelMode | LearnV2RawLearningLegacyModelMode;
 export type LearnV2LearningInputBoundary = "raw-local-in-memory-declassified-artifacts";
 
+export interface LearnV2ModelExecutionPolicyReport {
+  requestedPolicy: LearnV2RawLearningModelMode;
+  deterministicExtraction: {
+    supported: true;
+    status: "always-on";
+  };
+  requestArtifacts: {
+    status: "written" | "skipped-preview" | "skipped-no-accepted-evidence" | "skipped-no-routable-episodes";
+    requestCount: number;
+    requestDir: string;
+    routingManifestPath: string;
+    firstManifestPath?: string;
+  };
+  sanitizedOpenCodeExecution: {
+    supported: true;
+    requiresExplicitApproval: true;
+    command: string;
+    applyCommand: string;
+  };
+  rawToModelExecution: {
+    supported: false;
+    status: "rejected";
+    reason: string;
+    saferPolicy: "opencode-host-sanitized-only";
+  };
+}
+
 export interface LearnV2RawLocalLearningOptions {
   sourceFiles: string[];
   adapter?: string;
@@ -119,6 +146,7 @@ interface LearnV2RawLocalLearningRunCompat {
   generatedAt: string;
   previewOnly: boolean;
   modelMode: LearnV2RawLearningModelMode;
+  modelExecution: LearnV2ModelExecutionPolicyReport;
   sources: LearnV2SourceDigestCompat[];
   concepts: ReturnType<typeof toLegacyConceptCard>[];
   artifacts: {
@@ -409,6 +437,15 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         skippedEpisodes: [],
         routingManifestPath: path.join(root, ".openskill-kit", "learn-v2", "model-requests", "routing-manifest.json")
       };
+  const modelExecution = buildLearnV2ModelExecutionPolicyReport(root, {
+    modelMode,
+    previewOnly,
+    hasAcceptedEvidence,
+    requestCount: modelRequests.requestCount,
+    requestDir: learnV2ModelRequestsRoot(root),
+    routingManifestPath: modelRequests.routingManifestPath,
+    firstManifestPath: modelRequests.requests[0]?.manifestPath
+  });
   const extracted = extractLearnV2BehaviorAtoms(rawEpisodes);
   const concepts = declassifyLearnV2ConceptCards(mergeLearnV2ConceptCards(extracted.atoms, now), root, config);
   const canonicalConceptStateWritten = !previewOnly && concepts.length > 0;
@@ -490,6 +527,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     evalReport,
     eventsAppended,
     modelRequestCount: modelRequests.requestCount,
+    modelExecution,
     artifacts: {
       digestPath,
       reviewMarkdownPath,
@@ -520,6 +558,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     generatedAt,
     previewOnly,
     modelMode,
+    modelExecution,
     sources: sourceDigests,
     concepts: legacyConcepts,
     artifacts: {
@@ -712,6 +751,59 @@ export function resolveLearnV2RawLearningModelMode(mode: LearnV2RawLearningModel
   const mapped = LearnV2RawLearningModelModeAliases[mode as LearnV2RawLearningLegacyModelMode];
   if (mapped) return mapped;
   throw new Error(`Invalid Learn v2 raw learning model mode: ${mode}`);
+}
+
+function buildLearnV2ModelExecutionPolicyReport(
+  root: string,
+  input: {
+    modelMode: LearnV2RawLearningModelMode;
+    previewOnly: boolean;
+    hasAcceptedEvidence: boolean;
+    requestCount: number;
+    requestDir: string;
+    routingManifestPath: string;
+    firstManifestPath?: string;
+  }
+): LearnV2ModelExecutionPolicyReport {
+  const firstManifest = input.firstManifestPath ? learnV2ProjectRelativePath(root, input.firstManifestPath) : undefined;
+  const requestStatus: LearnV2ModelExecutionPolicyReport["requestArtifacts"]["status"] = input.requestCount > 0
+    ? "written"
+    : !input.hasAcceptedEvidence
+      ? "skipped-no-accepted-evidence"
+      : input.previewOnly
+        ? "skipped-preview"
+        : "skipped-no-routable-episodes";
+  const manifestArg = firstManifest ?? ".openskill-kit/learn-v2/model-requests/<request>/request-manifest.json";
+  return {
+    requestedPolicy: input.modelMode,
+    deterministicExtraction: {
+      supported: true,
+      status: "always-on"
+    },
+    requestArtifacts: {
+      status: requestStatus,
+      requestCount: input.requestCount,
+      requestDir: input.requestDir,
+      routingManifestPath: input.routingManifestPath,
+      firstManifestPath: input.firstManifestPath
+    },
+    sanitizedOpenCodeExecution: {
+      supported: true,
+      requiresExplicitApproval: true,
+      command: `openskill-kit osk learn --execute-model-requests --model-request ${manifestArg}`,
+      applyCommand: `openskill-kit osk learn --apply-model-responses --model-output ${manifestArg}`
+    },
+    rawToModelExecution: {
+      supported: false,
+      status: "rejected",
+      reason: "Raw evidence is never sent directly to model execution. Use prompt-safe request artifacts plus explicit sanitized OpenCode execution.",
+      saferPolicy: "opencode-host-sanitized-only"
+    }
+  };
+}
+
+function learnV2ProjectRelativePath(root: string, file: string): string {
+  return path.relative(root, file).split(path.sep).join("/");
 }
 
 async function writePreviewLearnV2ConceptStore(root: string, projectId: string, concepts: LearnV2ConceptCard[], now: Date): Promise<LearnV2ConceptStore> {

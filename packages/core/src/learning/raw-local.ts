@@ -5,6 +5,7 @@ import {
   LearnV2RawLearningModelModes,
   runLearnV2RawLocalLearning,
   type LearnV2LearningInputBoundary,
+  type LearnV2ModelExecutionPolicyReport,
   type LearnV2RawLearningModelMode,
   type LearnV2RawLearningModelModeInput
 } from "../learn-v2/pipeline.js";
@@ -94,6 +95,7 @@ export interface RawLocalLearningResult {
   generatedAt: string;
   previewOnly: boolean;
   modelMode: RawLearningModelMode;
+  modelExecution: LearnV2ModelExecutionPolicyReport;
   sources: RawLearningSourceDigest[];
   concepts: ConceptCard[];
   artifacts: {

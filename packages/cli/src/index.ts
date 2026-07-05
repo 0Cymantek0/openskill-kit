@@ -2194,7 +2194,11 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     result.artifacts.learnV2DeclassifiedSnippetsPath ? `Declassified snippets: ${result.artifacts.learnV2DeclassifiedSnippetsPath}` : undefined,
     result.artifacts.learnV2ConceptDriftPath ? `Concept drift: ${result.artifacts.learnV2ConceptDriftPath}` : undefined,
     result.artifacts.learnV2ObservabilityReportPath ? `Observability: ${result.artifacts.learnV2ObservabilityReportPath}` : undefined,
-    `Model requests: ${result.artifacts.learnV2ModelRequestDir}`
+    `Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
+    `Model request status: ${result.modelExecution.requestArtifacts.status} (${result.modelExecution.requestArtifacts.requestCount} request(s))`,
+    `Model execute: ${result.modelExecution.sanitizedOpenCodeExecution.command}`,
+    `Model apply: ${result.modelExecution.sanitizedOpenCodeExecution.applyCommand}`,
+    `Raw model dispatch: ${result.modelExecution.rawToModelExecution.status} (${result.modelExecution.rawToModelExecution.saferPolicy})`
   ].filter((line): line is string => Boolean(line));
   if (result.concepts.length > 0) {
     lines.push("");
@@ -2232,6 +2236,9 @@ function renderLearnV2ObservabilityPlain(report: LearnV2PipelineObservabilityRep
     "Learn v2 observability",
     `Generated: ${report.generatedAt}`,
     `Mode: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
+    `Model requests: ${report.modelExecution.requestArtifacts.status} (${report.modelExecution.requestArtifacts.requestCount})`,
+    `Model execute: ${report.modelExecution.sanitizedOpenCodeExecution.command}`,
+    `Raw model dispatch: ${report.modelExecution.rawToModelExecution.status} (${report.modelExecution.rawToModelExecution.saferPolicy})`,
     `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
     `Source adapters: ${renderLearnV2CountLine(report.sources.adapterCounts)}, content ${renderLearnV2CountLine(report.sources.contentKindCounts)}`,
     `Adapter detection: ${renderLearnV2CountLine(report.sources.adapterMatchedByCounts)}, confidence ${renderLearnV2CountLine(report.sources.adapterDetectionConfidenceCounts)}`,
@@ -2259,6 +2266,8 @@ function renderLearnV2ObservabilityTui(report: LearnV2PipelineObservabilityRepor
   clackNote([
     `Generated: ${report.generatedAt}`,
     `Run: ${report.run.previewOnly ? "preview" : "apply"} / ${report.run.modelMode}`,
+    `Model requests: ${report.modelExecution.requestArtifacts.status} (${report.modelExecution.requestArtifacts.requestCount})`,
+    `Raw model dispatch: ${report.modelExecution.rawToModelExecution.status}`,
     `Sources: ${report.sources.included} included, ${report.sources.reviewNeeded} review-needed, ${report.sources.excluded} excluded / ${report.sources.considered}`,
     `Adapters: ${renderLearnV2CountLine(report.sources.adapterCounts)}`,
     `Adapter detection: ${renderLearnV2CountLine(report.sources.adapterMatchedByCounts)} (${renderLearnV2CountLine(report.sources.adapterDetectionConfidenceCounts)})`,

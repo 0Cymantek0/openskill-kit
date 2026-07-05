@@ -85,6 +85,9 @@ describe("osk CLI facade", () => {
 
     expect(parsed.sources[0]?.sourcePath).toBe("[LOCAL_PATH]");
     expect(parsed.sources[0]?.learnV2?.rawRef).toBeUndefined();
+    expect(parsed.modelExecution.requestArtifacts.status).toBe("skipped-no-accepted-evidence");
+    expect(parsed.modelExecution.rawToModelExecution.status).toBe("rejected");
+    expect(parsed.modelExecution.sanitizedOpenCodeExecution.command).toContain("--execute-model-requests");
     expect(text).not.toContain(externalSource);
     expect(text).not.toContain("PRIVATE_RAW_JSON_BOUNDARY_MARKER");
     expect(text).not.toMatch(/"rawRefs?"\s*:/);
@@ -282,10 +285,13 @@ describe("osk CLI facade", () => {
     const jsonResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--observability", "--json"], { cwd: root, windowsHide: true });
     const parsed = JSON.parse(jsonResult.stdout);
     expect(parsed.schemaVersion).toBe("openskill-kit.learn-v2.pipeline-observability.v1");
+    expect(parsed.modelExecution.rawToModelExecution.status).toBe("rejected");
     expect(parsed.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
 
     const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--observability"], { cwd: root, windowsHide: true });
     expect(textResult.stdout).toContain("Learn v2 observability");
+    expect(textResult.stdout).toContain("Model requests: skipped-preview (0)");
+    expect(textResult.stdout).toContain("Raw model dispatch: rejected (opencode-host-sanitized-only)");
     expect(textResult.stdout).toContain("Source adapters: opencode=1, content transcript=1");
     expect(textResult.stdout).toContain("Adapter detection: filename=1, confidence high=1");
     expect(textResult.stdout).toContain("Source policy: explicit-only 1, raw-local-file 1, declassified-only model 1, sensitivity high=1");
@@ -932,6 +938,31 @@ function sampleLearnV2ObservabilityReport() {
       modelMode: "deterministic-only",
       eventsAppended: 0,
       modelRequestCount: 0
+    },
+    modelExecution: {
+      requestedPolicy: "deterministic-only",
+      deterministicExtraction: {
+        supported: true,
+        status: "always-on"
+      },
+      requestArtifacts: {
+        status: "skipped-preview",
+        requestCount: 0,
+        requestDir: ".openskill-kit/learn-v2/model-requests",
+        routingManifestPath: ".openskill-kit/learn-v2/model-requests/routing-manifest.json"
+      },
+      sanitizedOpenCodeExecution: {
+        supported: true,
+        requiresExplicitApproval: true,
+        command: "openskill-kit osk learn --execute-model-requests --model-request .openskill-kit/learn-v2/model-requests/<request>/request-manifest.json",
+        applyCommand: "openskill-kit osk learn --apply-model-responses --model-output .openskill-kit/learn-v2/model-requests/<request>/request-manifest.json"
+      },
+      rawToModelExecution: {
+        supported: false,
+        status: "rejected",
+        reason: "Raw evidence is never sent directly to model execution.",
+        saferPolicy: "opencode-host-sanitized-only"
+      }
     },
     sources: {
       considered: 1,
