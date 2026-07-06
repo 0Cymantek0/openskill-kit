@@ -1119,6 +1119,13 @@ describe("learn-v2 substrate", () => {
     const ledger = await writeLearnV2ConflictLedger(root, cards, "project", now);
     expect(ledger.ledger.unresolvedCount).toBeGreaterThanOrEqual(1);
     expect(ledger.ledger.conflicts.map((conflict) => conflict.conflictType)).toContain("direct-opposite");
+    const directConflict = ledger.ledger.conflicts.find((conflict) => conflict.conflictType === "direct-opposite")!;
+    expect(directConflict.diagnostics).toMatchObject({
+      scopeOverlap: true,
+      sameKind: true,
+      oppositePolarity: true
+    });
+    expect(directConflict.diagnostics?.tokenOverlap).toBeGreaterThanOrEqual(3);
 
     const queue = await writeLearnV2ReviewQueue(root, cards, now, {
       ledger: ledger.ledger,
@@ -1131,6 +1138,8 @@ describe("learn-v2 substrate", () => {
     expect(reviewMarkdown).toContain("direct-opposite");
     const ledgerText = await readText(ledger.artifactPaths.markdown);
     expect(ledgerText).toContain("Learn v2 Concept Conflict Ledger");
+    expect(ledgerText).toContain("Diagnostics: scopeOverlap=true");
+    expect(ledgerText).toContain("tokenOverlap=");
     expect(ledgerText).not.toContain("raw_");
   });
 
@@ -1249,6 +1258,18 @@ describe("learn-v2 substrate", () => {
       { ...strongNewer!, confidence: 0.95 }
     ], "project", newerTime);
     expect(strongLedger.ledger.conflicts.map((conflict) => conflict.conflictType)).toContain("newer-supersedes-older");
+    const supersessionConflict = strongLedger.ledger.conflicts.find((conflict) => conflict.conflictType === "newer-supersedes-older")!;
+    expect(supersessionConflict.diagnostics).toMatchObject({
+      newerConceptId: strongNewer!.id,
+      olderConceptId: older!.id,
+      confidenceDelta: 0.23,
+      authorityReasons: expect.arrayContaining(["rationale:explicit-preference"]),
+      protectedReasons: []
+    });
+    const strongLedgerText = await readText(strongLedger.artifactPaths.markdown);
+    expect(strongLedgerText).toContain("Supersession pair:");
+    expect(strongLedgerText).toContain("Authority:");
+    expect(strongLedgerText).toContain("rationale:explicit-preference");
 
     const justBelowThreshold = await writeLearnV2ConflictLedger(root, [
       { ...older!, status: "active", confidence: 0.73 },

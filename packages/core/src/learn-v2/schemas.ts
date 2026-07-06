@@ -856,7 +856,18 @@ export const LearnV2ConceptConflictSchema = z.object({
   detectedAt: z.string().datetime(),
   resolved: z.boolean().default(false),
   resolutionNote: z.string().optional(),
-  resolutionAction: z.enum(["auto-supersede", "auto-narrow", "manual", "none"]).default("none")
+  resolutionAction: z.enum(["auto-supersede", "auto-narrow", "manual", "none"]).default("none"),
+  diagnostics: z.object({
+    scopeOverlap: z.boolean(),
+    tokenOverlap: z.number().int().min(0),
+    sameKind: z.boolean(),
+    oppositePolarity: z.boolean(),
+    confidenceDelta: z.number().min(0).optional(),
+    newerConceptId: z.string().min(1).optional(),
+    olderConceptId: z.string().min(1).optional(),
+    authorityReasons: z.array(z.string().min(1)).default([]),
+    protectedReasons: z.array(z.string().min(1)).default([])
+  }).optional()
 });
 export type LearnV2ConceptConflict = z.infer<typeof LearnV2ConceptConflictSchema>;
 

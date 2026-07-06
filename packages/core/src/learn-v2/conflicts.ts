@@ -45,6 +45,17 @@ export interface DetectedConflict {
   detectedAt: string;
   resolved: boolean;
   resolutionAction: "auto-supersede" | "auto-narrow" | "manual" | "none";
+  diagnostics?: {
+    scopeOverlap: boolean;
+    tokenOverlap: number;
+    sameKind: boolean;
+    oppositePolarity: boolean;
+    confidenceDelta?: number;
+    newerConceptId?: string;
+    olderConceptId?: string;
+    authorityReasons: string[];
+    protectedReasons: string[];
+  };
 }
 
 const CONFLICT_OVERLAP_THRESHOLD = 3;
@@ -86,9 +97,11 @@ function detectPairConflict(a: LearnV2ConceptCard, b: LearnV2ConceptCard, projec
   const scopeOverlap = hasScopeOverlap(a, b);
   const tokenOverlap = tokenOverlapCount(a.canonicalBehavior, b.canonicalBehavior);
   const oppositePolarity = a.atoms.some((left) => b.atoms.some((right) => left.polarity !== right.polarity && left.kind === right.kind));
+  const sameKind = a.atoms[0]?.kind === b.atoms[0]?.kind;
+  const diagnostics = baseConflictDiagnostics(a, b, { scopeOverlap, tokenOverlap, oppositePolarity, sameKind });
 
   // newer-supersedes-older: same intent, newer is clearly stronger and older is not protected.
-  const sameIntent = tokenOverlap >= 4 && a.atoms[0]?.kind === b.atoms[0]?.kind && !oppositePolarity;
+  const sameIntent = tokenOverlap >= 4 && sameKind && !oppositePolarity;
   if (sameIntent) {
     const newer = new Date(a.lifecycle.updatedAt).getTime() > new Date(b.lifecycle.updatedAt).getTime() ? a : b;
     const older = newer === a ? b : a;
@@ -96,7 +109,14 @@ function detectPairConflict(a: LearnV2ConceptCard, b: LearnV2ConceptCard, projec
       return makeConflict(projectId, [newer.id, older.id], "newer-supersedes-older",
         `${newer.title} appears to supersede ${older.title}: same intent with newer higher-confidence reviewer-authoritative evidence.`,
         [...newer.evidenceIds, ...older.evidenceIds].slice(0, 12),
-        "prefer-newer-explicit-user-correction", now, "auto-supersede");
+        "prefer-newer-explicit-user-correction", now, "auto-supersede", {
+          ...diagnostics,
+          confidenceDelta: round(newer.confidence - older.confidence),
+          newerConceptId: newer.id,
+          olderConceptId: older.id,
+          authorityReasons: supersessionAuthorityReasons(newer),
+          protectedReasons: supersessionProtectedReasons(older)
+        });
     }
   }
 
@@ -105,7 +125,7 @@ function detectPairConflict(a: LearnV2ConceptCard, b: LearnV2ConceptCard, projec
     return makeConflict(projectId, [a.id, b.id], "direct-opposite",
       `${a.title} and ${b.title} express opposite behavior in overlapping scope.`,
       [...a.evidenceIds, ...b.evidenceIds].slice(0, 12),
-      "human-review", now, "manual");
+      "human-review", now, "manual", diagnostics);
   }
 
   // command-policy-conflict
@@ -117,7 +137,7 @@ function detectPairConflict(a: LearnV2ConceptCard, b: LearnV2ConceptCard, projec
     return makeConflict(projectId, [a.id, b.id], "command-policy-conflict",
       `${a.title} and ${b.title} recommend different commands for overlapping task scope.`,
       [...a.evidenceIds, ...b.evidenceIds].slice(0, 12),
-      "keep-both-with-conditions", now, "manual");
+      "keep-both-with-conditions", now, "manual", diagnostics);
   }
 
   // security-vs-convenience
@@ -129,15 +149,15 @@ function detectPairConflict(a: LearnV2ConceptCard, b: LearnV2ConceptCard, projec
     return makeConflict(projectId, [securityCard.id, otherCard.id], "security-vs-convenience",
       `Security rule "${securityCard.title}" may constrain convenience behavior "${otherCard.title}".`,
       [...securityCard.evidenceIds].slice(0, 8),
-      "narrow-scope", now, "manual");
+      "narrow-scope", now, "manual", diagnostics);
   }
 
   // scope-overlap: same kind, overlapping scope, different behavior text, not opposite
-  if (!oppositePolarity && a.atoms[0]?.kind === b.atoms[0]?.kind && scopeOverlap && tokenOverlap >= 2 && tokenOverlap < 4) {
+  if (!oppositePolarity && sameKind && scopeOverlap && tokenOverlap >= 2 && tokenOverlap < 4) {
     return makeConflict(projectId, [a.id, b.id], "scope-overlap",
       `${a.title} and ${b.title} cover overlapping scope; consider merging or narrowing.`,
       [...a.evidenceIds, ...b.evidenceIds].slice(0, 10),
-      "narrow-scope", now, "auto-narrow");
+      "narrow-scope", now, "auto-narrow", diagnostics);
   }
 
   // style-disagreement
@@ -147,7 +167,7 @@ function detectPairConflict(a: LearnV2ConceptCard, b: LearnV2ConceptCard, projec
     return makeConflict(projectId, [a.id, b.id], "style-disagreement",
       `Style disagreement between "${a.title}" and "${b.title}" in same scope.`,
       [...a.evidenceIds, ...b.evidenceIds].slice(0, 8),
-      "reject-lower-confidence", now, "manual");
+      "reject-lower-confidence", now, "manual", diagnostics);
   }
 
   return undefined;
@@ -161,7 +181,8 @@ function makeConflict(
   evidenceRefs: string[],
   suggestedResolution: DetectedConflict["suggestedResolution"],
   now: Date,
-  resolutionAction: DetectedConflict["resolutionAction"]
+  resolutionAction: DetectedConflict["resolutionAction"],
+  diagnostics?: DetectedConflict["diagnostics"]
 ): DetectedConflict {
   return {
     schemaVersion: "openskill-kit.learn-v2.concept-conflict.v1",
@@ -174,7 +195,26 @@ function makeConflict(
     suggestedResolution,
     detectedAt: now.toISOString(),
     resolved: false,
-    resolutionAction
+    resolutionAction,
+    diagnostics
+  };
+}
+
+function baseConflictDiagnostics(
+  a: LearnV2ConceptCard,
+  b: LearnV2ConceptCard,
+  input: {
+    scopeOverlap: boolean;
+    tokenOverlap: number;
+    sameKind: boolean;
+    oppositePolarity: boolean;
+  }
+): NonNullable<DetectedConflict["diagnostics"]> {
+  return {
+    ...input,
+    confidenceDelta: round(Math.abs(a.confidence - b.confidence)),
+    authorityReasons: [],
+    protectedReasons: []
   };
 }
 
@@ -192,16 +232,36 @@ function tokenOverlapCount(a: string, b: string): number {
 }
 
 function hasSupersessionAuthority(card: LearnV2ConceptCard): boolean {
-  if (card.status === "locked" || card.status === "active") return true;
-  return card.atoms.some((atom) =>
-    atom.rationale.toLowerCase().includes("explicit preference")
-    || atom.rationale.toLowerCase().includes("correction")
-    || atom.evidenceIds.some((id) => /user|review|correction|manual|edit/i.test(id))
-  );
+  return supersessionAuthorityReasons(card).length > 0;
+}
+
+function supersessionAuthorityReasons(card: LearnV2ConceptCard): string[] {
+  const reasons = new Set<string>();
+  if (card.status === "locked") reasons.add("status:locked");
+  if (card.status === "active") reasons.add("status:active");
+  for (const atom of card.atoms) {
+    const rationale = atom.rationale.toLowerCase();
+    if (rationale.includes("explicit preference")) reasons.add("rationale:explicit-preference");
+    if (rationale.includes("correction")) reasons.add("rationale:correction");
+    if (atom.evidenceIds.some((id) => /user|review|correction|manual|edit/i.test(id))) reasons.add("evidence:user-review-correction-manual-edit");
+  }
+  return [...reasons].sort();
 }
 
 function isSupersessionProtected(card: LearnV2ConceptCard): boolean {
-  return card.status === "locked" || card.risk === "high" || card.atoms.some((atom) => atom.kind === "security");
+  return supersessionProtectedReasons(card).length > 0;
+}
+
+function supersessionProtectedReasons(card: LearnV2ConceptCard): string[] {
+  const reasons = new Set<string>();
+  if (card.status === "locked") reasons.add("status:locked");
+  if (card.risk === "high") reasons.add("risk:high");
+  if (card.atoms.some((atom) => atom.kind === "security")) reasons.add("kind:security");
+  return [...reasons].sort();
+}
+
+function round(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 export function renderConflictLedgerMarkdown(ledger: LearnV2ConflictLedger): string {
@@ -214,6 +274,13 @@ export function renderConflictLedgerMarkdown(ledger: LearnV2ConflictLedger): str
     lines.push(`- Status: ${conflict.resolved ? "resolved" : "unresolved"}`);
     lines.push(`- Resolution: ${conflict.suggestedResolution} (${conflict.resolutionAction})`);
     lines.push(`- Explanation: ${conflict.explanation}`);
+    if (conflict.diagnostics) {
+      const diagnostic = conflict.diagnostics;
+      lines.push(`- Diagnostics: scopeOverlap=${diagnostic.scopeOverlap}; tokenOverlap=${diagnostic.tokenOverlap}; sameKind=${diagnostic.sameKind}; oppositePolarity=${diagnostic.oppositePolarity}; confidenceDelta=${diagnostic.confidenceDelta ?? 0}`);
+      if (diagnostic.newerConceptId || diagnostic.olderConceptId) lines.push(`- Supersession pair: newer=${diagnostic.newerConceptId ?? "n/a"} older=${diagnostic.olderConceptId ?? "n/a"}`);
+      if (diagnostic.authorityReasons.length) lines.push(`- Authority: ${diagnostic.authorityReasons.join(", ")}`);
+      if (diagnostic.protectedReasons.length) lines.push(`- Protection: ${diagnostic.protectedReasons.join(", ")}`);
+    }
     if (conflict.evidenceRefs.length) lines.push(`- Evidence: ${conflict.evidenceRefs.slice(0, 6).join(", ")}`);
     lines.push("");
   }

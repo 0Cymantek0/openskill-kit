@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 conflict ledger diagnostics slice
+
+- Finding verified: conflict ledger entries explained outcomes in prose but did not persist the deterministic metrics and authority/protection reasons used to choose direct-opposite, scope-overlap, or newer-supersedes-older classifications.
+- Done: conflict entries now include declassified diagnostics: scope overlap, token overlap, same-kind, opposite-polarity, confidence delta, newer/older concept ids, supersession authority reasons, and protection reasons.
+- Done: conflict ledger Markdown renders those diagnostics so reviewers and future model-request bundles can audit why a resolution was suggested without reading raw evidence.
+- Verified: focused conflict-ledger diagnostics regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 315 tests).
+
 ### 2026-07-06 concrete narrow review-action slice
 
 - Finding verified: after exposing `--concept-narrow`, review queues still did not turn deterministic `auto-narrow` conflict-ledger findings into concrete reviewer commands, so users had to infer negative triggers and scope JSON by hand.
