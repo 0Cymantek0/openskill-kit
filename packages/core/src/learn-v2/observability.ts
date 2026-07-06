@@ -119,6 +119,8 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     structuralClassCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     parserBackendCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     structuralConfidenceCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    parserCapabilityCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    parserLimitationCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     structuralConfidenceCapMin: z.number().min(0).max(1).default(1)
   }),
   concepts: z.object({
@@ -330,6 +332,8 @@ export async function writeLearnV2PipelineObservabilityReport(
       structuralClassCounts: countBy(patches.flatMap((patch) => patch.structuralClasses)),
       parserBackendCounts: countBy(structuralFiles.map((file) => file.parserBackend)),
       structuralConfidenceCounts: countBy(structuralFiles.map((file) => file.structuralConfidence)),
+      parserCapabilityCounts: countBy(structuralFiles.flatMap((file) => file.parserCapabilities ?? [])),
+      parserLimitationCounts: countBy(structuralFiles.flatMap((file) => file.parserLimitations ?? [])),
       structuralConfidenceCapMin: structuralFiles.length
         ? Number(Math.min(...structuralFiles.map((file) => file.confidenceCap)).toFixed(2))
         : 1
@@ -449,6 +453,8 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Structural classes: ${renderCounts(report.compression.structuralClassCounts)}`,
     `- Structural parser backends: ${renderCounts(report.compression.parserBackendCounts)}`,
     `- Structural parser confidence: ${renderCounts(report.compression.structuralConfidenceCounts)} (min cap ${report.compression.structuralConfidenceCapMin})`,
+    `- Structural parser capabilities: ${renderCounts(report.compression.parserCapabilityCounts)}`,
+    `- Structural parser limitations: ${renderCounts(report.compression.parserLimitationCounts)}`,
     "",
     "## Concepts And Gates",
     "",

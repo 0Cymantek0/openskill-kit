@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 structural parser capability visibility slice
+
+- Finding verified: structural diff summaries exposed backend, confidence, and cap, but did not persist what each parser could or could not prove. Python/Go/Rust fallback scanner output could be consumed without an artifact-level reminder that it is not AST-equivalent.
+- Done: per-file structural summaries now carry bounded parser capabilities and limitations. TypeScript/JavaScript compiler summaries identify AST declarations/import tracking; Python/Go/Rust scanner summaries identify block-scope/import/metadata-adjacent capabilities plus `not-ast-equivalent`, hunk-context, and fallback-cap limitations; unsupported languages identify the unsupported boundary.
+- Done: pipeline observability aggregates parser capability and limitation counts and renders them in Markdown, making structural proof limits visible without opening raw diffs.
+- Verified: focused structural parser metadata regression, focused observability regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 316 tests).
+
 ### 2026-07-07 human-review scoring calibration slice
 
 - Finding verified: concept scoring exposed `human-review` as a calibration source, but explicit accept/lock/bulk-accept review decisions did not mark scores as human-reviewed. Reviewed concepts were indistinguishable from purely deterministic candidates except for status.

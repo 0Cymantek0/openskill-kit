@@ -33,6 +33,8 @@ interface StructuralParser {
   backend: FileSummary["parserBackend"];
   confidence: FileSummary["structuralConfidence"];
   confidenceCap: number;
+  capabilities: FileSummary["parserCapabilities"];
+  limitations: FileSummary["parserLimitations"];
   signal(file: DiffFile): { symbols: string[]; imports: string[] };
 }
 
@@ -137,6 +139,8 @@ function summarizeFile(file: DiffFile): FileSummary {
     parserBackend: parser.backend,
     structuralConfidence: parser.confidence,
     confidenceCap: parser.confidenceCap,
+    parserCapabilities: parser.capabilities,
+    parserLimitations: parser.limitations,
     semanticChange
   };
 }
@@ -148,6 +152,8 @@ function structuralParserForLanguage(language: StructuralLanguage): StructuralPa
       backend: "typescript-compiler",
       confidence: "parser",
       confidenceCap: 1,
+      capabilities: ["ast-declarations", "hunk-scope", "import-tracking"],
+      limitations: ["hunk-context-dependent"],
       signal: (file) => typeScriptStructuralSignal(file, language)
     };
   }
@@ -157,6 +163,8 @@ function structuralParserForLanguage(language: StructuralLanguage): StructuralPa
       backend: "language-structural-scanner",
       confidence: "fallback",
       confidenceCap: 0.78,
+      capabilities: ["block-scope", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
+      limitations: ["fallback-confidence-cap", "hunk-context-dependent", "not-ast-equivalent"],
       signal: (file) => blockStructuralSignal(file, language)
     };
   }
@@ -165,6 +173,8 @@ function structuralParserForLanguage(language: StructuralLanguage): StructuralPa
     backend: "none",
     confidence: "none",
     confidenceCap: 0.35,
+    capabilities: ["unsupported-language"],
+    limitations: ["unsupported-language"],
     signal: () => ({ symbols: [], imports: [] })
   };
 }

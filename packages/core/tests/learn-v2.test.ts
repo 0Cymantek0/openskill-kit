@@ -711,7 +711,9 @@ describe("learn-v2 substrate", () => {
     expect(summary.fileSummaries.find((file) => file.path.endsWith("parser-service.ts"))).toMatchObject({
       parserBackend: "typescript-compiler",
       structuralConfidence: "parser",
-      confidenceCap: 1
+      confidenceCap: 1,
+      parserCapabilities: expect.arrayContaining(["ast-declarations", "hunk-scope", "import-tracking"]),
+      parserLimitations: ["hunk-context-dependent"]
     });
     expect(summary.fileSummaries.find((file) => file.path.endsWith("plugin-loader.js"))).toMatchObject({
       parserBackend: "typescript-compiler",
@@ -790,6 +792,10 @@ describe("learn-v2 substrate", () => {
     expect(summary.fileSummaries.every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
     expect(summary.fileSummaries.every((file) => file.structuralConfidence === "fallback")).toBe(true);
     expect(summary.fileSummaries.every((file) => file.confidenceCap === 0.78)).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.parserCapabilities.includes("block-scope"))).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.parserCapabilities.includes("metadata-adjacent-declarations"))).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.parserLimitations.includes("not-ast-equivalent"))).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.parserLimitations.includes("fallback-confidence-cap"))).toBe(true);
     expect(summary.fileSummaries.every((file) => file.semanticChange === true)).toBe(true);
   });
 
@@ -1068,6 +1074,8 @@ describe("learn-v2 substrate", () => {
     expect(report.compression.patchFilterReasonCounts["generated-only"]).toBe(1);
     expect(report.compression.parserBackendCounts["typescript-compiler"]).toBe(1);
     expect(report.compression.structuralConfidenceCounts.parser).toBe(1);
+    expect(report.compression.parserCapabilityCounts["ast-declarations"]).toBe(1);
+    expect(report.compression.parserLimitationCounts["hunk-context-dependent"]).toBe(1);
     expect(report.compression.structuralConfidenceCapMin).toBe(1);
     expect(report.qualityGates.behaviorDeltaStatus).toBe("not-configured");
     expect(report.qualityGates.activationReplayRate).toBe(1);
@@ -1093,6 +1101,8 @@ describe("learn-v2 substrate", () => {
     expect(reportText).toContain("\"health\"");
     expect(reportText).toContain("\"behaviorDeltaStatus\"");
     expect(reportText).toContain("\"parserBackendCounts\"");
+    expect(reportText).toContain("\"parserCapabilityCounts\"");
+    expect(reportText).toContain("\"parserLimitationCounts\"");
     expect(reportText).toContain("\"outcomeTelemetry\"");
     expect(reportText).not.toContain("raw harmful reason");
     expect(reportText).not.toContain(root);
@@ -1101,6 +1111,8 @@ describe("learn-v2 substrate", () => {
     expect(reportMarkdown).toContain("Behavior delta: not-configured");
     expect(reportMarkdown).toContain("Activation replay rate:");
     expect(reportMarkdown).toContain("Structural parser backends:");
+    expect(reportMarkdown).toContain("Structural parser capabilities:");
+    expect(reportMarkdown).toContain("Structural parser limitations:");
     expect(reportMarkdown).toContain("Outcome telemetry: 2 records across 1 concept(s)");
 
     const latest = await readLearnV2PipelineObservabilityReport(root);

@@ -159,6 +159,20 @@ export const LearnV2PatchComparisonSchema = z.object({
       parserBackend: z.enum(["typescript-compiler", "language-structural-scanner", "heuristic-fallback", "none"]).default("none"),
       structuralConfidence: z.enum(["parser", "fallback", "none"]).default("none"),
       confidenceCap: z.number().min(0).max(1).default(0.35),
+      parserCapabilities: z.array(z.enum([
+        "ast-declarations",
+        "block-scope",
+        "hunk-scope",
+        "import-tracking",
+        "metadata-adjacent-declarations",
+        "unsupported-language"
+      ])).default([]),
+      parserLimitations: z.array(z.enum([
+        "fallback-confidence-cap",
+        "hunk-context-dependent",
+        "not-ast-equivalent",
+        "unsupported-language"
+      ])).default([]),
       semanticChange: z.boolean()
     })).default([])
   }).default({
