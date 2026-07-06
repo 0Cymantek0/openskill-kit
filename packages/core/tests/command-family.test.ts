@@ -285,26 +285,36 @@ describe("OSK command family registry", () => {
     await initAdaptiveProject({ projectRoot: root, projectName: "learn-hidden-exports", now: new Date("2026-06-27T00:00:00.000Z") });
     await mkdir(path.join(root, ".codex", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".codex", "memories"), { recursive: true });
+    await mkdir(path.join(root, ".claude", "projects"), { recursive: true });
+    await mkdir(path.join(root, ".cursor", "chats"), { recursive: true });
     await mkdir(path.join(root, ".gemini", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".roo-code", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".kilo-code", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".cline", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".goose", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".zed", "agent-sessions"), { recursive: true });
+    await mkdir(path.join(root, ".opencode", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".opencode", "traces"), { recursive: true });
     await mkdir(path.join(root, ".gemini", "memories"), { recursive: true });
     await mkdir(path.join(home, ".codex", "memories"), { recursive: true });
     await writeFile(path.join(root, ".codex", "sessions", "2026-07-05.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer focused parser tests.\"}\n", "utf8");
     await writeFile(path.join(root, ".codex", "memories", "private.md"), "Do not plan this memory as raw learning.", "utf8");
+    await writeFile(path.join(root, ".claude", "projects", "session.jsonl"), "{\"role\":\"assistant\",\"content\":\"Prefer Claude project exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".cursor", "chats", "chat.json"), JSON.stringify({ messages: [{ role: "user", content: "Prefer Cursor chat exports." }] }), "utf8");
     await writeFile(path.join(root, ".gemini", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Gemini exports.\"}\n", "utf8");
     await writeFile(path.join(root, ".roo-code", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Roo exports.\"}\n", "utf8");
     await writeFile(path.join(root, ".kilo-code", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Kilo exports.\"}\n", "utf8");
     await writeFile(path.join(root, ".cline", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Cline exports.\"}\n", "utf8");
     await writeFile(path.join(root, ".goose", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Goose exports.\"}\n", "utf8");
     await writeFile(path.join(root, ".zed", "agent-sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Zed exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".opencode", "sessions", "session.jsonl"), "{\"eventType\":\"message\",\"provider\":\"opencode\",\"text\":\"Prefer OpenCode session exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".opencode", "traces", "trace.jsonl"), "{\"eventType\":\"tool.execute\",\"tool\":\"bash\",\"input\":{\"command\":\"npm test\"}}\n", "utf8");
     await writeFile(path.join(root, ".gemini", "memories", "private.md"), "Do not plan this Gemini memory.", "utf8");
 
     const plan = await planLearningSources(root, { sourceMode: "ask", homeDir: home, now: new Date("2026-06-27T00:07:00.000Z") });
     const rawCandidate = plan.options.find((option) => option.id.startsWith("raw-local:") && option.path?.endsWith(path.join(".codex", "sessions", "2026-07-05.jsonl")))!;
+    const rawOptions = plan.options.filter((option) => option.id.startsWith("raw-local:"));
+    const rawByPath = (segments: string[]) => rawOptions.find((option) => option.path?.endsWith(path.join(...segments)));
     const rawByAdapter = new Map(plan.options
       .filter((option) => option.id.startsWith("raw-local:"))
       .map((option) => [option.learnV2Surface?.adapterId, option]));
@@ -315,13 +325,29 @@ describe("OSK command family registry", () => {
       normalizationProfile: "structured-events",
       suggestedCommand: "openskill-kit osk learn --raw --surface-file .codex/sessions/2026-07-05.jsonl --surface-adapter codex"
     });
+    expect(rawByPath([".claude", "projects", "session.jsonl"])?.learnV2Surface).toMatchObject({
+      adapterId: "claude-code",
+      suggestedCommand: "openskill-kit osk learn --raw --surface-file .claude/projects/session.jsonl --surface-adapter claude-code"
+    });
+    expect(rawByPath([".cursor", "chats", "chat.json"])?.learnV2Surface).toMatchObject({
+      adapterId: "cursor",
+      suggestedCommand: "openskill-kit osk learn --raw --surface-file .cursor/chats/chat.json --surface-adapter cursor"
+    });
     expect(rawByAdapter.get("gemini")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter gemini");
     expect(rawByAdapter.get("roo")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter roo");
     expect(rawByAdapter.get("kilo")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter kilo");
     expect(rawByAdapter.get("cline")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter cline");
     expect(rawByAdapter.get("goose")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter goose");
     expect(rawByAdapter.get("zed")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter zed");
-    expect(plan.rawLocalDiscovery.allowedHiddenExportDirs).toEqual(expect.arrayContaining([".gemini/sessions", ".roo-code/sessions", ".kilo-code/sessions", ".cline/sessions", ".goose/sessions", ".zed/agent-sessions"]));
+    expect(rawByPath([".opencode", "sessions", "session.jsonl"])?.learnV2Surface).toMatchObject({
+      adapterId: "opencode",
+      suggestedCommand: "openskill-kit osk learn --raw --surface-file .opencode/sessions/session.jsonl --surface-adapter opencode"
+    });
+    expect(rawByPath([".opencode", "traces", "trace.jsonl"])?.learnV2Surface).toMatchObject({
+      adapterId: "opencode",
+      suggestedCommand: "openskill-kit osk learn --raw --surface-file .opencode/traces/trace.jsonl --surface-adapter opencode"
+    });
+    expect(plan.rawLocalDiscovery.allowedHiddenExportDirs).toEqual(expect.arrayContaining([".claude/projects", ".claude/sessions", ".cursor/chats", ".cursor/sessions", ".gemini/sessions", ".roo-code/sessions", ".kilo-code/sessions", ".cline/sessions", ".goose/sessions", ".zed/agent-sessions", ".opencode/sessions", ".opencode/traces"]));
     expect(plan.rawLocalDiscovery.blockedHiddenDirs).toEqual(expect.arrayContaining([".gemini/memories"]));
     expect(rawCandidate.privacy.notes.join("\n")).toContain("--surface-adapter codex");
     expect(plan.options.some((option) => option.path?.includes(`${path.sep}.codex${path.sep}memories${path.sep}private.md`))).toBe(false);

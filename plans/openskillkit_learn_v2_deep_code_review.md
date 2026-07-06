@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 primary hidden export fixture slice
+
+- Finding verified: the surface adapter code already mapped project-local Claude, Cursor, and OpenCode hidden export directories, but source-planning regression coverage only exercised Codex plus several secondary agent export dirs. Primary multi-tool ingestion could regress without a planner-level test.
+- Done: `/osk learn` source-planning tests now create `.claude/projects`, `.cursor/chats`, `.opencode/sessions`, and `.opencode/traces` exports and prove each stays blocked in normal planning while surfacing the exact explicit `--raw --surface-file ... --surface-adapter ...` command.
+- Done: docs now list both Claude/Cursor project-local session directories beside Codex/OpenCode and keep memory-store directories blocked.
+- Verified: focused hidden raw export planner regression, focused raw surface adapter regression, full command-family tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 319 tests).
+
 ### 2026-07-07 model-output placeholder boundary slice
 
 - Finding verified: model proposal validation treated approved declassification placeholders like `[PROJECT_ROOT]` and `[REDACTED:email]` as unsafe output content. That could reject safe redacted proposals even when the model avoided raw local values.
