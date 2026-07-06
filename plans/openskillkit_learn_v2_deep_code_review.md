@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 activation-outcome scoring calibration slice
+
+- Finding verified: concept scoring exposed `calibratedFrom` and the plan calls for outcome-updated confidence, but durable concept scores still came only from deterministic atom/evidence heuristics unless a separate demotion policy changed status.
+- Done: concept scoring now accepts counts-only activation outcome calibration and records helpful/ignored/wrong/harmful/superseded counts plus bounded boost/penalty fields.
+- Done: concept store writes and review transactions rescore concepts from local outcome JSONL under the concept lock, update activation-index confidence, and never copy raw outcome reasons into concept cards or compiled graph data.
+- Verified: focused outcome-calibration regression, `rtk npm run typecheck`, full Learn v2 substrate tests, and full `rtk npm test` (40 files, 306 tests).
+
 ### 2026-07-06 eval proof-boundary honesty slice
 
 - Finding verified: eval proof boundaries always claimed "configured behavior-delta golden checks" even when no behavior-delta scenarios were configured, while observability separately warned that the proof was missing.

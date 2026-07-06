@@ -16,7 +16,7 @@ import {
 import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
 import { findLearnV2ActivationGateFailures } from "./concept-quality-gates.js";
 import { detectLearnV2ConceptDrift } from "./drift.js";
-import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring } from "./scoring.js";
+import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring, type LearnV2ConceptOutcomeCalibrationInput } from "./scoring.js";
 import { LearnV2ConceptCardSchema, type LearnV2ConceptCard } from "./schemas.js";
 import { learnV2NormalizeStatement, learnV2ShortHash, learnV2Title } from "./utils.js";
 import { syncLearnV2RawEvidenceRecordPins } from "./vault.js";
@@ -118,11 +118,12 @@ export async function writeLearnV2ConceptStore(projectRoot: string, cards: Learn
   const existing = await readLearnV2ConceptStore(root, now);
   const merged = mergeLearnV2ConceptStoreCards(existing.cards, cards, now);
   const policyApplied = applyLearnV2AutoPolicies(merged, config, now);
+  const outcomeCalibrated = await applyLearnV2OutcomeCalibration(root, policyApplied, now);
   const store: LearnV2ConceptStore = {
     schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
     projectId: config.projectId,
     updatedAt: now.toISOString(),
-    cards: policyApplied
+    cards: outcomeCalibrated
   };
   await compileLearnV2ActiveConceptsOrThrow(root, config, store.cards, now);
   await writeJsonAtomic(learnV2ConceptStorePath(root), store);
@@ -302,11 +303,12 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
     const policyApplied = options.autoPolicy === true
       ? applyLearnV2AutoPolicies(outcomePolicyApplied, config, now, modifiedIds, restructureMessages)
       : outcomePolicyApplied;
+    const outcomeCalibrated = await applyLearnV2OutcomeCalibration(root, policyApplied, now, modifiedIds, restructureMessages);
     const nextStore: LearnV2ConceptStore = {
       schemaVersion: "openskill-kit.learn-v2.concept-store.v1",
       projectId: store.projectId,
       updatedAt: now.toISOString(),
-      cards: sortConceptCards(policyApplied)
+      cards: sortConceptCards(outcomeCalibrated)
     };
     const activatedModifiedIds = nextStore.cards
       .filter((card) => modifiedIds.has(card.id) && (card.status === "active" || card.status === "locked"))
@@ -532,6 +534,84 @@ export function applyLearnV2AutoPolicies(
     messages.push(`${status === "active" ? "Auto-activated" : "Auto-staged"} safe low-risk concept ${card.id}.`);
   }
   return sortConceptCards(values());
+}
+
+async function applyLearnV2OutcomeCalibration(
+  root: string,
+  cards: LearnV2ConceptCard[],
+  now: Date,
+  modifiedIds: Set<string> = new Set(),
+  messages: string[] = []
+): Promise<LearnV2ConceptCard[]> {
+  const outcomesByConcept = await readLearnV2OutcomeCalibration(root);
+  let calibratedCount = 0;
+  const next = cards.map((card) => {
+    const outcomeCalibration = outcomesByConcept.get(card.id);
+    const scoring = calculateLearnV2ConceptScoring({
+      atoms: card.atoms,
+      evidenceIds: card.evidenceIds,
+      rawRefs: card.rawRefs,
+      risk: card.risk,
+      counterevidenceCount: card.counterevidence.length,
+      outcomeCalibration
+    });
+    if (
+      card.confidence === scoring.confidence &&
+      card.durability === scoring.durability &&
+      card.sourceReliability === scoring.sourceReliability &&
+      JSON.stringify(card.scoring ?? {}) === JSON.stringify(scoring)
+    ) {
+      return card;
+    }
+    calibratedCount += 1;
+    modifiedIds.add(card.id);
+    return LearnV2ConceptCardSchema.parse({
+      ...card,
+      confidence: scoring.confidence,
+      durability: scoring.durability,
+      sourceReliability: scoring.sourceReliability,
+      scoring,
+      lifecycle: { ...card.lifecycle, updatedAt: now.toISOString() }
+    });
+  });
+  if (calibratedCount > 0) messages.push(`Recalibrated ${calibratedCount} concept score(s) from activation outcome telemetry.`);
+  return sortConceptCards(next);
+}
+
+async function readLearnV2OutcomeCalibration(root: string): Promise<Map<string, Required<LearnV2ConceptOutcomeCalibrationInput>>> {
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "outcomes");
+  const files = (await fs.readdir(dir, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => path.join(dir, entry.name))
+    .sort();
+  const out = new Map<string, Required<LearnV2ConceptOutcomeCalibrationInput>>();
+  for (const file of files) {
+    const lines = (await fs.readFile(file, "utf8").catch(() => "")).split(/\r?\n/).filter(Boolean);
+    for (const line of lines) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!isOutcomeRecordLike(parsed)) continue;
+      const current = out.get(parsed.conceptId) ?? { helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 };
+      current[parsed.outcome] += 1;
+      out.set(parsed.conceptId, current);
+    }
+  }
+  return out;
+}
+
+function isOutcomeRecordLike(value: unknown): value is { conceptId: string; outcome: keyof Required<LearnV2ConceptOutcomeCalibrationInput> } {
+  if (!value || typeof value !== "object") return false;
+  const record = value as { conceptId?: unknown; outcome?: unknown };
+  return typeof record.conceptId === "string" &&
+    (record.outcome === "helpful" ||
+      record.outcome === "ignored" ||
+      record.outcome === "wrong" ||
+      record.outcome === "harmful" ||
+      record.outcome === "superseded");
 }
 
 async function applyLearnV2OutcomeAutoDemotion(

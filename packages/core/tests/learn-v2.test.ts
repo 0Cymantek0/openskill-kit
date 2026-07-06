@@ -1244,6 +1244,53 @@ describe("learn-v2 substrate", () => {
     expect(reviewMarkdown).toContain(`Demote: openskill-kit osk review --concept-demote ${active.id}`);
   });
 
+  it("calibrates concept scoring from activation outcome telemetry without copying raw reasons", async () => {
+    const root = await tempProject();
+    const createdAt = new Date("2026-06-30T00:20:00.000Z");
+    const now = new Date("2026-06-30T00:35:00.000Z");
+    const [candidate] = mergeLearnV2ConceptCards([
+      behaviorAtom("outcome_calibrated_parser_fixture", "Prefer parser regression fixtures before parser refactors.", "positive")
+    ], createdAt);
+    const active = { ...candidate!, status: "active" as const };
+    const initial = await writeLearnV2ConceptStore(root, [active], createdAt);
+    const initialCard = initial.cards.find((card) => card.id === active.id)!;
+
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: active.id,
+      outcome: "helpful",
+      reason: "first helpful reason must stay local"
+    }, new Date("2026-06-30T00:25:00.000Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: active.id,
+      outcome: "helpful",
+      reason: "second helpful reason must stay local"
+    }, new Date("2026-06-30T00:26:00.000Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: active.id,
+      outcome: "harmful",
+      reason: "raw calibration reason sk-local-secret-must-not-enter-store"
+    }, new Date("2026-06-30T00:27:00.000Z"));
+
+    const result = await applyLearnV2ConceptReview(root, { now, compileActive: false });
+    expect(result.messages).toContain("Recalibrated 1 concept score(s) from activation outcome telemetry.");
+    const calibrated = await readLearnV2ConceptStore(root, now);
+    const card = calibrated.cards.find((item) => item.id === active.id)!;
+    expect(card.scoring?.calibratedFrom).toEqual(expect.arrayContaining(["deterministic-heuristic", "activation-outcome"]));
+    expect(card.scoring).toMatchObject({
+      outcomeHelpfulCount: 2,
+      outcomeHarmfulCount: 1,
+      outcomeBoost: 0.06,
+      outcomePenalty: 0.12
+    });
+    expect(card.confidence).toBeLessThan(initialCard.confidence);
+    expect(card.durability).toBeLessThan(initialCard.durability);
+    const activationIndex = JSON.parse(await readText(path.join(root, ".openskill-kit", "learn-v2", "activation-index.json")));
+    expect(activationIndex.entries.find((entry: { conceptId: string; confidence: number }) => entry.conceptId === active.id)?.confidence).toBe(card.confidence);
+    const storeText = await readText(learnV2ConceptStorePath(root));
+    expect(storeText).not.toContain("raw calibration reason");
+    expect(storeText).not.toContain("sk-local-secret-must-not-enter-store");
+  });
+
   it("refreshes and links Learn v2 concept review from the legacy review queue", async () => {
     const root = await tempProject();
     const createdAt = new Date("2026-03-01T00:00:00.000Z");

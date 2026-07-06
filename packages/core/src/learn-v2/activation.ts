@@ -510,7 +510,8 @@ export async function readLearnV2ConceptOutcomeTelemetrySummary(rootInput: strin
   };
 }
 
-async function readLearnV2ConceptOutcomeRecords(root: string): Promise<LearnV2ConceptOutcome[]> {
+export async function readLearnV2ConceptOutcomeRecords(rootInput: string): Promise<LearnV2ConceptOutcome[]> {
+  const root = path.resolve(rootInput);
   const dir = path.join(root, ".openskill-kit", "learn-v2", "outcomes");
   const files = (await fs.readdir(dir, { withFileTypes: true }).catch(() => []))
     .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
