@@ -1269,6 +1269,52 @@ describe("learn-v2 substrate", () => {
     expect(protectedLedger.ledger.conflicts.map((conflict) => conflict.conflictType)).not.toContain("newer-supersedes-older");
   });
 
+  it("suggests concrete supersede commands for ledger-authorized replacements", async () => {
+    const root = await tempProject();
+    const olderTime = new Date("2026-06-30T00:20:00.000Z");
+    const newerTime = new Date("2026-06-30T00:40:00.000Z");
+    const [older] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("review_action_old_parser_tests", "Prefer focused parser tests for parser changes.", "positive"),
+      confidence: 0.82
+    }], olderTime);
+    const [newer] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("review_action_new_parser_tests", "Prefer focused parser tests for parser changes.", "positive"),
+      confidence: 0.95,
+      rationale: "Explicit preference or correction language in episode.",
+      evidenceIds: ["ev_user_review_action_new_parser_tests"]
+    }], newerTime);
+    const olderCard = {
+      ...older!,
+      id: "concept_review_action_old",
+      status: "active" as const,
+      confidence: 0.72,
+      lifecycle: { ...older!.lifecycle, updatedAt: olderTime.toISOString() }
+    };
+    const newerCard = {
+      ...newer!,
+      id: "concept_review_action_new",
+      confidence: 0.95,
+      lifecycle: { ...newer!.lifecycle, updatedAt: newerTime.toISOString() }
+    };
+    const cards = [olderCard, newerCard];
+    const ledger = await writeLearnV2ConflictLedger(root, cards, "project", newerTime);
+    expect(ledger.ledger.conflicts.map((conflict) => conflict.conflictType)).toContain("newer-supersedes-older");
+
+    const queue = await writeLearnV2ReviewQueue(root, cards, newerTime, {
+      ledger: ledger.ledger,
+      markdownPath: ledger.artifactPaths.markdown
+    });
+    const supersedeAction = queue.reviewActions[olderCard.id]?.find((action) => action.command.includes("--concept-supersede"));
+    expect(supersedeAction?.command).toContain(`"supersededId":"${olderCard.id}"`);
+    expect(supersedeAction?.command).toContain(`"supersededById":"${newerCard.id}"`);
+    expect(supersedeAction?.command).toContain("Deterministic conflict ledger newer-supersedes-older");
+    expect(supersedeAction?.command).not.toContain("concept_replacement");
+    expect(supersedeAction?.rationale).toContain(newerCard.id);
+    const markdown = await readText(queue.artifacts.markdown);
+    expect(markdown).toContain(`"supersededById":"${newerCard.id}"`);
+    expect(markdown).not.toContain(`"supersededById":"concept_replacement"`);
+  });
+
   it("writes declassified evidence snippets and attaches them to review cards", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:25:00.000Z");

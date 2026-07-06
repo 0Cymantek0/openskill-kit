@@ -24,7 +24,7 @@ export async function writeLearnV2ReviewQueue(
   const conflictTypeCounts = context?.ledger ? countBy(context.ledger.conflicts.map((conflict) => conflict.conflictType)) : {};
   const evidenceSnippets = selectReviewEvidenceSnippets(cards, context?.declassifiedSnippets);
   const reviewFocus = selectReviewFocus(cards, context);
-  const reviewActions = selectReviewActions(cards, reviewFocus);
+  const reviewActions = selectReviewActions(cards, reviewFocus, context?.ledger);
   const queue = LearnV2ReviewQueueSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.review-queue.v1",
     generatedAt: now.toISOString(),
@@ -241,9 +241,13 @@ function focusRank(card: LearnV2ConceptCard, reasons: Set<string>): number {
 
 function selectReviewActions(
   cards: LearnV2ConceptCard[],
-  reviewFocus: LearnV2ReviewQueue["reviewFocus"]
+  reviewFocus: LearnV2ReviewQueue["reviewFocus"],
+  ledger?: LearnV2ConflictLedger
 ): LearnV2ReviewQueue["reviewActions"] {
   const focusIds = new Set(reviewFocus.focusCardIds);
+  const cardsById = new Map(cards.map((card) => [card.id, card]));
+  const supersedeActions = selectLedgerSupersedeActions(cardsById, ledger);
+  const supersedeSuccessorIds = selectLedgerSupersedeSuccessorIds(cardsById, ledger);
   const actions: LearnV2ReviewQueue["reviewActions"] = {};
   for (const card of cards) {
     if (!focusIds.has(card.id)) continue;
@@ -263,7 +267,12 @@ function selectReviewActions(
     if (card.status === "conflict" || card.counterevidence.length || reasons.some((reason) => reason.startsWith("conflict:"))) {
       add("Reject", `openskill-kit osk review --concept-reject ${card.id}`, "Reject the conflicted concept if counterevidence invalidates it.");
       add("Mark one-off", `openskill-kit osk review --concept-one-off ${card.id}`, "Keep the evidence local without treating it as durable behavior.");
-      add("Supersede", `openskill-kit osk review --concept-supersede '{"supersededId":"${card.id}","supersededById":"concept_replacement"}'`, "Replace this concept with a stronger reviewed concept.");
+      const supersede = supersedeActions.get(card.id);
+      if (supersede) {
+        add("Supersede", `openskill-kit osk review --concept-supersede '${supersede.json}'`, supersede.rationale);
+      } else if (!supersedeSuccessorIds.has(card.id)) {
+        add("Supersede", `openskill-kit osk review --concept-supersede '{"supersededId":"${card.id}","supersededById":"concept_replacement"}'`, "Replace this concept with a stronger reviewed concept.");
+      }
     }
     if (reasons.some((reason) => reason.startsWith("drift:"))) {
       add("Demote", `openskill-kit osk review --concept-demote ${card.id}`, "Pause activation while reviewing stale or harmful outcome telemetry.");
@@ -271,6 +280,58 @@ function selectReviewActions(
     if (out.length) actions[card.id] = out.slice(0, 5);
   }
   return actions;
+}
+
+function selectLedgerSupersedeActions(
+  cardsById: Map<string, LearnV2ConceptCard>,
+  ledger?: LearnV2ConflictLedger
+): Map<string, { json: string; rationale: string }> {
+  const out = new Map<string, { json: string; rationale: string }>();
+  for (const conflict of ledger?.conflicts ?? []) {
+    if (conflict.resolved || conflict.resolutionAction !== "auto-supersede") continue;
+    const pair = selectSupersedePair(cardsById, conflict.conceptIds);
+    if (!pair) continue;
+    const reason = `Deterministic conflict ledger ${conflict.conflictType}: ${conflict.suggestedResolution}.`;
+    out.set(pair.superseded.id, {
+      json: JSON.stringify({
+        supersededId: pair.superseded.id,
+        supersededById: pair.successor.id,
+        reason
+      }),
+      rationale: `Replace with stronger reviewed concept ${pair.successor.id}; ${conflict.conflictType}.`
+    });
+  }
+  return out;
+}
+
+function selectLedgerSupersedeSuccessorIds(
+  cardsById: Map<string, LearnV2ConceptCard>,
+  ledger?: LearnV2ConflictLedger
+): Set<string> {
+  const out = new Set<string>();
+  for (const conflict of ledger?.conflicts ?? []) {
+    if (conflict.resolved || conflict.resolutionAction !== "auto-supersede") continue;
+    const pair = selectSupersedePair(cardsById, conflict.conceptIds);
+    if (pair) out.add(pair.successor.id);
+  }
+  return out;
+}
+
+function selectSupersedePair(
+  cardsById: Map<string, LearnV2ConceptCard>,
+  conceptIds: string[]
+): { superseded: LearnV2ConceptCard; successor: LearnV2ConceptCard } | undefined {
+  const [leftId, rightId] = conceptIds;
+  if (!leftId || !rightId || leftId === rightId) return undefined;
+  const left = cardsById.get(leftId);
+  const right = cardsById.get(rightId);
+  if (!left || !right) return undefined;
+  const leftUpdated = Date.parse(left.lifecycle.updatedAt);
+  const rightUpdated = Date.parse(right.lifecycle.updatedAt);
+  const successor = rightUpdated > leftUpdated ? right : left;
+  const superseded = successor === right ? left : right;
+  if (successor.confidence < superseded.confidence + 0.15) return undefined;
+  return { superseded, successor };
 }
 
 function selectReviewEvidenceSnippets(cards: LearnV2ConceptCard[], artifact?: LearnV2DeclassifiedEvidenceSnippetArtifact): LearnV2ReviewQueue["evidenceSnippets"] {

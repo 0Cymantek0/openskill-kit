@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 concrete supersede review-action slice
+
+- Finding verified: review queues suggested `--concept-supersede` with `concept_replacement` placeholders even when the conflict ledger had already identified an `auto-supersede` successor, forcing users into manual id lookup and making guarded supersede errors more likely.
+- Done: review action generation now consumes the conflict ledger and emits concrete `--concept-supersede` JSON for unresolved `auto-supersede` conflicts when the successor is newer and sufficiently higher-confidence.
+- Done: generated commands include a deterministic ledger reason and declassified rationale, while non-authorized conflicts still use the placeholder workflow.
+- Verified: focused review-action regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 312 tests).
+
 ### 2026-07-06 idempotent counterevidence slice
 
 - Finding verified: reviewer and policy counterevidence writes could append the same `(evidenceId, reason)` repeatedly, causing repeated review commands or policy passes to over-penalize confidence and durability.
