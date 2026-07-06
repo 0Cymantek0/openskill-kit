@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 compile preview output-boundary slice
+
+- Finding verified: active concept sync used the shared declassification report before merging generated Preference/Workflow nodes, but `compileLearnV2ConceptPreview` wrote preview JSON/Markdown before callers could throw on a failed boundary report.
+- Done: persisted compile-preview artifacts now use relative artifact paths and, on boundary failure, write only counts plus the declassification report while omitting generated preference/workflow node bodies.
+- Done: Markdown compile previews render a blocked marker instead of unsafe active behavior statements when the declassification boundary fails.
+- Verified: focused compile-preview/sync boundary regressions, `rtk npm run typecheck`, and full `rtk npm test` (40 files, 305 tests).
+
 ### 2026-07-06 review artifact pack-boundary proof slice
 
 - Finding verified: path registry already excluded legacy and Learn v2 review directories, but pack hygiene tests did not explicitly simulate the new linked review queues and suggested-action artifacts.

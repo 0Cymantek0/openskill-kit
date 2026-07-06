@@ -52,8 +52,9 @@ export async function compileLearnV2ConceptPreview(rootInput: string, config: Pr
     declassificationReport: report,
     artifacts: { json, markdown }
   };
-  await writeJsonAtomic(json, preview);
-  await fs.writeFile(markdown, renderCompilePreview(preview), "utf8");
+  const artifactPreview = compilePreviewForArtifact(preview);
+  await writeJsonAtomic(json, artifactPreview);
+  await fs.writeFile(markdown, renderCompilePreview(artifactPreview), "utf8");
   return preview;
 }
 
@@ -154,6 +155,22 @@ function categoryFor(card: LearnV2ConceptCard): PreferenceNode["category"] {
   return "workflow";
 }
 
+function compilePreviewForArtifact(preview: LearnV2CompilePreview): LearnV2CompilePreview {
+  const artifacts = {
+    json: ".openskill-kit/learn-v2/compiled-preview/concept-compile-preview.json",
+    markdown: ".openskill-kit/learn-v2/compiled-preview/concept-compile-preview.md"
+  };
+  if (preview.declassificationReport.status === "pass") {
+    return { ...preview, artifacts };
+  }
+  return {
+    ...preview,
+    preferenceNodes: [],
+    workflowNodes: [],
+    artifacts
+  };
+}
+
 export function declassificationReport(
   cards: LearnV2ConceptCard[],
   preferenceNodes: PreferenceNode[] = [],
@@ -243,6 +260,10 @@ function renderCompilePreview(preview: LearnV2CompilePreview): string {
     "",
     "## Active Behaviors",
     "",
-    ...(preview.preferenceNodes.length ? preview.preferenceNodes.map((node) => `- ${node.title}: ${node.statement}`) : ["- none"])
+    ...(preview.declassificationReport.status === "fail"
+      ? ["- blocked by declassification boundary"]
+      : preview.preferenceNodes.length
+        ? preview.preferenceNodes.map((node) => `- ${node.title}: ${node.statement}`)
+        : ["- none"])
   ].join("\n");
 }

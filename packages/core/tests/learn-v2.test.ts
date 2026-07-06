@@ -2054,6 +2054,9 @@ describe("learn-v2 substrate", () => {
     expect(preview.preferenceNodes).toHaveLength(1);
     expect(preview.declassificationReport.rawRefsExported).toBe(false);
     expect(JSON.stringify(preview)).not.toContain("raw_compile");
+    const persistedPreview = await readFile(preview.artifacts.json, "utf8");
+    expect(persistedPreview).not.toContain("raw_compile");
+    expect(persistedPreview).not.toContain(root);
   });
 
   it("scans compiled Learn v2 artifacts with the shared declassification boundary", async () => {
@@ -2110,6 +2113,14 @@ describe("learn-v2 substrate", () => {
 
     await expect(syncLearnV2ActiveConcepts(root, [{ ...unsafeCandidate, status: "active" }], now))
       .rejects.toThrow("Learn v2 active concept sync blocked by declassification report");
+    const blockedPreviewJson = await readFile(path.join(root, ".openskill-kit", "learn-v2", "compiled-preview", "concept-compile-preview.json"), "utf8");
+    const blockedPreviewMarkdown = await readFile(path.join(root, ".openskill-kit", "learn-v2", "compiled-preview", "concept-compile-preview.md"), "utf8");
+    expect(JSON.parse(blockedPreviewJson).declassificationReport.status).toBe("fail");
+    expect(blockedPreviewMarkdown).toContain("blocked by declassification boundary");
+    expect(blockedPreviewJson).not.toContain("raw_unsafe_candidate_sync");
+    expect(blockedPreviewMarkdown).not.toContain("raw_unsafe_candidate_sync");
+    expect(blockedPreviewJson).not.toContain(root);
+    expect(blockedPreviewMarkdown).not.toContain(root);
     await expect(writeLearnV2ConceptStore(root, [{ ...unsafeCandidate, status: "active" }], now))
       .rejects.toThrow("Learn v2 active concept sync blocked by declassification report");
     const activated = await activateLearnV2Concepts(root, {
