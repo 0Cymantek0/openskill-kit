@@ -5,6 +5,7 @@ import { writeJsonAtomic } from "../storage/atomic.js";
 import {
   learnV2EscapeRegExp,
   learnV2IsInside,
+  learnV2ReadGitHeadCommit,
   learnV2ReadGitRemotes,
   learnV2ReadPackageName
 } from "./utils.js";
@@ -14,6 +15,7 @@ export const LearnV2ProjectFingerprintSchema = z.object({
   rootName: z.string().min(1),
   packageName: z.string().optional(),
   remotes: z.array(z.string()).default([]),
+  headCommit: z.string().regex(/^[a-f0-9]{40}$/).optional(),
   markerFiles: z.array(z.string()).default([]),
   topLevelDirs: z.array(z.string()).default([])
 });
@@ -27,7 +29,8 @@ export const LearnV2ProjectRelevanceSchema = z.object({
   featureValues: z.record(z.string(), z.number()).default({}),
   reasons: z.array(z.string()).default([]),
   matchedPaths: z.array(z.string()).default([]),
-  matchedRemotes: z.array(z.string()).default([])
+  matchedRemotes: z.array(z.string()).default([]),
+  matchedCommits: z.array(z.string()).default([])
 });
 export type LearnV2ProjectRelevance = z.infer<typeof LearnV2ProjectRelevanceSchema>;
 
@@ -61,6 +64,7 @@ export async function buildLearnV2ProjectFingerprint(root: string): Promise<Lear
     rootName: path.basename(root),
     packageName: await learnV2ReadPackageName(root),
     remotes: await learnV2ReadGitRemotes(root),
+    headCommit: await learnV2ReadGitHeadCommit(root),
     markerFiles: markerNames.filter((name) => entries.some((entry) => entry.name === name && entry.isFile())),
     topLevelDirs: entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).filter((name) => !name.startsWith(".")).sort().slice(0, 20)
   });
@@ -79,6 +83,7 @@ export async function scoreLearnV2ProjectRelevance(
   const reasons = new Set<string>();
   const matchedPaths = new Set<string>();
   const matchedRemotes = new Set<string>();
+  const matchedCommits = new Set<string>();
   const normalizedRoot = root.replace(/\\/g, "/");
   const escapedWindowsRoot = root.replace(/\\/g, "\\\\");
   const sourceFileInsideProject = learnV2IsInside(root, sourcePath);
@@ -105,6 +110,14 @@ export async function scoreLearnV2ProjectRelevance(
     featureValues.gitRemoteMentioned = 1;
     reasons.add("git-remote-mentioned");
     matchedRemotes.add(remote);
+  }
+  if (fingerprint.headCommit) {
+    const currentCommitPattern = new RegExp(`\\b(?:${learnV2EscapeRegExp(fingerprint.headCommit)}|${learnV2EscapeRegExp(fingerprint.headCommit.slice(0, 12))}|${learnV2EscapeRegExp(fingerprint.headCommit.slice(0, 8))})\\b`, "i");
+    if (currentCommitPattern.test(text)) {
+      featureValues.currentHeadCommitMentioned = 1;
+      reasons.add("current-head-commit-mentioned");
+      matchedCommits.add(fingerprint.headCommit.slice(0, 12));
+    }
   }
   const dirPattern = fingerprint.topLevelDirs.length
     ? `(?:${fingerprint.topLevelDirs.map(learnV2EscapeRegExp).join("|")})`
@@ -146,7 +159,8 @@ export async function scoreLearnV2ProjectRelevance(
     featureValues: orderedFeatureValues(featureValues, calibration.features),
     reasons: [...reasons].sort(),
     matchedPaths: [...matchedPaths].sort(),
-    matchedRemotes: [...matchedRemotes].sort()
+    matchedRemotes: [...matchedRemotes].sort(),
+    matchedCommits: [...matchedCommits].sort()
   });
 }
 
@@ -176,6 +190,7 @@ export function buildDefaultLearnV2ProjectRelevanceCalibration(now = new Date())
       "packageNameMentioned",
       "rootNameMentioned",
       "gitRemoteMentioned",
+      "currentHeadCommitMentioned",
       "repoRelativePathMentioned",
       "globalMemoryRisk",
       "foreignAbsolutePathMentioned",
@@ -187,6 +202,7 @@ export function buildDefaultLearnV2ProjectRelevanceCalibration(now = new Date())
       packageNameMentioned: 0.18,
       rootNameMentioned: 0.08,
       gitRemoteMentioned: 0.28,
+      currentHeadCommitMentioned: 0.22,
       repoRelativePathMentioned: 0.25,
       globalMemoryRisk: -0.36,
       foreignAbsolutePathMentioned: -0.18,
@@ -214,6 +230,7 @@ function decideHardGate(
   const strongAnchor = Boolean(
     features.projectRootMentioned ||
       features.gitRemoteMentioned ||
+      (features.currentHeadCommitMentioned && (features.repoRelativePathMentioned || features.packageNameMentioned || sourceFileInsideProject)) ||
       (features.packageNameMentioned && features.repoRelativePathMentioned) ||
       (sourceFileInsideProject && features.repoRelativePathMentioned)
   );
@@ -234,6 +251,9 @@ function decideHardGate(
   }
   if (features.gitRemoteMentioned && (features.repoRelativePathMentioned || features.packageNameMentioned)) {
     return { gate: "hard-accept", decision: "accept", reason: "git-remote-plus-project-anchor" };
+  }
+  if (features.currentHeadCommitMentioned && (sourceFileInsideProject || features.repoRelativePathMentioned || features.packageNameMentioned || features.projectRootMentioned)) {
+    return { gate: "hard-accept", decision: "accept", reason: "current-head-commit-plus-project-anchor" };
   }
   return undefined;
 }

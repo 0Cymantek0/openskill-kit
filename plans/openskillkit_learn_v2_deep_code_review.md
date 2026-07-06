@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 relevance current-commit anchor slice
+
+- Finding verified: the project relevance gate could anchor on project root, package name, repo-relative paths, and remotes, but not on the current Git HEAD SHA. The frontier plan explicitly calls out CI/test logs with current commit SHA as a hard-accept example.
+- Done: project fingerprints now include the current HEAD commit when `.git/HEAD` resolves to a direct SHA or loose branch ref. Relevance scoring detects full, 12-char, or 8-char current HEAD mentions and records bounded `matchedCommits` prefixes.
+- Done: current-head mentions hard-accept only when paired with a project-local source, project path, package name, or project root anchor. SHA-only external command logs remain review-needed instead of becoming accepted through a weak numeric score.
+- Verified: focused relevance commit-anchor regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 317 tests).
+
 ### 2026-07-07 structural parser capability visibility slice
 
 - Finding verified: structural diff summaries exposed backend, confidence, and cap, but did not persist what each parser could or could not prove. Python/Go/Rust fallback scanner output could be consumed without an artifact-level reminder that it is not AST-equivalent.

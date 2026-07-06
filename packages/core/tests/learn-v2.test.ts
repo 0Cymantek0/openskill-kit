@@ -110,6 +110,31 @@ describe("learn-v2 substrate", () => {
     expect(relevance.reasons).toContain("hard-accept:explicit-project-local-source-with-anchor");
   });
 
+  it("uses current git head commits as project relevance anchors with a project path", async () => {
+    const root = await tempProject();
+    const headCommit = "0123456789abcdef0123456789abcdef01234567";
+    await mkdir(path.join(root, ".git", "refs", "heads"), { recursive: true });
+    await writeFile(path.join(root, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
+    await writeFile(path.join(root, ".git", "refs", "heads", "main"), `${headCommit}\n`, "utf8");
+    const source = path.join(root, "ci.log");
+    await writeFile(source, `CI for ${headCommit.slice(0, 12)} passed after npm test -- parser in packages/core/src/parser.ts`, "utf8");
+
+    const relevance = await scoreLearnV2ProjectRelevance(root, source, await readText(source));
+    expect(relevance.decision).toBe("accept");
+    expect(relevance.gate).toBe("hard-accept");
+    expect(relevance.reasons).toContain("current-head-commit-mentioned");
+    expect(relevance.reasons).toContain("hard-accept:current-head-commit-plus-project-anchor");
+    expect(relevance.featureValues.currentHeadCommitMentioned).toBe(1);
+    expect(relevance.matchedCommits).toEqual([headCommit.slice(0, 12)]);
+
+    const externalSource = path.join(os.tmpdir(), "ci-with-only-commit.log");
+    await writeFile(externalSource, `CI ${headCommit.slice(0, 12)} PASS npm test`, "utf8");
+    const external = await scoreLearnV2ProjectRelevance(root, externalSource, await readText(externalSource));
+    expect(external.decision).toBe("review");
+    expect(external.gate).toBe("hard-review");
+    expect(external.reasons).toContain("hard-review:unanchored-test-or-command-log");
+  });
+
   it("normalizes JSONL, markdown, and plain transcript surfaces", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_surface");

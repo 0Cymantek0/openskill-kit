@@ -99,6 +99,17 @@ export async function learnV2ReadGitRemotes(root: string): Promise<string[]> {
   return [...config.matchAll(/url\s*=\s*(.+)/g)].map((match) => match[1]!.trim()).filter(Boolean);
 }
 
+export async function learnV2ReadGitHeadCommit(root: string): Promise<string | undefined> {
+  const head = (await fs.readFile(path.join(root, ".git", "HEAD"), "utf8").catch(() => "")).trim();
+  if (/^[a-f0-9]{40}$/i.test(head)) return head.toLowerCase();
+  const refMatch = /^ref:\s+(.+)$/m.exec(head);
+  if (!refMatch?.[1]) return undefined;
+  const ref = refMatch[1].trim();
+  if (!ref.startsWith("refs/") || ref.includes("..") || path.isAbsolute(ref) || ref.includes("\\")) return undefined;
+  const refCommit = (await fs.readFile(path.join(root, ".git", ref), "utf8").catch(() => "")).trim();
+  return /^[a-f0-9]{40}$/i.test(refCommit) ? refCommit.toLowerCase() : undefined;
+}
+
 export async function learnV2ReadGitBranch(root: string): Promise<string | undefined> {
   const head = await fs.readFile(path.join(root, ".git", "HEAD"), "utf8").catch(() => "");
   const refMatch = /^ref:\s+(.+)$/m.exec(head);
