@@ -4223,6 +4223,7 @@ describe("learn-v2 substrate", () => {
     expect(finalParent.lifecycle.supersedes).toContain(finalChild.id);
     expect(finalChild.counterevidence.some((item) => item.reason === "Folded back after reviewer decision.")).toBe(true);
     expect(finalChild.scoring?.penalties.join(",")).toContain("counterevidence:");
+    expect(supersedeReview.messages.join("\n")).toContain("Supersede semantic validation accepted");
     expect(supersedeReview.messages.join("\n")).toContain("superseded by");
   });
 
@@ -4255,6 +4256,40 @@ describe("learn-v2 substrate", () => {
     const store = await readLearnV2ConceptStore(root);
     expect(store.cards.find((card) => card.id === parserConcept!.id)?.lifecycle.supersedes).not.toContain(docsConcept!.id);
     expect(store.cards.find((card) => card.id === docsConcept!.id)?.status).toBe("candidate");
+  });
+
+  it("rejects unsafe concept supersede operations that retire unrelated concepts", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [parserConcept] = mergeLearnV2ConceptCards([
+      behaviorAtom("unsafe_supersede_parser_tests", "Prefer focused parser tests for parser changes.", "positive")
+    ], now);
+    const [docsConcept] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("unsafe_supersede_docs", "Prefer concise documentation updates for docs changes.", "positive"),
+      scope: {
+        level: "path",
+        paths: ["docs/guide.md"],
+        taskTypes: ["docs-change"]
+      }
+    }], now);
+    await writeLearnV2ConceptStore(root, [parserConcept!, docsConcept!], now);
+
+    await expect(applyLearnV2ConceptReview(root, {
+      supersedeConcepts: [{
+        supersededId: parserConcept!.id,
+        supersededById: docsConcept!.id,
+        reason: "Reviewer selected the wrong successor id."
+      }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:01:00Z")
+    })).rejects.toThrow("Unsafe learn-v2 concept supersede");
+
+    const store = await readLearnV2ConceptStore(root);
+    const retainedParser = store.cards.find((card) => card.id === parserConcept!.id)!;
+    const retainedDocs = store.cards.find((card) => card.id === docsConcept!.id)!;
+    expect(retainedParser.status).toBe("candidate");
+    expect(retainedParser.lifecycle.supersededBy).toBeUndefined();
+    expect(retainedDocs.lifecycle.supersedes).not.toContain(parserConcept!.id);
   });
 
   it("keeps split counterevidence attached to the atoms it still describes", async () => {

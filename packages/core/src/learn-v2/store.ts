@@ -760,6 +760,7 @@ function applyConceptRestructure(
   for (const item of options.supersedeConcepts ?? []) {
     const superseded = requireConcept(byId, item.supersededId, "superseded concept");
     const successor = requireConcept(byId, item.supersededById, "successor concept");
+    const validationMessages = validateConceptSupersedeCompatibility(superseded, successor, item);
     byId.set(superseded.id, LearnV2ConceptCardSchema.parse(withLearnV2ConceptScoring({
       ...superseded,
       status: "superseded",
@@ -772,6 +773,7 @@ function applyConceptRestructure(
     }));
     modifiedIds.add(superseded.id);
     modifiedIds.add(successor.id);
+    messages.push(...validationMessages);
     messages.push(`Marked ${superseded.id} superseded by ${successor.id}.`);
   }
   return [...byId.values()];
@@ -889,6 +891,47 @@ function validateConceptMergeCompatibility(
   return messages;
 }
 
+function validateConceptSupersedeCompatibility(
+  superseded: LearnV2ConceptCard,
+  successor: LearnV2ConceptCard,
+  item: NonNullable<LearnV2ConceptReviewOptions["supersedeConcepts"]>[number]
+): string[] {
+  const problems: string[] = [];
+  const messages: string[] = [];
+  const supersededSignature = conceptSemanticSignatureParts(superseded);
+  const successorSignature = conceptSemanticSignatureParts(successor);
+  const reason = item.reason?.trim() ?? "";
+  const hasReason = reason.length > 0;
+  const allowedSupersededStatuses: LearnV2ConceptCard["status"][] = ["candidate", "staged", "conflict", "active", "locked"];
+  const allowedSuccessorStatuses: LearnV2ConceptCard["status"][] = ["candidate", "staged", "conflict", "active", "locked"];
+  const sameSignature = supersededSignature.signature === successorSignature.signature;
+  const sameKind = supersededSignature.kind === successorSignature.kind;
+  const samePolarity = supersededSignature.polarity === successorSignature.polarity;
+  const scopeOverlap = conceptScopesOverlap(superseded, successor);
+  const deterministicRelation = conceptsContradictOrSupersede(superseded, successor);
+  const behaviorOverlap = conceptBehaviorWordOverlap(superseded, successor);
+  const reviewerSameTopic = hasReason && sameKind && scopeOverlap && behaviorOverlap >= 3;
+
+  if (superseded.id === successor.id) problems.push("supersededId and supersededById must be different.");
+  if (!allowedSupersededStatuses.includes(superseded.status)) problems.push(`${superseded.id} has non-supersedeable status ${superseded.status}.`);
+  if (!allowedSuccessorStatuses.includes(successor.status)) problems.push(`${successor.id} has non-successor status ${successor.status}.`);
+  if (!sameKind) problems.push(`${successor.id} kind ${successorSignature.kind} does not match ${superseded.id} kind ${supersededSignature.kind}.`);
+  if (!scopeOverlap) problems.push(`${successor.id} does not overlap scope for ${superseded.id}.`);
+  if (superseded.status === "locked" && !hasReason) problems.push(`${superseded.id} is locked and requires a supersede reason.`);
+  if (!samePolarity && !hasReason && !deterministicRelation) problems.push(`${successor.id} polarity differs from ${superseded.id} without deterministic conflict or reviewer reason.`);
+  if (!sameSignature && !deterministicRelation && !reviewerSameTopic) {
+    problems.push(`${successor.id} is not a deterministic supersession of ${superseded.id} and lacks same-topic reviewer reason.`);
+  }
+
+  if (problems.length) {
+    throw new Error(`Unsafe learn-v2 concept supersede ${superseded.id} -> ${successor.id}: ${problems.join(" ")}`);
+  }
+  if (!sameSignature || !deterministicRelation) {
+    messages.push(`Supersede semantic validation accepted ${superseded.id} -> ${successor.id}${hasReason ? " with reviewer reason" : ""}.`);
+  }
+  return messages;
+}
+
 function conceptSemanticSignatureParts(card: LearnV2ConceptCard): {
   signature: string;
   kind: string;
@@ -906,6 +949,12 @@ function conceptSemanticSignatureParts(card: LearnV2ConceptCard): {
     polarity: fields.get("polarity") ?? "neutral",
     behavior: fields.get("behavior") ?? "general"
   };
+}
+
+function conceptBehaviorWordOverlap(left: LearnV2ConceptCard, right: LearnV2ConceptCard): number {
+  const leftWords = wordSet(left.canonicalBehavior);
+  const rightWords = wordSet(right.canonicalBehavior);
+  return [...leftWords].filter((word) => rightWords.has(word)).length;
 }
 
 function uniqueAtoms(atoms: LearnV2ConceptCard["atoms"]): LearnV2ConceptCard["atoms"] {

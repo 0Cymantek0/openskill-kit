@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 guarded concept supersession slice
+
+- Finding verified: manual supersede review retired one concept in favor of another by id only; a mismatched successor id could supersede unrelated behavior and prune active compatibility graph nodes.
+- Done: supersede review now validates distinct ids, mergeable statuses, matching semantic kind, overlapping scope, locked-card reason requirements, polarity safety, and either exact signature, deterministic contradiction/supersession, or same-topic reviewer reason before mutating lifecycle state.
+- Done: review messages expose when semantic validation accepted a reviewer-reason supersession, while unrelated cross-scope supersession throws before store mutation.
+- Verified: focused supersede guard regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 311 tests).
+
 ### 2026-07-06 supersede scoring hygiene slice
 
 - Finding verified: manual supersede review could add counterevidence to the superseded card but leave its deterministic scoring fields unchanged until a later unrelated rescore.
