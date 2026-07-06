@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 local JUnit CI surface slice
+
+- Finding verified: `ci-log` advertised JUnit-style evidence, but raw surface discovery skipped `.xml` files and the normalizer treated JUnit XML as undifferentiated log text. Local CI reports could not produce testcase-level, path-linked Learn v2 evidence.
+- Done: `.xml` files are now explicit-only raw-local candidates, JUnit XML tags route to `ci-log`, and detected format records `xml`.
+- Done: JUnit XML normalization emits bounded CI `test-result` evidence per testcase with suite/class/test/file metadata, pass/fail/blocked status, failure text, and file paths.
+- Verified: focused JUnit XML normalization/discovery regressions, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 318 tests).
+
 ### 2026-07-07 relevance current-commit anchor slice
 
 - Finding verified: the project relevance gate could anchor on project root, package name, repo-relative paths, and remotes, but not on the current Git HEAD SHA. The frontier plan explicitly calls out CI/test logs with current commit SHA as a hard-accept example.

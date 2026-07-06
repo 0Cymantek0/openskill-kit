@@ -27,7 +27,7 @@ export const LearnV2SurfaceReadSchema = z.object({
   sourcePath: z.string().min(1),
   contentKind: z.enum(["transcript", "tool-trace", "diff", "log", "document", "summary", "unknown"]),
   rawText: z.string(),
-  detectedFormat: z.enum(["json", "jsonl", "markdown", "plain", "diff", "log"]),
+  detectedFormat: z.enum(["json", "jsonl", "markdown", "plain", "diff", "log", "xml"]),
   normalizationProfile: LearnV2SurfaceNormalizationProfileSchema.optional(),
   policy: z.object({
     selection: z.literal("explicit-only"),
@@ -124,7 +124,7 @@ export interface LearnV2SurfaceDiscoveryOptions {
 const RAW_LOCAL_SOURCE_SCAN_MAX_FILES = 2500;
 const RAW_LOCAL_SOURCE_SCAN_MAX_DEPTH = 5;
 const RAW_LOCAL_SOURCE_CANDIDATE_LIMIT = 12;
-const RAW_LOCAL_SOURCE_EXTENSIONS = new Set([".jsonl", ".json", ".md", ".txt", ".log", ".patch", ".diff"]);
+const RAW_LOCAL_SOURCE_EXTENSIONS = new Set([".jsonl", ".json", ".md", ".txt", ".log", ".xml", ".patch", ".diff"]);
 const RAW_LOCAL_SOURCE_SKIP_DIRS = new Set([
   ".git",
   ".hg",
@@ -212,7 +212,7 @@ export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
   makeAdapter("ide-diagnostics", "IDE diagnostics export", "ide-diagnostics", /\b(?:diagnostics?|problems?|lsp|language[-_. ]?server|tsserver|eslint|ruff|mypy|pyright)\b/i, "log", "medium", ["IDE diagnostics can include source paths, messages, snippets, and tool output; import remains explicit-only."], /(?:^|\n)\s*(?:diagnostic|problem|severity|range|line|column|source|eslint|pyright|mypy|ruff)\s*[:=]/i),
   makeAdapter("issue-local", "Issue tracker export", "issue-local", /\b(?:issues?|tickets?|github[-_. ]?issues?|jira|linear)\b/i, "document", "medium", ["Issue exports can include user text, identifiers, labels, and project paths; import remains explicit-only."], /(?:^|\n)\s*(?:issue|ticket|title|status|assignee|labels?)\s*:/i),
   makeAdapter("review-local", "Local review notes", "review-local", /\b(?:review|comments?|pr|pull-request)\b/i, "document", "medium", ["Review notes are explicit local evidence and remain declassified before output."], /(?:^|\n)\s*(?:reviewer|review comment|pr comment|pull request comment|pull-request comment)\s*:/i),
-  makeAdapter("ci-log", "CI or test log", "ci-log", /\b(?:ci|junit|vitest|pytest|build|log|PASS|FAIL|ERROR|WARN)\b/i, "log", "medium", ["Logs can be large and may include environment-specific paths or outputs."]),
+  makeAdapter("ci-log", "CI or test log", "ci-log", /\b(?:ci|junit|test-results?|surefire|vitest|pytest|build|log|PASS|FAIL|ERROR|WARN)\b/i, "log", "medium", ["Logs can be large and may include environment-specific paths or outputs."], /<(?:testsuite|testsuites|testcase)\b/i),
   makeAdapter("project-docs", "Project documentation", "project-docs", /(?:README|docs?|notes?|plan)/i, "document", "low", ["Project documentation is still treated as explicit local raw evidence when supplied."], false),
   makeAdapter("agent-summaries", "Agent summary", "agent-summaries", /(?:summary|handoff|finish)/i, "summary", "medium", ["Summaries are explicit local evidence and may still contain private project details."], false),
   {
@@ -571,8 +571,8 @@ function rawLocalSourceCandidateScore(
   if (detection.matchedBy === "filename") score += 0.22;
   if (detection.confidence === "high") score += 0.18;
   if (adapter.id !== "generic-transcript") score += 0.14;
-  if (/(^|\/)(codex|claude|cursor|gemini|roo|kilo|cline|goose|zed|opencode|terminal|review|comments?|issues?|tickets?|jira|linear|diagnostics?|problems?|ci|logs?|plans?|docs?|handoff|summary)[^/]*\.(jsonl|json|md|txt|log|patch|diff)$/.test(lower)) score += 0.18;
-  if (/\.(patch|diff|jsonl|log)$/.test(lower)) score += 0.08;
+  if (/(^|\/)(codex|claude|cursor|gemini|roo|kilo|cline|goose|zed|opencode|terminal|review|comments?|issues?|tickets?|jira|linear|diagnostics?|problems?|ci|junit|test-results?|surefire|logs?|plans?|docs?|handoff|summary)[^/]*\.(jsonl|json|md|txt|log|xml|patch|diff)$/.test(lower)) score += 0.18;
+  if (/\.(patch|diff|jsonl|log|xml)$/.test(lower)) score += 0.08;
   if (/(^|\/)(logs?|traces?|sessions?|transcripts?|reviews?|issues?|tickets?|diagnostics?|problems?|plans?|docs?)\//.test(lower)) score += 0.08;
   if (/(^|\/)(readme|notes?)\.md$/.test(lower)) score += 0.04;
   return Math.min(1, Number(score.toFixed(2)));
@@ -585,6 +585,7 @@ function rawLocalSourceCandidateId(relativePath: string): string {
 function contentKindFromExtension(extension: string): LearnV2SurfaceRead["contentKind"] {
   if (extension === ".diff" || extension === ".patch") return "diff";
   if (extension === ".log") return "log";
+  if (extension === ".xml") return "log";
   if (extension === ".md") return "document";
   return "transcript";
 }
@@ -595,6 +596,7 @@ function formatFromExtension(extension: string): LearnV2SurfaceRead["detectedFor
   if (extension === ".md") return "markdown";
   if (extension === ".diff" || extension === ".patch") return "diff";
   if (extension === ".log") return "log";
+  if (extension === ".xml") return "xml";
   if (extension === ".txt") return "plain";
   return undefined;
 }
@@ -605,6 +607,7 @@ function detectSurfaceFormat(sourcePath: string, rawText: string): LearnV2Surfac
   if (/\.md$/i.test(sourcePath) || /^#{1,6}\s/m.test(rawText) || /^\s*(user|assistant|system|developer|tool|reviewer)\s*:/im.test(rawText)) return "markdown";
   if (/\.jsonl$/i.test(sourcePath) || looksJsonl(trimmed)) return "jsonl";
   if (/\.json$/i.test(sourcePath) || looksJson(trimmed)) return "json";
+  if (/\.xml$/i.test(sourcePath) || /^<\?xml\b/i.test(trimmed) || /^<(?:testsuite|testsuites|testcase)\b/i.test(trimmed)) return "xml";
   if (/\.log$/i.test(sourcePath) || /\b(?:ERROR|WARN|INFO|FAIL|PASS)\b/.test(rawText.slice(0, 2000))) return "log";
   return "plain";
 }

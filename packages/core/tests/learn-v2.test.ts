@@ -191,6 +191,69 @@ describe("learn-v2 substrate", () => {
     expect(issueEvidence.some((item) => item.paths.includes("packages/core/src/parser.ts"))).toBe(true);
   });
 
+  it("normalizes local JUnit XML reports as CI test evidence", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_junit_xml");
+    const junit = path.join(root, "junit-results.xml");
+    await writeFile(junit, [
+      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+      "<testsuites>",
+      "  <testsuite name=\"parser\" tests=\"2\" failures=\"1\">",
+      "    <testcase classname=\"ParserSpec\" name=\"keeps focused fixtures\" file=\"packages/core/tests/parser.test.ts\" />",
+      "    <testcase classname=\"ParserSpec\" name=\"rejects broad rewrite\" file=\"packages/core/src/parser.ts\">",
+      "      <failure type=\"AssertionError\" message=\"Expected focused parser regression\">packages/core/src/parser.ts:42</failure>",
+      "    </testcase>",
+      "  </testsuite>",
+      "  <testsuite name=\"platform\" tests=\"1\" skipped=\"1\">",
+      "    <testcase classname=\"WindowsSpec\" name=\"skips unsupported signal\" file=\"packages/core/src/platform.ts\">",
+      "      <skipped message=\"not on this platform\" />",
+      "    </testcase>",
+      "  </testsuite>",
+      "</testsuites>"
+    ].join("\n"), "utf8");
+
+    const surface = await readLearnV2Surface(junit);
+    const evidence = normalizeLearnV2Evidence(surface, record, await readText(junit));
+
+    expect(surface).toMatchObject({
+      adapterId: "ci-log",
+      detectedFormat: "xml",
+      normalizationProfile: "ci-log"
+    });
+    expect(evidence).toHaveLength(3);
+    expect(evidence[0]).toMatchObject({
+      kind: "test-result",
+      actor: "ci",
+      status: "pass"
+    });
+    expect(evidence[1]).toMatchObject({
+      kind: "test-result",
+      actor: "ci",
+      status: "fail"
+    });
+    expect(evidence[1]!.text).toContain("Expected focused parser regression");
+    expect(evidence[1]!.paths).toEqual(expect.arrayContaining(["packages/core/src/parser.ts"]));
+    expect(evidence[1]!.metadata).toMatchObject({
+      adapter: "ci-log",
+      detectedFormat: "xml",
+      junit: true,
+      suite: "parser",
+      className: "ParserSpec",
+      testName: "rejects broad rewrite"
+    });
+    expect(evidence[2]).toMatchObject({
+      kind: "test-result",
+      actor: "ci",
+      status: "blocked"
+    });
+    expect(evidence[2]!.text).toContain("not on this platform");
+    expect(evidence[2]!.metadata).toMatchObject({
+      suite: "platform",
+      className: "WindowsSpec",
+      testName: "skips unsupported signal"
+    });
+  });
+
   it("lifts OpenCode trace context from raw JSONL surfaces into episode stitching ids", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_opencode_trace");
@@ -329,6 +392,7 @@ describe("learn-v2 substrate", () => {
     const zed = path.join(root, "zed-agent-chat.md");
     const diagnostics = path.join(root, "ide-diagnostics.json");
     const issues = path.join(root, "github-issues.md");
+    const junit = path.join(root, "junit-results.xml");
     const diff = path.join(root, "session.diff");
     const generic = path.join(root, "session.md");
     const summaryCollision = path.join(root, "ordinary-session.md");
@@ -345,6 +409,7 @@ describe("learn-v2 substrate", () => {
     await writeFile(zed, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(diagnostics, JSON.stringify({ diagnostics: [{ severity: "error", source: "eslint", message: "Parser fixture missing", path: "packages/core/src/parser.ts" }] }), "utf8");
     await writeFile(issues, "Issue: Parser regression\nStatus: open\nBody: Add focused parser tests for packages/core/src/parser.ts", "utf8");
+    await writeFile(junit, "<testsuite name=\"parser\"><testcase classname=\"ParserSpec\" name=\"regression\" file=\"packages/core/tests/parser.test.ts\" /></testsuite>", "utf8");
     await writeFile(diff, "diff --git a/src/parser.ts b/src/parser.ts\n+test", "utf8");
     await writeFile(generic, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(summaryCollision, "Summary: we discussed the plan.\nuser: Prefer focused parser tests.\nassistant: done", "utf8");
@@ -362,6 +427,7 @@ describe("learn-v2 substrate", () => {
     const zedSurface = await readLearnV2Surface(zed);
     const diagnosticsSurface = await readLearnV2Surface(diagnostics);
     const issuesSurface = await readLearnV2Surface(issues);
+    const junitSurface = await readLearnV2Surface(junit);
     const diffSurface = await readLearnV2Surface(diff);
     const genericSurface = await readLearnV2Surface(generic);
     const summaryCollisionSurface = await readLearnV2Surface(summaryCollision);
@@ -380,6 +446,7 @@ describe("learn-v2 substrate", () => {
     expect(zedSurface.adapterId).toBe("zed");
     expect(diagnosticsSurface.adapterId).toBe("ide-diagnostics");
     expect(issuesSurface.adapterId).toBe("issue-local");
+    expect(junitSurface).toMatchObject({ adapterId: "ci-log", detectedFormat: "xml" });
     expect(diffSurface.adapterId).toBe("git");
     expect(diffSurface.contentKind).toBe("diff");
     expect(genericSurface.adapterId).toBe("generic-transcript");
@@ -399,8 +466,14 @@ describe("learn-v2 substrate", () => {
       "goose",
       "zed",
       "ide-diagnostics",
-      "issue-local"
+      "issue-local",
+      "ci-log"
     ]));
+    expect(discovered.find((candidate) => candidate.relativePath === "junit-results.xml")).toMatchObject({
+      adapterId: "ci-log",
+      detectedFormat: "xml",
+      normalizationProfile: "ci-log"
+    });
     expect(discovered.find((candidate) => candidate.adapterId === "gemini")?.score).toBeGreaterThanOrEqual(0.72);
     expect(diffSurface.normalizationProfile).toBe("diff");
     expect(handoffSurface.normalizationProfile).toBe("agent-summaries");

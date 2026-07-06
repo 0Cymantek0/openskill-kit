@@ -153,6 +153,10 @@ function boundedMultiline(text: string, max: number): string {
 }
 
 function normalizeCiLogText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
+  if (surface.detectedFormat === "xml" || /<(?:testsuite|testsuites|testcase)\b/i.test(text.slice(0, 2000))) {
+    const junit = normalizeJUnitXml(surface, rawRecord, text);
+    if (junit.length) return junit;
+  }
   const chunks = splitLogChunks(text);
   return chunks.map((chunk, index) => makeEvidence(rawRecord, index, {
     kind: "test-result",
@@ -163,6 +167,59 @@ function normalizeCiLogText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEv
     commands: learnV2CommandLinesFromText(chunk),
     metadata: { detectedFormat: surface.detectedFormat, adapter: "ci-log" }
   }));
+}
+
+function normalizeJUnitXml(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
+  const suiteScopes = xmlElements(text, "testsuite");
+  const scopes = suiteScopes.length ? suiteScopes : [{ attributes: "", text: "", rawText: text }];
+  const out: LearnV2NormalizedEvidence[] = [];
+  const testcasePattern = /<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/gi;
+  for (const scope of scopes) {
+    const suiteAttrs = parseXmlAttributes(scope.attributes);
+    const suiteName = suiteAttrs.name;
+    for (const match of scope.rawText.matchAll(testcasePattern)) {
+      const attrs = parseXmlAttributes(match[1] ?? "");
+      const body = match[2] ?? "";
+      const failure = firstXmlElement(body, "failure") ?? firstXmlElement(body, "error");
+      const skipped = firstXmlElement(body, "skipped") ?? (/<skipped\b/i.test(body) ? { attributes: "", text: "", rawText: "" } : undefined);
+      const status = failure ? "fail" : skipped ? "blocked" : "pass";
+      const failureAttrs = failure ? parseXmlAttributes(failure.attributes) : {};
+      const skippedAttrs = skipped ? parseXmlAttributes(skipped.attributes) : {};
+      const parts = [
+        `JUnit ${status}`,
+        suiteName ? `suite=${suiteName}` : undefined,
+        attrs.classname ? `class=${attrs.classname}` : undefined,
+        attrs.name ? `test=${attrs.name}` : undefined,
+        attrs.file ? `file=${attrs.file}` : undefined,
+        failureAttrs.type ? `type=${failureAttrs.type}` : undefined,
+        failureAttrs.message ? `message=${failureAttrs.message}` : undefined,
+        skippedAttrs.message ? `skipped=${skippedAttrs.message}` : undefined,
+        failure?.text ? boundedMultiline(failure.text, 1200) : undefined,
+        skipped?.text ? boundedMultiline(skipped.text, 600) : undefined
+      ].filter(Boolean);
+      const fullText = parts.join("\n");
+      out.push(makeEvidence(rawRecord, out.length, {
+        kind: "test-result",
+        actor: "ci",
+        text: fullText,
+        status,
+        paths: [...new Set([
+          ...arrayStrings(attrs.file),
+          ...learnV2FilePathsFromText(`${fullText}\n${body}`)
+        ])],
+        commands: [],
+        metadata: {
+          detectedFormat: surface.detectedFormat,
+          adapter: "ci-log",
+          junit: true,
+          suite: suiteName,
+          className: attrs.classname,
+          testName: attrs.name
+        }
+      }));
+    }
+  }
+  return out.slice(0, 400);
 }
 
 function normalizeDiagnosticText(surface: LearnV2SurfaceRead, rawRecord: LearnV2RawEvidenceRecord, text: string): LearnV2NormalizedEvidence[] {
@@ -548,6 +605,40 @@ function parseJsonObject(value: string): Record<string, unknown> | undefined {
   } catch {
     return undefined;
   }
+}
+
+function parseXmlAttributes(value: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  for (const match of value.matchAll(/\b([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    attrs[match[1]!] = decodeXmlEntities(match[2] ?? match[3] ?? "");
+  }
+  return attrs;
+}
+
+function firstXmlElement(value: string, name: string): { attributes: string; text: string; rawText: string } | undefined {
+  return xmlElements(value, name)[0];
+}
+
+function xmlElements(value: string, name: string): { attributes: string; text: string; rawText: string }[] {
+  const pattern = new RegExp(`<${name}\\b([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/${name}>)`, "gi");
+  return [...value.matchAll(pattern)].map((match) => ({
+    attributes: match[1] ?? "",
+    text: decodeXmlEntities(stripXmlTags(match[2] ?? "").trim()),
+    rawText: match[2] ?? ""
+  }));
+}
+
+function stripXmlTags(value: string): string {
+  return value.replace(/<[^>]+>/g, " ");
+}
+
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
 }
 
 function safeTraceId(value: unknown, prefix: string): string | undefined {
