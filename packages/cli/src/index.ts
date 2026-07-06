@@ -392,6 +392,7 @@ osk.command("learn")
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--surface-adapter <adapter>", "Learn v2 raw surface adapter override for --raw --surface-file")
   .option("--learn-v2-goldens <path>", "Learn-v2 eval golden JSON file with extraction and optional behavior-delta scenarios")
+  .option("--allow-unreviewed-eval-proposal", "Preview model-planned Learn v2 eval-golden proposals before review; proof boundary marks golden quality as unreviewed")
   .option("--model-mode <mode>", `Learn v2 execution policy: ${RawLearningPublicModelModes.join("|")}; sanitized OpenCode execution uses --execute-model-requests; reserved raw-to-model dispatch requires --experimental-raw-model-dispatch and remains rejected`, parseRawLearningModelMode)
   .option("--experimental-raw-model-dispatch", "Acknowledge reserved raw OpenCode dispatch policy; currently still blocked pending UX, route display, and privacy review")
   .option("--all-detected", "Select all safe detected sources")
@@ -429,7 +430,11 @@ osk.command("learn")
       return;
     }
     if (options.runLearnV2Eval === true) {
-      const result = withLearnV2EvalProofBoundary(await runPersistedLearnV2Eval(process.cwd(), { goldensPath: options.learnV2Goldens, sandboxProbe: options.learnV2EvalSandboxProbe === true }));
+      const result = withLearnV2EvalProofBoundary(await runPersistedLearnV2Eval(process.cwd(), {
+        goldensPath: options.learnV2Goldens,
+        sandboxProbe: options.learnV2EvalSandboxProbe === true,
+        allowUnreviewedProposal: options.allowUnreviewedEvalProposal === true
+      }));
       output(options.json, result, renderLearnV2PersistedEval(result));
       return;
     }

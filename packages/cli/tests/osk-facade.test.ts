@@ -356,9 +356,11 @@ describe("osk CLI facade", () => {
     expect(executed.apply.extractionScenarioCount).toBe(1);
     expect(executed.apply.behaviorDeltaScenarioCount).toBe(1);
     expect(executed.apply.rejected).toEqual([]);
+    expect(executed.apply.instructions.join("\n")).toContain("--allow-unreviewed-eval-proposal");
     const proposal = JSON.parse(await readFile(path.resolve(root, executed.apply.proposalPath), "utf8"));
     expect(proposal.schemaVersion).toBe("openskill-kit.learn-v2.eval-golden-proposal.v1");
     expect(proposal.reviewRequired).toBe(true);
+    expect(proposal.instructions.join("\n")).toContain("Copy approved scenarios");
     expect(JSON.stringify(proposal)).not.toContain(root);
   }, 80_000);
 
@@ -420,6 +422,26 @@ describe("osk CLI facade", () => {
     expect(parsed.proofBoundary.doesNotProve).not.toContain("configured behavior-delta golden checks");
     expect(parsed.proofBoundary.doesNotProve).not.toContain("sandbox execution success");
     expect(parsed.leakCheck.status).toBe("pass");
+
+    const proposalPath = path.join(root, "eval-goldens-proposal.json");
+    await writeFile(proposalPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.eval-golden-proposal.v1",
+      generatedAt: "2026-06-30T00:02:00.000Z",
+      source: "eval-planner-model-proposal",
+      scenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.extraction-golden.v1",
+        id: "cli-parser-proposal",
+        title: "CLI parser proposal",
+        expectedConceptText: ["parser regression"],
+        expectedKinds: ["verification"]
+      }],
+      behaviorDeltaScenarios: [],
+      reviewRequired: true
+    }), "utf8");
+    await expect(execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--run-learn-v2-eval", "--learn-v2-goldens", proposalPath, "--json"], { cwd: root, windowsHide: true }))
+      .rejects.toThrow(/requires review before use/);
+    const preview = await execCliJson(["osk", "learn", "--run-learn-v2-eval", "--learn-v2-goldens", proposalPath, "--allow-unreviewed-eval-proposal", "--json"], root);
+    expect(preview.proofBoundary.doesNotProve).toContain("reviewed eval golden quality");
 
     const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--run-learn-v2-eval", "--learn-v2-goldens", goldensPath, "--learn-v2-eval-sandbox-probe"], { cwd: root, windowsHide: true });
     expect(textResult.stdout).toContain("Behavior delta: pass");

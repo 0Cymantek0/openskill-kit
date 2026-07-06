@@ -44,6 +44,11 @@ export type LearnV2BehaviorDeltaGoldenScenario = z.infer<typeof LearnV2BehaviorD
 export interface LearnV2EvalOptions {
   goldensPath?: string;
   sandboxProbe?: boolean;
+  allowUnreviewedProposal?: boolean;
+}
+
+export interface LearnV2EvalGoldenLoadOptions {
+  allowUnreviewedProposal?: boolean;
 }
 
 export interface LearnV2CounterfactualTraceEvalCase {
@@ -96,7 +101,9 @@ export async function runLearnV2Eval(
   const counterfactualCasesPath = path.join(runDir, "counterfactual-trace-cases.json");
   const behaviorDeltaCasesPath = path.join(runDir, "behavior-delta-cases.json");
   const leakIssues = leakIssuesForConcepts(root, concepts);
-  const goldenFile = options.goldensPath ? await loadLearnV2EvalGoldens(root, options.goldensPath) : { extraction: [], behaviorDelta: [] };
+  const goldenFile = options.goldensPath
+    ? await loadLearnV2EvalGoldens(root, options.goldensPath, { allowUnreviewedProposal: options.allowUnreviewedProposal })
+    : { extraction: [], behaviorDelta: [], unreviewedProposal: false };
   const goldens = goldenFile.extraction;
   const behaviorDeltaGoldens = goldenFile.behaviorDelta;
   const counterfactualCases = buildCounterfactualTraceCases(episodes, concepts);
@@ -155,7 +162,8 @@ export async function runLearnV2Eval(
     proofBoundary: learnV2EvalProofBoundary({
       behaviorDeltaScenarioCount: behaviorDeltaCases.length,
       counterfactualTraceCaseCount: counterfactualCases.length,
-      sandboxProbeStatus: sandboxProbe?.result.status
+      sandboxProbeStatus: sandboxProbe?.result.status,
+      unreviewedGoldenProposal: goldenFile.unreviewedProposal
     }),
     summary,
     leakCheck: {
@@ -198,10 +206,29 @@ export async function loadLearnV2ExtractionGoldens(rootInput: string, goldensPat
 export async function loadLearnV2EvalGoldens(rootInput: string, goldensPathInput: string): Promise<{
   extraction: LearnV2ExtractionGoldenScenario[];
   behaviorDelta: LearnV2BehaviorDeltaGoldenScenario[];
+  unreviewedProposal: boolean;
+}>;
+export async function loadLearnV2EvalGoldens(rootInput: string, goldensPathInput: string, options: LearnV2EvalGoldenLoadOptions): Promise<{
+  extraction: LearnV2ExtractionGoldenScenario[];
+  behaviorDelta: LearnV2BehaviorDeltaGoldenScenario[];
+  unreviewedProposal: boolean;
+}>;
+export async function loadLearnV2EvalGoldens(
+  rootInput: string,
+  goldensPathInput: string,
+  options: LearnV2EvalGoldenLoadOptions = {}
+): Promise<{
+  extraction: LearnV2ExtractionGoldenScenario[];
+  behaviorDelta: LearnV2BehaviorDeltaGoldenScenario[];
+  unreviewedProposal: boolean;
 }> {
   const root = path.resolve(rootInput);
   const file = path.resolve(root, goldensPathInput);
   const parsed = JSON.parse(await fs.readFile(file, "utf8"));
+  const unreviewedProposal = isUnreviewedEvalGoldenProposal(parsed);
+  if (unreviewedProposal && options.allowUnreviewedProposal !== true) {
+    throw new Error("Learn v2 eval golden proposal requires review before use. Copy reviewed scenarios into an approved goldens file, or pass allowUnreviewedProposal only for local preview.");
+  }
   const topLevelValues = Array.isArray(parsed) ? parsed : [];
   const scenarioValues = Array.isArray(parsed?.scenarios) ? parsed.scenarios : [];
   const behaviorValues = [
@@ -215,7 +242,17 @@ export async function loadLearnV2EvalGoldens(rootInput: string, goldensPathInput
   const behaviorDelta = allValues
     .filter(isBehaviorDeltaGoldenLike)
     .map((item: unknown) => LearnV2BehaviorDeltaGoldenScenarioSchema.parse(item));
-  return { extraction, behaviorDelta };
+  return { extraction, behaviorDelta, unreviewedProposal };
+}
+
+function isUnreviewedEvalGoldenProposal(value: unknown): boolean {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && (value as { schemaVersion?: unknown }).schemaVersion === "openskill-kit.learn-v2.eval-golden-proposal.v1"
+    && (value as { reviewRequired?: unknown }).reviewRequired === true
+  );
 }
 
 function evaluateGolden(golden: LearnV2ExtractionGoldenScenario, episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2EvalReport["results"][number] {
@@ -814,6 +851,7 @@ function learnV2EvalProofBoundary(input: {
   behaviorDeltaScenarioCount: number;
   counterfactualTraceCaseCount: number;
   sandboxProbeStatus?: "pass" | "fail";
+  unreviewedGoldenProposal?: boolean;
 }): LearnV2EvalReport["proofBoundary"] {
   const proves = [
     "concept retrieval from stored episodes",
@@ -838,6 +876,9 @@ function learnV2EvalProofBoundary(input: {
     proves.push("local sandbox verifier command execution");
   } else {
     doesNotProve.push("sandbox execution success");
+  }
+  if (input.unreviewedGoldenProposal) {
+    doesNotProve.push("reviewed eval golden quality");
   }
   return {
     method: "deterministic-local-replay",

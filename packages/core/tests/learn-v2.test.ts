@@ -2095,6 +2095,32 @@ describe("learn-v2 substrate", () => {
     expect(markdown).toContain("## Behavior Delta");
     expect(markdown).toContain("Result rows:");
     expect(markdown).toContain("Activated cases:");
+
+    const proposalPath = path.join(root, "eval-goldens-proposal.json");
+    await writeFile(proposalPath, JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.eval-golden-proposal.v1",
+      generatedAt: "2026-06-30T00:01:30.000Z",
+      source: "eval-planner-model-proposal",
+      scenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.extraction-golden.v1",
+        id: "parser-regression-proposal",
+        title: "Parser regression extraction proposal",
+        expectedConceptText: ["parser regression tests"],
+        expectedKinds: ["verification"],
+        expectedTaskHints: ["parser-change"]
+      }],
+      behaviorDeltaScenarios: [],
+      reviewRequired: true
+    }), "utf8");
+    await expect(runLearnV2Eval(root, episodes, concepts, new Date("2026-06-30T00:01:31Z"), {
+      goldensPath: proposalPath
+    })).rejects.toThrow(/requires review before use/);
+    const proposalPreview = await runLearnV2Eval(root, episodes, concepts, new Date("2026-06-30T00:01:32Z"), {
+      goldensPath: proposalPath,
+      allowUnreviewedProposal: true
+    });
+    expect(proposalPreview.extractionGoldenCount).toBe(1);
+    expect(proposalPreview.proofBoundary.doesNotProve).toContain("reviewed eval golden quality");
   });
 
   it("fails eval leak check for raw concept scope while declassifying counterfactual artifacts", async () => {

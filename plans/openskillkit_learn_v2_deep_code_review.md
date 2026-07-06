@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 eval-proposal review gate slice
+
+- Finding verified: eval-planner outputs were labeled `reviewRequired: true`, but the normal eval golden loader accepted the proposal file as if it were a reviewed golden file. That let model-planned tests influence proof reports without an explicit review or preview acknowledgement.
+- Done: Learn v2 eval now rejects unreviewed `openskill-kit.learn-v2.eval-golden-proposal.v1` files by default. Callers must copy reviewed scenarios into an approved goldens file, or explicitly set the preview escape hatch.
+- Done: CLI exposes `--allow-unreviewed-eval-proposal` for local preview only. When used, the eval proof boundary records that reviewed eval golden quality is not proven.
+- Verified: focused core eval proposal-gate regression, focused CLI eval proposal-gate regression, full Learn v2 substrate tests, full CLI facade tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 315 tests).
+
 ### 2026-07-07 contradiction-request diagnostics slice
 
 - Finding verified: deterministic conflict diagnostics were visible in the ledger and review queue, but the generated contradiction-review request bundle still sent the model only prose conflict fields. That made model-assisted review less explainable than human review and weakened the boundary between deterministic authority and semantic proposal text.

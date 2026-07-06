@@ -290,7 +290,10 @@ export async function applyLearnV2EvalPlannerOutputs(
     behaviorDeltaScenarioCount: behaviorDeltaScenarios.length,
     rejected,
     instructions: proposalPath
-      ? [`Run: openskill-kit osk learn --run-learn-v2-eval --learn-v2-goldens ${learnV2ProjectRelativePath(root, proposalPath)}`]
+      ? [
+          `Review and copy approved scenarios before using as a regression gate: ${learnV2ProjectRelativePath(root, proposalPath)}`,
+          `For local preview only: openskill-kit osk learn --run-learn-v2-eval --learn-v2-goldens ${learnV2ProjectRelativePath(root, proposalPath)} --allow-unreviewed-eval-proposal`
+        ]
       : ["No eval golden proposal file was written because no valid scenarios were accepted."]
   };
 }
@@ -335,7 +338,8 @@ async function writeEvalPlannerGoldenProposal(
     instructions: [
       "Model-planned eval goldens are proposal data.",
       "Review before using as a regression gate.",
-      "Run with openskill-kit osk learn --run-learn-v2-eval --learn-v2-goldens <this-file>."
+      "Copy approved scenarios into a reviewed goldens file before gate use.",
+      "For local preview only, run with openskill-kit osk learn --run-learn-v2-eval --learn-v2-goldens <this-file> --allow-unreviewed-eval-proposal."
     ]
   };
   const boundary = scanLearnV2OutputArtifactBoundary(root, config, [{ label: "eval-golden-proposal", content: proposal }]);
