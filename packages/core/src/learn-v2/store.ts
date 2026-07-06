@@ -178,7 +178,14 @@ function mergeStoredConceptSupport(previous: LearnV2ConceptCard, incoming: Learn
     ...incoming.counterevidence.filter((item) => !previous.counterevidence.some((previousItem) => previousItem.evidenceId === item.evidenceId && previousItem.reason === item.reason))
   ];
   const risk = highestRisk([previous.risk, incoming.risk, ...atoms.map((atom) => atom.risk)]);
-  const scoring = calculateLearnV2ConceptScoring({ atoms, evidenceIds, rawRefs, risk, counterevidenceCount: counterevidence.length });
+  const scoring = calculateLearnV2ConceptScoring({
+    atoms,
+    evidenceIds,
+    rawRefs,
+    risk,
+    counterevidenceCount: counterevidence.length,
+    reviewCalibration: { humanReviewed: hasHumanReviewCalibration(previous) }
+  });
   return LearnV2ConceptCardSchema.parse({
     ...previous,
     semanticKey: previous.semanticKey ?? incoming.semanticKey ?? learnV2ConceptSemanticKeyForCard(previous),
@@ -244,9 +251,9 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
       if (reject.has(card.id)) next = markModified(withStatus(next, "rejected", now), modifiedIds);
       if (markOneOff.has(card.id)) next = markModified(withStatus(next, "one-off", now), modifiedIds);
       if (demote.has(card.id)) next = markModified(withStatus(next, "candidate", now), modifiedIds);
-      if (accept.has(card.id)) next = markModified(withStatus(next, "active", now), modifiedIds);
-      if (lock.has(card.id)) next = markModified(withStatus(next, "locked", now), modifiedIds);
-      if (options.bulkSafe === "accept-low-risk" && card.status === "candidate" && isSafeAutoApplyCandidate(card, config)) next = markModified(withStatus(next, "active", now), modifiedIds);
+      if (accept.has(card.id)) next = markModified(withStatus(next, "active", now, { humanReviewed: true }), modifiedIds);
+      if (lock.has(card.id)) next = markModified(withStatus(next, "locked", now, { humanReviewed: true }), modifiedIds);
+      if (options.bulkSafe === "accept-low-risk" && card.status === "candidate" && isSafeAutoApplyCandidate(card, config)) next = markModified(withStatus(next, "active", now, { humanReviewed: true }), modifiedIds);
       if (options.bulkSafe === "reject-one-off" && card.status === "candidate" && card.durability < 0.5) next = markModified(withStatus(next, "one-off", now), modifiedIds);
       if (options.bulkSafe === "mark-superseded" && card.status === "candidate" && card.counterevidence.length > 0) next = markModified(withStatus(next, "superseded", now), modifiedIds);
       const edit = editById.get(card.id);
@@ -484,12 +491,49 @@ export function learnV2GraphReconciliationPath(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "compiled-preview", "graph-reconciliation.json");
 }
 
-function withStatus(card: LearnV2ConceptCard, status: LearnV2ConceptCard["status"], now: Date): LearnV2ConceptCard {
-  return {
+function withStatus(
+  card: LearnV2ConceptCard,
+  status: LearnV2ConceptCard["status"],
+  now: Date,
+  calibration: { humanReviewed?: boolean } = {}
+): LearnV2ConceptCard {
+  const next = {
     ...card,
     status,
     lifecycle: { ...card.lifecycle, updatedAt: now.toISOString() }
   };
+  return calibration.humanReviewed ? withReviewedScoring(next) : next;
+}
+
+function withReviewedScoring(card: LearnV2ConceptCard): LearnV2ConceptCard {
+  const scoring = calculateLearnV2ConceptScoring({
+    atoms: card.atoms,
+    evidenceIds: card.evidenceIds,
+    rawRefs: card.rawRefs,
+    risk: card.risk,
+    counterevidenceCount: card.counterevidence.length,
+    outcomeCalibration: card.scoring
+      ? {
+          helpful: card.scoring.outcomeHelpfulCount,
+          ignored: card.scoring.outcomeIgnoredCount,
+          wrong: card.scoring.outcomeWrongCount,
+          harmful: card.scoring.outcomeHarmfulCount,
+          superseded: card.scoring.outcomeSupersededCount
+        }
+      : undefined,
+    reviewCalibration: { humanReviewed: true }
+  });
+  return {
+    ...card,
+    confidence: scoring.confidence,
+    durability: scoring.durability,
+    sourceReliability: scoring.sourceReliability,
+    scoring
+  };
+}
+
+function hasHumanReviewCalibration(card: LearnV2ConceptCard): boolean {
+  return card.scoring?.calibratedFrom.includes("human-review") === true;
 }
 
 export function applyLearnV2AutoPolicies(
@@ -553,7 +597,8 @@ async function applyLearnV2OutcomeCalibration(
       rawRefs: card.rawRefs,
       risk: card.risk,
       counterevidenceCount: card.counterevidence.length,
-      outcomeCalibration
+      outcomeCalibration,
+      reviewCalibration: { humanReviewed: hasHumanReviewCalibration(card) }
     });
     if (
       card.confidence === scoring.confidence &&
@@ -806,7 +851,8 @@ function rebuildConceptFromAtoms(input: {
     evidenceIds,
     rawRefs,
     risk,
-    counterevidenceCount: input.counterevidence.length
+    counterevidenceCount: input.counterevidence.length,
+    reviewCalibration: { humanReviewed: hasHumanReviewCalibration(input.base) }
   });
   return {
     ...input.base,

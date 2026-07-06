@@ -4524,6 +4524,36 @@ describe("learn-v2 substrate", () => {
     expect(repeatedCard.confidence).toBe(rescored.confidence);
   });
 
+  it("marks accepted concept scores as human-review calibrated", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_human_review_scoring");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Prefer focused parser tests for packages/core/src/parser.ts."
+    ).map((item) => ({ ...item, paths: ["packages/core/src/parser.ts"] }));
+    const [concept] = mergeLearnV2ConceptCards(extractLearnV2BehaviorAtoms(reconstructLearnV2Episodes(evidence)).atoms, new Date("2026-06-30T00:00:00Z"));
+    await writeLearnV2ConceptStore(root, [concept!], new Date("2026-06-30T00:01:00Z"));
+    const stored = (await readLearnV2ConceptStore(root)).cards[0]!;
+
+    const accepted = await applyLearnV2ConceptReview(root, {
+      accept: [stored.id],
+      compileActive: false,
+      now: new Date("2026-06-30T00:02:00Z")
+    });
+    const active = accepted.store.cards.find((card) => card.id === stored.id)!;
+    expect(active.status).toBe("active");
+    expect(active.scoring?.calibratedFrom).toEqual(expect.arrayContaining(["deterministic-heuristic", "human-review"]));
+    expect(active.scoring?.humanReviewBoost).toBe(0.04);
+    expect(active.scoring?.reasons.join(",")).toContain("human-review-approved:0.04");
+    expect(active.confidence).toBeGreaterThanOrEqual(stored.confidence);
+
+    await writeLearnV2ConceptStore(root, [concept!], new Date("2026-06-30T00:03:00Z"));
+    const merged = (await readLearnV2ConceptStore(root)).cards.find((card) => card.id === stored.id)!;
+    expect(merged.scoring?.calibratedFrom).toContain("human-review");
+    expect(merged.scoring?.humanReviewBoost).toBe(0.04);
+  });
+
   it("uses stable semantic concept identity independent of evidence ids", () => {
     const now = new Date("2026-06-30T00:00:00Z");
     const [first] = mergeLearnV2ConceptCards([{

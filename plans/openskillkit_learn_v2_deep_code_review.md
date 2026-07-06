@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 human-review scoring calibration slice
+
+- Finding verified: concept scoring exposed `human-review` as a calibration source, but explicit accept/lock/bulk-accept review decisions did not mark scores as human-reviewed. Reviewed concepts were indistinguishable from purely deterministic candidates except for status.
+- Done: explicit review approvals now add bounded human-review calibration to concept scoring, including `humanReviewBoost`, `calibratedFrom: human-review`, and a visible scoring reason. The boost improves durability without bypassing confidence gates. Auto-policy activation does not claim human review.
+- Done: later support merges and outcome rescoring preserve the human-review calibration marker, so reviewed confidence/durability explanations do not disappear after new evidence arrives.
+- Verified: focused human-review scoring regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 316 tests).
+
 ### 2026-07-07 eval-proposal review gate slice
 
 - Finding verified: eval-planner outputs were labeled `reviewRequired: true`, but the normal eval golden loader accepted the proposal file as if it were a reviewed golden file. That let model-planned tests influence proof reports without an explicit review or preview acknowledgement.

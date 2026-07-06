@@ -548,6 +548,7 @@ export const LearnV2ConceptCardSchema = z.object({
     outcomeSupersededCount: z.number().int().min(0).default(0),
     outcomeBoost: z.number().min(0).max(1).default(0),
     outcomePenalty: z.number().min(0).max(1).default(0),
+    humanReviewBoost: z.number().min(0).max(1).default(0),
     confidence: z.number().min(0).max(1),
     durability: z.number().min(0).max(1),
     sourceReliability: z.number().min(0).max(1),

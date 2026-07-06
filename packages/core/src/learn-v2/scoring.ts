@@ -10,6 +10,10 @@ export interface LearnV2ConceptOutcomeCalibrationInput {
   superseded?: number;
 }
 
+export interface LearnV2ConceptReviewCalibrationInput {
+  humanReviewed?: boolean;
+}
+
 export interface LearnV2ConceptScoringBreakdown {
   schemaVersion: "openskill-kit.learn-v2.concept-scoring.v1";
   policyVersion: typeof SCORING_POLICY_VERSION;
@@ -29,6 +33,7 @@ export interface LearnV2ConceptScoringBreakdown {
   outcomeSupersededCount: number;
   outcomeBoost: number;
   outcomePenalty: number;
+  humanReviewBoost: number;
   confidence: number;
   durability: number;
   sourceReliability: number;
@@ -43,6 +48,7 @@ export interface LearnV2ConceptScoringInput {
   risk?: LearnV2ConceptCard["risk"];
   counterevidenceCount?: number;
   outcomeCalibration?: LearnV2ConceptOutcomeCalibrationInput;
+  reviewCalibration?: LearnV2ConceptReviewCalibrationInput;
 }
 
 export function calculateLearnV2ConceptScoring(input: LearnV2ConceptScoringInput): LearnV2ConceptScoringBreakdown {
@@ -59,6 +65,7 @@ export function calculateLearnV2ConceptScoring(input: LearnV2ConceptScoringInput
   const outcomeBoost = round(Math.min(0.12, outcome.helpful * 0.03));
   const outcomePenalty = round(Math.min(0.3, outcome.ignored * 0.02 + outcome.wrong * 0.07 + outcome.harmful * 0.12 + outcome.superseded * 0.08));
   const outcomeDurabilityPenalty = round(Math.min(0.25, outcome.ignored * 0.02 + outcome.wrong * 0.07 + outcome.harmful * 0.1 + outcome.superseded * 0.08));
+  const humanReviewBoost = input.reviewCalibration?.humanReviewed ? 0.04 : 0;
   const confidence = round(clamp(maxAtomConfidence + supportBoost + outcomeBoost - reliabilityPenalty - counterevidencePenalty - outcomePenalty, 0.05, 0.95));
   const durability = round(clamp(
     0.45
@@ -67,6 +74,7 @@ export function calculateLearnV2ConceptScoring(input: LearnV2ConceptScoringInput
       + Math.min(0.08, Math.max(0, input.atoms.length - 1) * 0.02)
       + (input.risk === "low" ? 0.08 : 0)
       + Math.min(0.12, outcome.helpful * 0.04)
+      + humanReviewBoost
       - Math.min(0.2, counterevidenceCount * 0.06)
       - outcomeDurabilityPenalty,
     0.05,
@@ -74,6 +82,7 @@ export function calculateLearnV2ConceptScoring(input: LearnV2ConceptScoringInput
   ));
   const calibratedFrom: LearnV2ConceptScoringBreakdown["calibratedFrom"] = ["deterministic-heuristic"];
   if (outcomeTotal(outcome) > 0) calibratedFrom.push("activation-outcome");
+  if (input.reviewCalibration?.humanReviewed) calibratedFrom.push("human-review");
   const reasons = [
     `max-atom-confidence:${maxAtomConfidence.toFixed(2)}`,
     `support-atoms:${input.atoms.length}`,
@@ -83,6 +92,7 @@ export function calculateLearnV2ConceptScoring(input: LearnV2ConceptScoringInput
   ];
   if (supportBoost > 0) reasons.push(`support-boost:${supportBoost.toFixed(2)}`);
   if (outcomeBoost > 0) reasons.push(`activation-outcome-helpful:${outcomeBoost.toFixed(2)}`);
+  if (humanReviewBoost > 0) reasons.push(`human-review-approved:${humanReviewBoost.toFixed(2)}`);
   if (input.risk === "low") reasons.push("low-risk-durability-boost");
   const penalties = [];
   if (reliabilityPenalty > 0) penalties.push(`low-source-reliability:${reliabilityPenalty.toFixed(2)}`);
@@ -107,6 +117,7 @@ export function calculateLearnV2ConceptScoring(input: LearnV2ConceptScoringInput
     outcomeSupersededCount: outcome.superseded,
     outcomeBoost,
     outcomePenalty,
+    humanReviewBoost,
     confidence,
     durability,
     sourceReliability: round(sourceReliability),
@@ -130,7 +141,10 @@ export function withLearnV2ConceptScoring<T extends LearnV2ConceptCard>(card: T)
           harmful: card.scoring.outcomeHarmfulCount,
           superseded: card.scoring.outcomeSupersededCount
         }
-      : undefined
+      : undefined,
+    reviewCalibration: {
+      humanReviewed: card.scoring?.calibratedFrom.includes("human-review") === true
+    }
   });
   return {
     ...card,
