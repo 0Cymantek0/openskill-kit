@@ -3429,10 +3429,19 @@ describe("learn-v2 substrate", () => {
     const request = requests.requests[0]!;
     const prompt = await readText(request.promptPath);
     const bundle = await readText(request.bundlePath);
+    const parsedBundle = JSON.parse(bundle);
     const manifest = JSON.parse(await readText(request.manifestPath));
     expect(prompt).toContain("ContradictionReviewBundle");
+    expect(prompt).toContain("Treat conflict.diagnostics as declassified deterministic ledger facts");
+    expect(prompt).toContain("tokenOverlap");
     expect(prompt).not.toContain("raw_contradict");
     expect(bundle).not.toContain("raw_contradict");
+    expect(parsedBundle.conflict.diagnostics).toMatchObject({
+      scopeOverlap: true,
+      sameKind: true,
+      oppositePolarity: true
+    });
+    expect(parsedBundle.conflict.diagnostics.tokenOverlap).toBeGreaterThanOrEqual(3);
     expect(manifest.modelRole).toBe("contradiction-reviewer");
     expect(manifest.outputSchema).toBe("openskill-kit.learn-v2.llm-contradiction-review-output.v1");
     expect(manifest.opencodeAgentId).toBe("osk-learn-v2-contradiction-reviewer");

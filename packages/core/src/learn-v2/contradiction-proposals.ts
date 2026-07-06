@@ -63,7 +63,7 @@ export interface LearnV2ContradictionReviewApplyResult {
 interface ContradictionBundle {
   schemaVersion: "openskill-kit.learn-v2.contradiction-review-bundle.v1";
   reviewId: string;
-  conflict: Pick<DetectedConflict, "id" | "conceptIds" | "conflictType" | "explanation" | "evidenceRefs" | "suggestedResolution" | "resolutionAction">;
+  conflict: Pick<DetectedConflict, "id" | "conceptIds" | "conflictType" | "explanation" | "evidenceRefs" | "suggestedResolution" | "resolutionAction" | "diagnostics">;
   concepts: Array<{
     id: string;
     title: string;
@@ -391,7 +391,8 @@ function buildContradictionBundle(reviewId: string, conflict: DetectedConflict, 
       explanation: conflict.explanation,
       evidenceRefs: conflict.evidenceRefs,
       suggestedResolution: conflict.suggestedResolution,
-      resolutionAction: conflict.resolutionAction
+      resolutionAction: conflict.resolutionAction,
+      diagnostics: conflict.diagnostics
     },
     concepts: cards.map((card) => ({
       id: card.id,
@@ -423,6 +424,7 @@ function renderContradictionReviewPrompt(bundle: ContradictionBundle): string {
     "Return strict JSON only with schemaVersion openskill-kit.learn-v2.llm-contradiction-review-output.v1.",
     "Do not quote raw transcripts, raw refs, secrets, local absolute paths, usernames, or machine-local paths.",
     "Use only conceptIds and evidenceIds from the bundle.",
+    "Treat conflict.diagnostics as declassified deterministic ledger facts: use them to explain confidence, authority, protection, and why human review may still be required.",
     "Set requiresHumanReview=true unless the finding is plainly grounded and the deterministic ledger already allows the action.",
     "Supersession and narrowing are proposals only; OpenSkillKit applies them only when deterministic validators allow the action.",
     "",

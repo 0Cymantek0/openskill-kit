@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 contradiction-request diagnostics slice
+
+- Finding verified: deterministic conflict diagnostics were visible in the ledger and review queue, but the generated contradiction-review request bundle still sent the model only prose conflict fields. That made model-assisted review less explainable than human review and weakened the boundary between deterministic authority and semantic proposal text.
+- Done: contradiction-review bundles now include the same declassified diagnostics carried by conflict ledger entries: scope/token overlap, kind/polarity checks, confidence delta, supersession pair ids, authority reasons, and protection reasons.
+- Done: contradiction-review prompts explicitly instruct the model to treat `conflict.diagnostics` as deterministic ledger facts and to use them when explaining confidence, authority, protection, or human-review requirements.
+- Verified: focused contradiction-request regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 315 tests).
+
 ### 2026-07-07 review-visible conflict diagnostics slice
 
 - Finding verified: conflict ledger diagnostics were persisted in the separate conflict ledger, but the concept review queue still showed only `conflict:<type>` focus reasons on cards. Reviewers had to open another artifact to understand overlap, polarity, confidence, authority, and protection factors.
