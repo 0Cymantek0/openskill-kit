@@ -5,6 +5,7 @@ import { learnV2IsGeneratedPath } from "./utils.js";
 type StructuralClass = LearnV2PatchComparison["structuralClasses"][number];
 type StructuralLanguage = LearnV2PatchComparison["structuralSummary"]["languages"][number];
 type FileSummary = LearnV2PatchComparison["structuralSummary"]["fileSummaries"][number];
+export type LearnV2StructuralParserBackendDescriptor = Pick<StructuralParser, "language" | "backend" | "confidence" | "confidenceCap" | "capabilities" | "limitations">;
 
 interface DiffFile {
   path: string;
@@ -36,6 +37,65 @@ interface StructuralParser {
   capabilities: FileSummary["parserCapabilities"];
   limitations: FileSummary["parserLimitations"];
   signal(file: DiffFile): { symbols: string[]; imports: string[] };
+}
+
+const STRUCTURAL_PARSERS: StructuralParser[] = [
+  {
+    language: "typescript",
+    backend: "typescript-compiler",
+    confidence: "parser",
+    confidenceCap: 1,
+    capabilities: ["ast-declarations", "hunk-scope", "import-tracking"],
+    limitations: ["hunk-context-dependent"],
+    signal: (file) => typeScriptStructuralSignal(file, "typescript")
+  },
+  {
+    language: "javascript",
+    backend: "typescript-compiler",
+    confidence: "parser",
+    confidenceCap: 1,
+    capabilities: ["ast-declarations", "hunk-scope", "import-tracking"],
+    limitations: ["hunk-context-dependent"],
+    signal: (file) => typeScriptStructuralSignal(file, "javascript")
+  },
+  {
+    language: "python",
+    backend: "language-structural-scanner",
+    confidence: "fallback",
+    confidenceCap: 0.78,
+    capabilities: ["block-scope", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
+    limitations: ["fallback-confidence-cap", "hunk-context-dependent", "not-ast-equivalent"],
+    signal: (file) => blockStructuralSignal(file, "python")
+  },
+  {
+    language: "go",
+    backend: "language-structural-scanner",
+    confidence: "fallback",
+    confidenceCap: 0.78,
+    capabilities: ["block-scope", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
+    limitations: ["fallback-confidence-cap", "hunk-context-dependent", "not-ast-equivalent"],
+    signal: (file) => blockStructuralSignal(file, "go")
+  },
+  {
+    language: "rust",
+    backend: "language-structural-scanner",
+    confidence: "fallback",
+    confidenceCap: 0.78,
+    capabilities: ["block-scope", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
+    limitations: ["fallback-confidence-cap", "hunk-context-dependent", "not-ast-equivalent"],
+    signal: (file) => blockStructuralSignal(file, "rust")
+  }
+];
+
+export function learnV2StructuralParserBackends(): LearnV2StructuralParserBackendDescriptor[] {
+  return STRUCTURAL_PARSERS.map(({ language, backend, confidence, confidenceCap, capabilities, limitations }) => ({
+    language,
+    backend,
+    confidence,
+    confidenceCap,
+    capabilities: [...capabilities],
+    limitations: [...limitations]
+  }));
 }
 
 export function analyzeLearnV2StructuralDiff(text: string, fallbackPaths: string[] = []): LearnV2PatchComparison["structuralSummary"] {
@@ -146,28 +206,8 @@ function summarizeFile(file: DiffFile): FileSummary {
 }
 
 function structuralParserForLanguage(language: StructuralLanguage): StructuralParser {
-  if (language === "typescript" || language === "javascript") {
-    return {
-      language,
-      backend: "typescript-compiler",
-      confidence: "parser",
-      confidenceCap: 1,
-      capabilities: ["ast-declarations", "hunk-scope", "import-tracking"],
-      limitations: ["hunk-context-dependent"],
-      signal: (file) => typeScriptStructuralSignal(file, language)
-    };
-  }
-  if (language === "python" || language === "go" || language === "rust") {
-    return {
-      language,
-      backend: "language-structural-scanner",
-      confidence: "fallback",
-      confidenceCap: 0.78,
-      capabilities: ["block-scope", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
-      limitations: ["fallback-confidence-cap", "hunk-context-dependent", "not-ast-equivalent"],
-      signal: (file) => blockStructuralSignal(file, language)
-    };
-  }
+  const registered = STRUCTURAL_PARSERS.find((parser) => parser.language === language);
+  if (registered) return registered;
   return {
     language,
     backend: "none",

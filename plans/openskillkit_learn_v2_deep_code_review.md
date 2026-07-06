@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 structural parser backend registry slice
+
+- Finding verified: structural summaries exposed backend/capability fields, but parser selection was still a private conditional. The plan/review calls for a parser abstraction so Python/Go/Rust can move from fallback scanners to stronger parser backends without rewriting patch summarization.
+- Done: structural diff now uses an explicit backend registry for TypeScript, JavaScript, Python, Go, and Rust. The exported registry reports active backend, confidence, confidence cap, capabilities, and limitations, returning defensive copies for callers.
+- Done: docs now describe the registry as the extension point for future Tree-sitter or language-native parser upgrades while preserving the current no-overclaim fallback boundary.
+- Verified: focused parser backend registry regression, focused structural parser regressions, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 321 tests).
+
 ### 2026-07-07 pack import concept visibility slice
 
 - Finding verified: behavior packs already carried declassified Learn v2 MCP resources and import reviews counted active/locked/high-risk concepts, but reviewers saw ids only. That was too weak for team sharing because imported learned behavior could not be judged from the review file without opening JSON resources by hand.

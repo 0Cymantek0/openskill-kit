@@ -15,6 +15,7 @@ import {
   mergeLearnV2ConceptCards,
   normalizeLearnV2Evidence,
   analyzeLearnV2StructuralDiff,
+  learnV2StructuralParserBackends,
   summarizeLearnV2Patches,
   summarizeLearnV2Tools,
   buildReviewQueue,
@@ -767,6 +768,33 @@ describe("learn-v2 substrate", () => {
     expect(patches[0]!.ignoredGenerated).toBe(true);
     expect(patches[0]!.behaviorEligible).toBe(true);
     expect(patches[0]!.filterReasons).toEqual([]);
+  });
+
+  it("exposes structural parser backend registry for future parser upgrades", () => {
+    const backends = learnV2StructuralParserBackends();
+    const byLanguage = new Map(backends.map((backend) => [backend.language, backend]));
+
+    expect([...byLanguage.keys()].sort()).toEqual(["go", "javascript", "python", "rust", "typescript"]);
+    expect(byLanguage.get("typescript")).toMatchObject({
+      backend: "typescript-compiler",
+      confidence: "parser",
+      confidenceCap: 1,
+      capabilities: expect.arrayContaining(["ast-declarations", "hunk-scope", "import-tracking"]),
+      limitations: ["hunk-context-dependent"]
+    });
+    for (const language of ["python", "go", "rust"] as const) {
+      expect(byLanguage.get(language)).toMatchObject({
+        backend: "language-structural-scanner",
+        confidence: "fallback",
+        confidenceCap: 0.78,
+        capabilities: expect.arrayContaining(["block-scope", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"]),
+        limitations: expect.arrayContaining(["fallback-confidence-cap", "hunk-context-dependent", "not-ast-equivalent"])
+      });
+    }
+
+    const mutable = learnV2StructuralParserBackends();
+    mutable[0]!.capabilities.push("unsupported-language");
+    expect(learnV2StructuralParserBackends()[0]!.capabilities).not.toContain("unsupported-language");
   });
 
   it("uses TypeScript AST signals for multiline imports default exports arrows and class methods", async () => {
