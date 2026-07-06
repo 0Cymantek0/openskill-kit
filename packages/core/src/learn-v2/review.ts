@@ -56,6 +56,7 @@ export async function writeLearnV2ReviewQueue(
       healthScore: context?.conceptDrift?.report.healthScore ?? 1,
       staleCandidateCount: context?.conceptDrift?.report.staleCandidates.length ?? 0,
       reasonCounts: context?.conceptDrift ? countBy(context.conceptDrift.report.staleCandidates.map((candidate) => candidate.reason)) : {},
+      staleCandidates: (context?.conceptDrift?.report.staleCandidates ?? []).slice(0, 50),
       reportPath: context?.conceptDrift ? learnV2SafeLocalPath(context.conceptDrift.artifactPath, root) : undefined
     },
     artifacts: {
@@ -125,6 +126,9 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     `Stale candidates: ${queue.driftSummary.staleCandidateCount}`,
     `Reasons: ${renderCounts(queue.driftSummary.reasonCounts)}`,
     queue.driftSummary.reportPath ? `Report: ${queue.driftSummary.reportPath}` : "Report: not written",
+    ...queue.driftSummary.staleCandidates.slice(0, 12).map((candidate) =>
+      `- ${candidate.conceptId}: ${candidate.reason}; negative=${candidate.negativeOutcomeCount}; activations=${candidate.activationCount}; ageDays=${candidate.ageDays}; suggestion=${candidate.suggestion}`
+    ),
     "",
     "## Focus Cards",
     ""
@@ -132,6 +136,7 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
   const focusIds = new Set(queue.reviewFocus.focusCardIds);
   const focusCards = queue.cards.filter((card) => focusIds.has(card.id));
   const appendixCards = queue.cards.filter((card) => !focusIds.has(card.id));
+  const driftByConcept = new Map(queue.driftSummary.staleCandidates.map((candidate) => [candidate.conceptId, candidate]));
   for (const card of focusCards) {
     lines.push(`### ${card.title}`);
     lines.push("");
@@ -151,6 +156,11 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     if (card.activation.commands.length) lines.push(`Commands: ${card.activation.commands.join(", ")}`);
     lines.push(`Evidence: ${card.evidenceIds.join(", ")}`);
     lines.push("Raw refs: local-only, not exportable");
+    const drift = driftByConcept.get(card.id);
+    if (drift) {
+      lines.push(`Drift: ${drift.reason}; negative=${drift.negativeOutcomeCount}; activations=${drift.activationCount}; ageDays=${drift.ageDays}${drift.lastOutcomeDays !== undefined ? `; lastOutcomeDays=${drift.lastOutcomeDays}` : ""}`);
+      lines.push(`Drift suggestion: ${drift.suggestion}`);
+    }
     const snippets = queue.evidenceSnippets.filter((snippet) => card.evidenceIds.includes(snippet.evidenceId)).slice(0, 3);
     if (snippets.length) {
       lines.push("Evidence snippets:");

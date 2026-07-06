@@ -626,11 +626,21 @@ export const LearnV2ReviewQueueSchema = z.object({
     healthScore: z.number().min(0).max(1),
     staleCandidateCount: z.number().int().min(0),
     reasonCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    staleCandidates: z.array(z.object({
+      conceptId: z.string().min(1),
+      reason: z.enum(["stale-no-outcomes", "low-activation", "recent-negative-outcomes", "supersession-candidate", "evidence-expired"]),
+      ageDays: z.number().int().min(0),
+      lastOutcomeDays: z.number().int().min(0).optional(),
+      activationCount: z.number().int().min(0),
+      negativeOutcomeCount: z.number().int().min(0),
+      suggestion: z.string().min(1)
+    })).default([]),
     reportPath: z.string().optional()
   }).default({
     healthScore: 1,
     staleCandidateCount: 0,
-    reasonCounts: {}
+    reasonCounts: {},
+    staleCandidates: []
   }),
   artifacts: z.object({
     markdown: z.string(),

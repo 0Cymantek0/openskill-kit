@@ -1201,9 +1201,16 @@ describe("learn-v2 substrate", () => {
     const queue = await writeLearnV2ReviewQueue(root, [active], now, { conceptDrift: drift });
     expect(queue.driftSummary.staleCandidateCount).toBe(1);
     expect(queue.driftSummary.reasonCounts["recent-negative-outcomes"]).toBe(1);
+    expect(queue.driftSummary.staleCandidates[0]).toMatchObject({
+      conceptId: active.id,
+      reason: "recent-negative-outcomes",
+      negativeOutcomeCount: 2
+    });
     const reviewMarkdown = await readText(queue.artifacts.markdown);
     expect(reviewMarkdown).toContain("Drift Summary");
     expect(reviewMarkdown).toContain("recent-negative-outcomes");
+    expect(reviewMarkdown).toContain(`- ${active.id}: recent-negative-outcomes; negative=2`);
+    expect(reviewMarkdown).toContain("Drift suggestion: Concept has 2 recent negative outcome(s)");
   });
 
   it("detects Python Go and Rust structural symbols with confidence-capped fallback parsers", async () => {

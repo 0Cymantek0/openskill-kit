@@ -9,6 +9,14 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 review-visible drift detail slice
+
+- Finding verified: drift reports carried useful stale-candidate detail, but the review queue only exposed aggregate drift counts. Reviewers could miss why a concept was stale or harmful unless they opened the separate drift JSON.
+- Done: review queue JSON now carries bounded, declassified stale-candidate details: concept id, reason, age, last-outcome age, activation count, negative outcome count, and suggestion.
+- Done: review queue Markdown now prints drift detail in the Drift Summary and on focused concept cards, so harmful-outcome and stale-concept review reasons are visible at the point of review.
+- Done: regression coverage proves the review queue includes negative-outcome drift details without exposing raw outcome reasons.
+- Verified: focused review-queue drift visibility regression, docs coverage, `rtk npm run typecheck`, full Learn v2 test file, and full `rtk npm test` (40 files, 304 tests).
+
 ### 2026-07-06 harmful outcome policy calibration slice
 
 - Finding verified: the first harmful-outcome demotion pass closed the telemetry loop, but the threshold/window were implicit code constants.
