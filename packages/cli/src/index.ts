@@ -555,6 +555,7 @@ osk.command("review")
   .option("--concept-lock <id>", "Lock a learn-v2 concept card as active", collectOption, [])
   .option("--concept-demote <id>", "Demote a learn-v2 concept card back to candidate", collectOption, [])
   .option("--concept-one-off <id>", "Mark a learn-v2 concept card as one-off", collectOption, [])
+  .option("--concept-narrow <json>", "Narrow a learn-v2 concept. JSON: {\"id\":\"concept_a\",\"paths\":[\"packages/core/src/parser.ts\"],\"taskTypes\":[\"parser-change\"]}", collectOption, [])
   .option("--concept-merge <json>", "Merge learn-v2 concepts. JSON: {\"targetId\":\"concept_a\",\"sourceIds\":[\"concept_b\"]}", collectOption, [])
   .option("--concept-split <json>", "Split a learn-v2 concept. JSON: {\"sourceId\":\"concept_a\",\"atomIds\":[\"atom_b\"]}", collectOption, [])
   .option("--concept-supersede <json>", "Mark supersession. JSON: {\"supersededId\":\"concept_old\",\"supersededById\":\"concept_new\"}", collectOption, [])
@@ -575,6 +576,7 @@ osk.command("review")
         lock: options.conceptLock,
         demote: options.conceptDemote,
         markOneOff: options.conceptOneOff,
+        narrowScopes: parseConceptNarrowOptions(options.conceptNarrow),
         mergeConcepts: parseConceptMergeOptions(options.conceptMerge),
         splitConcepts: parseConceptSplitOptions(options.conceptSplit),
         supersedeConcepts: parseConceptSupersedeOptions(options.conceptSupersede),
@@ -2877,6 +2879,24 @@ function parseConceptMergeOptions(values: string[] | undefined): NonNullable<Con
   });
 }
 
+function parseConceptNarrowOptions(values: string[] | undefined): NonNullable<ConceptReviewOptionsInput["narrowScopes"]> {
+  return (values ?? []).map((value) => {
+    const parsed = parseJsonOption(value, "--concept-narrow");
+    const paths = optionalStringArrayField(parsed, "paths", "--concept-narrow");
+    const taskTypes = optionalStringArrayField(parsed, "taskTypes", "--concept-narrow");
+    const negativeTriggers = optionalStringArrayField(parsed, "negativeTriggers", "--concept-narrow");
+    if (!paths?.length && !taskTypes?.length && !negativeTriggers?.length) {
+      throw new Error("--concept-narrow requires at least one non-empty paths, taskTypes, or negativeTriggers array.");
+    }
+    return {
+      id: requireStringField(parsed, "id", "--concept-narrow"),
+      paths,
+      taskTypes,
+      negativeTriggers
+    };
+  });
+}
+
 function parseConceptSplitOptions(values: string[] | undefined): NonNullable<ConceptReviewOptionsInput["splitConcepts"]> {
   return (values ?? []).map((value) => {
     const parsed = parseJsonOption(value, "--concept-split");
@@ -2947,6 +2967,7 @@ function hasConceptReviewOptions(options: {
   conceptLock?: string[];
   conceptDemote?: string[];
   conceptOneOff?: string[];
+  conceptNarrow?: string[];
   conceptMerge?: string[];
   conceptSplit?: string[];
   conceptSupersede?: string[];
@@ -2960,6 +2981,7 @@ function hasConceptReviewOptions(options: {
     || options.conceptLock?.length
     || options.conceptDemote?.length
     || options.conceptOneOff?.length
+    || options.conceptNarrow?.length
     || options.conceptMerge?.length
     || options.conceptSplit?.length
     || options.conceptSupersede?.length

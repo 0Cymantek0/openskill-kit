@@ -96,6 +96,7 @@ openskill-kit osk learn --gc-raw-vault --max-raw-vault-bytes 50000000
 openskill-kit osk learn --raw-vault-status --max-raw-vault-bytes 50000000 --max-pinned-raw-vault-bytes 100000000 --max-total-raw-vault-bytes 200000000
 openskill-kit osk review --concept-accept concept_...
 openskill-kit osk review --concept-reject concept_...
+openskill-kit osk review --concept-narrow '{"id":"concept_a","paths":["packages/core/src/parser.ts"],"taskTypes":["parser-change"],"negativeTriggers":["docs-only parser mention"]}'
 openskill-kit osk review --concept-merge '{"targetId":"concept_a","sourceIds":["concept_b"]}'
 openskill-kit osk review --concept-split '{"sourceId":"concept_a","atomIds":["atom_b"],"taskTypes":["parser-change"]}'
 openskill-kit osk review --concept-supersede '{"supersededId":"concept_old","supersededById":"concept_new"}'

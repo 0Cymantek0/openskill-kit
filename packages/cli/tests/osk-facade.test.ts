@@ -89,6 +89,17 @@ describe("osk CLI facade", () => {
     expect(invalidSplit.code).toBe(1);
     expect(invalidSplit.stderr).toContain("--concept-split field paths must be an array of non-empty strings");
 
+    const invalidNarrow = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "review",
+      "--concept-narrow",
+      JSON.stringify({ id: "concept_a", paths: [42] })
+    ], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(invalidNarrow.code).toBe(1);
+    expect(invalidNarrow.stderr).toContain("--concept-narrow field paths must be an array of non-empty strings");
+
     const invalidSupersede = await execFileAsync(process.execPath, [
       tsxBin,
       cli,
@@ -100,6 +111,40 @@ describe("osk CLI facade", () => {
     expect(invalidSupersede.code).toBe(1);
     expect(invalidSupersede.stderr).toContain("--concept-supersede field reason must be a non-empty string");
   });
+
+  it("narrows Learn v2 concept scope through the review CLI", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-review-narrow-"));
+    await execCliJson(["init", "--json"], root);
+    const transcript = path.join(root, "session.md");
+    await writeFile(transcript, `user: ${root} prefer focused parser tests for parser changes in packages/core/src/parser.ts.`, "utf8");
+    await execCliJson(["osk", "learn", "--raw", "--surface-file", transcript, "--apply", "--json"], root);
+    const storePath = path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
+    const before = JSON.parse(await readFile(storePath, "utf8"));
+    const concept = before.cards.find((card: { status: string }) => card.status === "candidate");
+    expect(concept?.id).toBeTruthy();
+
+    const reviewed = await execCliJson([
+      "osk",
+      "review",
+      "--concept-narrow",
+      JSON.stringify({
+        id: concept.id,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: ["docs-only parser mention"]
+      }),
+      "--no-concept-compile",
+      "--json"
+    ], root);
+    const narrowed = reviewed.store.cards.find((card: { id: string }) => card.id === concept.id);
+
+    expect(narrowed.scope.paths).toEqual(["packages/core/src/parser.ts"]);
+    expect(narrowed.scope.taskTypes).toEqual(["parser-change"]);
+    expect(narrowed.scope.negativeTriggers).toEqual(["docs-only parser mention"]);
+    expect(narrowed.scope.reviewLocked).toBe(true);
+    expect(narrowed.scope.reviewedAt).toBeTruthy();
+    expect(narrowed.activation.pathGlobs).toEqual(["packages/core/src/**"]);
+  }, 60_000);
 
   it("blocks reserved raw model dispatch unless explicitly acknowledged, and still does not execute it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-raw-model-boundary-"));

@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 CLI concept narrow review slice
+
+- Finding verified: core review transactions supported `narrowScopes`, but the public `osk review` CLI exposed accept/reject/lock/demote/one-off/merge/split/supersede only, leaving reviewer scope narrowing inaccessible through the normal command path.
+- Done: `osk review --concept-narrow` now accepts validated JSON with `id`, optional `paths`, `taskTypes`, and `negativeTriggers`, requiring at least one non-empty narrowing array before calling the locked review transaction.
+- Done: CLI regression coverage proves malformed narrow JSON fails at the boundary and a real raw-learned concept can be narrowed, review-locked, and given path/task/negative-trigger scope through the CLI.
+- Verified: focused CLI narrow regressions, `rtk npm run typecheck`, `rtk npm run build`, full CLI facade tests (34 tests), and full `rtk npm test` (40 files, 314 tests).
+
 ### 2026-07-06 CLI review JSON validation slice
 
 - Finding verified: `osk review --concept-merge`, `--concept-split`, and `--concept-supersede` parsed JSON objects but trusted array element types and optional field types, so malformed commands could reach store review logic or fail with indirect schema/runtime errors.
