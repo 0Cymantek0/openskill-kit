@@ -148,6 +148,8 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     lines.push(`Delta: ${card.behaviorDelta}`);
     lines.push(`Behavior: ${card.canonicalBehavior}`);
     lines.push(`Confidence: ${card.confidence.toFixed(2)} Durability: ${card.durability.toFixed(2)} Reliability: ${card.sourceReliability.toFixed(2)} Risk: ${card.risk}`);
+    const scoringSummary = renderScoringSummary(card);
+    if (scoringSummary) lines.push(scoringSummary);
     if (card.scope.reviewLocked) lines.push(`Scope lock: reviewer-narrowed${card.scope.reviewedAt ? ` at ${card.scope.reviewedAt}` : ""}`);
     if (card.scope.paths.length) lines.push(`Scope paths: ${card.scope.paths.join(", ")}`);
     if (card.scope.taskTypes.length) lines.push(`Task types: ${card.scope.taskTypes.join(", ")}`);
@@ -211,6 +213,7 @@ function selectReviewFocus(
   for (const card of cards) {
     if (card.status === "candidate" || card.status === "staged" || card.status === "conflict") add(card.id, `status:${card.status}`);
     if (card.counterevidence.length) add(card.id, "counterevidence");
+    if (card.scoring?.calibratedFrom.includes("activation-outcome")) add(card.id, "scoring:activation-outcome");
   }
   for (const conflict of context?.ledger?.conflicts ?? []) {
     if (conflict.resolved) continue;
@@ -294,4 +297,21 @@ function countBy(values: string[]): Record<string, number> {
 function renderCounts(counts: Record<string, number>): string {
   const entries = Object.entries(counts);
   return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join(", ") : "none";
+}
+
+function renderScoringSummary(card: LearnV2ConceptCard): string | undefined {
+  const scoring = card.scoring;
+  if (!scoring) return undefined;
+  const outcomes = [
+    `helpful=${scoring.outcomeHelpfulCount ?? 0}`,
+    `ignored=${scoring.outcomeIgnoredCount ?? 0}`,
+    `wrong=${scoring.outcomeWrongCount ?? 0}`,
+    `harmful=${scoring.outcomeHarmfulCount ?? 0}`,
+    `superseded=${scoring.outcomeSupersededCount ?? 0}`
+  ].join(", ");
+  return [
+    `Scoring: calibrated=${scoring.calibratedFrom.join(", ")}; outcomes ${outcomes}; boost=${(scoring.outcomeBoost ?? 0).toFixed(2)} penalty=${(scoring.outcomePenalty ?? 0).toFixed(2)}`,
+    scoring.reasons.length ? `Scoring reasons: ${scoring.reasons.slice(0, 6).join("; ")}` : undefined,
+    scoring.penalties.length ? `Scoring penalties: ${scoring.penalties.slice(0, 6).join("; ")}` : undefined
+  ].filter((line): line is string => line !== undefined).join("\n");
 }

@@ -14,7 +14,8 @@
 - Finding verified: concept scoring exposed `calibratedFrom` and the plan calls for outcome-updated confidence, but durable concept scores still came only from deterministic atom/evidence heuristics unless a separate demotion policy changed status.
 - Done: concept scoring now accepts counts-only activation outcome calibration and records helpful/ignored/wrong/harmful/superseded counts plus bounded boost/penalty fields.
 - Done: concept store writes and review transactions rescore concepts from local outcome JSONL under the concept lock, update activation-index confidence, and never copy raw outcome reasons into concept cards or compiled graph data.
-- Verified: focused outcome-calibration regression, `rtk npm run typecheck`, full Learn v2 substrate tests, and full `rtk npm test` (40 files, 306 tests).
+- Done: review queues now focus outcome-calibrated concepts and render bounded scoring details, so reviewers see why confidence changed without opening raw outcome telemetry.
+- Verified: focused outcome-calibration/review-visibility regression, `rtk npm run typecheck`, full Learn v2 substrate tests, and full `rtk npm test` (40 files, 306 tests).
 
 ### 2026-07-06 eval proof-boundary honesty slice
 

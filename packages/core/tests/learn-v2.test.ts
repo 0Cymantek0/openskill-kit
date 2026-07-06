@@ -1289,6 +1289,12 @@ describe("learn-v2 substrate", () => {
     const storeText = await readText(learnV2ConceptStorePath(root));
     expect(storeText).not.toContain("raw calibration reason");
     expect(storeText).not.toContain("sk-local-secret-must-not-enter-store");
+    const queue = await writeLearnV2ReviewQueue(root, [card], now);
+    expect(queue.reviewFocus.reasons[card.id]).toContain("scoring:activation-outcome");
+    const reviewMarkdown = await readText(queue.artifacts.markdown);
+    expect(reviewMarkdown).toContain("Scoring: calibrated=deterministic-heuristic, activation-outcome; outcomes helpful=2, ignored=0, wrong=0, harmful=1, superseded=0; boost=0.06 penalty=0.12");
+    expect(reviewMarkdown).toContain("Scoring penalties: activation-outcome-negative:0.12");
+    expect(reviewMarkdown).not.toContain("sk-local-secret-must-not-enter-store");
   });
 
   it("refreshes and links Learn v2 concept review from the legacy review queue", async () => {
