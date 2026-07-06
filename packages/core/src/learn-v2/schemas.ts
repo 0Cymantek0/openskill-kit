@@ -695,13 +695,13 @@ export const LearnV2EvalReportSchema = z.object({
     agentExecuted: z.literal(false),
     proves: z.array(z.string()).default([
       "concept retrieval from stored episodes",
-      "deterministic activation scoring",
-      "configured behavior-delta golden checks"
+      "deterministic activation scoring"
     ]),
     doesNotProve: z.array(z.string()).default([
       "real agent task success",
       "sandbox execution success",
-      "external model judgment quality"
+      "external model judgment quality",
+      "configured behavior-delta golden checks"
     ])
   }).default({
     method: "deterministic-local-replay",
@@ -709,13 +709,13 @@ export const LearnV2EvalReportSchema = z.object({
     agentExecuted: false,
     proves: [
       "concept retrieval from stored episodes",
-      "deterministic activation scoring",
-      "configured behavior-delta golden checks"
+      "deterministic activation scoring"
     ],
     doesNotProve: [
       "real agent task success",
       "sandbox execution success",
-      "external model judgment quality"
+      "external model judgment quality",
+      "configured behavior-delta golden checks"
     ]
   }),
   summary: z.object({

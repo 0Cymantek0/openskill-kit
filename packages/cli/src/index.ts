@@ -2420,6 +2420,8 @@ function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersist
     `Concepts: ${result.conceptCount}`,
     `Results: ${result.summary.resultCounts.pass}/${result.summary.resultCounts.total} pass (${result.summary.resultCounts.fail} fail)`,
     `Proof boundary: ${proofBoundary.method} (sandbox=${proofBoundary.sandboxExecuted}, agent=${proofBoundary.agentExecuted})`,
+    `Proves: ${proofBoundary.proves.join("; ")}`,
+    `Does not prove: ${proofBoundary.doesNotProve.join("; ")}`,
     `Behavior delta: ${result.summary.behaviorDelta.status} (${result.summary.behaviorDelta.passedScenarios}/${result.summary.behaviorDelta.scenarioCount} scenarios, ${result.summary.behaviorDelta.activatedConceptCount} activated concepts)`,
     `Activation replay: ${result.summary.activationReplay.status} (${result.summary.activationReplay.retrievedConcepts}/${result.summary.activationReplay.replayableConcepts}, rate ${result.summary.activationReplay.retrievalRate})`,
     `Counterfactual trace: ${result.summary.counterfactualTrace.status} (${result.summary.counterfactualTrace.activatedCases}/${result.summary.counterfactualTrace.caseCount}, rate ${result.summary.counterfactualTrace.activationRate})`,
@@ -2454,13 +2456,13 @@ function learnV2EvalProofBoundaryFallback(): LearnV2EvalProofBoundary {
     agentExecuted: false,
     proves: [
       "concept retrieval from stored episodes",
-      "deterministic activation scoring",
-      "configured behavior-delta golden checks"
+      "deterministic activation scoring"
     ],
     doesNotProve: [
       "real agent task success",
       "sandbox execution success",
-      "external model judgment quality"
+      "external model judgment quality",
+      "configured behavior-delta golden checks"
     ]
   };
 }

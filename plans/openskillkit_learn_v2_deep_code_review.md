@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 eval proof-boundary honesty slice
+
+- Finding verified: eval proof boundaries always claimed "configured behavior-delta golden checks" even when no behavior-delta scenarios were configured, while observability separately warned that the proof was missing.
+- Done: Learn v2 eval proof boundaries are now data-dependent: configured behavior-delta and counterfactual trace checks appear under `proves` only when cases exist, otherwise they are listed under `doesNotProve`.
+- Done: CLI persisted-eval text now prints both `Proves` and `Does not prove`, so users do not need JSON parsing to see proof limits.
+- Verified: focused core eval proof-boundary regressions, focused CLI persisted-eval rendering regression, `rtk npm run typecheck`, and full `rtk npm test` (40 files, 305 tests).
+
 ### 2026-07-06 compile preview output-boundary slice
 
 - Finding verified: active concept sync used the shared declassification report before merging generated Preference/Workflow nodes, but `compileLearnV2ConceptPreview` wrote preview JSON/Markdown before callers could throw on a failed boundary report.

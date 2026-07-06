@@ -856,6 +856,8 @@ describe("learn-v2 substrate", () => {
     ]);
     const reviewQueue = await writeLearnV2ReviewQueue(root, [], now);
     const evalReport = await runLearnV2Eval(root, episodes, [], now);
+    expect(evalReport.proofBoundary.proves).not.toContain("configured behavior-delta golden checks");
+    expect(evalReport.proofBoundary.doesNotProve).toContain("configured behavior-delta golden checks");
     await recordLearnV2ConceptOutcome(root, {
       conceptId: "concept_observable_outcome",
       outcome: "helpful",
@@ -1751,6 +1753,11 @@ describe("learn-v2 substrate", () => {
       agentExecuted: false
     });
     expect(report.proofBoundary.doesNotProve).toEqual(expect.arrayContaining(["real agent task success", "sandbox execution success"]));
+    expect(report.proofBoundary.proves).toEqual(expect.arrayContaining([
+      "configured behavior-delta golden checks",
+      "deterministic counterfactual trace activation checks"
+    ]));
+    expect(report.proofBoundary.doesNotProve).not.toContain("configured behavior-delta golden checks");
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "behavior-delta:parser-plan-delta" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
