@@ -286,10 +286,10 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
         next = markModified({
           ...next,
           status: next.status === "active" || next.status === "locked" ? next.status : "conflict",
-          counterevidence: [
+          counterevidence: uniqueCounterevidenceItems([
             ...next.counterevidence,
             ...counter.map((item) => ({ evidenceId: item.evidenceId, reason: item.reason }))
-          ],
+          ]),
           lifecycle: { ...next.lifecycle, updatedAt: now.toISOString() }
         }, modifiedIds);
         next = withLearnV2ConceptScoring(next);
@@ -509,10 +509,10 @@ export function applyLearnV2AutoPolicies(
     byId.set(card.id, LearnV2ConceptCardSchema.parse(withLearnV2ConceptScoring({
       ...card,
       status: "superseded",
-      counterevidence: [...card.counterevidence, {
+      counterevidence: uniqueCounterevidenceItems([...card.counterevidence, {
         evidenceId: successor.evidenceIds[0] ?? successor.id,
         reason: `Auto-superseded weak assistant-only-like candidate by stronger reviewed evidence candidate ${successor.id}.`
-      }],
+      }]),
       lifecycle: { ...card.lifecycle, updatedAt: now.toISOString(), supersededBy: successor.id }
     })));
     byId.set(successor.id, LearnV2ConceptCardSchema.parse({
@@ -643,13 +643,13 @@ async function applyLearnV2OutcomeAutoDemotion(
     const demoted = LearnV2ConceptCardSchema.parse(withLearnV2ConceptScoring({
       ...card,
       status: "conflict" as const,
-      counterevidence: [
+      counterevidence: uniqueCounterevidenceItems([
         ...card.counterevidence,
         {
           evidenceId: `outcome:${card.id}`,
           reason: `Auto-demoted active concept after ${negativeOutcomeCount} recent negative outcome(s), meeting policy threshold ${threshold} within ${recentOutcomeDays} day(s). Review the concept drift report before reactivation.`
         }
-      ],
+      ]),
       lifecycle: { ...card.lifecycle, updatedAt: now.toISOString() }
     }));
     modifiedIds.add(card.id);
@@ -689,7 +689,7 @@ function applyConceptRestructure(
         updatedAt: now.toISOString(),
         supersedes: [...new Set([...target.lifecycle.supersedes, ...sources.map((card) => card.id), ...sources.flatMap((card) => card.lifecycle.supersedes)])]
       },
-      counterevidence: [...target.counterevidence, ...sources.flatMap((card) => card.counterevidence)],
+      counterevidence: uniqueCounterevidenceItems([...target.counterevidence, ...sources.flatMap((card) => card.counterevidence)]),
       conditions: {
         appliesWhen: uniqueStrings([...(target.conditions?.appliesWhen ?? []), ...sources.flatMap((card) => card.conditions?.appliesWhen ?? [])]).slice(0, 16),
         doesNotApplyWhen: uniqueStrings([...(target.conditions?.doesNotApplyWhen ?? []), ...sources.flatMap((card) => card.conditions?.doesNotApplyWhen ?? [])]).slice(0, 16)
@@ -764,7 +764,7 @@ function applyConceptRestructure(
     byId.set(superseded.id, LearnV2ConceptCardSchema.parse(withLearnV2ConceptScoring({
       ...superseded,
       status: "superseded",
-      counterevidence: item.reason ? [...superseded.counterevidence, { evidenceId: successor.evidenceIds[0] ?? successor.id, reason: item.reason }] : superseded.counterevidence,
+      counterevidence: item.reason ? uniqueCounterevidenceItems([...superseded.counterevidence, { evidenceId: successor.evidenceIds[0] ?? successor.id, reason: item.reason }]) : superseded.counterevidence,
       lifecycle: { ...superseded.lifecycle, updatedAt: now.toISOString(), supersededBy: successor.id }
     })));
     byId.set(successor.id, LearnV2ConceptCardSchema.parse({

@@ -4349,6 +4349,10 @@ describe("learn-v2 substrate", () => {
         id: stored.id,
         evidenceId: stored.evidenceIds[0]!,
         reason: "Reviewer marked this concept too broad for automatic use."
+      }, {
+        id: stored.id,
+        evidenceId: stored.evidenceIds[0]!,
+        reason: "Reviewer marked this concept too broad for automatic use."
       }],
       compileActive: false,
       now: new Date("2026-06-30T00:02:00Z")
@@ -4356,8 +4360,23 @@ describe("learn-v2 substrate", () => {
     const rescored = reviewed.store.cards.find((card) => card.id === stored.id)!;
     expect(rescored.status).toBe("conflict");
     expect(rescored.scoring?.counterevidenceCount).toBe(1);
+    expect(rescored.counterevidence).toHaveLength(1);
     expect(rescored.scoring?.penalties.join(",")).toContain("counterevidence:");
     expect(rescored.confidence).toBeLessThan(stored.confidence);
+
+    const repeated = await applyLearnV2ConceptReview(root, {
+      addCounterevidence: [{
+        id: stored.id,
+        evidenceId: stored.evidenceIds[0]!,
+        reason: "Reviewer marked this concept too broad for automatic use."
+      }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:03:00Z")
+    });
+    const repeatedCard = repeated.store.cards.find((card) => card.id === stored.id)!;
+    expect(repeatedCard.counterevidence).toHaveLength(1);
+    expect(repeatedCard.scoring?.counterevidenceCount).toBe(1);
+    expect(repeatedCard.confidence).toBe(rescored.confidence);
   });
 
   it("uses stable semantic concept identity independent of evidence ids", () => {

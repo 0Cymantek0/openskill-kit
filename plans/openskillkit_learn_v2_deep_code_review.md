@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 idempotent counterevidence slice
+
+- Finding verified: reviewer and policy counterevidence writes could append the same `(evidenceId, reason)` repeatedly, causing repeated review commands or policy passes to over-penalize confidence and durability.
+- Done: manual counterevidence, auto-supersede, harmful-outcome auto-demotion, merge, split partitioning, and manual supersede paths now de-duplicate counterevidence by evidence id plus reason before rescoring.
+- Done: repeated reviewer counterevidence in one command and across repeated commands now leaves one objection and one scoring penalty count.
+- Verified: focused counterevidence idempotence regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 311 tests).
+
 ### 2026-07-06 guarded concept supersession slice
 
 - Finding verified: manual supersede review retired one concept in favor of another by id only; a mismatched successor id could supersede unrelated behavior and prune active compatibility graph nodes.
