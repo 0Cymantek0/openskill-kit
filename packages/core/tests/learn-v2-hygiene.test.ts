@@ -61,6 +61,8 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
       "learn-v2/raw-vault/records/raw_12345678.json", // content-addressed raw blobs; only raw refs (e.g. raw_12345678) leave this dir, declassified
       "learn-v2/declassified-snippets/snippet.json", // bounded declassified review snippets; safe-text only, but still local-only diagnostics
       "learn-v2/evidence-quality/quality.json", // per-record quality scores over normalized analysis frames; local prioritization aid
+      "reviews/queue.md", // legacy review queue; can link local Learn v2 review artifacts and evidence cards
+      "learn-v2/review/concept-review-queue.md", // Learn v2 concept review queue with suggested local review commands and local artifact links
       "learn-v2/conflicts/ledger.json", // deterministic concept conflict ledger; drives review queue, never shareable on its own
       "learn-v2/drift/drift.json", // stale/supersession/low-activation diagnostics derived from local outcomes + activation runs
       "learn-v2/observability/obs.json", // declassified pipeline observability report; local rollout-facing diagnostics only

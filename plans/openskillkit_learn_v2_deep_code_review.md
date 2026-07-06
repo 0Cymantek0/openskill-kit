@@ -9,6 +9,12 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 review artifact pack-boundary proof slice
+
+- Finding verified: path registry already excluded legacy and Learn v2 review directories, but pack hygiene tests did not explicitly simulate the new linked review queues and suggested-action artifacts.
+- Done: pack exclusion hygiene now creates both `.openskill-kit/reviews/queue.md` and `.openskill-kit/learn-v2/review/concept-review-queue.md` as private local artifacts and proves export does not include them.
+- Verified: focused pack-exclusion hygiene regression, full Learn v2 hygiene file, `rtk npm run typecheck`, and full `rtk npm test` (40 files, 305 tests).
+
 ### 2026-07-06 review queue bridge slice
 
 - Finding verified: `osk review --write` still built the legacy Preference/Workflow review queue only. Learn v2 drift/action/counterevidence visibility was available in raw pipeline artifacts, but the natural review command did not refresh or link it.
