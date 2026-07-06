@@ -343,12 +343,26 @@ describe("learn-v2 substrate", () => {
     await mkdir(path.join(root, ".cursor", "chats"), { recursive: true });
     await mkdir(path.join(root, ".opencode", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".opencode", "commands"), { recursive: true });
+    await mkdir(path.join(root, ".gemini", "transcripts"), { recursive: true });
+    await mkdir(path.join(root, ".roo-code", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".kilo-code", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".cline", "chats"), { recursive: true });
+    await mkdir(path.join(root, ".goose", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".zed", "transcripts"), { recursive: true });
+    await mkdir(path.join(root, ".gemini", "memories"), { recursive: true });
     await writeFile(path.join(root, ".codex", "sessions", "2026-07-05.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
     await writeFile(path.join(root, ".codex", "memories", "private.md"), "Do not discover this private memory.", "utf8");
     await writeFile(path.join(root, ".claude", "projects", "openskill", "session.json"), "{\"messages\":[{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}]}\n", "utf8");
     await writeFile(path.join(root, ".cursor", "chats", "chat.json"), "{\"messages\":[{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}]}\n", "utf8");
     await writeFile(path.join(root, ".opencode", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
     await writeFile(path.join(root, ".opencode", "commands", "learn.md"), "Command docs are not raw session exports.", "utf8");
+    await writeFile(path.join(root, ".gemini", "transcripts", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".roo-code", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".kilo-code", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".cline", "chats", "chat.json"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".goose", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".zed", "transcripts", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
+    await writeFile(path.join(root, ".gemini", "memories", "private.md"), "Do not discover this private memory.", "utf8");
 
     const discovered = await discoverLearnV2SurfaceCandidates(root, { limit: 20 });
     const byPath = new Map(discovered.map((candidate) => [candidate.relativePath, candidate]));
@@ -365,7 +379,14 @@ describe("learn-v2 substrate", () => {
     expect(byPath.get(".claude/projects/openskill/session.json")?.adapterId).toBe("claude-code");
     expect(byPath.get(".cursor/chats/chat.json")?.adapterId).toBe("cursor");
     expect(byPath.get(".opencode/sessions/session.jsonl")?.adapterId).toBe("opencode");
+    expect(byPath.get(".gemini/transcripts/session.jsonl")?.adapterId).toBe("gemini");
+    expect(byPath.get(".roo-code/sessions/session.jsonl")?.adapterId).toBe("roo");
+    expect(byPath.get(".kilo-code/sessions/session.jsonl")?.adapterId).toBe("kilo");
+    expect(byPath.get(".cline/chats/chat.json")?.adapterId).toBe("cline");
+    expect(byPath.get(".goose/sessions/session.jsonl")?.adapterId).toBe("goose");
+    expect(byPath.get(".zed/transcripts/session.jsonl")?.adapterId).toBe("zed");
     expect([...byPath.keys()].some((item) => item.includes(".codex/memories"))).toBe(false);
+    expect([...byPath.keys()].some((item) => item.includes(".gemini/memories"))).toBe(false);
     expect([...byPath.keys()].some((item) => item.includes(".opencode/commands"))).toBe(false);
   });
 

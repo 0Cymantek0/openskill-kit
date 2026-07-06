@@ -116,9 +116,23 @@ describe("OSK command family registry", () => {
     });
     expect(planCandidate.adapter).toBe("learn-v2:project-docs");
     expect(planCandidate.learnV2Surface?.normalizationProfile).toBe("project-docs");
+    expect(plan.rawLocalDiscovery).toMatchObject({
+      schemaVersion: "openskill-kit.learn-v2.raw-surface-discovery.v1",
+      candidatesReturned: rawOptions.length,
+      policy: {
+        plannerInput: "path-metadata-only",
+        normalPlanSelection: "blocked",
+        rawImport: "explicit-command-only",
+        modelBoundary: "declassified-only"
+      }
+    });
+    expect(plan.rawLocalDiscovery.adapterCounts.terminal).toBeGreaterThanOrEqual(1);
+    expect(plan.rawLocalDiscovery.adapterCounts["project-docs"]).toBeGreaterThanOrEqual(1);
+    expect(plan.rawLocalDiscovery.sensitivityCounts.high).toBeGreaterThanOrEqual(1);
     expect(terminalCandidate.privacy.notes.join(" ")).toContain("Adapter contract: terminal / terminal / log");
     expect(terminalCandidate.privacy.notes.join(" ")).toContain("model=declassified-only");
     expect(plan.privacyPreview.join(" ")).toContain("path metadata only");
+    expect(plan.privacyPreview.join(" ")).toContain("Raw local discovery scanned");
     expect(plan.nextActions.join(" ")).toContain("--raw --surface-file");
     expect(rawOptions[0]!.privacy.notes.join(" ")).toContain("did not read or copy");
 
@@ -259,12 +273,29 @@ describe("OSK command family registry", () => {
     await initAdaptiveProject({ projectRoot: root, projectName: "learn-hidden-exports", now: new Date("2026-06-27T00:00:00.000Z") });
     await mkdir(path.join(root, ".codex", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".codex", "memories"), { recursive: true });
+    await mkdir(path.join(root, ".gemini", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".roo-code", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".kilo-code", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".cline", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".goose", "sessions"), { recursive: true });
+    await mkdir(path.join(root, ".zed", "agent-sessions"), { recursive: true });
+    await mkdir(path.join(root, ".gemini", "memories"), { recursive: true });
     await mkdir(path.join(home, ".codex", "memories"), { recursive: true });
     await writeFile(path.join(root, ".codex", "sessions", "2026-07-05.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer focused parser tests.\"}\n", "utf8");
     await writeFile(path.join(root, ".codex", "memories", "private.md"), "Do not plan this memory as raw learning.", "utf8");
+    await writeFile(path.join(root, ".gemini", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Gemini exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".roo-code", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Roo exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".kilo-code", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Kilo exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".cline", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Cline exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".goose", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Goose exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".zed", "agent-sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer Zed exports.\"}\n", "utf8");
+    await writeFile(path.join(root, ".gemini", "memories", "private.md"), "Do not plan this Gemini memory.", "utf8");
 
     const plan = await planLearningSources(root, { sourceMode: "ask", homeDir: home, now: new Date("2026-06-27T00:07:00.000Z") });
     const rawCandidate = plan.options.find((option) => option.id.startsWith("raw-local:") && option.path?.endsWith(path.join(".codex", "sessions", "2026-07-05.jsonl")))!;
+    const rawByAdapter = new Map(plan.options
+      .filter((option) => option.id.startsWith("raw-local:"))
+      .map((option) => [option.learnV2Surface?.adapterId, option]));
 
     expect(rawCandidate.policy).toBe("blocked");
     expect(rawCandidate.learnV2Surface).toMatchObject({
@@ -272,8 +303,17 @@ describe("OSK command family registry", () => {
       normalizationProfile: "structured-events",
       suggestedCommand: "openskill-kit osk learn --raw --surface-file .codex/sessions/2026-07-05.jsonl --surface-adapter codex"
     });
+    expect(rawByAdapter.get("gemini")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter gemini");
+    expect(rawByAdapter.get("roo")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter roo");
+    expect(rawByAdapter.get("kilo")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter kilo");
+    expect(rawByAdapter.get("cline")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter cline");
+    expect(rawByAdapter.get("goose")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter goose");
+    expect(rawByAdapter.get("zed")?.learnV2Surface?.suggestedCommand).toContain("--surface-adapter zed");
+    expect(plan.rawLocalDiscovery.allowedHiddenExportDirs).toEqual(expect.arrayContaining([".gemini/sessions", ".roo-code/sessions", ".kilo-code/sessions", ".cline/sessions", ".goose/sessions", ".zed/agent-sessions"]));
+    expect(plan.rawLocalDiscovery.blockedHiddenDirs).toEqual(expect.arrayContaining([".gemini/memories"]));
     expect(rawCandidate.privacy.notes.join("\n")).toContain("--surface-adapter codex");
     expect(plan.options.some((option) => option.path?.includes(`${path.sep}.codex${path.sep}memories${path.sep}private.md`))).toBe(false);
+    expect(plan.options.some((option) => option.path?.includes(`${path.sep}.gemini${path.sep}memories${path.sep}private.md`))).toBe(false);
     expect(plan.options.some((option) => option.policy === "blocked" && option.path?.includes(`${path.sep}.codex${path.sep}memories`))).toBe(true);
   });
 

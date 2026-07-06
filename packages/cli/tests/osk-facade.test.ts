@@ -42,6 +42,9 @@ describe("osk CLI facade", () => {
     expect(parsed.schemaVersion).toBe("openskill-kit.learn-source-plan.v1");
     expect(parsed.defaults.previewOnly).toBe(true);
     expect(parsed.privacyPreview.join(" ")).toContain("No raw prompts");
+    expect(parsed.rawLocalDiscovery.schemaVersion).toBe("openskill-kit.learn-v2.raw-surface-discovery.v1");
+    expect(parsed.rawLocalDiscovery.policy.plannerInput).toBe("path-metadata-only");
+    expect(parsed.rawLocalDiscovery.policy.rawImport).toBe("explicit-command-only");
   });
 
   it("documents Learn v2 model mode as execution policy, not raw dispatch", async () => {

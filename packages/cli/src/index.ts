@@ -2143,6 +2143,8 @@ function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
     return [
       `Sources: ${result.summary.total} (${result.summary.safeMetadata} safe, ${result.summary.explicitImport} explicit, ${result.summary.blocked} blocked)`,
       `Default selected: ${result.defaults.selectedSourceIds.join(", ") || "none"}`,
+      `Raw local discovery: ${result.rawLocalDiscovery.candidatesReturned}/${result.rawLocalDiscovery.candidatesFound} candidates, scanned ${result.rawLocalDiscovery.scannedFiles} path(s), ${result.rawLocalDiscovery.truncatedByLimit ? "truncated" : "complete"}`,
+      `Raw adapters: ${renderLearnV2CountLine(result.rawLocalDiscovery.adapterCounts)}, sensitivity ${renderLearnV2CountLine(result.rawLocalDiscovery.sensitivityCounts)}`,
       ...result.nextActions
     ].join("\n");
   }

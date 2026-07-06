@@ -10,7 +10,7 @@ import { buildReviewQueue } from "../preferences/proposals.js";
 import { summarizeAmbientLabelCandidates, updateAmbientLabelCandidates } from "../preferences/labels.js";
 import { extractSignalsTransiently } from "../signals/extract.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import { discoverLearnV2SurfaceCandidates, type LearnV2SurfaceCandidate } from "../learn-v2/surfaces.js";
+import { discoverLearnV2SurfaceCandidateReport, type LearnV2SurfaceCandidate } from "../learn-v2/surfaces.js";
 import { inspectGitLocalContext, type GitLocalContextResult } from "./git-local.js";
 import { importInteractionSource, readInteractionImportRuns, type InteractionImportRun } from "./importer.js";
 
@@ -75,6 +75,31 @@ export const LearnSourcePlanSchema = z.object({
     explicitImport: z.number().int().min(0),
     blocked: z.number().int().min(0),
     previousImportRuns: z.number().int().min(0)
+  }),
+  rawLocalDiscovery: z.object({
+    schemaVersion: z.literal("openskill-kit.learn-v2.raw-surface-discovery.v1"),
+    scannedFiles: z.number().int().min(0),
+    maxFiles: z.number().int().min(0),
+    maxDepth: z.number().int().min(0),
+    candidateLimit: z.number().int().min(0),
+    candidatesFound: z.number().int().min(0),
+    candidatesReturned: z.number().int().min(0),
+    truncatedByMaxFiles: z.boolean(),
+    truncatedByLimit: z.boolean(),
+    knownSurfaceFilesSkipped: z.number().int().min(0),
+    allowedHiddenExportDirs: z.array(z.string()),
+    blockedHiddenDirs: z.array(z.string()),
+    adapterCounts: z.record(z.string(), z.number().int().min(0)),
+    sensitivityCounts: z.record(z.string(), z.number().int().min(0)),
+    matchedByCounts: z.record(z.string(), z.number().int().min(0)),
+    confidenceCounts: z.record(z.string(), z.number().int().min(0)),
+    policy: z.object({
+      plannerInput: z.literal("path-metadata-only"),
+      normalPlanSelection: z.literal("blocked"),
+      rawImport: z.literal("explicit-command-only"),
+      modelBoundary: z.literal("declassified-only")
+    }),
+    notes: z.array(z.string())
   }),
   privacyPreview: z.array(z.string()),
   nextActions: z.array(z.string())
@@ -184,7 +209,8 @@ export async function planLearningSources(
     }
   }
   const knownSurfacePaths = new Set(report.surfaces.map((surface) => path.resolve(surface.path).toLowerCase()));
-  for (const candidate of await discoverLearnV2SurfaceCandidates(projectRoot, { knownSurfacePaths })) {
+  const rawLocalDiscovery = await discoverLearnV2SurfaceCandidateReport(projectRoot, { knownSurfacePaths });
+  for (const candidate of rawLocalDiscovery.candidates) {
     sources.push(rawLocalCandidateSource(
       `raw-local:${candidate.id}`,
       `Raw local candidate: ${candidate.relativePath} (${candidate.adapterLabel})`,
@@ -234,10 +260,12 @@ export async function planLearningSources(
       blocked: parsed.filter((item) => item.policy === "blocked").length,
       previousImportRuns: imports.length
     },
+    rawLocalDiscovery: rawLocalDiscovery.report,
     privacyPreview: [
       "No raw prompts are read by default.",
       "No raw diffs are read by default.",
       "Raw local candidate discovery uses path metadata only; candidate files are not opened by the source planner.",
+      `Raw local discovery scanned ${rawLocalDiscovery.report.scannedFiles} file path(s), returned ${rawLocalDiscovery.report.candidatesReturned} blocked candidate(s), and skipped ${rawLocalDiscovery.report.knownSurfaceFilesSkipped} already-detected explicit surface file(s).`,
       "Session/export files require preview before apply.",
       "User/global memories and shell history paths are blocked unless the user supplies an explicit export/file.",
       "Learned behavior remains staged for review."

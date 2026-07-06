@@ -111,6 +111,13 @@
 - Done: `/osk learn` docs list the expanded adapter matrix and keep the privacy rule: transcript exports are never default-selected and require explicit file choice.
 - Verified: focused raw-surface adapter tests and `rtk npm run typecheck`.
 
+### 2026-07-06 explainable raw surface discovery slice
+
+- Done: raw local source planning now emits a `rawLocalDiscovery` report with scanned path count, found/returned candidate counts, truncation flags, skipped already-detected explicit surfaces, adapter/sensitivity/match/confidence counts, safe hidden export directories, blocked hidden memory directories, and the enforced path-metadata-only/blocked/explicit-command-only/declassified-only policy.
+- Done: project-local hidden export discovery now covers conservative session/transcript directories for Gemini, Roo Code, Kilo Code, Cline, Goose, and Zed, while memory directories for those tools remain blocked from raw candidate discovery.
+- Done: CLI plain output now includes compact raw discovery counts and adapter/sensitivity counts, and docs explain the scan visibility contract.
+- Remaining gap: this is still file/path discovery, not live tool-specific store fetchers, IDE diagnostic adapters, issue/CI service adapters, or non-file host adapters.
+
 ### 2026-07-05 MCP descriptor coverage slice
 
 - Done: generated advanced MCP descriptors now expose the Learn v2 raw-ingest, review, concept compilation, sanitized model request, activation, observability, reconstruction, extraction, and eval tools.

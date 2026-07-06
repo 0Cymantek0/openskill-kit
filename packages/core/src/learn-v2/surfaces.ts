@@ -75,6 +75,33 @@ export const LearnV2SurfaceCandidateSchema = z.object({
 });
 export type LearnV2SurfaceCandidate = z.infer<typeof LearnV2SurfaceCandidateSchema>;
 
+export const LearnV2SurfaceDiscoveryReportSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.raw-surface-discovery.v1"),
+  scannedFiles: z.number().int().min(0),
+  maxFiles: z.number().int().min(0),
+  maxDepth: z.number().int().min(0),
+  candidateLimit: z.number().int().min(0),
+  candidatesFound: z.number().int().min(0),
+  candidatesReturned: z.number().int().min(0),
+  truncatedByMaxFiles: z.boolean(),
+  truncatedByLimit: z.boolean(),
+  knownSurfaceFilesSkipped: z.number().int().min(0),
+  allowedHiddenExportDirs: z.array(z.string()),
+  blockedHiddenDirs: z.array(z.string()),
+  adapterCounts: z.record(z.string(), z.number().int().min(0)),
+  sensitivityCounts: z.record(z.string(), z.number().int().min(0)),
+  matchedByCounts: z.record(z.string(), z.number().int().min(0)),
+  confidenceCounts: z.record(z.string(), z.number().int().min(0)),
+  policy: z.object({
+    plannerInput: z.literal("path-metadata-only"),
+    normalPlanSelection: z.literal("blocked"),
+    rawImport: z.literal("explicit-command-only"),
+    modelBoundary: z.literal("declassified-only")
+  }),
+  notes: z.array(z.string())
+});
+export type LearnV2SurfaceDiscoveryReport = z.infer<typeof LearnV2SurfaceDiscoveryReportSchema>;
+
 export interface LearnV2SurfaceAdapter {
   id: string;
   label: string;
@@ -120,6 +147,22 @@ const RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS = [
   ".claude/sessions",
   ".cursor/chats",
   ".cursor/sessions",
+  ".gemini/sessions",
+  ".gemini/transcripts",
+  ".roo/chats",
+  ".roo/sessions",
+  ".roo-code/chats",
+  ".roo-code/sessions",
+  ".kilo/chats",
+  ".kilo/sessions",
+  ".kilo-code/chats",
+  ".kilo-code/sessions",
+  ".cline/chats",
+  ".cline/sessions",
+  ".goose/sessions",
+  ".zed/agent-sessions",
+  ".zed/sessions",
+  ".zed/transcripts",
   ".opencode/sessions",
   ".opencode/traces"
 ];
@@ -129,7 +172,23 @@ const RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS = [
   ".claude/memories",
   ".claude/memory",
   ".cursor/memories",
-  ".cursor/memory"
+  ".cursor/memory",
+  ".gemini/memories",
+  ".gemini/memory",
+  ".roo/memories",
+  ".roo/memory",
+  ".roo-code/memories",
+  ".roo-code/memory",
+  ".kilo/memories",
+  ".kilo/memory",
+  ".kilo-code/memories",
+  ".kilo-code/memory",
+  ".cline/memories",
+  ".cline/memory",
+  ".goose/memories",
+  ".goose/memory",
+  ".zed/memories",
+  ".zed/memory"
 ];
 
 export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
@@ -243,6 +302,13 @@ export async function discoverLearnV2SurfaceCandidates(
   projectRootInput: string,
   options: LearnV2SurfaceDiscoveryOptions = {}
 ): Promise<LearnV2SurfaceCandidate[]> {
+  return (await discoverLearnV2SurfaceCandidateReport(projectRootInput, options)).candidates;
+}
+
+export async function discoverLearnV2SurfaceCandidateReport(
+  projectRootInput: string,
+  options: LearnV2SurfaceDiscoveryOptions = {}
+): Promise<{ candidates: LearnV2SurfaceCandidate[]; report: LearnV2SurfaceDiscoveryReport }> {
   const projectRoot = path.resolve(projectRootInput);
   const knownSurfacePaths = options.knownSurfacePaths ?? new Set<string>();
   const candidates: LearnV2SurfaceCandidate[] = [];
@@ -250,6 +316,7 @@ export async function discoverLearnV2SurfaceCandidates(
   const maxDepth = options.maxDepth ?? RAW_LOCAL_SOURCE_SCAN_MAX_DEPTH;
   const limit = options.limit ?? RAW_LOCAL_SOURCE_CANDIDATE_LIMIT;
   let visitedFiles = 0;
+  let knownSurfaceFilesSkipped = 0;
 
   async function walk(dir: string, depth: number): Promise<void> {
     if (visitedFiles >= maxFiles || depth > maxDepth) return;
@@ -266,16 +333,48 @@ export async function discoverLearnV2SurfaceCandidates(
       if (!entry.isFile()) continue;
       visitedFiles += 1;
       if (visitedFiles > maxFiles) return;
-      if (knownSurfacePaths.has(path.resolve(fullPath).toLowerCase())) continue;
+      if (knownSurfacePaths.has(path.resolve(fullPath).toLowerCase())) {
+        knownSurfaceFilesSkipped += 1;
+        continue;
+      }
       const candidate = discoverLearnV2SurfaceCandidate(projectRoot, fullPath);
       if (candidate) candidates.push(candidate);
     }
   }
 
   await walk(projectRoot, 0);
-  return candidates
-    .sort((left, right) => right.score - left.score || left.relativePath.localeCompare(right.relativePath))
-    .slice(0, limit);
+  const sorted = candidates.sort((left, right) => right.score - left.score || left.relativePath.localeCompare(right.relativePath));
+  const limited = sorted.slice(0, limit);
+  const report = LearnV2SurfaceDiscoveryReportSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.raw-surface-discovery.v1",
+    scannedFiles: Math.min(visitedFiles, maxFiles),
+    maxFiles,
+    maxDepth,
+    candidateLimit: limit,
+    candidatesFound: sorted.length,
+    candidatesReturned: limited.length,
+    truncatedByMaxFiles: visitedFiles >= maxFiles,
+    truncatedByLimit: sorted.length > limited.length,
+    knownSurfaceFilesSkipped,
+    allowedHiddenExportDirs: [...RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS],
+    blockedHiddenDirs: [...RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS],
+    adapterCounts: countValues(limited.map((candidate) => candidate.adapterId)),
+    sensitivityCounts: countValues(limited.map((candidate) => candidate.sensitivity)),
+    matchedByCounts: countValues(limited.map((candidate) => candidate.detection.matchedBy)),
+    confidenceCounts: countValues(limited.map((candidate) => candidate.detection.confidence)),
+    policy: {
+      plannerInput: "path-metadata-only",
+      normalPlanSelection: "blocked",
+      rawImport: "explicit-command-only",
+      modelBoundary: "declassified-only"
+    },
+    notes: [
+      "Source planning never opens raw local candidate files; it scores path, extension, and adapter filename/export-dir metadata only.",
+      "Normal /osk learn plans keep raw-local candidates blocked so they cannot be selected accidentally.",
+      "Raw candidate import requires the suggested --raw --surface-file command and keeps model-facing output declassified-only."
+    ]
+  });
+  return { candidates: limited, report };
 }
 
 export function discoverLearnV2SurfaceCandidate(projectRootInput: string, sourcePathInput: string): LearnV2SurfaceCandidate | undefined {
@@ -334,9 +433,21 @@ function detectLearnV2SurfaceAdapterByProjectRelativePath(relativePathInput: str
         ? "claude-code"
         : relativePath.startsWith(".cursor/chats/") || relativePath.startsWith(".cursor/sessions/")
           ? "cursor"
-          : relativePath.startsWith(".opencode/sessions/") || relativePath.startsWith(".opencode/traces/")
-            ? "opencode"
-            : undefined;
+          : relativePath.startsWith(".gemini/sessions/") || relativePath.startsWith(".gemini/transcripts/")
+            ? "gemini"
+            : relativePath.startsWith(".roo/chats/") || relativePath.startsWith(".roo/sessions/") || relativePath.startsWith(".roo-code/chats/") || relativePath.startsWith(".roo-code/sessions/")
+              ? "roo"
+              : relativePath.startsWith(".kilo/chats/") || relativePath.startsWith(".kilo/sessions/") || relativePath.startsWith(".kilo-code/chats/") || relativePath.startsWith(".kilo-code/sessions/")
+                ? "kilo"
+                : relativePath.startsWith(".cline/chats/") || relativePath.startsWith(".cline/sessions/")
+                  ? "cline"
+                  : relativePath.startsWith(".goose/sessions/")
+                    ? "goose"
+                    : relativePath.startsWith(".zed/agent-sessions/") || relativePath.startsWith(".zed/sessions/") || relativePath.startsWith(".zed/transcripts/")
+                      ? "zed"
+                      : relativePath.startsWith(".opencode/sessions/") || relativePath.startsWith(".opencode/traces/")
+                        ? "opencode"
+                        : undefined;
   return adapterId ? learnV2SurfaceAdapters.find((adapter) => adapter.id === adapterId) : undefined;
 }
 
@@ -519,4 +630,10 @@ function looksJsonl(value: string): boolean {
       return false;
     }
   });
+}
+
+function countValues(values: string[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const value of values) out[value] = (out[value] ?? 0) + 1;
+  return out;
 }
