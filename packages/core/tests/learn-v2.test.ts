@@ -1315,6 +1315,40 @@ describe("learn-v2 substrate", () => {
     expect(markdown).not.toContain(`"supersededById":"concept_replacement"`);
   });
 
+  it("suggests concrete narrow commands for ledger-authorized scope overlaps", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:45:00.000Z");
+    const [testsConcept] = mergeLearnV2ConceptCards([
+      behaviorAtom("review_action_narrow_tests", "Prefer parser regression tests for parser changes.", "positive")
+    ], now);
+    const [fixtureConcept] = mergeLearnV2ConceptCards([
+      behaviorAtom("review_action_narrow_fixtures", "Prefer parser fixture coverage for parser edits.", "positive")
+    ], now);
+    const cards = [
+      { ...testsConcept!, id: "concept_review_action_narrow_tests" },
+      { ...fixtureConcept!, id: "concept_review_action_narrow_fixtures" }
+    ];
+    const ledger = await writeLearnV2ConflictLedger(root, cards, "project", now);
+    expect(ledger.ledger.conflicts.map((conflict) => conflict.conflictType)).toContain("scope-overlap");
+    expect(ledger.ledger.conflicts.map((conflict) => conflict.resolutionAction)).toContain("auto-narrow");
+
+    const queue = await writeLearnV2ReviewQueue(root, cards, now, {
+      ledger: ledger.ledger,
+      markdownPath: ledger.artifactPaths.markdown
+    });
+    const narrowAction = queue.reviewActions[cards[0]!.id]?.find((action) => action.command.includes("--concept-narrow"));
+
+    expect(narrowAction?.command).toContain(`"id":"${cards[0]!.id}"`);
+    expect(narrowAction?.command).toContain("\"paths\":[\"packages/core/src/parser.ts\"]");
+    expect(narrowAction?.command).toContain("\"taskTypes\":[\"parser-change\"]");
+    expect(narrowAction?.command).toContain(cards[1]!.title);
+    expect(narrowAction?.rationale).toContain(cards[1]!.id);
+    const markdown = await readText(queue.artifacts.markdown);
+    expect(markdown).toContain("Narrow scope:");
+    expect(markdown).toContain("--concept-narrow");
+    expect(markdown).toContain(cards[1]!.title);
+  });
+
   it("writes declassified evidence snippets and attaches them to review cards", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:25:00.000Z");

@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 concrete narrow review-action slice
+
+- Finding verified: after exposing `--concept-narrow`, review queues still did not turn deterministic `auto-narrow` conflict-ledger findings into concrete reviewer commands, so users had to infer negative triggers and scope JSON by hand.
+- Done: review action generation now consumes unresolved `auto-narrow` conflicts and emits concrete `--concept-narrow` JSON for each involved concept, preserving current paths/task types and adding peer-specific negative triggers.
+- Done: Markdown and JSON review queues now show narrow-scope actions with declassified concept ids/rationale only; no concept state changes until reviewer runs the command.
+- Verified: focused review-action regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 315 tests).
+
 ### 2026-07-06 CLI concept narrow review slice
 
 - Finding verified: core review transactions supported `narrowScopes`, but the public `osk review` CLI exposed accept/reject/lock/demote/one-off/merge/split/supersede only, leaving reviewer scope narrowing inaccessible through the normal command path.

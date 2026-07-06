@@ -248,6 +248,7 @@ function selectReviewActions(
   const cardsById = new Map(cards.map((card) => [card.id, card]));
   const supersedeActions = selectLedgerSupersedeActions(cardsById, ledger);
   const supersedeSuccessorIds = selectLedgerSupersedeSuccessorIds(cardsById, ledger);
+  const narrowActions = selectLedgerNarrowActions(cardsById, ledger);
   const actions: LearnV2ReviewQueue["reviewActions"] = {};
   for (const card of cards) {
     if (!focusIds.has(card.id)) continue;
@@ -267,6 +268,8 @@ function selectReviewActions(
     if (card.status === "conflict" || card.counterevidence.length || reasons.some((reason) => reason.startsWith("conflict:"))) {
       add("Reject", `openskill-kit osk review --concept-reject ${card.id}`, "Reject the conflicted concept if counterevidence invalidates it.");
       add("Mark one-off", `openskill-kit osk review --concept-one-off ${card.id}`, "Keep the evidence local without treating it as durable behavior.");
+      const narrow = narrowActions.get(card.id);
+      if (narrow) add("Narrow scope", `openskill-kit osk review --concept-narrow '${narrow.json}'`, narrow.rationale);
       const supersede = supersedeActions.get(card.id);
       if (supersede) {
         add("Supersede", `openskill-kit osk review --concept-supersede '${supersede.json}'`, supersede.rationale);
@@ -280,6 +283,36 @@ function selectReviewActions(
     if (out.length) actions[card.id] = out.slice(0, 5);
   }
   return actions;
+}
+
+function selectLedgerNarrowActions(
+  cardsById: Map<string, LearnV2ConceptCard>,
+  ledger?: LearnV2ConflictLedger
+): Map<string, { json: string; rationale: string }> {
+  const out = new Map<string, { json: string; rationale: string }>();
+  for (const conflict of ledger?.conflicts ?? []) {
+    if (conflict.resolved || conflict.resolutionAction !== "auto-narrow") continue;
+    const cards = conflict.conceptIds.map((id) => cardsById.get(id)).filter((card): card is LearnV2ConceptCard => card !== undefined);
+    if (cards.length !== 2) continue;
+    for (const card of cards) {
+      const peer = cards.find((item) => item.id !== card.id);
+      if (!peer) continue;
+      const negativeTriggers = [...new Set([
+        ...card.scope.negativeTriggers,
+        `When ${peer.title} applies.`
+      ])].slice(0, 20);
+      out.set(card.id, {
+        json: JSON.stringify({
+          id: card.id,
+          paths: card.scope.paths,
+          taskTypes: card.scope.taskTypes,
+          negativeTriggers
+        }),
+        rationale: `Lock current scope and avoid overlap with ${peer.id}; ${conflict.conflictType}.`
+      });
+    }
+  }
+  return out;
 }
 
 function selectLedgerSupersedeActions(
