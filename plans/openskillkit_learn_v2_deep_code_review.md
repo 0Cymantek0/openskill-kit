@@ -144,8 +144,15 @@
 ### 2026-07-05 structural parser coverage visibility slice
 
 - Done: Learn v2 observability now reports structural parser backend counts, structural confidence counts, and minimum parser confidence cap across patch file summaries.
-- Done: CLI and Markdown observability surfaces show whether a run relied on the TypeScript compiler parser, heuristic fallback, or no structural parser, making the remaining Tree-sitter/equivalent gap visible instead of hidden in patch summaries.
-- Verified: focused Learn v2 observability tests, focused CLI observability tests, and `rtk npm run typecheck`.
+- Done: CLI and Markdown observability surfaces show whether a run relied on the TypeScript compiler parser, language structural scanner, heuristic fallback, or no structural parser, making the remaining Tree-sitter/equivalent gap visible instead of hidden in patch summaries.
+
+### 2026-07-06 Python/Go/Rust structural scanner hardening slice
+
+- Done: Python, Go, and Rust patch summaries now use an explicit `language-structural-scanner` backend instead of the generic heuristic fallback label, with fallback confidence and a bounded confidence cap.
+- Done: the scanner now covers more production-relevant supported-language structure: Python decorators and multiline imports, Go receiver methods plus import/const/var/type blocks, and Rust impl scopes, traits, macros, constants/statics, grouped `use` imports, and body-only edits.
+- Done: regression coverage proves symbols/imports/backend/confidence for Python/Go/Rust structural diffs and preserves patch-pair confidence caps through the new backend.
+- Remaining gap: this is still deterministic syntax/scope scanning, not full Tree-sitter/equivalent AST parsing for Python/Go/Rust. The frontier AST requirement remains open until parser dependency/runtime design is settled.
+- Verified: focused Learn v2 structural tests, full `packages/core/tests/learn-v2.test.ts`, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test`.
 
 ### 2026-07-04 trace context slice
 
@@ -988,7 +995,7 @@ Done:
 
 - Added explicit structural parser metadata on Learn v2 patch file summaries: `parserBackend`, `structuralConfidence`, and `confidenceCap`.
 - Routed TypeScript/JavaScript structural extraction through a named `typescript-compiler` parser backend with parser confidence.
-- Routed Python/Go/Rust structural extraction through an explicit `heuristic-fallback` backend with fallback confidence and a 0.68 cap.
+- Routed Python/Go/Rust structural extraction through an explicit `language-structural-scanner` backend with fallback confidence and a 0.78 cap after the 2026-07-06 hardening slice.
 - Kept unknown/unsupported languages on `none` backend with low structural confidence.
 - Applied structural confidence caps to agent-patch versus final/manual patch comparison confidence so fallback-only patch pairings cannot be overrepresented as parser-grade evidence.
 - Added regression tests for TS/JS parser backend metadata, Python/Go/Rust fallback metadata, and fallback-capped patch-pair confidence.

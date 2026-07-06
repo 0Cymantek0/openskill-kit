@@ -667,6 +667,78 @@ describe("learn-v2 substrate", () => {
     expect(summary.semanticChange).toBe(true);
   });
 
+  it("uses language structural scanners for Python Go and Rust scope signals", async () => {
+    const diff = [
+      "diff --git a/src/parser_engine.py b/src/parser_engine.py",
+      "--- a/src/parser_engine.py",
+      "+++ b/src/parser_engine.py",
+      "@@",
+      "+from osk.parser import (",
+      "+    ParserConfig,",
+      "+    parse_skill,",
+      "+)",
+      "+class ParserService:",
+      "+    @classmethod",
+      "+    def build(cls, source):",
+      "+        return parse_skill(source)",
+      "diff --git a/internal/parser/service.go b/internal/parser/service.go",
+      "--- a/internal/parser/service.go",
+      "+++ b/internal/parser/service.go",
+      "@@",
+      "+import (",
+      "+  \"context\"",
+      "+  parser \"example.com/acme/parser\"",
+      "+)",
+      "+type ParserConfig struct {",
+      "+  Strict bool",
+      "+}",
+      "+func (s *Service) LoadParser(ctx context.Context) (*ParserConfig, error) {",
+      "+  return parser.New(ctx)",
+      "+}",
+      "diff --git a/crates/parser/src/lib.rs b/crates/parser/src/lib.rs",
+      "--- a/crates/parser/src/lib.rs",
+      "+++ b/crates/parser/src/lib.rs",
+      "@@",
+      "+use crate::parser::{Parser, parse_skill};",
+      "+pub struct SkillParser {",
+      "+    strict: bool,",
+      "+}",
+      "+impl SkillParser {",
+      "+    pub fn parse(&self, input: &str) -> Parser {",
+      "+        parse_skill(input)",
+      "+    }",
+      "+}",
+      "+macro_rules! parser_rule {",
+      "+    () => {};",
+      "+}"
+    ].join("\n");
+
+    const summary = analyzeLearnV2StructuralDiff(diff);
+
+    expect(summary.languages).toEqual(["go", "python", "rust"]);
+    expect(summary.changedSymbols).toEqual(expect.arrayContaining([
+      "ParserService",
+      "build",
+      "ParserConfig",
+      "LoadParser",
+      "Service",
+      "SkillParser",
+      "parse",
+      "parser_rule"
+    ]));
+    expect(summary.changedImports).toEqual(expect.arrayContaining([
+      "osk.parser",
+      "context",
+      "example.com/acme/parser",
+      "crate::parser::Parser",
+      "crate::parser::parse_skill"
+    ]));
+    expect(summary.fileSummaries.every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.structuralConfidence === "fallback")).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.confidenceCap === 0.78)).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.semanticChange === true)).toBe(true);
+  });
+
   it("marks non-semantic generated lockfile formatting and rename-only patches as audit-only", async () => {
     const generatedOnly = [
       "diff --git a/packages/core/src/generated/client.ts b/packages/core/src/generated/client.ts",
@@ -1416,9 +1488,9 @@ describe("learn-v2 substrate", () => {
     ]));
     expect(summary.semanticChange).toBe(true);
     expect(summary.fileSummaries.every((file) => file.classes.includes("api"))).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.parserBackend === "heuristic-fallback")).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
     expect(summary.fileSummaries.every((file) => file.structuralConfidence === "fallback")).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.confidenceCap === 0.68)).toBe(true);
+    expect(summary.fileSummaries.every((file) => file.confidenceCap === 0.78)).toBe(true);
   });
 
   it("caps patch-pair confidence when only fallback structural parsers are available", async () => {
@@ -1448,10 +1520,10 @@ describe("learn-v2 substrate", () => {
     ]);
     const final = patches.find((patch) => patch.kind === "final-patch")!;
 
-    expect(final.structuralSummary.fileSummaries.every((file) => file.parserBackend === "heuristic-fallback")).toBe(true);
-    expect(final.comparison?.confidence).toBeLessThanOrEqual(0.68);
+    expect(final.structuralSummary.fileSummaries.every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
+    expect(final.comparison?.confidence).toBeLessThanOrEqual(0.78);
     expect(final.comparison?.confidence).toBeGreaterThanOrEqual(0.5);
-    expect(final.summary).toContain("structural=python:heuristic-fallback:fallback");
+    expect(final.summary).toContain("structural=python:language-structural-scanner:fallback");
   });
 
   it("recovers enclosing symbols from hunk headers and context for body-only edits", async () => {

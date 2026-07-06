@@ -154,9 +154,9 @@ function structuralParserForLanguage(language: StructuralLanguage): StructuralPa
   if (language === "python" || language === "go" || language === "rust") {
     return {
       language,
-      backend: "heuristic-fallback",
+      backend: "language-structural-scanner",
       confidence: "fallback",
-      confidenceCap: 0.68,
+      confidenceCap: 0.78,
       signal: (file) => blockStructuralSignal(file, language)
     };
   }
@@ -218,9 +218,9 @@ function blockSignalFromHunk(language: StructuralLanguage, hunk: DiffHunk, side:
 }
 
 function blockSignalFromSource(language: StructuralLanguage, lines: string[], changedLines: Set<number>): BlockStructuralSignal {
-  if (language === "python") return mergeBlockSignals(pythonBlockSignal(lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
+  if (language === "python") return mergeBlockSignals(pythonBlockSignal(lines, changedLines), pythonImportBlockSignal(lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
   if (language === "go") return mergeBlockSignals(braceBlockSignal(language, lines, changedLines), goDeclarationBlockSignal(lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
-  if (language === "rust") return mergeBlockSignals(braceBlockSignal(language, lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
+  if (language === "rust") return mergeBlockSignals(braceBlockSignal(language, lines, changedLines), rustDeclarationBlockSignal(lines, changedLines), adjacentDeclarationSignal(language, lines, changedLines));
   return { symbols: [], imports: [] };
 }
 
@@ -254,6 +254,32 @@ function pythonBlockSignal(lines: string[], changedLines: Set<number>): BlockStr
     }
   });
   return { symbols: [...symbols].sort(), imports: [...imports].sort() };
+}
+
+function pythonImportBlockSignal(lines: string[], changedLines: Set<number>): BlockStructuralSignal {
+  const imports = new Set<string>();
+  let fromModule: string | undefined;
+  let inImportBlock = false;
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    if (!inImportBlock) {
+      for (const item of pythonImportsForLine(trimmed)) imports.add(item);
+      const start = /^from\s+([A-Za-z0-9_.]+)\s+import\s*\($/.exec(trimmed);
+      if (start) {
+        fromModule = start[1]!;
+        inImportBlock = true;
+      }
+      return;
+    }
+    if (trimmed === ")") {
+      fromModule = undefined;
+      inImportBlock = false;
+      return;
+    }
+    if (fromModule && changedLines.has(index + 1)) imports.add(fromModule);
+  });
+  return { symbols: [], imports: [...imports].sort() };
 }
 
 function braceBlockSignal(language: "go" | "rust", lines: string[], changedLines: Set<number>): BlockStructuralSignal {
@@ -311,6 +337,28 @@ function goDeclarationBlockSignal(lines: string[], changedLines: Set<number>): B
     if (!changedLines.has(index + 1)) return;
     const symbol = /^([A-Za-z_]\w*)\b/.exec(trimmed)?.[1];
     if (symbol) symbols.add(symbol);
+  });
+  return { symbols: [...symbols].sort(), imports: [...imports].sort() };
+}
+
+function rustDeclarationBlockSignal(lines: string[], changedLines: Set<number>): BlockStructuralSignal {
+  const symbols = new Set<string>();
+  const imports = new Set<string>();
+  const stack: Array<{ depth: number; symbols: string[] }> = [];
+  let depth = 0;
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    for (const item of importsForLine("rust", trimmed)) imports.add(item);
+    const lineSymbols = braceLineSymbols("rust", trimmed);
+    for (const symbol of lineSymbols) symbols.add(symbol);
+    if (/^(?:pub(?:\([^)]*\))?\s+)?(?:impl|trait|mod)\b/.test(trimmed) && lineSymbols.length) {
+      stack.push({ depth, symbols: lineSymbols });
+    }
+    if (changedLines.has(index + 1)) {
+      for (const scope of stack) for (const symbol of scope.symbols) symbols.add(symbol);
+    }
+    depth = Math.max(0, depth + braceDelta(trimmed));
+    while (stack.length && depth <= stack[stack.length - 1]!.depth) stack.pop();
   });
   return { symbols: [...symbols].sort(), imports: [...imports].sort() };
 }
