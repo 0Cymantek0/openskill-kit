@@ -585,6 +585,11 @@ export const LearnV2ReviewQueueSchema = z.object({
     reasons: {}
   }),
   safeBulkActions: z.array(z.enum(["accept-low-risk", "reject-one-off", "mark-superseded"])).default([]),
+  reviewActions: z.record(z.string(), z.array(z.object({
+    label: z.string().min(1),
+    command: z.string().min(1),
+    rationale: z.string().min(1)
+  }))).default({}),
   conflictSummary: z.object({
     unresolvedCount: z.number().int().min(0),
     conflictTypeCounts: z.record(z.string(), z.number().int().min(0)).default({}),

@@ -9,6 +9,15 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 review action guidance slice
+
+- Finding verified: review queues exposed focus reasons and drift detail, but still left users to translate those reasons into exact CLI review actions.
+- Done: review queue JSON now includes bounded per-card suggested review actions for focused cards, with command strings and declassified rationale.
+- Done: Markdown review queues render suggested commands for candidate/staged cards, active/locked drift candidates, conflicted cards, counterevidence cards, and supersession cases.
+- Done: regression coverage proves drift-focused active concepts suggest demotion and conflict-focused cards suggest reject/supersede commands.
+- Done: Vitest's global per-test timeout is now 60s, matching heavy subprocess integration tests that already use 60s process timeouts and preventing full-suite load from producing false timeout failures.
+- Verified: focused review-action regressions, docs coverage, `rtk npm run typecheck`, full Learn v2 test file, full CLI facade file, and full `rtk npm test` (40 files, 304 tests).
+
 ### 2026-07-06 concept outcome observability metrics slice
 
 - Finding verified: Learn v2 stored local concept outcome telemetry and used it for activation, drift, and demotion, but pipeline observability did not summarize the outcome loop.

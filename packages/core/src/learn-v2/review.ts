@@ -24,6 +24,7 @@ export async function writeLearnV2ReviewQueue(
   const conflictTypeCounts = context?.ledger ? countBy(context.ledger.conflicts.map((conflict) => conflict.conflictType)) : {};
   const evidenceSnippets = selectReviewEvidenceSnippets(cards, context?.declassifiedSnippets);
   const reviewFocus = selectReviewFocus(cards, context);
+  const reviewActions = selectReviewActions(cards, reviewFocus);
   const queue = LearnV2ReviewQueueSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.review-queue.v1",
     generatedAt: now.toISOString(),
@@ -31,6 +32,7 @@ export async function writeLearnV2ReviewQueue(
     behaviorDeltaFirst: true,
     reviewFocus,
     safeBulkActions: ["accept-low-risk", "reject-one-off", "mark-superseded"],
+    reviewActions,
     conflictSummary: {
       unresolvedCount: context?.ledger?.unresolvedCount ?? 0,
       conflictTypeCounts,
@@ -156,6 +158,11 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     if (card.activation.commands.length) lines.push(`Commands: ${card.activation.commands.join(", ")}`);
     lines.push(`Evidence: ${card.evidenceIds.join(", ")}`);
     lines.push("Raw refs: local-only, not exportable");
+    const actions = queue.reviewActions[card.id] ?? [];
+    if (actions.length) {
+      lines.push("Suggested actions:");
+      for (const action of actions) lines.push(`- ${action.label}: ${action.command} (${action.rationale})`);
+    }
     const drift = driftByConcept.get(card.id);
     if (drift) {
       lines.push(`Drift: ${drift.reason}; negative=${drift.negativeOutcomeCount}; activations=${drift.activationCount}; ageDays=${drift.ageDays}${drift.lastOutcomeDays !== undefined ? `; lastOutcomeDays=${drift.lastOutcomeDays}` : ""}`);
@@ -227,6 +234,40 @@ function focusRank(card: LearnV2ConceptCard, reasons: Set<string>): number {
   if (card.status === "candidate" || card.status === "staged") return 2;
   if ([...reasons].some((reason) => reason.startsWith("drift:"))) return 3;
   return 4;
+}
+
+function selectReviewActions(
+  cards: LearnV2ConceptCard[],
+  reviewFocus: LearnV2ReviewQueue["reviewFocus"]
+): LearnV2ReviewQueue["reviewActions"] {
+  const focusIds = new Set(reviewFocus.focusCardIds);
+  const actions: LearnV2ReviewQueue["reviewActions"] = {};
+  for (const card of cards) {
+    if (!focusIds.has(card.id)) continue;
+    const reasons = reviewFocus.reasons[card.id] ?? [];
+    const out: LearnV2ReviewQueue["reviewActions"][string] = [];
+    const add = (label: string, command: string, rationale: string): void => {
+      if (out.some((item) => item.command === command)) return;
+      out.push({ label, command, rationale });
+    };
+    if (card.status === "candidate" || card.status === "staged") {
+      add("Accept", `openskill-kit osk review --concept-accept ${card.id}`, "Activate this concept after human review.");
+      add("Reject", `openskill-kit osk review --concept-reject ${card.id}`, "Remove a wrong or overfit concept from activation candidates.");
+    }
+    if (card.status === "active" || card.status === "locked") {
+      add("Demote", `openskill-kit osk review --concept-demote ${card.id}`, "Move this active concept back to candidate while reviewing drift or harm.");
+    }
+    if (card.status === "conflict" || card.counterevidence.length || reasons.some((reason) => reason.startsWith("conflict:"))) {
+      add("Reject", `openskill-kit osk review --concept-reject ${card.id}`, "Reject the conflicted concept if counterevidence invalidates it.");
+      add("Mark one-off", `openskill-kit osk review --concept-one-off ${card.id}`, "Keep the evidence local without treating it as durable behavior.");
+      add("Supersede", `openskill-kit osk review --concept-supersede '{"supersededId":"${card.id}","supersededById":"concept_replacement"}'`, "Replace this concept with a stronger reviewed concept.");
+    }
+    if (reasons.some((reason) => reason.startsWith("drift:"))) {
+      add("Demote", `openskill-kit osk review --concept-demote ${card.id}`, "Pause activation while reviewing stale or harmful outcome telemetry.");
+    }
+    if (out.length) actions[card.id] = out.slice(0, 5);
+  }
+  return actions;
 }
 
 function selectReviewEvidenceSnippets(cards: LearnV2ConceptCard[], artifact?: LearnV2DeclassifiedEvidenceSnippetArtifact): LearnV2ReviewQueue["evidenceSnippets"] {

@@ -1012,9 +1012,13 @@ describe("learn-v2 substrate", () => {
     expect(queue.reviewFocus.focusCardIds).toEqual(expect.arrayContaining(conflictingCards.map((card) => card.id)));
     expect(queue.reviewFocus.focusCardIds).not.toContain(unrelatedActive.id);
     expect(queue.reviewFocus.omittedCardCount).toBe(1);
+    expect(queue.reviewActions[conflictingCards[0]!.id]?.some((action) => action.command.includes("--concept-reject"))).toBe(true);
+    expect(queue.reviewActions[conflictingCards[0]!.id]?.some((action) => action.command.includes("--concept-supersede"))).toBe(true);
     const markdown = await readText(queue.artifacts.markdown);
     expect(markdown).toContain("## Focus Cards");
     expect(markdown).toContain("Focus reasons: conflict:direct-opposite");
+    expect(markdown).toContain("Suggested actions:");
+    expect(markdown).toContain("openskill-kit osk review --concept-supersede");
     expect(markdown).toContain("## Full Store Appendix");
     expect(markdown).toContain(unrelatedActive.id);
   });
@@ -1228,11 +1232,13 @@ describe("learn-v2 substrate", () => {
       reason: "recent-negative-outcomes",
       negativeOutcomeCount: 2
     });
+    expect(queue.reviewActions[active.id]?.map((action) => action.command)).toContain(`openskill-kit osk review --concept-demote ${active.id}`);
     const reviewMarkdown = await readText(queue.artifacts.markdown);
     expect(reviewMarkdown).toContain("Drift Summary");
     expect(reviewMarkdown).toContain("recent-negative-outcomes");
     expect(reviewMarkdown).toContain(`- ${active.id}: recent-negative-outcomes; negative=2`);
     expect(reviewMarkdown).toContain("Drift suggestion: Concept has 2 recent negative outcome(s)");
+    expect(reviewMarkdown).toContain(`Demote: openskill-kit osk review --concept-demote ${active.id}`);
   });
 
   it("detects Python Go and Rust structural symbols with confidence-capped fallback parsers", async () => {
