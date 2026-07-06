@@ -715,6 +715,7 @@ function applyConceptRestructure(
     const selected = source.atoms.filter((atom) => atomIds.has(atom.id));
     if (!selected.length) throw new Error(`Learn-v2 concept split selected no atoms for ${source.id}.`);
     const remaining = source.atoms.filter((atom) => !atomIds.has(atom.id));
+    const counterevidence = partitionCounterevidenceForSplit(source.counterevidence, selected, remaining);
     const childId = `concept_${learnV2ShortHash(`split:${source.id}:${selected.map((atom) => atom.id).sort().join(",")}:${item.canonicalBehavior ?? ""}`)}`;
     const childBase = { ...source, id: childId, status: "candidate" as const };
     const child = rebuildConceptFromAtoms({
@@ -732,7 +733,7 @@ function applyConceptRestructure(
         updatedAt: now.toISOString(),
         supersedes: []
       },
-      counterevidence: []
+      counterevidence: counterevidence.selected
     });
     byId.set(child.id, LearnV2ConceptCardSchema.parse(child));
     modifiedIds.add(child.id);
@@ -743,7 +744,7 @@ function applyConceptRestructure(
         now,
         status: source.status,
         lifecycle: { ...source.lifecycle, updatedAt: now.toISOString() },
-        counterevidence: source.counterevidence
+        counterevidence: counterevidence.remaining
       })));
     } else {
       byId.set(source.id, LearnV2ConceptCardSchema.parse({
@@ -913,6 +914,25 @@ function uniqueAtoms(atoms: LearnV2ConceptCard["atoms"]): LearnV2ConceptCard["at
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
+}
+
+function partitionCounterevidenceForSplit(
+  items: LearnV2ConceptCard["counterevidence"],
+  selected: LearnV2ConceptCard["atoms"],
+  remaining: LearnV2ConceptCard["atoms"]
+): { selected: LearnV2ConceptCard["counterevidence"]; remaining: LearnV2ConceptCard["counterevidence"] } {
+  const selectedEvidenceIds = new Set(selected.flatMap((atom) => atom.evidenceIds));
+  const remainingEvidenceIds = new Set(remaining.flatMap((atom) => atom.evidenceIds));
+  const selectedItems = items.filter((item) => selectedEvidenceIds.has(item.evidenceId));
+  const remainingItems = items.filter((item) => remainingEvidenceIds.has(item.evidenceId) || !selectedEvidenceIds.has(item.evidenceId));
+  return {
+    selected: uniqueCounterevidenceItems(selectedItems),
+    remaining: uniqueCounterevidenceItems(remainingItems)
+  };
+}
+
+function uniqueCounterevidenceItems(items: LearnV2ConceptCard["counterevidence"]): LearnV2ConceptCard["counterevidence"] {
+  return [...new Map(items.map((item) => [`${item.evidenceId}\0${item.reason}`, item])).values()];
 }
 
 function highestRisk(values: Array<LearnV2ConceptCard["risk"]>): LearnV2ConceptCard["risk"] {

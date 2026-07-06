@@ -4255,6 +4255,42 @@ describe("learn-v2 substrate", () => {
     expect(store.cards.find((card) => card.id === docsConcept!.id)?.status).toBe("candidate");
   });
 
+  it("keeps split counterevidence attached to the atoms it still describes", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [concept] = mergeLearnV2ConceptCards([
+      behaviorAtom("split_counter_parser_a", "Prefer parser regression fixtures before parser changes.", "positive"),
+      behaviorAtom("split_counter_parser_b", "Prefer parser regression fixtures before parser changes.", "positive")
+    ], now);
+    const source = {
+      ...concept!,
+      counterevidence: [
+        { evidenceId: "ev_split_counter_parser_a", reason: "Selected atom objection." },
+        { evidenceId: "ev_split_counter_parser_b", reason: "Remaining atom objection." },
+        { evidenceId: "external_review_note", reason: "Whole concept objection without atom evidence id." }
+      ]
+    };
+    await writeLearnV2ConceptStore(root, [source], now);
+
+    const reviewed = await applyLearnV2ConceptReview(root, {
+      splitConcepts: [{
+        sourceId: source.id,
+        atomIds: ["split_counter_parser_a"],
+        canonicalBehavior: "Prefer parser regression fixtures before parser changes."
+      }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+    const child = reviewed.store.cards.find((card) => card.id !== source.id)!;
+    const parent = reviewed.store.cards.find((card) => card.id === source.id)!;
+
+    expect(child.atoms.map((atom) => atom.id)).toEqual(["split_counter_parser_a"]);
+    expect(child.counterevidence.map((item) => item.evidenceId)).toEqual(["ev_split_counter_parser_a"]);
+    expect(parent.atoms.map((atom) => atom.id)).toEqual(["split_counter_parser_b"]);
+    expect(parent.counterevidence.map((item) => item.evidenceId)).toEqual(["ev_split_counter_parser_b", "external_review_note"]);
+    expect(child.scoring?.penalties.join(",")).toContain("counterevidence:");
+  });
+
   it("persists concept scoring breakdowns and penalizes counterevidence", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_scoring");

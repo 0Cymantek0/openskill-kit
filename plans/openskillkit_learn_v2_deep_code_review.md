@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 split counterevidence hygiene slice
+
+- Finding verified: concept splits rebuilt the child with no counterevidence and left all original counterevidence on the parent, so selected-atom objections could disappear from the child while no-longer-relevant objections stayed on the remaining parent.
+- Done: split now partitions counterevidence by atom evidence ids: selected-atom objections follow the child, remaining-atom and concept-level unknown objections stay on the parent.
+- Done: split rebuild scoring now sees the child's retained counterevidence, so review and activation surfaces keep the objection visible after restructure.
+- Verified: focused split hygiene regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 310 tests).
+
 ### 2026-07-06 guarded concept restructure slice
 
 - Finding verified: Learn v2 review transactions already merged, split, and superseded concept cards atomically, but reviewer-provided merge JSON could still collapse unrelated concepts if target/source ids were mismatched.
