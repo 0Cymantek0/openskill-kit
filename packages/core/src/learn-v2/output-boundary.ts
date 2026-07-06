@@ -38,12 +38,12 @@ export function validateLearnV2ModelOutputBoundary(
   const issues = new Set<string>();
   const declassified = learnV2DeclassifyText(text, root, config);
   for (const match of declassified.matches) issues.add(match);
-  collectPattern(issues, text, PLACEHOLDER_TOKEN_PATTERN, "declassification-placeholder");
   collectPattern(issues, text, RAW_REF_PATTERN, "raw-ref");
   collectPattern(issues, text, UNIX_USER_PATH_PATTERN, "absolute-user-path");
   collectPattern(issues, text, WINDOWS_USER_PATH_PATTERN, "absolute-user-path");
   collectPattern(issues, text, RAW_VAULT_PATH_PATTERN, "raw-vault-path");
   collectPattern(issues, text, EMAIL_PATTERN, "email");
+  collectPattern(issues, text, SECRET_PATTERN, "secret-like-token");
 
   if (!issues.size) return { ok: true };
   return {

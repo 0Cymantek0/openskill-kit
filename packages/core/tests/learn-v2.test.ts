@@ -62,6 +62,7 @@ import {
   scoreLearnV2ProjectRelevance,
   scoreLearnV2ActivationEntries,
   validateLearnV2LlmExtractionProposal,
+  validateLearnV2ModelOutputBoundary,
   readLearnV2ConceptActivationRuns,
   readProjectConfig,
   type LearnV2BehaviorAtom,
@@ -2547,6 +2548,27 @@ describe("learn-v2 substrate", () => {
     }), "utf8");
     await expect(compileBehaviorLayer(root, { targets: ["project-rules"] })).rejects.toThrow("Compile-time declassification checks failed");
     await expect(compileBehaviorLayer(root, { targets: ["mcp-resources"] })).rejects.toThrow("Compile-time declassification checks failed");
+  });
+
+  it("allows approved declassification placeholders in model outputs while blocking raw leaks", async () => {
+    const root = await tempProject();
+    const config = (await initAdaptiveProject({ projectRoot: root })).config;
+
+    expect(validateLearnV2ModelOutputBoundary(root, config, {
+      proposals: [{
+        statement: "Prefer bounded diagnostics under [PROJECT_ROOT] and redact user mail as [REDACTED:email].",
+        rationale: "This uses approved placeholders instead of raw local values."
+      }]
+    })).toEqual({ ok: true });
+
+    const unsafe = validateLearnV2ModelOutputBoundary(root, config, {
+      proposals: [{
+        statement: `Do not emit ${root}, raw_model_boundary_123456, or ghp_123456789012345678901234567890123456.`
+      }]
+    });
+    expect(unsafe.ok).toBe(false);
+    expect(unsafe.ok ? "" : unsafe.detail).toContain("raw-ref");
+    expect(unsafe.ok ? "" : unsafe.detail).toContain("secret-like-token");
   });
 
   it("hard-blocks unsafe active concept graph sync without letting unsafe candidates block safe active concepts", async () => {

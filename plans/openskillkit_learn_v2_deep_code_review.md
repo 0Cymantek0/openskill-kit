@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 model-output placeholder boundary slice
+
+- Finding verified: model proposal validation treated approved declassification placeholders like `[PROJECT_ROOT]` and `[REDACTED:email]` as unsafe output content. That could reject safe redacted proposals even when the model avoided raw local values.
+- Done: model output validation now allows approved placeholder tokens while still rejecting raw refs, raw local paths, raw-vault paths, email identifiers, and secret-like tokens.
+- Done: the output-boundary validator is exported through the Learn v2 public barrel for direct regression coverage, and docs now describe the accepted placeholder boundary.
+- Verified: focused model-output boundary regression, focused compiled-artifact boundary regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 318 passed, 1 skipped).
+
 ### 2026-07-07 local JUnit CI surface slice
 
 - Finding verified: `ci-log` advertised JUnit-style evidence, but raw surface discovery skipped `.xml` files and the normalizer treated JUnit XML as undifferentiated log text. Local CI reports could not produce testcase-level, path-linked Learn v2 evidence.
