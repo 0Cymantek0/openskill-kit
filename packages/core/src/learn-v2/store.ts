@@ -760,12 +760,12 @@ function applyConceptRestructure(
   for (const item of options.supersedeConcepts ?? []) {
     const superseded = requireConcept(byId, item.supersededId, "superseded concept");
     const successor = requireConcept(byId, item.supersededById, "successor concept");
-    byId.set(superseded.id, LearnV2ConceptCardSchema.parse({
+    byId.set(superseded.id, LearnV2ConceptCardSchema.parse(withLearnV2ConceptScoring({
       ...superseded,
       status: "superseded",
       counterevidence: item.reason ? [...superseded.counterevidence, { evidenceId: successor.evidenceIds[0] ?? successor.id, reason: item.reason }] : superseded.counterevidence,
       lifecycle: { ...superseded.lifecycle, updatedAt: now.toISOString(), supersededBy: successor.id }
-    }));
+    })));
     byId.set(successor.id, LearnV2ConceptCardSchema.parse({
       ...successor,
       lifecycle: { ...successor.lifecycle, updatedAt: now.toISOString(), supersedes: [...new Set([...successor.lifecycle.supersedes, superseded.id])] }

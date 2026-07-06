@@ -9,6 +9,12 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 supersede scoring hygiene slice
+
+- Finding verified: manual supersede review could add counterevidence to the superseded card but leave its deterministic scoring fields unchanged until a later unrelated rescore.
+- Done: supersede review now immediately recalculates confidence, durability, source reliability, and scoring penalties for the superseded card after status/counterevidence/lifecycle mutation.
+- Verified: focused supersede scoring regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 310 tests).
+
 ### 2026-07-06 split counterevidence hygiene slice
 
 - Finding verified: concept splits rebuilt the child with no counterevidence and left all original counterevidence on the parent, so selected-atom objections could disappear from the child while no-longer-relevant objections stayed on the remaining parent.

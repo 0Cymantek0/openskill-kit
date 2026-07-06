@@ -4221,6 +4221,8 @@ describe("learn-v2 substrate", () => {
     expect(finalChild.status).toBe("superseded");
     expect(finalChild.lifecycle.supersededBy).toBe(finalParent.id);
     expect(finalParent.lifecycle.supersedes).toContain(finalChild.id);
+    expect(finalChild.counterevidence.some((item) => item.reason === "Folded back after reviewer decision.")).toBe(true);
+    expect(finalChild.scoring?.penalties.join(",")).toContain("counterevidence:");
     expect(supersedeReview.messages.join("\n")).toContain("superseded by");
   });
 
