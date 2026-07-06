@@ -597,6 +597,38 @@ export const LearnV2ReviewQueueSchema = z.object({
     command: z.string().min(1),
     rationale: z.string().min(1)
   }))).default({}),
+  conflictDetails: z.array(z.object({
+    conflictId: z.string().min(1),
+    conceptIds: z.array(z.string().min(1)).min(1),
+    conflictType: z.enum([
+      "direct-opposite",
+      "scope-overlap",
+      "newer-supersedes-older",
+      "command-policy-conflict",
+      "security-vs-convenience",
+      "style-disagreement"
+    ]),
+    suggestedResolution: z.enum([
+      "narrow-scope",
+      "prefer-newer-explicit-user-correction",
+      "keep-both-with-conditions",
+      "reject-lower-confidence",
+      "human-review"
+    ]),
+    resolutionAction: z.enum(["auto-supersede", "auto-narrow", "manual", "none"]).default("none"),
+    explanation: z.string().min(1),
+    diagnostics: z.object({
+      scopeOverlap: z.boolean(),
+      tokenOverlap: z.number().int().min(0),
+      sameKind: z.boolean(),
+      oppositePolarity: z.boolean(),
+      confidenceDelta: z.number().min(0).optional(),
+      newerConceptId: z.string().min(1).optional(),
+      olderConceptId: z.string().min(1).optional(),
+      authorityReasons: z.array(z.string().min(1)).default([]),
+      protectedReasons: z.array(z.string().min(1)).default([])
+    }).optional()
+  })).default([]),
   conflictSummary: z.object({
     unresolvedCount: z.number().int().min(0),
     conflictTypeCounts: z.record(z.string(), z.number().int().min(0)).default({}),

@@ -25,6 +25,7 @@ export async function writeLearnV2ReviewQueue(
   const evidenceSnippets = selectReviewEvidenceSnippets(cards, context?.declassifiedSnippets);
   const reviewFocus = selectReviewFocus(cards, context);
   const reviewActions = selectReviewActions(cards, reviewFocus, context?.ledger);
+  const conflictDetails = selectReviewConflictDetails(cards, context?.ledger);
   const queue = LearnV2ReviewQueueSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.review-queue.v1",
     generatedAt: now.toISOString(),
@@ -33,6 +34,7 @@ export async function writeLearnV2ReviewQueue(
     reviewFocus,
     safeBulkActions: ["accept-low-risk", "reject-one-off", "mark-superseded"],
     reviewActions,
+    conflictDetails,
     conflictSummary: {
       unresolvedCount: context?.ledger?.unresolvedCount ?? 0,
       conflictTypeCounts,
@@ -139,6 +141,7 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
   const focusCards = queue.cards.filter((card) => focusIds.has(card.id));
   const appendixCards = queue.cards.filter((card) => !focusIds.has(card.id));
   const driftByConcept = new Map(queue.driftSummary.staleCandidates.map((candidate) => [candidate.conceptId, candidate]));
+  const conflictsByConcept = mapReviewConflictsByConcept(queue.conflictDetails);
   for (const card of focusCards) {
     lines.push(`### ${card.title}`);
     lines.push("");
@@ -150,6 +153,16 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     lines.push(`Confidence: ${card.confidence.toFixed(2)} Durability: ${card.durability.toFixed(2)} Reliability: ${card.sourceReliability.toFixed(2)} Risk: ${card.risk}`);
     const scoringSummary = renderScoringSummary(card);
     if (scoringSummary) lines.push(scoringSummary);
+    const conflictDetails = conflictsByConcept.get(card.id) ?? [];
+    if (conflictDetails.length) {
+      lines.push("Conflict diagnostics:");
+      for (const conflict of conflictDetails.slice(0, 4)) {
+        const diagnostic = conflict.diagnostics;
+        lines.push(`- ${conflict.conflictType}: resolution=${conflict.suggestedResolution}/${conflict.resolutionAction}; scopeOverlap=${diagnostic?.scopeOverlap ?? "n/a"}; tokenOverlap=${diagnostic?.tokenOverlap ?? "n/a"}; sameKind=${diagnostic?.sameKind ?? "n/a"}; oppositePolarity=${diagnostic?.oppositePolarity ?? "n/a"}; confidenceDelta=${diagnostic?.confidenceDelta ?? 0}`);
+        if (diagnostic?.authorityReasons.length) lines.push(`  Authority: ${diagnostic.authorityReasons.join(", ")}`);
+        if (diagnostic?.protectedReasons.length) lines.push(`  Protection: ${diagnostic.protectedReasons.join(", ")}`);
+      }
+    }
     if (card.scope.reviewLocked) lines.push(`Scope lock: reviewer-narrowed${card.scope.reviewedAt ? ` at ${card.scope.reviewedAt}` : ""}`);
     if (card.scope.paths.length) lines.push(`Scope paths: ${card.scope.paths.join(", ")}`);
     if (card.scope.taskTypes.length) lines.push(`Task types: ${card.scope.taskTypes.join(", ")}`);
@@ -196,6 +209,16 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
   return `${lines.join("\n")}\n`;
 }
 
+function mapReviewConflictsByConcept(conflicts: LearnV2ReviewQueue["conflictDetails"]): Map<string, LearnV2ReviewQueue["conflictDetails"]> {
+  const out = new Map<string, LearnV2ReviewQueue["conflictDetails"]>();
+  for (const conflict of conflicts) {
+    for (const conceptId of conflict.conceptIds) {
+      out.set(conceptId, [...(out.get(conceptId) ?? []), conflict]);
+    }
+  }
+  return out;
+}
+
 function selectReviewFocus(
   cards: LearnV2ConceptCard[],
   context?: {
@@ -237,6 +260,22 @@ function focusRank(card: LearnV2ConceptCard, reasons: Set<string>): number {
   if (card.status === "candidate" || card.status === "staged") return 2;
   if ([...reasons].some((reason) => reason.startsWith("drift:"))) return 3;
   return 4;
+}
+
+function selectReviewConflictDetails(cards: LearnV2ConceptCard[], ledger?: LearnV2ConflictLedger): LearnV2ReviewQueue["conflictDetails"] {
+  const cardIds = new Set(cards.map((card) => card.id));
+  return (ledger?.conflicts ?? [])
+    .filter((conflict) => !conflict.resolved && conflict.conceptIds.some((id) => cardIds.has(id)))
+    .slice(0, 80)
+    .map((conflict) => ({
+      conflictId: conflict.id,
+      conceptIds: conflict.conceptIds.filter((id) => cardIds.has(id)),
+      conflictType: conflict.conflictType,
+      suggestedResolution: conflict.suggestedResolution,
+      resolutionAction: conflict.resolutionAction,
+      explanation: conflict.explanation,
+      diagnostics: conflict.diagnostics
+    }));
 }
 
 function selectReviewActions(

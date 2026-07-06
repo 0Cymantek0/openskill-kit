@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 review-visible conflict diagnostics slice
+
+- Finding verified: conflict ledger diagnostics were persisted in the separate conflict ledger, but the concept review queue still showed only `conflict:<type>` focus reasons on cards. Reviewers had to open another artifact to understand overlap, polarity, confidence, authority, and protection factors.
+- Done: review queue JSON now carries bounded `conflictDetails` entries copied from unresolved conflicts for included concepts, preserving declassified diagnostics and explanations.
+- Done: review queue Markdown now renders conflict diagnostics directly on focused cards before suggested actions, so accept/reject/narrow/supersede decisions have visible deterministic evidence at the point of review.
+- Verified: focused review-queue conflict diagnostics regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 315 tests).
+
 ### 2026-07-06 conflict ledger diagnostics slice
 
 - Finding verified: conflict ledger entries explained outcomes in prose but did not persist the deterministic metrics and authority/protection reasons used to choose direct-opposite, scope-overlap, or newer-supersedes-older classifications.

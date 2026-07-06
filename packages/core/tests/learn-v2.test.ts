@@ -1133,9 +1133,18 @@ describe("learn-v2 substrate", () => {
     });
     expect(queue.conflictSummary.unresolvedCount).toBe(ledger.ledger.unresolvedCount);
     expect(queue.artifacts.conflictLedger).toBe(ledger.artifactPaths.markdown);
+    expect(queue.conflictDetails.some((conflict) => conflict.conflictType === "direct-opposite")).toBe(true);
+    expect(queue.conflictDetails.find((conflict) => conflict.conflictType === "direct-opposite")?.diagnostics).toMatchObject({
+      scopeOverlap: true,
+      sameKind: true,
+      oppositePolarity: true
+    });
     const reviewMarkdown = await readText(queue.artifacts.markdown);
     expect(reviewMarkdown).toContain("Unresolved conflicts:");
     expect(reviewMarkdown).toContain("direct-opposite");
+    expect(reviewMarkdown).toContain("Conflict diagnostics:");
+    expect(reviewMarkdown).toContain("scopeOverlap=true");
+    expect(reviewMarkdown).toContain("tokenOverlap=");
     const ledgerText = await readText(ledger.artifactPaths.markdown);
     expect(ledgerText).toContain("Learn v2 Concept Conflict Ledger");
     expect(ledgerText).toContain("Diagnostics: scopeOverlap=true");
