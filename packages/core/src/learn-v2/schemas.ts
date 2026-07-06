@@ -698,7 +698,7 @@ export const LearnV2EvalReportSchema = z.object({
   replayEpisodeCount: z.number().int().min(0),
   proofBoundary: z.object({
     method: z.literal("deterministic-local-replay"),
-    sandboxExecuted: z.literal(false),
+    sandboxExecuted: z.boolean().default(false),
     agentExecuted: z.literal(false),
     proves: z.array(z.string()).default([
       "concept retrieval from stored episodes",
@@ -783,7 +783,8 @@ export const LearnV2EvalReportSchema = z.object({
     json: z.string(),
     markdown: z.string(),
     counterfactualCases: z.string().optional(),
-    behaviorDeltaCases: z.string().optional()
+    behaviorDeltaCases: z.string().optional(),
+    sandboxProbe: z.string().optional()
   })
 });
 export type LearnV2EvalReport = z.infer<typeof LearnV2EvalReportSchema>;

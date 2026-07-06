@@ -362,6 +362,7 @@ osk.command("learn")
   .option("--reconstruct-episodes", "Rebuild Learn-v2 episodes from persisted analysis frames")
   .option("--extract-concepts", "Extract deterministic Learn-v2 concepts from the persisted episode store")
   .option("--run-learn-v2-eval", "Run Learn-v2 eval from persisted episode and concept stores")
+  .option("--learn-v2-eval-sandbox-probe", "Run an opt-in local-process sandbox verifier probe for serialized Learn-v2 eval cases")
   .option("--prepare-model-requests", "Write prompt-safe Learn-v2 model request artifacts from the stored episode store")
   .option("--prepare-scope-requests", "Write prompt-safe Learn-v2 scope-inferencer request artifacts from the concept store")
   .option("--scope-concept <conceptId>", "Concept id to prepare for --prepare-scope-requests", collectOption, [])
@@ -428,7 +429,7 @@ osk.command("learn")
       return;
     }
     if (options.runLearnV2Eval === true) {
-      const result = withLearnV2EvalProofBoundary(await runPersistedLearnV2Eval(process.cwd(), { goldensPath: options.learnV2Goldens }));
+      const result = withLearnV2EvalProofBoundary(await runPersistedLearnV2Eval(process.cwd(), { goldensPath: options.learnV2Goldens, sandboxProbe: options.learnV2EvalSandboxProbe === true }));
       output(options.json, result, renderLearnV2PersistedEval(result));
       return;
     }
@@ -2436,7 +2437,7 @@ function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersist
 
 type LearnV2EvalProofBoundary = {
   method: "deterministic-local-replay";
-  sandboxExecuted: false;
+  sandboxExecuted: boolean;
   agentExecuted: false;
   proves: string[];
   doesNotProve: string[];

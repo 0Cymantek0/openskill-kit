@@ -1785,7 +1785,8 @@ describe("learn-v2 substrate", () => {
       }]
     }), "utf8");
     const report = await runLearnV2Eval(root, episodes, concepts, new Date("2026-06-30T00:01:00Z"), {
-      goldensPath
+      goldensPath,
+      sandboxProbe: true
     });
     expect(report.status).toBe("pass");
     expect(report.extractionGoldenCount).toBe(1);
@@ -1802,15 +1803,18 @@ describe("learn-v2 substrate", () => {
     expect(report.summary.counterfactualTrace.activationRate).toBe(1);
     expect(report.proofBoundary).toMatchObject({
       method: "deterministic-local-replay",
-      sandboxExecuted: false,
+      sandboxExecuted: true,
       agentExecuted: false
     });
-    expect(report.proofBoundary.doesNotProve).toEqual(expect.arrayContaining(["real agent task success", "sandbox execution success"]));
+    expect(report.proofBoundary.doesNotProve).toEqual(expect.arrayContaining(["real agent task success"]));
+    expect(report.proofBoundary.doesNotProve).not.toContain("sandbox execution success");
     expect(report.proofBoundary.proves).toEqual(expect.arrayContaining([
       "configured behavior-delta golden checks",
-      "deterministic counterfactual trace activation checks"
+      "deterministic counterfactual trace activation checks",
+      "local sandbox verifier command execution"
     ]));
     expect(report.proofBoundary.doesNotProve).not.toContain("configured behavior-delta golden checks");
+    expect(report.results.some((result) => result.id === "sandbox-eval-probe" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "behavior-delta:parser-plan-delta" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
@@ -1823,9 +1827,13 @@ describe("learn-v2 substrate", () => {
     expect(behaviorDeltaCases).toContain("parser regression tests");
     expect(behaviorDeltaCases).not.toContain("raw_");
     expect(behaviorDeltaCases).not.toContain(root);
+    const sandboxProbe = await readText(report.artifacts.sandboxProbe!);
+    expect(sandboxProbe).toContain("openskill-kit.learn-v2.sandbox-probe-result.v1");
+    expect(JSON.parse(sandboxProbe).status).toBe("pass");
+    expect(sandboxProbe).not.toContain(root);
     const markdown = await readText(report.artifacts.markdown);
     expect(markdown).toContain("## Proof Boundary");
-    expect(markdown).toContain("Sandbox executed: false");
+    expect(markdown).toContain("Sandbox executed: true");
     expect(markdown).toContain("Does not prove: real agent task success");
     expect(markdown).toContain("## Behavior Delta");
     expect(markdown).toContain("Result rows:");

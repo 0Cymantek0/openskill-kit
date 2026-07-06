@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 opt-in sandbox eval probe slice
+
+- Finding verified: Learn v2 eval had honest proof-boundary labels, behavior-delta goldens, and counterfactual trace activation checks, but no eval path could set `sandboxExecuted=true`.
+- Done: `runLearnV2Eval` now supports an opt-in local-process sandbox probe that validates declassified serialized behavior-delta and counterfactual eval cases through the shared sandbox runner.
+- Done: `/osk learn --run-learn-v2-eval --learn-v2-eval-sandbox-probe` exposes the probe in CLI JSON/plain output; the proof boundary only claims local sandbox verifier command execution, not real agent task success.
+- Verified: focused core eval sandbox-probe regression, focused CLI persisted-eval regression, `rtk npm run typecheck`, full Learn v2 substrate tests, full CLI facade tests, and full `rtk npm test` (40 files, 306 tests).
+
 ### 2026-07-06 activation-outcome scoring calibration slice
 
 - Finding verified: concept scoring exposed `calibratedFrom` and the plan calls for outcome-updated confidence, but durable concept scores still came only from deterministic atom/evidence heuristics unless a separate demotion policy changed status.

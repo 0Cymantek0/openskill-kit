@@ -6,6 +6,8 @@ import { writeJsonAtomic } from "../storage/atomic.js";
 import { scoreLearnV2ActivationEntries } from "./activation.js";
 import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
 import { evaluateLearnV2ConceptQualityGates } from "./concept-quality-gates.js";
+import { createLocalSandboxPolicy } from "../sandbox/policy.js";
+import { runSandboxCommand, type SandboxCommandResult } from "../sandbox/runner.js";
 
 export const LearnV2ExtractionGoldenScenarioSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.extraction-golden.v1"),
@@ -41,6 +43,7 @@ export type LearnV2BehaviorDeltaGoldenScenario = z.infer<typeof LearnV2BehaviorD
 
 export interface LearnV2EvalOptions {
   goldensPath?: string;
+  sandboxProbe?: boolean;
 }
 
 export interface LearnV2CounterfactualTraceEvalCase {
@@ -103,6 +106,9 @@ export async function runLearnV2Eval(
   const activationReplay = evaluateActivationReplay(episodes, concepts);
   const counterfactualTrace = evaluateCounterfactualTraceCases(concepts, counterfactualCases);
   const behaviorDeltaResults = behaviorDeltaCases.map((item) => evaluateBehaviorDeltaCase(item));
+  const sandboxProbe = options.sandboxProbe
+    ? await runLearnV2EvalSandboxProbe(root, runDir, behaviorDeltaCases, counterfactualCases)
+    : undefined;
   const results = [
     {
       id: "concept-evidence-grounding",
@@ -134,6 +140,7 @@ export async function runLearnV2Eval(
     evaluateLearnV2ConceptQualityGates(concepts),
     activationReplay.result,
     counterfactualTrace.result,
+    ...(sandboxProbe ? [sandboxProbe.result] : []),
     ...behaviorDeltaResults,
     ...goldens.map((golden) => evaluateGolden(golden, episodes, concepts))
   ];
@@ -147,7 +154,8 @@ export async function runLearnV2Eval(
     replayEpisodeCount: episodes.length,
     proofBoundary: learnV2EvalProofBoundary({
       behaviorDeltaScenarioCount: behaviorDeltaCases.length,
-      counterfactualTraceCaseCount: counterfactualCases.length
+      counterfactualTraceCaseCount: counterfactualCases.length,
+      sandboxProbeStatus: sandboxProbe?.result.status
     }),
     summary,
     leakCheck: {
@@ -160,7 +168,13 @@ export async function runLearnV2Eval(
       compressionRatio: rawChars ? Number(Math.min(1, compressedChars / rawChars).toFixed(3)) : 1
     },
     results,
-    artifacts: { json, markdown, counterfactualCases: counterfactualCasesPath, behaviorDeltaCases: behaviorDeltaCasesPath }
+    artifacts: {
+      json,
+      markdown,
+      counterfactualCases: counterfactualCasesPath,
+      behaviorDeltaCases: behaviorDeltaCasesPath,
+      sandboxProbe: sandboxProbe?.artifactPath
+    }
   });
   await writeJsonAtomic(counterfactualCasesPath, {
     schemaVersion: "openskill-kit.counterfactual-trace-eval-cases.v1",
@@ -254,6 +268,113 @@ function evaluateGolden(golden: LearnV2ExtractionGoldenScenario, episodes: Learn
     status: checks.every((item) => item.status === "pass") ? "pass" : "fail",
     checks
   };
+}
+
+async function runLearnV2EvalSandboxProbe(
+  root: string,
+  runDir: string,
+  behaviorDeltaCases: LearnV2BehaviorDeltaEvalCase[],
+  counterfactualCases: LearnV2CounterfactualTraceEvalCase[]
+): Promise<{ result: LearnV2EvalResultRow; artifactPath: string }> {
+  const artifactPath = path.join(runDir, "sandbox-probe.json");
+  const inputPath = path.join(runDir, "sandbox-probe-input.json");
+  const runnerPath = path.join(runDir, "sandbox-probe-runner.cjs");
+  const input = {
+    schemaVersion: "openskill-kit.learn-v2.sandbox-probe-input.v1",
+    behaviorDeltaCases: behaviorDeltaCases.map((item) => declassifyBehaviorDeltaCase(root, item)),
+    counterfactualCases: counterfactualCases.map((item) => declassifyCounterfactualTraceCase(root, item))
+  };
+  await writeJsonAtomic(inputPath, input);
+  await fs.mkdir(path.dirname(runnerPath), { recursive: true });
+  await fs.writeFile(runnerPath, sandboxProbeRunnerSource(), "utf8");
+  const sandboxResult = await runSandboxCommand(createLocalSandboxPolicy({
+    projectRoot: root,
+    allowedCommands: [process.execPath, "node"],
+    timeoutMs: 30_000,
+    maxOutputBytes: 64 * 1024
+  }), {
+    command: process.execPath,
+    args: [runnerPath, inputPath],
+    cwd: root
+  });
+  const parsed = parseSandboxProbeStdout(sandboxResult);
+  const unsafeInputIssues = sandboxProbeInputIssues(JSON.stringify(input));
+  const pass = sandboxResult.status === "pass" && parsed.ok === true && unsafeInputIssues.length === 0;
+  await writeJsonAtomic(artifactPath, {
+    schemaVersion: "openskill-kit.learn-v2.sandbox-probe-result.v1",
+    status: pass ? "pass" : "fail",
+    sandboxStatus: sandboxResult.status,
+    durationMs: sandboxResult.durationMs,
+    behaviorDeltaCaseCount: behaviorDeltaCases.length,
+    counterfactualCaseCount: counterfactualCases.length,
+    unsafeInputIssues,
+    runnerChecks: parsed,
+    limitations: [
+      "local-process sandbox mode uses execFile without shell expansion but is not a container boundary",
+      "probe validates serialized eval cases and verifier plumbing; it does not execute a real coding agent"
+    ],
+    stderr: sandboxResult.stderr ? "[present]" : ""
+  });
+  return {
+    artifactPath,
+    result: {
+      id: "sandbox-eval-probe",
+      status: pass ? "pass" : "fail",
+      checks: [
+        check("sandbox-command", sandboxResult.status === "pass", `local-process sandbox command status: ${sandboxResult.status}`),
+        check("probe-runner", parsed.ok === true, parsed.detail),
+        check("declassified-input", unsafeInputIssues.length === 0, unsafeInputIssues.length ? `unsafe probe input: ${unsafeInputIssues.join(", ")}` : "probe input uses declassified eval cases")
+      ]
+    }
+  };
+}
+
+function sandboxProbeRunnerSource(): string {
+  return `
+const fs = require("node:fs");
+const inputPath = process.argv[2];
+const input = JSON.parse(fs.readFileSync(inputPath, "utf8"));
+const behaviorDeltaCases = Array.isArray(input.behaviorDeltaCases) ? input.behaviorDeltaCases : [];
+const counterfactualCases = Array.isArray(input.counterfactualCases) ? input.counterfactualCases : [];
+const invalidBehavior = behaviorDeltaCases.filter((item) => !Array.isArray(item.withConceptPlan) || !Array.isArray(item.baselinePlan));
+const invalidCounterfactual = counterfactualCases.filter((item) => typeof item.expectedBehavior !== "string" || !Array.isArray(item.paths));
+const ok = input.schemaVersion === "openskill-kit.learn-v2.sandbox-probe-input.v1" && invalidBehavior.length === 0 && invalidCounterfactual.length === 0;
+console.log(JSON.stringify({
+  ok,
+  behaviorDeltaCaseCount: behaviorDeltaCases.length,
+  counterfactualCaseCount: counterfactualCases.length,
+  invalidBehaviorDeltaCaseCount: invalidBehavior.length,
+  invalidCounterfactualCaseCount: invalidCounterfactual.length
+}));
+process.exit(ok ? 0 : 1);
+`.trimStart();
+}
+
+function parseSandboxProbeStdout(result: SandboxCommandResult): { ok: boolean; detail: string } {
+  if (!result.stdout.trim()) return { ok: false, detail: "sandbox probe produced no JSON output" };
+  try {
+    const parsed = JSON.parse(result.stdout) as {
+      ok?: unknown;
+      behaviorDeltaCaseCount?: unknown;
+      counterfactualCaseCount?: unknown;
+      invalidBehaviorDeltaCaseCount?: unknown;
+      invalidCounterfactualCaseCount?: unknown;
+    };
+    return {
+      ok: parsed.ok === true,
+      detail: `validated behaviorDelta=${parsed.behaviorDeltaCaseCount ?? 0}, counterfactual=${parsed.counterfactualCaseCount ?? 0}, invalidBehavior=${parsed.invalidBehaviorDeltaCaseCount ?? 0}, invalidCounterfactual=${parsed.invalidCounterfactualCaseCount ?? 0}`
+    };
+  } catch {
+    return { ok: false, detail: "sandbox probe output was not valid JSON" };
+  }
+}
+
+function sandboxProbeInputIssues(text: string): string[] {
+  const issues: string[] = [];
+  if (/\braw_[A-Za-z0-9][A-Za-z0-9_-]{5,}\b/.test(text)) issues.push("raw-ref-like-token");
+  if (/\b[A-Z]:[\\/]Users[\\/]/i.test(text) || /\/(?:Users|home)\/[^/\s"'`]+/i.test(text)) issues.push("absolute-user-path");
+  if (/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/.test(text)) issues.push("secret-like-token");
+  return [...new Set(issues)].sort();
 }
 
 function buildCounterfactualTraceCases(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2CounterfactualTraceEvalCase[] {
@@ -692,6 +813,7 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
 function learnV2EvalProofBoundary(input: {
   behaviorDeltaScenarioCount: number;
   counterfactualTraceCaseCount: number;
+  sandboxProbeStatus?: "pass" | "fail";
 }): LearnV2EvalReport["proofBoundary"] {
   const proves = [
     "concept retrieval from stored episodes",
@@ -699,7 +821,6 @@ function learnV2EvalProofBoundary(input: {
   ];
   const doesNotProve = [
     "real agent task success",
-    "sandbox execution success",
     "external model judgment quality"
   ];
   if (input.behaviorDeltaScenarioCount > 0) {
@@ -712,9 +833,15 @@ function learnV2EvalProofBoundary(input: {
   } else {
     doesNotProve.push("counterfactual trace activation checks");
   }
+  const sandboxExecuted = input.sandboxProbeStatus === "pass";
+  if (sandboxExecuted) {
+    proves.push("local sandbox verifier command execution");
+  } else {
+    doesNotProve.push("sandbox execution success");
+  }
   return {
     method: "deterministic-local-replay",
-    sandboxExecuted: false,
+    sandboxExecuted,
     agentExecuted: false,
     proves,
     doesNotProve
