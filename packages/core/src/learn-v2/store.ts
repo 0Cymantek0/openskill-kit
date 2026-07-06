@@ -675,6 +675,7 @@ function applyConceptRestructure(
     const target = requireConcept(byId, item.targetId, "merge target");
     const sources = item.sourceIds.map((id) => requireConcept(byId, id, "merge source")).filter((card) => card.id !== target.id);
     if (!sources.length) continue;
+    const validationMessages = validateConceptMergeCompatibility(target, sources, item);
     const merged = rebuildConceptFromAtoms({
       base: target,
       atoms: uniqueAtoms([target, ...sources].flatMap((card) => card.atoms)),
@@ -704,6 +705,7 @@ function applyConceptRestructure(
       }));
       modifiedIds.add(source.id);
     }
+    messages.push(...validationMessages);
     messages.push(`Merged ${sources.length} concept(s) into ${target.id}.`);
   }
 
@@ -843,6 +845,66 @@ function requireConcept(byId: Map<string, LearnV2ConceptCard>, id: string, label
   const card = byId.get(id);
   if (!card) throw new Error(`Missing learn-v2 ${label}: ${id}`);
   return card;
+}
+
+function validateConceptMergeCompatibility(
+  target: LearnV2ConceptCard,
+  sources: LearnV2ConceptCard[],
+  item: NonNullable<LearnV2ConceptReviewOptions["mergeConcepts"]>[number]
+): string[] {
+  const problems: string[] = [];
+  const messages: string[] = [];
+  const targetSignature = conceptSemanticSignatureParts(target);
+  const reviewerReconciled = typeof item.canonicalBehavior === "string" && item.canonicalBehavior.trim().length > 0;
+  const allowedTargetStatuses: LearnV2ConceptCard["status"][] = ["candidate", "staged", "conflict", "active", "locked"];
+  const allowedSourceStatuses: LearnV2ConceptCard["status"][] = ["candidate", "staged", "conflict", "active"];
+  if (!allowedTargetStatuses.includes(target.status)) problems.push(`${target.id} has non-mergeable target status ${target.status}.`);
+
+  for (const source of sources) {
+    const sourceSignature = conceptSemanticSignatureParts(source);
+    const scopeOverlap = conceptScopesOverlap(target, source);
+    const sameSignature = targetSignature.signature === sourceSignature.signature;
+    const sameKind = targetSignature.kind === sourceSignature.kind;
+    const samePolarity = targetSignature.polarity === sourceSignature.polarity;
+    const sameBehavior = targetSignature.behavior === sourceSignature.behavior;
+
+    if (!allowedSourceStatuses.includes(source.status)) problems.push(`${source.id} has non-mergeable source status ${source.status}.`);
+    if (!sameKind) problems.push(`${source.id} kind ${sourceSignature.kind} does not match ${target.id} kind ${targetSignature.kind}.`);
+    if (target.scope.reviewLocked && !scopeOverlap) problems.push(`${source.id} does not overlap review-locked scope for ${target.id}.`);
+    if (!sameBehavior && !scopeOverlap) problems.push(`${source.id} behavior differs from ${target.id} outside overlapping scope.`);
+    if (!sameBehavior && !reviewerReconciled) problems.push(`${source.id} behavior differs from ${target.id} without a reviewer canonicalBehavior.`);
+    if (!samePolarity && !reviewerReconciled) problems.push(`${source.id} polarity differs from ${target.id} without a reviewer canonicalBehavior.`);
+    if (!scopeOverlap && !sameSignature) problems.push(`${source.id} lacks either semantic signature match or scope overlap with ${target.id}.`);
+    if (source.status === "conflict" && !reviewerReconciled) problems.push(`${source.id} is in conflict status and needs reviewer canonicalBehavior before merge.`);
+
+    if (!sameSignature) {
+      messages.push(`Merge semantic validation reconciled ${source.id} into ${target.id} with reviewer canonical behavior.`);
+    }
+  }
+
+  if (problems.length) {
+    throw new Error(`Unsafe learn-v2 concept merge into ${target.id}: ${problems.join(" ")}`);
+  }
+  return messages;
+}
+
+function conceptSemanticSignatureParts(card: LearnV2ConceptCard): {
+  signature: string;
+  kind: string;
+  polarity: string;
+  behavior: string;
+} {
+  const signature = learnV2ConceptSemanticSignatureForCard(card);
+  const fields = new Map(signature.split("|").map((part) => {
+    const [key, ...rest] = part.split(":");
+    return [key ?? "", rest.join(":")];
+  }));
+  return {
+    signature,
+    kind: fields.get("kind") ?? "unknown",
+    polarity: fields.get("polarity") ?? "neutral",
+    behavior: fields.get("behavior") ?? "general"
+  };
 }
 
 function uniqueAtoms(atoms: LearnV2ConceptCard["atoms"]): LearnV2ConceptCard["atoms"] {

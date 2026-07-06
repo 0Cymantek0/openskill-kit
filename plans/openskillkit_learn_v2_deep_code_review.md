@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 guarded concept restructure slice
+
+- Finding verified: Learn v2 review transactions already merged, split, and superseded concept cards atomically, but reviewer-provided merge JSON could still collapse unrelated concepts if target/source ids were mismatched.
+- Done: concept merge now validates target/source status, semantic kind/signature, polarity reconciliation, scope overlap, conflict status, and review-locked scope before mutating the concept store.
+- Done: reviewer-reconciled same-scope merges remain supported through explicit `canonicalBehavior`; unsafe cross-scope behavior collapse throws before lifecycle supersession or activation-index rewrite.
+- Verified: focused guarded-merge regression, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 309 tests).
+
 ### 2026-07-06 opt-in sandbox eval probe slice
 
 - Finding verified: Learn v2 eval had honest proof-boundary labels, behavior-delta goldens, and counterfactual trace activation checks, but no eval path could set `sandboxExecuted=true`.

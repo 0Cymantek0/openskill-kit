@@ -4188,6 +4188,7 @@ describe("learn-v2 substrate", () => {
     expect(mergedTarget.atoms.length).toBeGreaterThanOrEqual(2);
     expect(supersededSource.status).toBe("superseded");
     expect(supersededSource.lifecycle.supersededBy).toBe(target!.id);
+    expect(mergedReview.messages.join("\n")).toContain("Merge semantic validation reconciled");
     expect(await readText(mergedReview.activationIndexPath)).not.toContain(source!.id);
 
     const atomToSplit = mergedTarget.atoms[0]!;
@@ -4221,6 +4222,37 @@ describe("learn-v2 substrate", () => {
     expect(finalChild.lifecycle.supersededBy).toBe(finalParent.id);
     expect(finalParent.lifecycle.supersedes).toContain(finalChild.id);
     expect(supersedeReview.messages.join("\n")).toContain("superseded by");
+  });
+
+  it("rejects unsafe concept merges that collapse unrelated behaviors", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:00:00Z");
+    const [parserConcept] = mergeLearnV2ConceptCards([
+      behaviorAtom("unsafe_merge_parser_tests", "Prefer focused parser tests for parser changes.", "positive")
+    ], now);
+    const [docsConcept] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("unsafe_merge_docs", "Prefer concise documentation updates for docs changes.", "positive"),
+      scope: {
+        level: "path",
+        paths: ["docs/guide.md"],
+        taskTypes: ["docs-change"]
+      }
+    }], now);
+    await writeLearnV2ConceptStore(root, [parserConcept!, docsConcept!], now);
+
+    await expect(applyLearnV2ConceptReview(root, {
+      mergeConcepts: [{
+        targetId: parserConcept!.id,
+        sourceIds: [docsConcept!.id],
+        canonicalBehavior: "Prefer focused parser tests and concise docs updates."
+      }],
+      compileActive: false,
+      now: new Date("2026-06-30T00:01:00Z")
+    })).rejects.toThrow("Unsafe learn-v2 concept merge");
+
+    const store = await readLearnV2ConceptStore(root);
+    expect(store.cards.find((card) => card.id === parserConcept!.id)?.lifecycle.supersedes).not.toContain(docsConcept!.id);
+    expect(store.cards.find((card) => card.id === docsConcept!.id)?.status).toBe("candidate");
   });
 
   it("persists concept scoring breakdowns and penalizes counterevidence", async () => {
