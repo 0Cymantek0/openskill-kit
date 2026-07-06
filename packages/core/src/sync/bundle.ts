@@ -382,6 +382,15 @@ export interface LearnV2PackConceptSummary {
   commandCount: number;
   pathScopedCount: number;
   conceptIds: string[];
+  concepts: Array<{
+    id: string;
+    title: string;
+    behavior: string;
+    status: "active" | "locked" | "unknown";
+    risk: string;
+    scope: string;
+    commands: string[];
+  }>;
 }
 
 export async function importProjectBehaviorPack(projectRootInput: string, packPathInput: string, options: { dryRun?: boolean; trustHooks?: boolean; review?: boolean; maxChangedFiles?: number } = {}): Promise<ImportProjectBehaviorPackResult> {
@@ -460,6 +469,15 @@ async function writeImportReview(
     `- Concept ids: ${learnV2ConceptSummary.conceptIds.length ? learnV2ConceptSummary.conceptIds.join(", ") : "none"}`,
     "- Import review does not auto-activate Learn v2 concepts; apply only copies the reviewed pack artifacts.",
     "",
+    "### Concept Summaries",
+    "",
+    ...(learnV2ConceptSummary.concepts.length
+      ? learnV2ConceptSummary.concepts.flatMap((concept) => [
+        `- ${concept.id} [${concept.status}; risk=${concept.risk}; ${concept.scope}] ${concept.title}: ${concept.behavior}`,
+        ...(concept.commands.length ? [`  - Commands: ${concept.commands.join(", ")}`] : [])
+      ])
+      : ["- none"]),
+    "",
     "## Files Planned",
     "",
     ...(files.length ? files.map((file) => `- ${file.status}: ${path.relative(projectRoot, file.destination).replace(/\\/g, "/")}`) : ["- none"]),
@@ -478,7 +496,8 @@ async function readLearnV2PackConceptSummary(packPath: string, files: string[]):
     highRiskCount: 0,
     commandCount: 0,
     pathScopedCount: 0,
-    conceptIds: []
+    conceptIds: [],
+    concepts: []
   };
   if (!files.includes(LEARN_V2_CONCEPT_RESOURCE_REL)) return empty;
   const parsed = await fs.readFile(path.join(packPath, LEARN_V2_CONCEPT_RESOURCE_REL), "utf8")
@@ -505,9 +524,44 @@ async function readLearnV2PackConceptSummary(packPath: string, files: string[]):
     const paths = Array.isArray(item.scope?.paths) ? item.scope.paths : [];
     if (item.scope?.level === "path" || paths.length > 0) summary.pathScopedCount += 1;
     if (typeof item.id === "string" && item.id.trim()) conceptIds.add(item.id);
+    if (summary.concepts.length < 20) {
+      const id = typeof item.id === "string" && item.id.trim() ? item.id : "<unknown>";
+      const title = typeof (resource as { title?: unknown }).title === "string"
+        ? boundedPackText((resource as { title: string }).title, 120)
+        : id;
+      const behavior = typeof (item as { behavior?: unknown }).behavior === "string"
+        ? boundedPackText((item as { behavior: string }).behavior, 240)
+        : "<missing behavior>";
+      summary.concepts.push({
+        id,
+        title,
+        behavior,
+        status: item.status === "active" || item.status === "locked" ? item.status : "unknown",
+        risk: typeof item.risk === "string" ? item.risk : "unknown",
+        scope: packConceptScopeLabel(item.scope),
+        commands: Array.isArray(item.activation?.commands)
+          ? item.activation.commands.filter((command): command is string => typeof command === "string" && command.trim().length > 0).map((command) => boundedPackText(command, 120)).slice(0, 6)
+          : []
+      });
+    }
   }
   summary.conceptIds = [...conceptIds].sort();
   return summary;
+}
+
+function packConceptScopeLabel(scope: { level?: unknown; paths?: unknown; taskTypes?: unknown } | undefined): string {
+  const level = typeof scope?.level === "string" ? scope.level : "unknown";
+  const paths = Array.isArray(scope?.paths) ? scope.paths.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 3) : [];
+  const taskTypes = Array.isArray(scope?.taskTypes) ? scope.taskTypes.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 3) : [];
+  const parts = [`scope=${level}`];
+  if (paths.length) parts.push(`paths=${paths.map((item) => boundedPackText(item, 80)).join(",")}`);
+  if (taskTypes.length) parts.push(`taskTypes=${taskTypes.map((item) => boundedPackText(item, 80)).join(",")}`);
+  return parts.join("; ");
+}
+
+function boundedPackText(value: string, max: number): string {
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max - 3)}...` : trimmed;
 }
 
 async function fileImportStatus(source: string, destination: string): Promise<"added" | "changed" | "unchanged"> {

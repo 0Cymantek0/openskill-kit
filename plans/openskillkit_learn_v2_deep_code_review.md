@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 pack import concept visibility slice
+
+- Finding verified: behavior packs already carried declassified Learn v2 MCP resources and import reviews counted active/locked/high-risk concepts, but reviewers saw ids only. That was too weak for team sharing because imported learned behavior could not be judged from the review file without opening JSON resources by hand.
+- Done: pack inspect/import summaries now include bounded concept details: id, title, behavior, active/locked status, risk, scope, and commands. Import review Markdown renders these summaries before file plans while still excluding raw refs and private Learn v2 artifact paths.
+- Done: docs now state that pack inspect/import-review output exposes bounded Learn v2 concept summaries before apply.
+- Verified: focused Learn v2 pack import review regressions, full hygiene/hardening tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 319 passed, 1 skipped).
+
 ### 2026-07-07 primary hidden export fixture slice
 
 - Finding verified: the surface adapter code already mapped project-local Claude, Cursor, and OpenCode hidden export directories, but source-planning regression coverage only exercised Codex plus several secondary agent export dirs. Primary multi-tool ingestion could regress without a planner-level test.

@@ -6,10 +6,13 @@ import { promises as fs } from "node:fs";
 import {
   initAdaptiveProject,
   exportProjectBehaviorPack,
+  importProjectBehaviorPack,
+  inspectProjectBehaviorPack,
   verifyProjectBehaviorPack,
   compileLearnV2ConceptPreview,
   ensureLearnV2ModelRoutingArtifacts,
   compileBehaviorLayer,
+  writeLearnV2ConceptStore,
   LEARN_V2_GENERATED_DIRS,
   LEARN_V2_GENERATED_FILES,
   getCleanedLearnV2Paths
@@ -90,6 +93,62 @@ describe("Learn v2 hygiene + export boundary hardening", () => {
 
     const verified = await verifyProjectBehaviorPack(pack.packPath);
     expect(verified.status).toBe("pass");
+  });
+
+  it("renders reviewed Learn v2 concept summaries before behavior pack import", async () => {
+    const root = await tempProject();
+    const card = {
+      ...createBadCard("shareable_parser_concept", "Prefer focused parser regression tests before parser changes."),
+      title: "Focused parser regression workflow",
+      status: "locked" as const,
+      risk: "medium" as const,
+      scope: {
+        level: "path" as const,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: []
+      },
+      activation: {
+        phrases: ["focused parser regression"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: ["npm test -- parser"]
+      },
+      evidenceIds: ["ev_parser_1", "ev_parser_2"],
+      sourceReliability: 0.92
+    };
+    card.atoms[0]!.scope.paths = ["packages/core/src/parser.ts"];
+    card.atoms[0]!.scope.taskTypes = ["parser-change"];
+    await writeLearnV2ConceptStore(root, [card], new Date("2026-06-30T00:01:00.000Z"));
+    await compileBehaviorLayer(root, { targets: ["mcp-resources"] });
+
+    const pack = await exportProjectBehaviorPack(root);
+    const inspected = await inspectProjectBehaviorPack(pack.packPath);
+    expect(inspected.learnV2ConceptSummary).toMatchObject({
+      resourceCount: 1,
+      lockedCount: 1,
+      pathScopedCount: 1,
+      conceptIds: ["shareable_parser_concept"]
+    });
+    expect(inspected.learnV2ConceptSummary.concepts[0]).toMatchObject({
+      id: "shareable_parser_concept",
+      title: "Focused parser regression workflow",
+      behavior: "Prefer focused parser regression tests before parser changes.",
+      status: "locked",
+      risk: "medium",
+      commands: ["npm test -- parser"]
+    });
+    expect(inspected.learnV2ConceptSummary.concepts[0]!.scope).toContain("packages/core/src/parser.ts");
+
+    const importRoot = await tempProject();
+    const planned = await importProjectBehaviorPack(importRoot, pack.packPath, { review: true });
+    expect(planned.status).toBe("planned");
+    expect(planned.learnV2ConceptSummary?.concepts[0]?.behavior).toContain("focused parser regression tests");
+    const review = await readFile(planned.reviewPath!, "utf8");
+    expect(review).toContain("### Concept Summaries");
+    expect(review).toContain("Focused parser regression workflow");
+    expect(review).toContain("Prefer focused parser regression tests before parser changes.");
+    expect(review).toContain("Commands: npm test -- parser");
+    expect(review).not.toContain("raw_123");
   });
 
   it("proves pack verification fails if manifest includes a private Learn v2 path", async () => {

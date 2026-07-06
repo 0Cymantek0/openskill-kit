@@ -294,7 +294,7 @@ describe("phase 1 hardening", () => {
 
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-import-learn-v2-review-"));
     const inspected = await inspectProjectBehaviorPack(pack);
-    expect(inspected.learnV2ConceptSummary).toEqual({
+    expect(inspected.learnV2ConceptSummary).toMatchObject({
       schemaVersion: "openskill-kit.learn-v2-pack-concept-summary.v1",
       resourceCount: 1,
       activeCount: 1,
@@ -304,10 +304,19 @@ describe("phase 1 hardening", () => {
       pathScopedCount: 1,
       conceptIds: ["concept_shared_parser"]
     });
+    expect(inspected.learnV2ConceptSummary.concepts[0]).toMatchObject({
+      id: "concept_shared_parser",
+      title: "Shared parser regression behavior",
+      behavior: "Prefer focused parser regression tests when parser code changes.",
+      status: "active",
+      risk: "low",
+      commands: ["npm test -- parser"]
+    });
+    expect(inspected.learnV2ConceptSummary.concepts[0]!.scope).toContain("packages/core/src/parser.ts");
     const result = await importProjectBehaviorPack(root, pack, { review: true });
 
     expect(result.status).toBe("planned");
-    expect(result.learnV2ConceptSummary).toEqual({
+    expect(result.learnV2ConceptSummary).toMatchObject({
       schemaVersion: "openskill-kit.learn-v2-pack-concept-summary.v1",
       resourceCount: 1,
       activeCount: 1,
@@ -321,6 +330,10 @@ describe("phase 1 hardening", () => {
     const review = await readFile(result.reviewPath!, "utf8");
     expect(review).toContain("## Learn v2 Concepts");
     expect(review).toContain("- Concept ids: concept_shared_parser");
+    expect(review).toContain("### Concept Summaries");
+    expect(review).toContain("Shared parser regression behavior");
+    expect(review).toContain("Prefer focused parser regression tests when parser code changes.");
+    expect(review).toContain("Commands: npm test -- parser");
     expect(review).toContain("does not auto-activate Learn v2 concepts");
     await expect(stat(path.join(root, resourceRel))).rejects.toThrow();
   });
