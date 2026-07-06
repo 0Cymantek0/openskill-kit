@@ -166,6 +166,8 @@ The most important positive reality check: **the core architecture is proceeding
 
 The most important negative reality check: **do not call this the next-generation Learn Engine yet.** It should be merged or continued as a **review-gated experimental Learn v2 substrate**, then hardened through targeted PRs before it becomes the default learning loop.
 
+**2026-07-06 status correction:** Items 1 and 2 in the original verdict are now closed in this branch. Normal task context surfaces Learn v2 activations through `learnedConcepts.shown`, active concept sync hard-blocks declassification failures before graph merge, failed compile-preview artifacts no longer persist unsafe node bodies, and persisted eval proof boundaries now state what was and was not actually proven. Remaining frontier gaps are model-assisted raw-to-model policy, AST-equivalent structural parsing beyond TS/JS, deeper surface adapters, calibrated scoring/conflict merge, and sandbox/agent-backed behavior eval.
+
 ---
 
 ## 1. Methodology and limitations
@@ -857,11 +859,11 @@ But the branch is still **a Learn v2 substrate**, not yet the fully realized fro
 raw evidence -> reviewed concept -> activation at task time -> changed agent behavior -> outcome telemetry -> concept health update
 ```
 
-The branch implements most of the first half. The next work must harden the output gate and connect activation to normal task context. After that, deeper adapters, model-assisted extraction, robust structural parsing, and research-grade eval will matter much more.
+The branch implements most of this loop, and the 2026-07-06 slices closed the normal task-context activation and output-gate blockers called out in the original review. The next work should focus on deeper adapters, model-assisted extraction under a stricter raw-to-model policy, robust structural parsing, calibrated scoring, and research-grade eval.
 
 Until then, the honest status is:
 
-> OpenSkillKit is proceeding in the right direction. The branch is a strong, safety-conscious raw-local Learn v2 prototype. It is not yet a default-ready frontier learning engine, mainly because declassification is not enforced as a hard compile gate and Learn v2 activation is not yet part of the normal agent task context.
+> OpenSkillKit is proceeding in the right direction. The branch is now a stronger safety-conscious raw-local Learn v2 substrate with task-time activation, hard output-gate enforcement, review visibility, outcome feedback, and honest eval proof boundaries. It is still not a default-ready frontier learning engine until raw-to-model policy, AST-equivalent structural parsing, broader adapters, calibrated scoring, and sandbox/agent-backed behavior eval are hardened.
 
 ---
 
