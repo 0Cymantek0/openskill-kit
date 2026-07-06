@@ -2866,54 +2866,79 @@ type ConceptReviewOptionsInput = Parameters<typeof applyLearnV2ConceptReview>[1]
 
 function parseConceptMergeOptions(values: string[] | undefined): NonNullable<ConceptReviewOptionsInput["mergeConcepts"]> {
   return (values ?? []).map((value) => {
-    const parsed = parseJsonOption(value, "--concept-merge") as Partial<NonNullable<ConceptReviewOptionsInput["mergeConcepts"]>[number]>;
-    if (!parsed.targetId || !Array.isArray(parsed.sourceIds) || !parsed.sourceIds.length) throw new Error("--concept-merge requires targetId and non-empty sourceIds.");
+    const parsed = parseJsonOption(value, "--concept-merge");
     return {
-      targetId: parsed.targetId,
-      sourceIds: parsed.sourceIds,
-      title: parsed.title,
-      canonicalBehavior: parsed.canonicalBehavior,
-      activationPhrases: parsed.activationPhrases
+      targetId: requireStringField(parsed, "targetId", "--concept-merge"),
+      sourceIds: requireStringArrayField(parsed, "sourceIds", "--concept-merge"),
+      title: optionalStringField(parsed, "title", "--concept-merge"),
+      canonicalBehavior: optionalStringField(parsed, "canonicalBehavior", "--concept-merge"),
+      activationPhrases: optionalStringArrayField(parsed, "activationPhrases", "--concept-merge")
     };
   });
 }
 
 function parseConceptSplitOptions(values: string[] | undefined): NonNullable<ConceptReviewOptionsInput["splitConcepts"]> {
   return (values ?? []).map((value) => {
-    const parsed = parseJsonOption(value, "--concept-split") as Partial<NonNullable<ConceptReviewOptionsInput["splitConcepts"]>[number]>;
-    if (!parsed.sourceId || !Array.isArray(parsed.atomIds) || !parsed.atomIds.length) throw new Error("--concept-split requires sourceId and non-empty atomIds.");
+    const parsed = parseJsonOption(value, "--concept-split");
     return {
-      sourceId: parsed.sourceId,
-      atomIds: parsed.atomIds,
-      title: parsed.title,
-      canonicalBehavior: parsed.canonicalBehavior,
-      paths: parsed.paths,
-      taskTypes: parsed.taskTypes,
-      activationPhrases: parsed.activationPhrases
+      sourceId: requireStringField(parsed, "sourceId", "--concept-split"),
+      atomIds: requireStringArrayField(parsed, "atomIds", "--concept-split"),
+      title: optionalStringField(parsed, "title", "--concept-split"),
+      canonicalBehavior: optionalStringField(parsed, "canonicalBehavior", "--concept-split"),
+      paths: optionalStringArrayField(parsed, "paths", "--concept-split"),
+      taskTypes: optionalStringArrayField(parsed, "taskTypes", "--concept-split"),
+      activationPhrases: optionalStringArrayField(parsed, "activationPhrases", "--concept-split")
     };
   });
 }
 
 function parseConceptSupersedeOptions(values: string[] | undefined): NonNullable<ConceptReviewOptionsInput["supersedeConcepts"]> {
   return (values ?? []).map((value) => {
-    const parsed = parseJsonOption(value, "--concept-supersede") as Partial<NonNullable<ConceptReviewOptionsInput["supersedeConcepts"]>[number]>;
-    if (!parsed.supersededId || !parsed.supersededById) throw new Error("--concept-supersede requires supersededId and supersededById.");
+    const parsed = parseJsonOption(value, "--concept-supersede");
     return {
-      supersededId: parsed.supersededId,
-      supersededById: parsed.supersededById,
-      reason: parsed.reason
+      supersededId: requireStringField(parsed, "supersededId", "--concept-supersede"),
+      supersededById: requireStringField(parsed, "supersededById", "--concept-supersede"),
+      reason: optionalStringField(parsed, "reason", "--concept-supersede")
     };
   });
 }
 
-function parseJsonOption(value: string, optionName: string): unknown {
+function parseJsonOption(value: string, optionName: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("expected JSON object");
-    return parsed;
+    return parsed as Record<string, unknown>;
   } catch (error) {
     throw new Error(`Invalid ${optionName} JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function requireStringField(parsed: Record<string, unknown>, field: string, optionName: string): string {
+  const value = parsed[field];
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${optionName} requires non-empty string field ${field}.`);
+  return value;
+}
+
+function requireStringArrayField(parsed: Record<string, unknown>, field: string, optionName: string): string[] {
+  const values = optionalStringArrayField(parsed, field, optionName);
+  if (!values?.length) throw new Error(`${optionName} requires non-empty string array field ${field}.`);
+  return values;
+}
+
+function optionalStringField(parsed: Record<string, unknown>, field: string, optionName: string): string | undefined {
+  const value = parsed[field];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${optionName} field ${field} must be a non-empty string when provided.`);
+  return value;
+}
+
+function optionalStringArrayField(parsed: Record<string, unknown>, field: string, optionName: string): string[] | undefined {
+  const value = parsed[field];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`${optionName} field ${field} must be an array of non-empty strings when provided.`);
+  }
+  return value;
 }
 
 function hasConceptReviewOptions(options: {

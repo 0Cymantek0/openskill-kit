@@ -65,6 +65,42 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--experimental-raw-model-dispatch");
   });
 
+  it("rejects malformed Learn v2 concept review JSON at the CLI boundary", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-review-json-"));
+    const invalidMerge = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "review",
+      "--concept-merge",
+      JSON.stringify({ targetId: "concept_a", sourceIds: [123] })
+    ], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(invalidMerge.code).toBe(1);
+    expect(invalidMerge.stderr).toContain("--concept-merge field sourceIds must be an array of non-empty strings");
+
+    const invalidSplit = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "review",
+      "--concept-split",
+      JSON.stringify({ sourceId: "concept_a", atomIds: ["atom_a"], paths: [42] })
+    ], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(invalidSplit.code).toBe(1);
+    expect(invalidSplit.stderr).toContain("--concept-split field paths must be an array of non-empty strings");
+
+    const invalidSupersede = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "review",
+      "--concept-supersede",
+      JSON.stringify({ supersededId: "concept_a", supersededById: "concept_b", reason: 99 })
+    ], { cwd: root, windowsHide: true }).catch((error: Error & { stdout?: string; stderr?: string; code?: number }) => error);
+    expect(invalidSupersede.code).toBe(1);
+    expect(invalidSupersede.stderr).toContain("--concept-supersede field reason must be a non-empty string");
+  });
+
   it("blocks reserved raw model dispatch unless explicitly acknowledged, and still does not execute it", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-raw-model-boundary-"));
     await execCliJson(["init", "--json"], root);

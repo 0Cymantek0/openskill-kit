@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 CLI review JSON validation slice
+
+- Finding verified: `osk review --concept-merge`, `--concept-split`, and `--concept-supersede` parsed JSON objects but trusted array element types and optional field types, so malformed commands could reach store review logic or fail with indirect schema/runtime errors.
+- Done: CLI review parsers now validate required ids, required arrays, and optional text/array fields as non-empty strings before calling the concept review transaction.
+- Done: malformed merge source ids, split paths, and supersede reasons now fail at the command boundary with targeted errors and no store read/write.
+- Verified: focused CLI facade regression, `rtk npm run typecheck`, `rtk npm run build`, full CLI facade tests (33 tests), and full `rtk npm test` (40 files, 313 tests).
+
 ### 2026-07-06 concrete supersede review-action slice
 
 - Finding verified: review queues suggested `--concept-supersede` with `concept_replacement` placeholders even when the conflict ledger had already identified an `auto-supersede` successor, forcing users into manual id lookup and making guarded supersede errors more likely.
