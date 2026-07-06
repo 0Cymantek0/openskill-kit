@@ -129,6 +129,43 @@ describe("learn-v2 substrate", () => {
     expect(plainEvidence[0]!.commands).toContain("npm test -- parser before final summary");
   });
 
+  it("normalizes IDE diagnostics and issue tracker exports as explicit raw surfaces", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_diagnostics_issues");
+    const diagnostics = path.join(root, "ide-diagnostics.json");
+    const issues = path.join(root, "github-issues.md");
+    await writeFile(diagnostics, JSON.stringify({
+      diagnostics: [{
+        severity: "error",
+        source: "pyright",
+        message: "Parser fixture missing",
+        path: "packages/core/src/parser.ts"
+      }]
+    }), "utf8");
+    await writeFile(issues, [
+      "Issue: Parser regression",
+      "Status: open",
+      "Body: Add focused parser tests for packages/core/src/parser.ts before broad suite"
+    ].join("\n"), "utf8");
+
+    const diagnosticEvidence = normalizeLearnV2Evidence(await readLearnV2Surface(diagnostics), record, await readText(diagnostics));
+    const issueEvidence = normalizeLearnV2Evidence(await readLearnV2Surface(issues), record, await readText(issues));
+
+    expect(diagnosticEvidence[0]).toMatchObject({
+      kind: "test-result",
+      actor: "tool",
+      status: "fail"
+    });
+    expect(diagnosticEvidence[0]!.metadata.adapter).toBe("ide-diagnostics");
+    expect(diagnosticEvidence[0]!.paths).toContain("packages/core/src/parser.ts");
+    expect(issueEvidence[0]).toMatchObject({
+      kind: "review",
+      actor: "reviewer"
+    });
+    expect(issueEvidence[0]!.metadata.adapter).toBe("issue-local");
+    expect(issueEvidence.some((item) => item.paths.includes("packages/core/src/parser.ts"))).toBe(true);
+  });
+
   it("lifts OpenCode trace context from raw JSONL surfaces into episode stitching ids", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_opencode_trace");
@@ -265,6 +302,8 @@ describe("learn-v2 substrate", () => {
     const cline = path.join(root, "cline-transcript.txt");
     const goose = path.join(root, "goose-session.json");
     const zed = path.join(root, "zed-agent-chat.md");
+    const diagnostics = path.join(root, "ide-diagnostics.json");
+    const issues = path.join(root, "github-issues.md");
     const diff = path.join(root, "session.diff");
     const generic = path.join(root, "session.md");
     const summaryCollision = path.join(root, "ordinary-session.md");
@@ -279,6 +318,8 @@ describe("learn-v2 substrate", () => {
     await writeFile(cline, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(goose, JSON.stringify([{ role: "user", content: "Prefer focused parser tests." }]), "utf8");
     await writeFile(zed, "user: Prefer focused parser tests.\nassistant: done", "utf8");
+    await writeFile(diagnostics, JSON.stringify({ diagnostics: [{ severity: "error", source: "eslint", message: "Parser fixture missing", path: "packages/core/src/parser.ts" }] }), "utf8");
+    await writeFile(issues, "Issue: Parser regression\nStatus: open\nBody: Add focused parser tests for packages/core/src/parser.ts", "utf8");
     await writeFile(diff, "diff --git a/src/parser.ts b/src/parser.ts\n+test", "utf8");
     await writeFile(generic, "user: Prefer focused parser tests.\nassistant: done", "utf8");
     await writeFile(summaryCollision, "Summary: we discussed the plan.\nuser: Prefer focused parser tests.\nassistant: done", "utf8");
@@ -294,6 +335,8 @@ describe("learn-v2 substrate", () => {
     const clineSurface = await readLearnV2Surface(cline);
     const gooseSurface = await readLearnV2Surface(goose);
     const zedSurface = await readLearnV2Surface(zed);
+    const diagnosticsSurface = await readLearnV2Surface(diagnostics);
+    const issuesSurface = await readLearnV2Surface(issues);
     const diffSurface = await readLearnV2Surface(diff);
     const genericSurface = await readLearnV2Surface(generic);
     const summaryCollisionSurface = await readLearnV2Surface(summaryCollision);
@@ -310,6 +353,8 @@ describe("learn-v2 substrate", () => {
     expect(clineSurface.adapterId).toBe("cline");
     expect(gooseSurface.adapterId).toBe("goose");
     expect(zedSurface.adapterId).toBe("zed");
+    expect(diagnosticsSurface.adapterId).toBe("ide-diagnostics");
+    expect(issuesSurface.adapterId).toBe("issue-local");
     expect(diffSurface.adapterId).toBe("git");
     expect(diffSurface.contentKind).toBe("diff");
     expect(genericSurface.adapterId).toBe("generic-transcript");
@@ -327,7 +372,9 @@ describe("learn-v2 substrate", () => {
       "kilo",
       "cline",
       "goose",
-      "zed"
+      "zed",
+      "ide-diagnostics",
+      "issue-local"
     ]));
     expect(discovered.find((candidate) => candidate.adapterId === "gemini")?.score).toBeGreaterThanOrEqual(0.72);
     expect(diffSurface.normalizationProfile).toBe("diff");
@@ -341,6 +388,7 @@ describe("learn-v2 substrate", () => {
     await mkdir(path.join(root, ".codex", "memories"), { recursive: true });
     await mkdir(path.join(root, ".claude", "projects", "openskill"), { recursive: true });
     await mkdir(path.join(root, ".cursor", "chats"), { recursive: true });
+    await mkdir(path.join(root, ".vscode", "diagnostics"), { recursive: true });
     await mkdir(path.join(root, ".opencode", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".opencode", "commands"), { recursive: true });
     await mkdir(path.join(root, ".gemini", "transcripts"), { recursive: true });
@@ -354,6 +402,7 @@ describe("learn-v2 substrate", () => {
     await writeFile(path.join(root, ".codex", "memories", "private.md"), "Do not discover this private memory.", "utf8");
     await writeFile(path.join(root, ".claude", "projects", "openskill", "session.json"), "{\"messages\":[{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}]}\n", "utf8");
     await writeFile(path.join(root, ".cursor", "chats", "chat.json"), "{\"messages\":[{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}]}\n", "utf8");
+    await writeFile(path.join(root, ".vscode", "diagnostics", "problems.json"), "{\"diagnostics\":[{\"severity\":\"error\",\"message\":\"Parser fixture missing\",\"path\":\"packages/core/src/parser.ts\"}]}\n", "utf8");
     await writeFile(path.join(root, ".opencode", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
     await writeFile(path.join(root, ".opencode", "commands", "learn.md"), "Command docs are not raw session exports.", "utf8");
     await writeFile(path.join(root, ".gemini", "transcripts", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
@@ -378,6 +427,7 @@ describe("learn-v2 substrate", () => {
     });
     expect(byPath.get(".claude/projects/openskill/session.json")?.adapterId).toBe("claude-code");
     expect(byPath.get(".cursor/chats/chat.json")?.adapterId).toBe("cursor");
+    expect(byPath.get(".vscode/diagnostics/problems.json")?.adapterId).toBe("ide-diagnostics");
     expect(byPath.get(".opencode/sessions/session.jsonl")?.adapterId).toBe("opencode");
     expect(byPath.get(".gemini/transcripts/session.jsonl")?.adapterId).toBe("gemini");
     expect(byPath.get(".roo-code/sessions/session.jsonl")?.adapterId).toBe("roo");
@@ -408,6 +458,8 @@ describe("learn-v2 substrate", () => {
       "zed",
       "git",
       "terminal",
+      "ide-diagnostics",
+      "issue-local",
       "review-local",
       "ci-log",
       "project-docs",
@@ -416,6 +468,8 @@ describe("learn-v2 substrate", () => {
     ]);
     expect(descriptorContracts).toEqual(contracts);
     expect(byId.get("terminal")?.normalizationProfile).toBe("terminal");
+    expect(byId.get("ide-diagnostics")?.normalizationProfile).toBe("ide-diagnostics");
+    expect(byId.get("issue-local")?.normalizationProfile).toBe("issue-local");
     expect(byId.get("git")?.normalizationProfile).toBe("diff");
     expect(byId.get("project-docs")?.normalizationProfile).toBe("project-docs");
     expect(byId.get("generic-transcript")?.capabilities).toEqual({

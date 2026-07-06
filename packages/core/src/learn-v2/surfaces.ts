@@ -8,6 +8,8 @@ export const LearnV2SurfaceNormalizationProfileSchema = z.enum([
   "diff",
   "terminal",
   "ci-log",
+  "ide-diagnostics",
+  "issue-local",
   "review-local",
   "project-docs",
   "agent-summaries"
@@ -147,6 +149,9 @@ const RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS = [
   ".claude/sessions",
   ".cursor/chats",
   ".cursor/sessions",
+  ".vscode/diagnostics",
+  ".vscode/problems",
+  ".idea/diagnostics",
   ".gemini/sessions",
   ".gemini/transcripts",
   ".roo/chats",
@@ -202,8 +207,10 @@ export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
   makeAdapter("cline", "Cline transcript", "structured-events", /\bcline\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
   makeAdapter("goose", "Goose transcript", "structured-events", /\bgoose\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
   makeAdapter("zed", "Zed agent transcript", "structured-events", /\bzed(?:[-_. ]?agent)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("git", "Git diff or metadata", "diff", /(?:\.diff|\.patch|^git[-_.]?|diff --git)/i, "diff", "high", ["Raw diffs are local-only learner input; output artifacts receive declassified summaries."]),
+  makeAdapter("git", "Git diff or metadata", "diff", /(?:\.diff|\.patch|^git(?:[-_.]|$)|diff --git)/i, "diff", "high", ["Raw diffs are local-only learner input; output artifacts receive declassified summaries."]),
   makeAdapter("terminal", "Terminal transcript", "terminal", /(?:terminal|shell|console|history|commands?)/i, "log", "high", ["Shell history and output can contain secrets or machine-local paths."]),
+  makeAdapter("ide-diagnostics", "IDE diagnostics export", "ide-diagnostics", /\b(?:diagnostics?|problems?|lsp|language[-_. ]?server|tsserver|eslint|ruff|mypy|pyright)\b/i, "log", "medium", ["IDE diagnostics can include source paths, messages, snippets, and tool output; import remains explicit-only."], /(?:^|\n)\s*(?:diagnostic|problem|severity|range|line|column|source|eslint|pyright|mypy|ruff)\s*[:=]/i),
+  makeAdapter("issue-local", "Issue tracker export", "issue-local", /\b(?:issues?|tickets?|github[-_. ]?issues?|jira|linear)\b/i, "document", "medium", ["Issue exports can include user text, identifiers, labels, and project paths; import remains explicit-only."], /(?:^|\n)\s*(?:issue|ticket|title|status|assignee|labels?)\s*:/i),
   makeAdapter("review-local", "Local review notes", "review-local", /\b(?:review|comments?|pr|pull-request)\b/i, "document", "medium", ["Review notes are explicit local evidence and remain declassified before output."], /(?:^|\n)\s*(?:reviewer|review comment|pr comment|pull request comment|pull-request comment)\s*:/i),
   makeAdapter("ci-log", "CI or test log", "ci-log", /\b(?:ci|junit|vitest|pytest|build|log|PASS|FAIL|ERROR|WARN)\b/i, "log", "medium", ["Logs can be large and may include environment-specific paths or outputs."]),
   makeAdapter("project-docs", "Project documentation", "project-docs", /(?:README|docs?|notes?|plan)/i, "document", "low", ["Project documentation is still treated as explicit local raw evidence when supplied."], false),
@@ -433,21 +440,23 @@ function detectLearnV2SurfaceAdapterByProjectRelativePath(relativePathInput: str
         ? "claude-code"
         : relativePath.startsWith(".cursor/chats/") || relativePath.startsWith(".cursor/sessions/")
           ? "cursor"
-          : relativePath.startsWith(".gemini/sessions/") || relativePath.startsWith(".gemini/transcripts/")
-            ? "gemini"
-            : relativePath.startsWith(".roo/chats/") || relativePath.startsWith(".roo/sessions/") || relativePath.startsWith(".roo-code/chats/") || relativePath.startsWith(".roo-code/sessions/")
-              ? "roo"
-              : relativePath.startsWith(".kilo/chats/") || relativePath.startsWith(".kilo/sessions/") || relativePath.startsWith(".kilo-code/chats/") || relativePath.startsWith(".kilo-code/sessions/")
-                ? "kilo"
-                : relativePath.startsWith(".cline/chats/") || relativePath.startsWith(".cline/sessions/")
-                  ? "cline"
-                  : relativePath.startsWith(".goose/sessions/")
-                    ? "goose"
-                    : relativePath.startsWith(".zed/agent-sessions/") || relativePath.startsWith(".zed/sessions/") || relativePath.startsWith(".zed/transcripts/")
-                      ? "zed"
-                      : relativePath.startsWith(".opencode/sessions/") || relativePath.startsWith(".opencode/traces/")
-                        ? "opencode"
-                        : undefined;
+          : relativePath.startsWith(".vscode/diagnostics/") || relativePath.startsWith(".vscode/problems/") || relativePath.startsWith(".idea/diagnostics/")
+            ? "ide-diagnostics"
+            : relativePath.startsWith(".gemini/sessions/") || relativePath.startsWith(".gemini/transcripts/")
+              ? "gemini"
+              : relativePath.startsWith(".roo/chats/") || relativePath.startsWith(".roo/sessions/") || relativePath.startsWith(".roo-code/chats/") || relativePath.startsWith(".roo-code/sessions/")
+                ? "roo"
+                : relativePath.startsWith(".kilo/chats/") || relativePath.startsWith(".kilo/sessions/") || relativePath.startsWith(".kilo-code/chats/") || relativePath.startsWith(".kilo-code/sessions/")
+                  ? "kilo"
+                  : relativePath.startsWith(".cline/chats/") || relativePath.startsWith(".cline/sessions/")
+                    ? "cline"
+                    : relativePath.startsWith(".goose/sessions/")
+                      ? "goose"
+                      : relativePath.startsWith(".zed/agent-sessions/") || relativePath.startsWith(".zed/sessions/") || relativePath.startsWith(".zed/transcripts/")
+                        ? "zed"
+                        : relativePath.startsWith(".opencode/sessions/") || relativePath.startsWith(".opencode/traces/")
+                          ? "opencode"
+                          : undefined;
   return adapterId ? learnV2SurfaceAdapters.find((adapter) => adapter.id === adapterId) : undefined;
 }
 
@@ -562,9 +571,9 @@ function rawLocalSourceCandidateScore(
   if (detection.matchedBy === "filename") score += 0.22;
   if (detection.confidence === "high") score += 0.18;
   if (adapter.id !== "generic-transcript") score += 0.14;
-  if (/(^|\/)(codex|claude|cursor|gemini|roo|kilo|cline|goose|zed|opencode|terminal|review|comments?|ci|logs?|plans?|docs?|handoff|summary)[^/]*\.(jsonl|json|md|txt|log|patch|diff)$/.test(lower)) score += 0.18;
+  if (/(^|\/)(codex|claude|cursor|gemini|roo|kilo|cline|goose|zed|opencode|terminal|review|comments?|issues?|tickets?|jira|linear|diagnostics?|problems?|ci|logs?|plans?|docs?|handoff|summary)[^/]*\.(jsonl|json|md|txt|log|patch|diff)$/.test(lower)) score += 0.18;
   if (/\.(patch|diff|jsonl|log)$/.test(lower)) score += 0.08;
-  if (/(^|\/)(logs?|traces?|sessions?|transcripts?|reviews?|plans?|docs?)\//.test(lower)) score += 0.08;
+  if (/(^|\/)(logs?|traces?|sessions?|transcripts?|reviews?|issues?|tickets?|diagnostics?|problems?|plans?|docs?)\//.test(lower)) score += 0.08;
   if (/(^|\/)(readme|notes?)\.md$/.test(lower)) score += 0.04;
   return Math.min(1, Number(score.toFixed(2)));
 }

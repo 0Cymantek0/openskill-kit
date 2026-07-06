@@ -84,6 +84,8 @@ describe("OSK command family registry", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-learn-raw-candidates-"));
     await initAdaptiveProject({ projectRoot: root, projectName: "learn-raw-candidates", now: new Date("2026-06-27T00:00:00.000Z") });
     await writeText(root, "logs/terminal-build.log", "$ npm test\nPASS packages/core/tests/learn-v2.test.ts\n");
+    await writeText(root, "diagnostics/ide-diagnostics-parser-problems.json", JSON.stringify({ diagnostics: [{ severity: "error", message: "Parser fixture missing", path: "packages/core/src/parser.ts" }] }));
+    await writeText(root, "issues/github-issues-parser-regression.md", "Issue: Parser regression\nBody: Add focused parser tests for packages/core/src/parser.ts\n");
     await writeText(root, "plans/frontier-plan.md", "# Frontier plan\nUse high precision learning traces.\n");
     await writeText(root, "dist/logs/session-build.log", "generated log should not be considered\n");
     await writeText(root, "node_modules/session-cached.jsonl", "{\"role\":\"user\",\"content\":\"ignored vendor cache\"}\n");
@@ -99,10 +101,14 @@ describe("OSK command family registry", () => {
     expect(plan.question.choices.some((choice) => choice.id.startsWith("raw-local:"))).toBe(false);
     expect(plan.defaults.selectedSourceIds.some((id) => id.startsWith("raw-local:"))).toBe(false);
     expect(rawPaths.some((item) => item.endsWith(`${path.sep}logs${path.sep}terminal-build.log`))).toBe(true);
+    expect(rawPaths.some((item) => item.endsWith(`${path.sep}diagnostics${path.sep}ide-diagnostics-parser-problems.json`))).toBe(true);
+    expect(rawPaths.some((item) => item.endsWith(`${path.sep}issues${path.sep}github-issues-parser-regression.md`))).toBe(true);
     expect(rawPaths.some((item) => item.endsWith(`${path.sep}plans${path.sep}frontier-plan.md`))).toBe(true);
     expect(rawPaths.some((item) => item.includes(`${path.sep}dist${path.sep}`))).toBe(false);
     expect(rawPaths.some((item) => item.includes(`${path.sep}node_modules${path.sep}`))).toBe(false);
     const terminalCandidate = rawOptions.find((option) => option.path?.endsWith(`${path.sep}logs${path.sep}terminal-build.log`))!;
+    const diagnosticCandidate = rawOptions.find((option) => option.path?.endsWith(`${path.sep}diagnostics${path.sep}ide-diagnostics-parser-problems.json`))!;
+    const issueCandidate = rawOptions.find((option) => option.path?.endsWith(`${path.sep}issues${path.sep}github-issues-parser-regression.md`))!;
     const planCandidate = rawOptions.find((option) => option.path?.endsWith(`${path.sep}plans${path.sep}frontier-plan.md`))!;
     expect(terminalCandidate.adapter).toBe("learn-v2:terminal");
     expect(terminalCandidate.label).toContain("Terminal transcript");
@@ -114,6 +120,10 @@ describe("OSK command family registry", () => {
       matchedBy: "filename",
       confidence: "high"
     });
+    expect(diagnosticCandidate.adapter).toBe("learn-v2:ide-diagnostics");
+    expect(diagnosticCandidate.learnV2Surface?.normalizationProfile).toBe("ide-diagnostics");
+    expect(issueCandidate.adapter).toBe("learn-v2:issue-local");
+    expect(issueCandidate.learnV2Surface?.normalizationProfile).toBe("issue-local");
     expect(planCandidate.adapter).toBe("learn-v2:project-docs");
     expect(planCandidate.learnV2Surface?.normalizationProfile).toBe("project-docs");
     expect(plan.rawLocalDiscovery).toMatchObject({
@@ -127,6 +137,8 @@ describe("OSK command family registry", () => {
       }
     });
     expect(plan.rawLocalDiscovery.adapterCounts.terminal).toBeGreaterThanOrEqual(1);
+    expect(plan.rawLocalDiscovery.adapterCounts["ide-diagnostics"]).toBeGreaterThanOrEqual(1);
+    expect(plan.rawLocalDiscovery.adapterCounts["issue-local"]).toBeGreaterThanOrEqual(1);
     expect(plan.rawLocalDiscovery.adapterCounts["project-docs"]).toBeGreaterThanOrEqual(1);
     expect(plan.rawLocalDiscovery.sensitivityCounts.high).toBeGreaterThanOrEqual(1);
     expect(terminalCandidate.privacy.notes.join(" ")).toContain("Adapter contract: terminal / terminal / log");

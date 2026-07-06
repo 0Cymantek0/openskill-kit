@@ -116,7 +116,14 @@
 - Done: raw local source planning now emits a `rawLocalDiscovery` report with scanned path count, found/returned candidate counts, truncation flags, skipped already-detected explicit surfaces, adapter/sensitivity/match/confidence counts, safe hidden export directories, blocked hidden memory directories, and the enforced path-metadata-only/blocked/explicit-command-only/declassified-only policy.
 - Done: project-local hidden export discovery now covers conservative session/transcript directories for Gemini, Roo Code, Kilo Code, Cline, Goose, and Zed, while memory directories for those tools remain blocked from raw candidate discovery.
 - Done: CLI plain output now includes compact raw discovery counts and adapter/sensitivity counts, and docs explain the scan visibility contract.
-- Remaining gap: this is still file/path discovery, not live tool-specific store fetchers, IDE diagnostic adapters, issue/CI service adapters, or non-file host adapters.
+- Remaining gap: this is still file/path discovery, not live tool-specific store fetchers, live IDE diagnostic adapters, issue/CI service adapters, or non-file host adapters.
+
+### 2026-07-06 local diagnostics and issue surface slice
+
+- Done: Learn v2 raw surface registry now has explicit-only `ide-diagnostics` and `issue-local` adapters with dedicated normalization profiles, medium sensitivity, adapter contracts, docs, and tests.
+- Done: IDE diagnostic JSON/text exports normalize into tool/test-result style evidence; issue tracker markdown/text exports normalize into reviewer/review evidence. Structured JSON containers now flatten `diagnostics`, `problems`, `issues`, and `tickets`, and singular `path`/`file`/`uri` fields feed path extraction.
+- Done: source planning can discover conservative project-local IDE diagnostic export folders such as `.vscode/diagnostics`, `.vscode/problems`, and `.idea/diagnostics` using path metadata only; candidates remain blocked from normal learn plans and require explicit `--raw --surface-file`.
+- Remaining gap: this does not call live IDEs, GitHub/Jira/Linear APIs, or CI services. It covers local exported evidence files first, preserving the raw-local privacy boundary.
 
 ### 2026-07-05 MCP descriptor coverage slice
 
