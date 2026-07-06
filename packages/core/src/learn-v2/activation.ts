@@ -110,6 +110,15 @@ export interface LearnV2ConceptOutcomeFeedback {
   lastRecordedAt?: string;
 }
 
+export interface LearnV2ConceptOutcomeTelemetrySummary {
+  totalRecords: number;
+  conceptCount: number;
+  outcomeCounts: Record<LearnV2ConceptOutcome["outcome"], number>;
+  negativeOutcomeRecords: number;
+  harmfulOutcomeRecords: number;
+  latestRecordedAt?: string;
+}
+
 export async function activateLearnV2Concepts(
   rootInput: string,
   query: LearnV2ConceptActivationQuery,
@@ -463,28 +472,64 @@ function learnV2ActivationIndexPath(root: string): string {
 }
 
 async function readLearnV2ConceptOutcomeFeedback(root: string): Promise<Map<string, LearnV2ConceptOutcomeFeedback>> {
-  const dir = path.join(root, ".openskill-kit", "learn-v2", "outcomes");
+  const records = await readLearnV2ConceptOutcomeRecords(root);
   const out = new Map<string, LearnV2ConceptOutcomeFeedback>();
+  for (const record of records) {
+    const current = out.get(record.conceptId) ?? { helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 };
+    current[record.outcome] += 1;
+    if (!current.lastRecordedAt || current.lastRecordedAt < record.recordedAt) current.lastRecordedAt = record.recordedAt;
+    out.set(record.conceptId, current);
+  }
+  return out;
+}
+
+export async function readLearnV2ConceptOutcomeTelemetrySummary(rootInput: string): Promise<LearnV2ConceptOutcomeTelemetrySummary> {
+  const root = path.resolve(rootInput);
+  const records = await readLearnV2ConceptOutcomeRecords(root);
+  const outcomeCounts: Record<LearnV2ConceptOutcome["outcome"], number> = {
+    helpful: 0,
+    ignored: 0,
+    wrong: 0,
+    harmful: 0,
+    superseded: 0
+  };
+  const conceptIds = new Set<string>();
+  let latestRecordedAt: string | undefined;
+  for (const record of records) {
+    outcomeCounts[record.outcome] += 1;
+    conceptIds.add(record.conceptId);
+    if (!latestRecordedAt || latestRecordedAt < record.recordedAt) latestRecordedAt = record.recordedAt;
+  }
+  return {
+    totalRecords: records.length,
+    conceptCount: conceptIds.size,
+    outcomeCounts,
+    negativeOutcomeRecords: outcomeCounts.wrong + outcomeCounts.harmful + outcomeCounts.superseded,
+    harmfulOutcomeRecords: outcomeCounts.harmful,
+    latestRecordedAt
+  };
+}
+
+async function readLearnV2ConceptOutcomeRecords(root: string): Promise<LearnV2ConceptOutcome[]> {
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "outcomes");
   const files = (await fs.readdir(dir, { withFileTypes: true }).catch(() => []))
     .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
     .map((entry) => path.join(dir, entry.name))
     .sort();
+  const records: LearnV2ConceptOutcome[] = [];
   for (const file of files) {
     const text = await fs.readFile(file, "utf8").catch(() => "");
     for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
       try {
         const record = LearnV2ConceptOutcomeSchema.parse(JSON.parse(line));
-        const current = out.get(record.conceptId) ?? { helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 };
-        current[record.outcome] += 1;
-        if (!current.lastRecordedAt || current.lastRecordedAt < record.recordedAt) current.lastRecordedAt = record.recordedAt;
-        out.set(record.conceptId, current);
+        records.push(record);
       } catch {
         // Ignore malformed local telemetry; model activation should remain usable.
       }
     }
   }
-  return out;
+  return records;
 }
 
 function tokenSet(value: string): Set<string> {

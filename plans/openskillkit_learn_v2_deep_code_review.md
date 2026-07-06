@@ -9,6 +9,14 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 concept outcome observability metrics slice
+
+- Finding verified: Learn v2 stored local concept outcome telemetry and used it for activation, drift, and demotion, but pipeline observability did not summarize the outcome loop.
+- Done: activation telemetry now exposes a reusable counts-only summary: total records, concept count, per-outcome counts, negative outcome records, harmful outcome records, and latest timestamp.
+- Done: pipeline observability JSON and Markdown now include that concept outcome summary and warn when negative outcome records exist, without copying raw prompts, paths, commands, hashes, or free-form outcome reasons.
+- Done: regression coverage records helpful and harmful outcomes, proves observability shows aggregate counts, and verifies raw outcome reasons stay out of the report.
+- Verified: focused observability outcome-metrics regression, docs coverage, `rtk npm run typecheck`, full Learn v2 test file, and full `rtk npm test` (40 files, 304 tests).
+
 ### 2026-07-06 review-visible drift detail slice
 
 - Finding verified: drift reports carried useful stale-candidate detail, but the review queue only exposed aggregate drift counts. Reviewers could miss why a concept was stale or harmful unless they opened the separate drift JSON.
@@ -558,7 +566,7 @@ Regex/heuristic concept extraction can turn textual statements into durable proj
 4. Add team-sharing/export flow for reviewed/declassified concepts.
 5. Add red-team fixtures for raw transcript prompt injection, malicious review comments, path leakage, customer IDs, and branch names containing sensitive data.
 6. Add golden fixtures for all nine scenarios in the plan.
-7. Add longitudinal outcome telemetry loops that can demote harmful active concepts. Partially done: review auto-policy now demotes repeatedly harmful active non-locked concepts with project-configurable threshold/window controls; still need empirical calibration, reviewer UI explanations, and team-level outcome metrics before calling this frontier.
+7. Add longitudinal outcome telemetry loops that can demote harmful active concepts. Partially done: review auto-policy now demotes repeatedly harmful active non-locked concepts with project-configurable threshold/window controls, review queues show drift detail, and observability summarizes counts-only outcome metrics; still need empirical calibration, richer reviewer actions, and team-sharing outcome dashboards before calling this frontier.
 
 ---
 

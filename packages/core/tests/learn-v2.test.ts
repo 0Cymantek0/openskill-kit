@@ -855,6 +855,16 @@ describe("learn-v2 substrate", () => {
     ]);
     const reviewQueue = await writeLearnV2ReviewQueue(root, [], now);
     const evalReport = await runLearnV2Eval(root, episodes, [], now);
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: "concept_observable_outcome",
+      outcome: "helpful",
+      reason: "safe reason must not appear in observability"
+    }, new Date("2026-06-30T00:11:00.000Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: "concept_observable_outcome",
+      outcome: "harmful",
+      reason: "raw harmful reason must not appear in observability"
+    }, new Date("2026-06-30T00:12:00.000Z"));
     const report = await writeLearnV2PipelineObservabilityReport(root, {
       generatedAt: now.toISOString(),
       previewOnly: true,
@@ -912,9 +922,18 @@ describe("learn-v2 substrate", () => {
     expect(report.qualityGates.behaviorDeltaStatus).toBe("not-configured");
     expect(report.qualityGates.activationReplayRate).toBe(1);
     expect(report.qualityGates.counterfactualTraceRate).toBe(1);
+    expect(report.concepts.outcomeTelemetry).toMatchObject({
+      totalRecords: 2,
+      conceptCount: 1,
+      negativeOutcomeRecords: 1,
+      harmfulOutcomeRecords: 1
+    });
+    expect(report.concepts.outcomeTelemetry.outcomeCounts.helpful).toBe(1);
+    expect(report.concepts.outcomeTelemetry.outcomeCounts.harmful).toBe(1);
     expect(report.health.status).toBe("warn");
     expect(report.health.warnings).toEqual(expect.arrayContaining(["1 audit-only patch summary item(s)."]));
     expect(report.health.warnings).toEqual(expect.arrayContaining(["No behavior-delta eval goldens configured."]));
+    expect(report.health.warnings).toEqual(expect.arrayContaining(["1 negative concept outcome record(s)."]));
     expect(report.health.blockers).toEqual([]);
     expect(report.privacy.rawRefsExported).toBe(false);
     expect(report.modelExecution.requestArtifacts.requestDir).toContain("[PROJECT_ROOT]");
@@ -924,12 +943,15 @@ describe("learn-v2 substrate", () => {
     expect(reportText).toContain("\"health\"");
     expect(reportText).toContain("\"behaviorDeltaStatus\"");
     expect(reportText).toContain("\"parserBackendCounts\"");
+    expect(reportText).toContain("\"outcomeTelemetry\"");
+    expect(reportText).not.toContain("raw harmful reason");
     expect(reportText).not.toContain(root);
     expect(reportText).not.toContain("raw_ev_observable");
     const reportMarkdown = await readText(path.join(root, report.artifactsWritten.markdown.replace(/^\[PROJECT_ROOT\]\//, "")));
     expect(reportMarkdown).toContain("Behavior delta: not-configured");
     expect(reportMarkdown).toContain("Activation replay rate:");
     expect(reportMarkdown).toContain("Structural parser backends:");
+    expect(reportMarkdown).toContain("Outcome telemetry: 2 records across 1 concept(s)");
 
     const latest = await readLearnV2PipelineObservabilityReport(root);
     expect(latest.generatedAt).toBe(report.generatedAt);

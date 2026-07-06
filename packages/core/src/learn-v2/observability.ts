@@ -4,6 +4,7 @@ import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
 import type { LearnV2ModelExecutionPolicyReport } from "./pipeline.js";
+import { readLearnV2ConceptOutcomeTelemetrySummary, type LearnV2ConceptOutcomeTelemetrySummary } from "./activation.js";
 import { learnV2SafeLocalPath } from "./utils.js";
 
 const LearnV2ModelExecutionPolicyReportSchema = z.object({
@@ -132,7 +133,21 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     conflictTypeCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     driftHealthScore: z.number().min(0).max(1),
     staleDriftCandidates: z.number().int().min(0),
-    driftReasonCounts: z.record(z.string(), z.number().int().min(0)).default({})
+    driftReasonCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+    outcomeTelemetry: z.object({
+      totalRecords: z.number().int().min(0),
+      conceptCount: z.number().int().min(0),
+      outcomeCounts: z.record(z.string(), z.number().int().min(0)).default({}),
+      negativeOutcomeRecords: z.number().int().min(0),
+      harmfulOutcomeRecords: z.number().int().min(0),
+      latestRecordedAt: z.string().datetime().optional()
+    }).default({
+      totalRecords: 0,
+      conceptCount: 0,
+      outcomeCounts: {},
+      negativeOutcomeRecords: 0,
+      harmfulOutcomeRecords: 0
+    })
   }),
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
@@ -248,11 +263,13 @@ export async function writeLearnV2PipelineObservabilityReport(
   const conflictLedger = input.conflictLedger;
   const conceptDrift = input.conceptDrift;
   const declassifiedSnippets = input.declassifiedSnippets;
+  const outcomeTelemetry = await readLearnV2ConceptOutcomeTelemetrySummary(root);
   const health = buildPipelineHealth(input, {
     auditOnlyPatches,
     conflictLedger,
     conceptDrift,
-    declassifiedSnippets
+    declassifiedSnippets,
+    outcomeTelemetry
   });
   const report = LearnV2PipelineObservabilityReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.pipeline-observability.v1",
@@ -329,7 +346,8 @@ export async function writeLearnV2PipelineObservabilityReport(
       conflictTypeCounts: countBy((conflictLedger?.conflicts ?? []).map((conflict) => conflict.conflictType)),
       driftHealthScore: conceptDrift?.healthScore ?? input.reviewQueue.driftSummary.healthScore,
       staleDriftCandidates: conceptDrift?.staleCandidates.length ?? input.reviewQueue.driftSummary.staleCandidateCount,
-      driftReasonCounts: conceptDrift ? countBy(conceptDrift.staleCandidates.map((candidate) => candidate.reason)) : input.reviewQueue.driftSummary.reasonCounts
+      driftReasonCounts: conceptDrift ? countBy(conceptDrift.staleCandidates.map((candidate) => candidate.reason)) : input.reviewQueue.driftSummary.reasonCounts,
+      outcomeTelemetry
     },
     qualityGates: {
       evalStatus: input.evalReport.status,
@@ -442,6 +460,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Unresolved conflicts: ${report.concepts.unresolvedConflicts}`,
     `- Conflict types: ${renderCounts(report.concepts.conflictTypeCounts)}`,
     `- Drift health: ${report.concepts.driftHealthScore.toFixed(2)} (${report.concepts.staleDriftCandidates} stale, ${renderCounts(report.concepts.driftReasonCounts)})`,
+    `- Outcome telemetry: ${report.concepts.outcomeTelemetry.totalRecords} records across ${report.concepts.outcomeTelemetry.conceptCount} concept(s); outcomes=${renderCounts(report.concepts.outcomeTelemetry.outcomeCounts)}, negative=${report.concepts.outcomeTelemetry.negativeOutcomeRecords}, harmful=${report.concepts.outcomeTelemetry.harmfulOutcomeRecords}`,
     `- Eval: ${report.qualityGates.evalStatus}`,
     `- Leak check: ${report.qualityGates.leakStatus}`,
     `- Behavior delta: ${report.qualityGates.behaviorDeltaStatus} (${report.qualityGates.behaviorDeltaScenarios} scenarios)`,
@@ -477,6 +496,7 @@ function buildPipelineHealth(
     conflictLedger?: LearnV2ConflictLedger;
     conceptDrift?: LearnV2ConceptDriftReport;
     declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
+    outcomeTelemetry?: LearnV2ConceptOutcomeTelemetrySummary;
   }
 ): LearnV2PipelineObservabilityReport["health"] {
   const blockers: string[] = [];
@@ -499,6 +519,10 @@ function buildPipelineHealth(
   if (staleCandidates > 0 || driftHealth < 0.75) {
     warnings.push(`${staleCandidates} stale drift candidate(s); drift health ${driftHealth.toFixed(2)}.`);
     reviewFocus.push("Review stale or negatively reinforced concepts.");
+  }
+  if ((context.outcomeTelemetry?.negativeOutcomeRecords ?? 0) > 0) {
+    warnings.push(`${context.outcomeTelemetry!.negativeOutcomeRecords} negative concept outcome record(s).`);
+    reviewFocus.push("Review concept outcome telemetry before broad activation.");
   }
   const lowConfidenceEpisodes = input.episodes.filter((episode) => episode.episodeConfidence < 0.5).length;
   if (lowConfidenceEpisodes > 0) warnings.push(`${lowConfidenceEpisodes} low-confidence reconstructed episode(s).`);
