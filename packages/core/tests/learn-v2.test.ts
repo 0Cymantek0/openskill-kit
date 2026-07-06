@@ -17,6 +17,7 @@ import {
   analyzeLearnV2StructuralDiff,
   summarizeLearnV2Patches,
   summarizeLearnV2Tools,
+  buildReviewQueue,
   buildLearnV2EpisodeLearningBundle,
   readLearnV2PipelineObservabilityReport,
   writeLearnV2PipelineObservabilityReport,
@@ -1239,6 +1240,47 @@ describe("learn-v2 substrate", () => {
     expect(reviewMarkdown).toContain(`- ${active.id}: recent-negative-outcomes; negative=2`);
     expect(reviewMarkdown).toContain("Drift suggestion: Concept has 2 recent negative outcome(s)");
     expect(reviewMarkdown).toContain(`Demote: openskill-kit osk review --concept-demote ${active.id}`);
+  });
+
+  it("refreshes and links Learn v2 concept review from the legacy review queue", async () => {
+    const root = await tempProject();
+    const createdAt = new Date("2026-03-01T00:00:00.000Z");
+    const [candidate] = mergeLearnV2ConceptCards([
+      behaviorAtom("legacy_review_link_parser_fixture", "Prefer parser regression fixtures before parser refactors.", "positive")
+    ], createdAt);
+    const active = {
+      ...candidate!,
+      status: "active" as const,
+      lifecycle: {
+        ...candidate!.lifecycle,
+        createdAt: createdAt.toISOString(),
+        updatedAt: createdAt.toISOString()
+      }
+    };
+    await writeLearnV2ConceptStore(root, [active], createdAt);
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: active.id,
+      outcome: "harmful"
+    }, new Date("2026-06-25T00:00:00.000Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: active.id,
+      outcome: "wrong"
+    }, new Date("2026-06-26T00:00:00.000Z"));
+
+    const queue = await buildReviewQueue(root);
+
+    expect(queue.learnV2ReviewQueue).toMatchObject({
+      conceptCount: 1,
+      focusCardCount: 1,
+      staleCandidateCount: 1
+    });
+    expect(queue.candidateCount).toBeGreaterThanOrEqual(1);
+    const legacyMarkdown = await readText(queue.markdownPath);
+    expect(legacyMarkdown).toContain("Learn v2 Concept Review");
+    expect(legacyMarkdown).toContain("Focus cards: 1");
+    const learnV2Markdown = await readText(queue.learnV2ReviewQueue!.markdownPath);
+    expect(learnV2Markdown).toContain("recent-negative-outcomes");
+    expect(learnV2Markdown).toContain(`openskill-kit osk review --concept-demote ${active.id}`);
   });
 
   it("detects Python Go and Rust structural symbols with confidence-capped fallback parsers", async () => {

@@ -9,6 +9,14 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 review queue bridge slice
+
+- Finding verified: `osk review --write` still built the legacy Preference/Workflow review queue only. Learn v2 drift/action/counterevidence visibility was available in raw pipeline artifacts, but the natural review command did not refresh or link it.
+- Done: legacy review queue generation now refreshes the Learn v2 concept review queue whenever concept cards exist, including conflict ledger, counterevidence ledger, concept drift, and suggested actions.
+- Done: legacy review queue JSON and Markdown now include a Learn v2 Concept Review section with the linked queue path and concept/focus/drift/counterevidence/conflict counts.
+- Done: candidate count now includes Learn v2 focus cards so machine callers do not see an empty review queue while Learn v2 concepts need review.
+- Verified: focused Learn v2 review-bridge regression, docs coverage, `rtk npm run typecheck`, full Learn v2 test file, existing semantic/workflow/OpenWorld review queue tests, and full `rtk npm test` (40 files, 305 tests).
+
 ### 2026-07-06 review action guidance slice
 
 - Finding verified: review queues exposed focus reasons and drift detail, but still left users to translate those reasons into exact CLI review actions.

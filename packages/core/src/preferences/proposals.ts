@@ -10,6 +10,11 @@ import { SignalSchema, type Signal } from "../signals/schema.js";
 import { writeFileAtomic, writeJsonAtomic, withFileLock } from "../storage/atomic.js";
 import { readWorkflowGraph } from "../workflows/store.js";
 import type { WorkflowNode } from "../workflows/schema.js";
+import { detectLearnV2ConceptDrift } from "../learn-v2/drift.js";
+import { writeLearnV2ConflictLedger } from "../learn-v2/conflicts.js";
+import { writeLearnV2CounterevidenceLedger } from "../learn-v2/counterevidence-ledger.js";
+import { writeLearnV2ReviewQueue } from "../learn-v2/review.js";
+import { readLearnV2ConceptStore } from "../learn-v2/store.js";
 import { readPreferenceGraph } from "./graph.js";
 import { readAmbientLabelLedger, type AmbientLabel } from "./labels.js";
 import type { PreferenceNode } from "./schema.js";
@@ -63,6 +68,14 @@ export interface ReviewQueueResult {
   workflowCandidates: WorkflowNode[];
   labelCandidates: AmbientLabel[];
   evidenceCards: EvidenceCard[];
+  learnV2ReviewQueue?: {
+    markdownPath: string;
+    conceptCount: number;
+    focusCardCount: number;
+    staleCandidateCount: number;
+    counterevidenceCount: number;
+    unresolvedConflictCount: number;
+  };
 }
 
 export async function proposeSemanticPreference(projectRoot: string, input: SemanticPreferenceProposalInput, now = new Date()): Promise<ProposeSemanticPreferenceResult> {
@@ -113,12 +126,39 @@ export async function buildReviewQueue(projectRoot: string): Promise<ReviewQueue
   const labelCandidates = [...commandLabels.labels, ...pathLabels.labels].filter((label) => label.status === "candidate");
   const proposals = await readSemanticProposals(root);
   const evidenceCards = await readEvidenceCards(root, candidates.flatMap((node) => node.evidence.flatMap((item) => item.cardIds ?? [])));
+  const now = new Date();
+  const learnV2ReviewQueue = await buildLearnV2ReviewQueueLink(root, config.projectId, now);
   const queuePath = path.join(root, ".openskill-kit", "reviews", "queue.json");
   const markdownPath = path.join(root, ".openskill-kit", "reviews", "queue.md");
-  const queue = { schemaVersion: "openskill-kit.review-queue.v1", generatedAt: new Date().toISOString(), proposals, candidates, workflowCandidates, labelCandidates, evidenceCards };
+  const queue = { schemaVersion: "openskill-kit.review-queue.v1", generatedAt: now.toISOString(), proposals, candidates, workflowCandidates, labelCandidates, evidenceCards, learnV2ReviewQueue };
   await writeJsonAtomic(queuePath, queue);
-  await writeFileAtomic(markdownPath, renderReviewQueueMarkdown(proposals, candidates, workflowCandidates, labelCandidates, evidenceCards));
-  return { schemaVersion: "openskill-kit.review-queue.v1", queuePath, markdownPath, candidateCount: candidates.length + workflowCandidates.length + labelCandidates.length, workflowCandidateCount: workflowCandidates.length, proposals, candidates, workflowCandidates, labelCandidates, evidenceCards };
+  await writeFileAtomic(markdownPath, renderReviewQueueMarkdown(proposals, candidates, workflowCandidates, labelCandidates, evidenceCards, learnV2ReviewQueue));
+  return { schemaVersion: "openskill-kit.review-queue.v1", queuePath, markdownPath, candidateCount: candidates.length + workflowCandidates.length + labelCandidates.length + (learnV2ReviewQueue?.focusCardCount ?? 0), workflowCandidateCount: workflowCandidates.length, proposals, candidates, workflowCandidates, labelCandidates, evidenceCards, learnV2ReviewQueue };
+}
+
+async function buildLearnV2ReviewQueueLink(root: string, projectId: string, now: Date): Promise<ReviewQueueResult["learnV2ReviewQueue"]> {
+  const store = await readLearnV2ConceptStore(root, now);
+  if (!store.cards.length) return undefined;
+  const conflictLedger = await writeLearnV2ConflictLedger(root, store.cards, projectId, now);
+  const counterevidenceLedger = await writeLearnV2CounterevidenceLedger(root, store.cards, now);
+  const drift = await detectLearnV2ConceptDrift(root, store.cards, { now });
+  const queue = await writeLearnV2ReviewQueue(root, store.cards, now, {
+    ledger: conflictLedger.ledger,
+    markdownPath: conflictLedger.artifactPaths.markdown,
+    counterevidenceLedger: {
+      ledger: counterevidenceLedger.ledger,
+      markdownPath: counterevidenceLedger.artifactPaths.markdown
+    },
+    conceptDrift: drift
+  });
+  return {
+    markdownPath: queue.artifacts.markdown,
+    conceptCount: queue.cards.length,
+    focusCardCount: queue.reviewFocus.focusCardIds.length,
+    staleCandidateCount: queue.driftSummary.staleCandidateCount,
+    counterevidenceCount: queue.counterevidenceSummary.itemCount,
+    unresolvedConflictCount: queue.conflictSummary.unresolvedCount
+  };
 }
 
 function proposalSignal(proposal: SemanticPreferenceProposal, now: Date): Signal {
@@ -138,9 +178,28 @@ function proposalSignal(proposal: SemanticPreferenceProposal, now: Date): Signal
   });
 }
 
-function renderReviewQueueMarkdown(proposals: SemanticPreferenceProposal[], candidates: PreferenceNode[], workflowCandidates: WorkflowNode[], labelCandidates: AmbientLabel[], evidenceCards: EvidenceCard[]): string {
+function renderReviewQueueMarkdown(
+  proposals: SemanticPreferenceProposal[],
+  candidates: PreferenceNode[],
+  workflowCandidates: WorkflowNode[],
+  labelCandidates: AmbientLabel[],
+  evidenceCards: EvidenceCard[],
+  learnV2ReviewQueue?: ReviewQueueResult["learnV2ReviewQueue"]
+): string {
   const cardsById = new Map(evidenceCards.map((card) => [card.id, card]));
   const lines = ["# Learning Review Queue", ""];
+  lines.push("## Learn v2 Concept Review", "");
+  if (learnV2ReviewQueue) {
+    lines.push(`- Queue: ${learnV2ReviewQueue.markdownPath}`);
+    lines.push(`- Concepts: ${learnV2ReviewQueue.conceptCount}`);
+    lines.push(`- Focus cards: ${learnV2ReviewQueue.focusCardCount}`);
+    lines.push(`- Drift stale candidates: ${learnV2ReviewQueue.staleCandidateCount}`);
+    lines.push(`- Counterevidence items: ${learnV2ReviewQueue.counterevidenceCount}`);
+    lines.push(`- Unresolved conflicts: ${learnV2ReviewQueue.unresolvedConflictCount}`);
+    lines.push("");
+  } else {
+    lines.push("No Learn v2 concept cards found.", "");
+  }
   lines.push("## Semantic Proposals", "");
   if (!proposals.length) lines.push("No semantic proposals.", "");
   for (const proposal of proposals.sort((a, b) => a.category.localeCompare(b.category) || b.confidence - a.confidence)) {
