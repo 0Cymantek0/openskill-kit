@@ -3742,6 +3742,59 @@ describe("learn-v2 substrate", () => {
     expect(workflowGraph.nodes.some((node) => node.id === `workflow_${lockedConcept!.id}`)).toBe(true);
   });
 
+  it("respects configured harmful outcome demotion thresholds", async () => {
+    const root = await tempProject();
+    const createdAt = new Date("2026-06-30T00:00:00Z");
+    const [concept] = mergeLearnV2ConceptCards([
+      behaviorAtom("outcome_demote_threshold_parser_tests", "Prefer parser smoke fixtures before parser behavior changes.", "positive")
+    ], createdAt);
+    await writeLearnV2ConceptStore(root, [concept!], createdAt);
+    await applyLearnV2ConceptReview(root, {
+      accept: [concept!.id],
+      now: new Date("2026-06-30T00:01:00Z")
+    });
+    const config = await readProjectConfig(root);
+    config.learning.outcomePolicy = {
+      demoteAfterNegativeOutcomes: 3,
+      recentNegativeOutcomeDays: 7
+    };
+    await writeFile(path.join(root, ".openskill-kit", "config.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: concept!.id,
+      outcome: "harmful"
+    }, new Date("2026-06-30T00:02:00Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: concept!.id,
+      outcome: "wrong"
+    }, new Date("2026-06-30T00:03:00Z"));
+
+    const afterTwo = await applyLearnV2ConceptReview(root, {
+      autoPolicy: true,
+      now: new Date("2026-06-30T00:04:00Z")
+    });
+    let store = await readLearnV2ConceptStore(root);
+    expect(store.cards.find((card) => card.id === concept!.id)?.status).toBe("active");
+    expect(afterTwo.messages.join("\n")).not.toContain("Auto-demoted active concept");
+    expect((await readPreferenceGraph(root)).nodes.some((node) => node.id === `pref_${concept!.id}`)).toBe(true);
+
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: concept!.id,
+      outcome: "superseded"
+    }, new Date("2026-06-30T00:05:00Z"));
+    const afterThree = await applyLearnV2ConceptReview(root, {
+      autoPolicy: true,
+      now: new Date("2026-06-30T00:06:00Z")
+    });
+    store = await readLearnV2ConceptStore(root);
+    const demoted = store.cards.find((card) => card.id === concept!.id)!;
+
+    expect(demoted.status).toBe("conflict");
+    expect(demoted.counterevidence.some((item) => item.reason.includes("policy threshold 3 within 7 day"))).toBe(true);
+    expect(afterThree.messages.join("\n")).toContain("policy threshold 3 within 7 day");
+    expect(afterThree.prunedPreferenceNodeIds).toEqual([`pref_${concept!.id}`]);
+  });
+
   it("prunes stale Learn v2 graph nodes even when active concept compilation is skipped", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:00:00Z");

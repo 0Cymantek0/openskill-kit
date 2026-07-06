@@ -9,6 +9,14 @@
 
 ## Codex implementation progress
 
+### 2026-07-06 harmful outcome policy calibration slice
+
+- Finding verified: the first harmful-outcome demotion pass closed the telemetry loop, but the threshold/window were implicit code constants.
+- Done: project config now exposes `learning.outcomePolicy.demoteAfterNegativeOutcomes` and `learning.outcomePolicy.recentNegativeOutcomeDays`, defaulting conservatively to two negative outcomes within 30 days.
+- Done: review auto-policy uses the configured threshold/window, writes them into counterevidence and review messages, and keeps the minimum threshold at two so a single bad activation cannot auto-demote a concept.
+- Done: regression coverage proves a project configured for three negative outcomes does not demote after two outcomes, but does demote and prune generated graph nodes after the third.
+- Verified: focused default/custom harmful-outcome demotion policy regressions, docs coverage, `rtk npm run typecheck`, full Learn v2 test file, and full `rtk npm test` (40 files, 304 tests).
+
 ### 2026-07-06 harmful outcome auto-demotion slice
 
 - Finding verified: activation scoring suppresses concepts after harmful/superseded outcome telemetry, and drift reports repeated recent negative outcomes, but review auto-policy did not yet close the loop by changing durable concept state.
@@ -542,7 +550,7 @@ Regex/heuristic concept extraction can turn textual statements into durable proj
 4. Add team-sharing/export flow for reviewed/declassified concepts.
 5. Add red-team fixtures for raw transcript prompt injection, malicious review comments, path leakage, customer IDs, and branch names containing sensitive data.
 6. Add golden fixtures for all nine scenarios in the plan.
-7. Add longitudinal outcome telemetry loops that can demote harmful active concepts. Partially done: review auto-policy now demotes repeatedly harmful active non-locked concepts; still need calibrated thresholds, reviewer UI explanations, and team-level outcome metrics before calling this frontier.
+7. Add longitudinal outcome telemetry loops that can demote harmful active concepts. Partially done: review auto-policy now demotes repeatedly harmful active non-locked concepts with project-configurable threshold/window controls; still need empirical calibration, reviewer UI explanations, and team-level outcome metrics before calling this frontier.
 
 ---
 

@@ -297,7 +297,7 @@ export async function applyLearnV2ConceptReview(projectRoot: string, options: Le
     });
     const restructured = applyConceptRestructure(reviewed, options, now, modifiedIds, restructureMessages);
     const outcomePolicyApplied = options.autoPolicy === true
-      ? await applyLearnV2OutcomeAutoDemotion(root, restructured, now, modifiedIds, restructureMessages)
+      ? await applyLearnV2OutcomeAutoDemotion(root, restructured, config, now, modifiedIds, restructureMessages)
       : restructured;
     const policyApplied = options.autoPolicy === true
       ? applyLearnV2AutoPolicies(outcomePolicyApplied, config, now, modifiedIds, restructureMessages)
@@ -537,6 +537,7 @@ export function applyLearnV2AutoPolicies(
 async function applyLearnV2OutcomeAutoDemotion(
   root: string,
   cards: LearnV2ConceptCard[],
+  config: ProjectConfig,
   now: Date,
   modifiedIds: Set<string>,
   messages: string[]
@@ -544,10 +545,12 @@ async function applyLearnV2OutcomeAutoDemotion(
   const activeCards = cards.filter((card) => card.status === "active");
   if (!activeCards.length) return cards;
 
-  const drift = await detectLearnV2ConceptDrift(root, cards, { now });
+  const threshold = config.learning.outcomePolicy.demoteAfterNegativeOutcomes;
+  const recentOutcomeDays = config.learning.outcomePolicy.recentNegativeOutcomeDays;
+  const drift = await detectLearnV2ConceptDrift(root, cards, { now, recentOutcomeDays });
   const staleById = new Map(
     drift.report.staleCandidates
-      .filter((item) => item.reason === "recent-negative-outcomes" && item.negativeOutcomeCount >= 2)
+      .filter((item) => item.reason === "recent-negative-outcomes" && item.negativeOutcomeCount >= threshold)
       .map((item) => [item.conceptId, item])
   );
   if (!staleById.size) return cards;
@@ -556,7 +559,7 @@ async function applyLearnV2OutcomeAutoDemotion(
     if (card.status !== "active") return card;
     const stale = staleById.get(card.id);
     if (!stale) return card;
-    const negativeOutcomeCount = Math.max(2, stale.negativeOutcomeCount);
+    const negativeOutcomeCount = Math.max(threshold, stale.negativeOutcomeCount);
     const demoted = LearnV2ConceptCardSchema.parse(withLearnV2ConceptScoring({
       ...card,
       status: "conflict" as const,
@@ -564,13 +567,13 @@ async function applyLearnV2OutcomeAutoDemotion(
         ...card.counterevidence,
         {
           evidenceId: `outcome:${card.id}`,
-          reason: `Auto-demoted active concept after ${negativeOutcomeCount} recent negative outcome(s). Review the concept drift report before reactivation.`
+          reason: `Auto-demoted active concept after ${negativeOutcomeCount} recent negative outcome(s), meeting policy threshold ${threshold} within ${recentOutcomeDays} day(s). Review the concept drift report before reactivation.`
         }
       ],
       lifecycle: { ...card.lifecycle, updatedAt: now.toISOString() }
     }));
     modifiedIds.add(card.id);
-    messages.push(`Auto-demoted active concept ${card.id} after ${negativeOutcomeCount} recent negative outcome(s).`);
+    messages.push(`Auto-demoted active concept ${card.id} after ${negativeOutcomeCount} recent negative outcome(s), meeting policy threshold ${threshold} within ${recentOutcomeDays} day(s).`);
     return demoted;
   }));
 }

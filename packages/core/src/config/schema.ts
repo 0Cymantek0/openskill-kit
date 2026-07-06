@@ -29,6 +29,10 @@ export const ProjectConfigSchema = z.object({
     minConfidenceToApply: z.number().min(0).max(1).default(0.72),
     minConfidenceToShare: z.number().min(0).max(1).default(0.86),
     decayHalfLifeDays: z.number().int().min(1).default(90),
+    outcomePolicy: z.object({
+      demoteAfterNegativeOutcomes: z.number().int().min(2).max(20).default(2),
+      recentNegativeOutcomeDays: z.number().int().min(1).max(365).default(30)
+    }).default(() => ({ demoteAfterNegativeOutcomes: 2, recentNegativeOutcomeDays: 30 })),
     rawEvidence: RawEvidenceConfigSchema.default(() => RawEvidenceConfigSchema.parse({}))
   }),
   privacy: z.object({
