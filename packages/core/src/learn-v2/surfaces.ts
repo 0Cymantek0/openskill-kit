@@ -50,6 +50,10 @@ export const LearnV2SurfaceAdapterContractSchema = z.object({
   normalizationProfile: LearnV2SurfaceNormalizationProfileSchema,
   contentKind: LearnV2SurfaceReadSchema.shape.contentKind.optional(),
   sensitivity: z.enum(["low", "medium", "high"]),
+  discovery: z.object({
+    projectLocalRoots: z.array(z.string()).default([]),
+    blockedProjectLocalRoots: z.array(z.string()).default([])
+  }).default({ projectLocalRoots: [], blockedProjectLocalRoots: [] }),
   capabilities: z.object({
     discover: z.literal(true),
     fetch: z.literal(true),
@@ -110,6 +114,7 @@ export interface LearnV2SurfaceAdapter {
   normalizationProfile: LearnV2SurfaceNormalizationProfile;
   contentKind?: LearnV2SurfaceRead["contentKind"];
   policy: LearnV2SurfaceAdapterPolicy;
+  discovery?: LearnV2SurfaceAdapterContract["discovery"];
   detect(sourcePath: string, rawText: string): LearnV2SurfaceAdapterDetection | undefined;
   read(sourcePath: string, rawText: string, detection?: LearnV2SurfaceAdapterDetection): LearnV2SurfaceRead;
 }
@@ -141,75 +146,20 @@ const RAW_LOCAL_SOURCE_SKIP_DIRS = new Set([
   ".cache",
   ".vite"
 ]);
-const RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS = [
-  ".codex-log",
-  ".codex/sessions",
-  ".codex/transcripts",
-  ".claude/projects",
-  ".claude/sessions",
-  ".cursor/chats",
-  ".cursor/sessions",
-  ".vscode/diagnostics",
-  ".vscode/problems",
-  ".idea/diagnostics",
-  ".gemini/sessions",
-  ".gemini/transcripts",
-  ".roo/chats",
-  ".roo/sessions",
-  ".roo-code/chats",
-  ".roo-code/sessions",
-  ".kilo/chats",
-  ".kilo/sessions",
-  ".kilo-code/chats",
-  ".kilo-code/sessions",
-  ".cline/chats",
-  ".cline/sessions",
-  ".goose/sessions",
-  ".zed/agent-sessions",
-  ".zed/sessions",
-  ".zed/transcripts",
-  ".opencode/sessions",
-  ".opencode/traces"
-];
-const RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS = [
-  ".codex/memories",
-  ".codex/memory",
-  ".claude/memories",
-  ".claude/memory",
-  ".cursor/memories",
-  ".cursor/memory",
-  ".gemini/memories",
-  ".gemini/memory",
-  ".roo/memories",
-  ".roo/memory",
-  ".roo-code/memories",
-  ".roo-code/memory",
-  ".kilo/memories",
-  ".kilo/memory",
-  ".kilo-code/memories",
-  ".kilo-code/memory",
-  ".cline/memories",
-  ".cline/memory",
-  ".goose/memories",
-  ".goose/memory",
-  ".zed/memories",
-  ".zed/memory"
-];
-
 export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
-  makeAdapter("opencode", "OpenCode session or trace", "structured-events", /opencode|opencode-events|opencode-session|opencode-trace|tool\.execute|provider:\s*opencode/i, undefined, "high", ["Conversation/tool traces may include prompts, paths, commands, and outputs."]),
-  makeAdapter("codex", "Codex transcript", "structured-events", /codex/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("claude-code", "Claude Code transcript", "structured-events", /claude/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("cursor", "Cursor transcript", "structured-events", /cursor/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("gemini", "Gemini CLI transcript", "structured-events", /gemini/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("roo", "Roo Code transcript", "structured-events", /\broo(?:[-_. ]?code)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("kilo", "Kilo Code transcript", "structured-events", /\bkilo(?:[-_. ]?code)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("cline", "Cline transcript", "structured-events", /\bcline\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("goose", "Goose transcript", "structured-events", /\bgoose\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
-  makeAdapter("zed", "Zed agent transcript", "structured-events", /\bzed(?:[-_. ]?agent)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."]),
+  makeAdapter("opencode", "OpenCode session or trace", "structured-events", /opencode|opencode-events|opencode-session|opencode-trace|tool\.execute|provider:\s*opencode/i, undefined, "high", ["Conversation/tool traces may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".opencode", [".opencode/sessions", ".opencode/traces"])),
+  makeAdapter("codex", "Codex transcript", "structured-events", /codex/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".codex", [".codex-log", ".codex/sessions", ".codex/transcripts"])),
+  makeAdapter("claude-code", "Claude Code transcript", "structured-events", /claude/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".claude", [".claude/projects", ".claude/sessions"])),
+  makeAdapter("cursor", "Cursor transcript", "structured-events", /cursor/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".cursor", [".cursor/chats", ".cursor/sessions"])),
+  makeAdapter("gemini", "Gemini CLI transcript", "structured-events", /gemini/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".gemini", [".gemini/sessions", ".gemini/transcripts"])),
+  makeAdapter("roo", "Roo Code transcript", "structured-events", /\broo(?:[-_. ]?code)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".roo", [".roo/chats", ".roo/sessions", ".roo-code/chats", ".roo-code/sessions"], [".roo-code"])),
+  makeAdapter("kilo", "Kilo Code transcript", "structured-events", /\bkilo(?:[-_. ]?code)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".kilo", [".kilo/chats", ".kilo/sessions", ".kilo-code/chats", ".kilo-code/sessions"], [".kilo-code"])),
+  makeAdapter("cline", "Cline transcript", "structured-events", /\bcline\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".cline", [".cline/chats", ".cline/sessions"])),
+  makeAdapter("goose", "Goose transcript", "structured-events", /\bgoose\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".goose", [".goose/sessions"])),
+  makeAdapter("zed", "Zed agent transcript", "structured-events", /\bzed(?:[-_. ]?agent)?\b/i, undefined, "high", ["Conversation transcripts may include prompts, paths, commands, and outputs."], undefined, agentDiscovery(".zed", [".zed/agent-sessions", ".zed/sessions", ".zed/transcripts"])),
   makeAdapter("git", "Git diff or metadata", "diff", /(?:\.diff|\.patch|^git(?:[-_.]|$)|diff --git)/i, "diff", "high", ["Raw diffs are local-only learner input; output artifacts receive declassified summaries."]),
   makeAdapter("terminal", "Terminal transcript", "terminal", /(?:terminal|shell|console|history|commands?)/i, "log", "high", ["Shell history and output can contain secrets or machine-local paths."]),
-  makeAdapter("ide-diagnostics", "IDE diagnostics export", "ide-diagnostics", /\b(?:diagnostics?|problems?|lsp|language[-_. ]?server|tsserver|eslint|ruff|mypy|pyright)\b/i, "log", "medium", ["IDE diagnostics can include source paths, messages, snippets, and tool output; import remains explicit-only."], /(?:^|\n)\s*(?:diagnostic|problem|severity|range|line|column|source|eslint|pyright|mypy|ruff)\s*[:=]/i),
+  makeAdapter("ide-diagnostics", "IDE diagnostics export", "ide-diagnostics", /\b(?:diagnostics?|problems?|lsp|language[-_. ]?server|tsserver|eslint|ruff|mypy|pyright)\b/i, "log", "medium", ["IDE diagnostics can include source paths, messages, snippets, and tool output; import remains explicit-only."], /(?:^|\n)\s*(?:diagnostic|problem|severity|range|line|column|source|eslint|pyright|mypy|ruff)\s*[:=]/i, { projectLocalRoots: [".vscode/diagnostics", ".vscode/problems", ".idea/diagnostics"], blockedProjectLocalRoots: [] }),
   makeAdapter("issue-local", "Issue tracker export", "issue-local", /\b(?:issues?|tickets?|github[-_. ]?issues?|jira|linear)\b/i, "document", "medium", ["Issue exports can include user text, identifiers, labels, and project paths; import remains explicit-only."], /(?:^|\n)\s*(?:issue|ticket|title|status|assignee|labels?)\s*:/i),
   makeAdapter("review-local", "Local review notes", "review-local", /\b(?:review|comments?|pr|pull-request)\b/i, "document", "medium", ["Review notes are explicit local evidence and remain declassified before output."], /(?:^|\n)\s*(?:reviewer|review comment|pr comment|pull request comment|pull-request comment)\s*:/i),
   makeAdapter("ci-log", "CI or test log", "ci-log", /\b(?:ci|junit|test-results?|surefire|vitest|pytest|build|log|PASS|FAIL|ERROR|WARN)\b/i, "log", "medium", ["Logs can be large and may include environment-specific paths or outputs."], /<(?:testsuite|testsuites|testcase)\b/i),
@@ -220,6 +170,7 @@ export const learnV2SurfaceAdapters: LearnV2SurfaceAdapter[] = [
     label: "Generic transcript",
     normalizationProfile: "generic-transcript",
     policy: rawSurfacePolicy("high", ["Fallback raw surface adapter; explicit user selection required."]),
+    discovery: { projectLocalRoots: [], blockedProjectLocalRoots: [] },
     detect: () => ({
       matchedBy: "fallback",
       confidence: "low",
@@ -250,6 +201,7 @@ export function learnV2SurfaceAdapterContracts(): LearnV2SurfaceAdapterContract[
     normalizationProfile: adapter.normalizationProfile,
     contentKind: adapter.contentKind,
     sensitivity: adapter.policy.sensitivity,
+    discovery: adapter.discovery,
     capabilities: {
       discover: true,
       fetch: true,
@@ -271,6 +223,7 @@ export function validateLearnV2SurfaceAdapterContracts(adapters: LearnV2SurfaceA
       normalizationProfile: adapter.normalizationProfile,
       contentKind: adapter.contentKind,
       sensitivity: adapter.policy.sensitivity,
+      discovery: adapter.discovery,
       capabilities: {
         discover: true,
         fetch: true,
@@ -283,6 +236,16 @@ export function validateLearnV2SurfaceAdapterContracts(adapters: LearnV2SurfaceA
   const fallbackIndex = adapters.findIndex((adapter) => adapter.id === "generic-transcript");
   if (fallbackIndex !== adapters.length - 1) throw new Error("Learn v2 generic-transcript adapter must remain last fallback adapter.");
   return contracts;
+}
+
+export function learnV2SurfaceAdapterDiscoveryRoots(adapters: LearnV2SurfaceAdapter[] = learnV2SurfaceAdapters): {
+  projectLocalRoots: string[];
+  blockedProjectLocalRoots: string[];
+} {
+  return {
+    projectLocalRoots: uniqueSorted(adapters.flatMap((adapter) => adapter.discovery?.projectLocalRoots ?? [])),
+    blockedProjectLocalRoots: uniqueSorted(adapters.flatMap((adapter) => adapter.discovery?.blockedProjectLocalRoots ?? []))
+  };
 }
 
 export async function readLearnV2Surface(sourcePathInput: string, adapterId?: string): Promise<LearnV2SurfaceRead> {
@@ -352,6 +315,7 @@ export async function discoverLearnV2SurfaceCandidateReport(
   await walk(projectRoot, 0);
   const sorted = candidates.sort((left, right) => right.score - left.score || left.relativePath.localeCompare(right.relativePath));
   const limited = sorted.slice(0, limit);
+  const discoveryRoots = learnV2SurfaceAdapterDiscoveryRoots();
   const report = LearnV2SurfaceDiscoveryReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.raw-surface-discovery.v1",
     scannedFiles: Math.min(visitedFiles, maxFiles),
@@ -363,8 +327,8 @@ export async function discoverLearnV2SurfaceCandidateReport(
     truncatedByMaxFiles: visitedFiles >= maxFiles,
     truncatedByLimit: sorted.length > limited.length,
     knownSurfaceFilesSkipped,
-    allowedHiddenExportDirs: [...RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS],
-    blockedHiddenDirs: [...RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS],
+    allowedHiddenExportDirs: discoveryRoots.projectLocalRoots,
+    blockedHiddenDirs: discoveryRoots.blockedProjectLocalRoots,
     adapterCounts: countValues(limited.map((candidate) => candidate.adapterId)),
     sensitivityCounts: countValues(limited.map((candidate) => candidate.sensitivity)),
     matchedByCounts: countValues(limited.map((candidate) => candidate.detection.matchedBy)),
@@ -433,36 +397,15 @@ export function detectLearnV2SurfaceAdapterByPath(sourcePathInput: string): Lear
 
 function detectLearnV2SurfaceAdapterByProjectRelativePath(relativePathInput: string): LearnV2SurfaceAdapter | undefined {
   const relativePath = relativePathInput.replace(/\\/g, "/").toLowerCase();
-  const adapterId =
-    relativePath.startsWith(".codex-log/") || relativePath.startsWith(".codex/sessions/") || relativePath.startsWith(".codex/transcripts/")
-      ? "codex"
-      : relativePath.startsWith(".claude/projects/") || relativePath.startsWith(".claude/sessions/")
-        ? "claude-code"
-        : relativePath.startsWith(".cursor/chats/") || relativePath.startsWith(".cursor/sessions/")
-          ? "cursor"
-          : relativePath.startsWith(".vscode/diagnostics/") || relativePath.startsWith(".vscode/problems/") || relativePath.startsWith(".idea/diagnostics/")
-            ? "ide-diagnostics"
-            : relativePath.startsWith(".gemini/sessions/") || relativePath.startsWith(".gemini/transcripts/")
-              ? "gemini"
-              : relativePath.startsWith(".roo/chats/") || relativePath.startsWith(".roo/sessions/") || relativePath.startsWith(".roo-code/chats/") || relativePath.startsWith(".roo-code/sessions/")
-                ? "roo"
-                : relativePath.startsWith(".kilo/chats/") || relativePath.startsWith(".kilo/sessions/") || relativePath.startsWith(".kilo-code/chats/") || relativePath.startsWith(".kilo-code/sessions/")
-                  ? "kilo"
-                  : relativePath.startsWith(".cline/chats/") || relativePath.startsWith(".cline/sessions/")
-                    ? "cline"
-                    : relativePath.startsWith(".goose/sessions/")
-                      ? "goose"
-                      : relativePath.startsWith(".zed/agent-sessions/") || relativePath.startsWith(".zed/sessions/") || relativePath.startsWith(".zed/transcripts/")
-                        ? "zed"
-                        : relativePath.startsWith(".opencode/sessions/") || relativePath.startsWith(".opencode/traces/")
-                          ? "opencode"
-                          : undefined;
-  return adapterId ? learnV2SurfaceAdapters.find((adapter) => adapter.id === adapterId) : undefined;
+  return learnV2SurfaceAdapters.find((adapter) =>
+    (adapter.discovery?.projectLocalRoots ?? []).some((root) => relativePath === root || relativePath.startsWith(`${root}/`))
+  );
 }
 
 function exportDirDetection(relativePathInput: string, adapterId: string): LearnV2SurfaceAdapterDetection | undefined {
   const relativePath = relativePathInput.replace(/\\/g, "/").toLowerCase();
-  const prefix = RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS.find((dir) => relativePath.startsWith(`${dir}/`) || relativePath === dir);
+  const adapter = learnV2SurfaceAdapters.find((item) => item.id === adapterId);
+  const prefix = (adapter?.discovery?.projectLocalRoots ?? []).find((dir) => relativePath.startsWith(`${dir}/`) || relativePath === dir);
   if (!prefix) return undefined;
   return {
     matchedBy: "filename",
@@ -479,7 +422,8 @@ function makeAdapter(
   contentKind?: LearnV2SurfaceRead["contentKind"],
   sensitivity: LearnV2SurfaceAdapterPolicy["sensitivity"] = "high",
   notes: string[] = [],
-  contentPattern: RegExp | false | undefined = undefined
+  contentPattern: RegExp | false | undefined = undefined,
+  discovery: LearnV2SurfaceAdapterContract["discovery"] = { projectLocalRoots: [], blockedProjectLocalRoots: [] }
 ): LearnV2SurfaceAdapter {
   const policy = rawSurfacePolicy(sensitivity, notes);
   return {
@@ -488,6 +432,7 @@ function makeAdapter(
     normalizationProfile,
     contentKind,
     policy,
+    discovery,
     detect: (sourcePath, rawText) => {
       const filename = path.basename(sourcePath);
       if (pathPattern.test(filename)) {
@@ -534,19 +479,32 @@ function rawSurfacePolicy(sensitivity: LearnV2SurfaceAdapterPolicy["sensitivity"
   };
 }
 
+function agentDiscovery(
+  primaryRoot: string,
+  projectLocalRoots: string[],
+  aliasRoots: string[] = []
+): LearnV2SurfaceAdapterContract["discovery"] {
+  const roots = [primaryRoot, ...aliasRoots];
+  return {
+    projectLocalRoots,
+    blockedProjectLocalRoots: roots.flatMap((root) => [`${root}/memories`, `${root}/memory`])
+  };
+}
+
 function shouldSkipRawLocalSourceDir(projectRoot: string, fullPath: string, name: string): boolean {
   if (RAW_LOCAL_SOURCE_SKIP_DIRS.has(name) || name.startsWith(".pnpm")) return true;
   const relativePath = path.relative(projectRoot, fullPath).replace(/\\/g, "/").toLowerCase();
-  if (RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS.some((dir) => relativePath === dir || relativePath.startsWith(`${dir}/`))) return true;
+  const blockedRoots = learnV2SurfaceAdapterDiscoveryRoots().blockedProjectLocalRoots;
+  if (blockedRoots.some((dir) => relativePath === dir || relativePath.startsWith(`${dir}/`))) return true;
   if (relativePath.startsWith(".")) return !isAllowedRawLocalHiddenPathOrAncestor(relativePath);
   if (relativePath.includes("/")) {
-    return RAW_LOCAL_SOURCE_BLOCKED_HIDDEN_DIRS.some((dir) => relativePath === dir || relativePath.startsWith(`${dir}/`));
+    return blockedRoots.some((dir) => relativePath === dir || relativePath.startsWith(`${dir}/`));
   }
   return false;
 }
 
 function isAllowedRawLocalHiddenPathOrAncestor(relativePath: string): boolean {
-  return RAW_LOCAL_SOURCE_ALLOWED_HIDDEN_DIRS.some((dir) =>
+  return learnV2SurfaceAdapterDiscoveryRoots().projectLocalRoots.some((dir) =>
     dir === relativePath
     || dir.startsWith(`${relativePath}/`)
     || relativePath.startsWith(`${dir}/`)
@@ -648,4 +606,8 @@ function countValues(values: string[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const value of values) out[value] = (out[value] ?? 0) + 1;
   return out;
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort();
 }

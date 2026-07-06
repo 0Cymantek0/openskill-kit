@@ -41,6 +41,7 @@ import {
   readLearnV2Surface,
   discoverLearnV2SurfaceCandidates,
   learnV2SurfaceAdapterContracts,
+  learnV2SurfaceAdapterDiscoveryRoots,
   validateLearnV2SurfaceAdapterContracts,
   reconstructLearnV2Episodes,
   runRawLocalLearning,
@@ -491,6 +492,7 @@ describe("learn-v2 substrate", () => {
     await mkdir(path.join(root, ".vscode", "diagnostics"), { recursive: true });
     await mkdir(path.join(root, ".opencode", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".opencode", "commands"), { recursive: true });
+    await mkdir(path.join(root, ".opencode", "memories"), { recursive: true });
     await mkdir(path.join(root, ".gemini", "transcripts"), { recursive: true });
     await mkdir(path.join(root, ".roo-code", "sessions"), { recursive: true });
     await mkdir(path.join(root, ".kilo-code", "sessions"), { recursive: true });
@@ -505,6 +507,7 @@ describe("learn-v2 substrate", () => {
     await writeFile(path.join(root, ".vscode", "diagnostics", "problems.json"), "{\"diagnostics\":[{\"severity\":\"error\",\"message\":\"Parser fixture missing\",\"path\":\"packages/core/src/parser.ts\"}]}\n", "utf8");
     await writeFile(path.join(root, ".opencode", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
     await writeFile(path.join(root, ".opencode", "commands", "learn.md"), "Command docs are not raw session exports.", "utf8");
+    await writeFile(path.join(root, ".opencode", "memories", "private.md"), "Do not discover this private memory.", "utf8");
     await writeFile(path.join(root, ".gemini", "transcripts", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
     await writeFile(path.join(root, ".roo-code", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
     await writeFile(path.join(root, ".kilo-code", "sessions", "session.jsonl"), "{\"role\":\"user\",\"content\":\"Prefer parser tests.\"}\n", "utf8");
@@ -537,12 +540,14 @@ describe("learn-v2 substrate", () => {
     expect(byPath.get(".zed/transcripts/session.jsonl")?.adapterId).toBe("zed");
     expect([...byPath.keys()].some((item) => item.includes(".codex/memories"))).toBe(false);
     expect([...byPath.keys()].some((item) => item.includes(".gemini/memories"))).toBe(false);
+    expect([...byPath.keys()].some((item) => item.includes(".opencode/memories"))).toBe(false);
     expect([...byPath.keys()].some((item) => item.includes(".opencode/commands"))).toBe(false);
   });
 
   it("exposes a validated raw surface adapter contract with normalization profiles", async () => {
     const contracts = validateLearnV2SurfaceAdapterContracts();
     const descriptorContracts = learnV2SurfaceAdapterContracts();
+    const discoveryRoots = learnV2SurfaceAdapterDiscoveryRoots();
     const byId = new Map(contracts.map((contract) => [contract.id, contract]));
 
     expect(contracts.map((contract) => contract.id)).toEqual([
@@ -572,6 +577,27 @@ describe("learn-v2 substrate", () => {
     expect(byId.get("issue-local")?.normalizationProfile).toBe("issue-local");
     expect(byId.get("git")?.normalizationProfile).toBe("diff");
     expect(byId.get("project-docs")?.normalizationProfile).toBe("project-docs");
+    expect(byId.get("codex")?.discovery).toMatchObject({
+      projectLocalRoots: [".codex-log", ".codex/sessions", ".codex/transcripts"],
+      blockedProjectLocalRoots: [".codex/memories", ".codex/memory"]
+    });
+    expect(byId.get("opencode")?.discovery.projectLocalRoots).toEqual([".opencode/sessions", ".opencode/traces"]);
+    expect(byId.get("opencode")?.discovery.blockedProjectLocalRoots).toEqual([".opencode/memories", ".opencode/memory"]);
+    expect(byId.get("ide-diagnostics")?.discovery.projectLocalRoots).toEqual([".vscode/diagnostics", ".vscode/problems", ".idea/diagnostics"]);
+    expect(discoveryRoots.projectLocalRoots).toEqual(expect.arrayContaining([
+      ".codex/sessions",
+      ".claude/projects",
+      ".cursor/chats",
+      ".opencode/sessions",
+      ".vscode/diagnostics",
+      ".zed/transcripts"
+    ]));
+    expect(discoveryRoots.blockedProjectLocalRoots).toEqual(expect.arrayContaining([
+      ".codex/memories",
+      ".claude/memory",
+      ".opencode/memories",
+      ".zed/memory"
+    ]));
     expect(byId.get("generic-transcript")?.capabilities).toEqual({
       discover: true,
       fetch: true,

@@ -9,6 +9,13 @@
 
 ## Codex implementation progress
 
+### 2026-07-07 surface adapter discovery-root registry slice
+
+- Finding verified: the adapter surface already normalized many project-local raw sources, but project-local hidden export roots and blocked memory roots were maintained as separate path lists and a private relative-path conditional. That made future adapter expansion drift-prone.
+- Done: raw surface adapter contracts now own project-local discovery roots and blocked memory roots. Candidate discovery reports and relative-path adapter selection derive from the same registry used by contract validation.
+- Done: OpenCode memory roots are explicitly blocked with the same memory-store rule used for Codex, Claude, Cursor, Gemini, Roo, Kilo, Cline, Goose, and Zed.
+- Verified: focused adapter registry regressions, full Learn v2 substrate tests, `rtk npm run typecheck`, `rtk npm run build`, and full `rtk npm test` (40 files, 321 tests).
+
 ### 2026-07-07 structural parser backend registry slice
 
 - Finding verified: structural summaries exposed backend/capability fields, but parser selection was still a private conditional. The plan/review calls for a parser abstraction so Python/Go/Rust can move from fallback scanners to stronger parser backends without rewriting patch summarization.

@@ -47,6 +47,11 @@ review-gated.
 | `agent-summaries` | `summary*`, `handoff*`, `finish*` filename only | summary | `agent-summaries` | medium | Words like `Summary:` in ordinary transcript content do not force this adapter. |
 | `generic-transcript` | fallback when no specific marker matches | inferred | `generic-transcript` | high | Default for explicit raw files with no trusted adapter identity. |
 
+The adapter contract also owns project-local discovery roots and blocked memory
+roots. Normal source planning derives hidden export traversal, candidate adapter
+selection, and discovery reports from this registry instead of a separate
+path-map, so adding a new tool adapter requires one reviewed contract entry.
+
 ## Workflow
 
 1. Detect candidate learning sources.
