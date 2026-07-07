@@ -4,6 +4,7 @@ import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
 import { writeLearnV2SkillOntologyArtifact } from "./skill-ontology.js";
+import { writeLearnV2OpenWorldGroundingArtifact } from "./resource-grounding.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { runLearnV2Eval, type LearnV2EvalOptions } from "./eval.js";
@@ -30,11 +31,13 @@ export interface LearnV2ConceptExtractionResult {
   conditionalHypothesisCount: number;
   promotedConditionalHypothesisCount: number;
   skillNamespaceCount: number;
+  openWorldAnchorCount: number;
   rejectedAtomCount: number;
   conceptCount: number;
   conceptStorePath: string;
   conditionalLearningPath: string;
   skillOntologyPath: string;
+  openWorldGroundingPath: string;
 }
 
 export interface LearnV2PersistedEvalResult {
@@ -78,6 +81,7 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
   const concepts = mergeLearnV2ConceptCards(atoms, now);
   const store = await writeLearnV2ConceptStore(root, concepts, now);
   const skillOntology = await writeLearnV2SkillOntologyArtifact(root, store.cards, now);
+  const openWorldGrounding = await writeLearnV2OpenWorldGroundingArtifact(root, store.cards, now);
   return {
     schemaVersion: "openskill-kit.learn-v2.extract-concepts-result.v1",
     extractedAt: now.toISOString(),
@@ -87,11 +91,13 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
     conditionalHypothesisCount: conditionalLearning.counts.hypotheses,
     promotedConditionalHypothesisCount: conditionalLearning.counts.promotedHypotheses,
     skillNamespaceCount: skillOntology.counts.namespaces,
+    openWorldAnchorCount: openWorldGrounding.counts.anchors,
     rejectedAtomCount: extracted.rejected.length,
     conceptCount: store.cards.length,
     conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
     conditionalLearningPath: conditionalLearning.artifacts.markdown,
-    skillOntologyPath: skillOntology.artifacts.markdown
+    skillOntologyPath: skillOntology.artifacts.markdown,
+    openWorldGroundingPath: openWorldGrounding.artifacts.markdown
   };
 }
 

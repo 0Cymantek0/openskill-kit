@@ -484,6 +484,45 @@ export const LearnV2SkillOntologyArtifactSchema = z.object({
 });
 export type LearnV2SkillOntologyArtifact = z.infer<typeof LearnV2SkillOntologyArtifactSchema>;
 
+export const LearnV2OpenWorldResourceAnchorSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.openworld-resource-anchor.v1"),
+  id: z.string().min(1),
+  conceptId: z.string().min(1),
+  title: z.string().min(1),
+  uri: z.string().min(1),
+  resourceKind: z.enum(["project-doc", "official-docs", "repository", "paper", "standard", "reference"]),
+  trustTier: z.enum(["project", "official", "community", "unknown"]),
+  alignment: z.enum(["supports-review", "needs-review", "possible-conflict", "informational"]),
+  precedence: z.enum(["user-correction-over-resource", "project-doc-over-external", "resource-informs-review-only"]),
+  retrievedAt: z.string().datetime(),
+  licenseRisk: z.enum(["low", "unknown", "restricted"]),
+  alignedClaims: z.array(z.string().min(1)).default([]),
+  conflictingClaims: z.array(z.string().min(1)).default([]),
+  declassifiedSnippetIds: z.array(z.string().min(1)).default([]),
+  usedFor: z.array(z.enum(["title", "conditions", "verification", "eval", "skill-text"])).default([]),
+  rationale: z.string().min(1),
+  evidenceConceptIds: z.array(z.string().min(1)).min(1)
+});
+export type LearnV2OpenWorldResourceAnchor = z.infer<typeof LearnV2OpenWorldResourceAnchorSchema>;
+
+export const LearnV2OpenWorldGroundingArtifactSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.openworld-grounding-artifact.v1"),
+  generatedAt: z.string().datetime(),
+  anchors: z.array(LearnV2OpenWorldResourceAnchorSchema).default([]),
+  counts: z.object({
+    anchors: z.number().int().min(0),
+    conceptCount: z.number().int().min(0),
+    officialAnchors: z.number().int().min(0),
+    projectAnchors: z.number().int().min(0),
+    reviewOnlyAnchors: z.number().int().min(0)
+  }),
+  artifacts: z.object({
+    json: z.string(),
+    markdown: z.string()
+  })
+});
+export type LearnV2OpenWorldGroundingArtifact = z.infer<typeof LearnV2OpenWorldGroundingArtifactSchema>;
+
 export const LearnV2LlmConceptExtractionOutputSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.llm-concept-extraction-output.v1"),
   atoms: z.array(z.object({

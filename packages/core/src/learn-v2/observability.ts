@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2SkillOntologyArtifact, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2OpenWorldGroundingArtifact, LearnV2ReviewQueue, LearnV2SkillOntologyArtifact, LearnV2TaskEpisode } from "./schemas.js";
 import type { LearnV2ModelExecutionPolicyReport } from "./pipeline.js";
 import { readLearnV2ConceptOutcomeTelemetrySummary, type LearnV2ConceptOutcomeTelemetrySummary } from "./activation.js";
 import { learnV2SafeLocalPath } from "./utils.js";
@@ -179,6 +179,22 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     representedConcepts: 0,
     labels: []
   }),
+  openWorldGrounding: z.object({
+    anchors: z.number().int().min(0),
+    conceptCount: z.number().int().min(0),
+    officialAnchors: z.number().int().min(0),
+    projectAnchors: z.number().int().min(0),
+    reviewOnlyAnchors: z.number().int().min(0),
+    titles: z.array(z.string()).default([]),
+    artifactPath: z.string().optional()
+  }).default({
+    anchors: 0,
+    conceptCount: 0,
+    officialAnchors: 0,
+    projectAnchors: 0,
+    reviewOnlyAnchors: 0,
+    titles: []
+  }),
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
     leakStatus: z.enum(["pass", "fail"]),
@@ -249,6 +265,7 @@ export interface LearnV2PipelineObservabilityInput {
   declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
   conditionalLearning?: LearnV2ConditionalLearningArtifact;
   skillOntology?: LearnV2SkillOntologyArtifact;
+  openWorldGrounding?: LearnV2OpenWorldGroundingArtifact;
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
   evidenceQualityScores?: LearnV2EvidenceQualityScore[];
@@ -403,6 +420,17 @@ export async function writeLearnV2PipelineObservabilityReport(
         ? learnV2SafeLocalPath(input.skillOntology.artifacts.markdown, root)
         : undefined
     },
+    openWorldGrounding: {
+      anchors: input.openWorldGrounding?.counts.anchors ?? 0,
+      conceptCount: input.openWorldGrounding?.counts.conceptCount ?? 0,
+      officialAnchors: input.openWorldGrounding?.counts.officialAnchors ?? 0,
+      projectAnchors: input.openWorldGrounding?.counts.projectAnchors ?? 0,
+      reviewOnlyAnchors: input.openWorldGrounding?.counts.reviewOnlyAnchors ?? 0,
+      titles: [...new Set(input.openWorldGrounding?.anchors.map((anchor) => anchor.title) ?? [])].sort(),
+      artifactPath: input.openWorldGrounding?.artifacts.markdown
+        ? learnV2SafeLocalPath(input.openWorldGrounding.artifacts.markdown, root)
+        : undefined
+    },
     qualityGates: {
       evalStatus: input.evalReport.status,
       leakStatus: input.evalReport.leakCheck.status,
@@ -518,6 +546,10 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Skill namespaces: ${report.skillOntology.namespaces} (${report.skillOntology.candidateNamespaces} candidate, ${report.skillOntology.reviewNamespaces} needs review)`,
     `- Namespace labels: ${report.skillOntology.labels.join(", ") || "none"}`,
     `- Skill ontology artifact: ${report.skillOntology.artifactPath ?? "none"}`,
+    `- Open-world anchors: ${report.openWorldGrounding.anchors} across ${report.openWorldGrounding.conceptCount} concept(s)`,
+    `- Open-world trust: official=${report.openWorldGrounding.officialAnchors}, project=${report.openWorldGrounding.projectAnchors}, review-only=${report.openWorldGrounding.reviewOnlyAnchors}`,
+    `- Open-world titles: ${report.openWorldGrounding.titles.join(", ") || "none"}`,
+    `- Open-world artifact: ${report.openWorldGrounding.artifactPath ?? "none"}`,
     `- Review-ready cards: ${report.concepts.reviewReadyCards}`,
     `- Review focus: ${report.concepts.reviewFocusCards} focus, ${report.concepts.reviewAppendixCards} appendix`,
     `- Unresolved conflicts: ${report.concepts.unresolvedConflicts}`,

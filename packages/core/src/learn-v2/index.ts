@@ -17,6 +17,7 @@ export * from "./store.js";
 export * from "./activation.js";
 export * from "./conditional-learning.js";
 export * from "./skill-ontology.js";
+export * from "./resource-grounding.js";
 export * from "./model-routing.js";
 export * from "./model-proposals.js";
 export * from "./scope-proposals.js";

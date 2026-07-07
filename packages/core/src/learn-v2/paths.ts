@@ -46,6 +46,7 @@ export const LEARN_V2_GENERATED_DIRS = [
   ".openskill-kit/learn-v2/source-gate/",
   ".openskill-kit/learn-v2/conditional-learning/",
   ".openskill-kit/learn-v2/skill-ontology/",
+  ".openskill-kit/learn-v2/open-world-grounding/",
 
   // Compiled/preview local output
   ".openskill-kit/learn-v2/compiled-preview/",

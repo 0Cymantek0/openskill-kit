@@ -2729,6 +2729,7 @@ describe("learn-v2 substrate", () => {
     expect(result.digest.conditionalHypotheses).toBe(3);
     expect(result.digest.promotedConditionalHypotheses).toBe(3);
     expect(result.digest.skillNamespaces).toBeGreaterThanOrEqual(1);
+    expect(result.digest.openWorldAnchors).toBeGreaterThanOrEqual(1);
     expect(result.digest.behaviorAtoms).toBeGreaterThanOrEqual(3);
     const conditionalMarkdown = await readText(result.artifacts.learnV2ConditionalLearningPath);
     expect(conditionalMarkdown).toContain("Promoted hypotheses: 3");
@@ -2738,6 +2739,23 @@ describe("learn-v2 substrate", () => {
     expect(skillOntologyMarkdown).toContain("UI/UX design");
     expect(skillOntologyMarkdown).toContain("ui:surface-design");
     expect(skillOntologyMarkdown).not.toContain(root);
+    expect(result.artifacts.learnV2OpenWorldGroundingPath).toContain("open-world-grounding");
+    const groundingMarkdown = await readText(result.artifacts.learnV2OpenWorldGroundingPath);
+    expect(groundingMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
+    expect(groundingMarkdown).toContain("user-correction-over-resource");
+    expect(groundingMarkdown).toContain("Direct user corrections and reviewed project behavior remain authoritative.");
+    expect(groundingMarkdown).toContain("User preference evidence, project evidence, external grounding, and model interpretation stay separate.");
+    expect(groundingMarkdown).not.toContain(root);
+    const groundingJson = JSON.parse(await readText(result.artifacts.learnV2OpenWorldGroundingPath.replace(/\.md$/, ".json")));
+    expect(groundingJson.counts.anchors).toBeGreaterThanOrEqual(1);
+    const wcagAnchor = groundingJson.anchors.find((anchor: { title: string }) => anchor.title === "W3C WCAG 2.2 Quick Reference");
+    expect(wcagAnchor).toMatchObject({
+      title: "W3C WCAG 2.2 Quick Reference",
+      trustTier: "official",
+      precedence: "user-correction-over-resource",
+      licenseRisk: "low"
+    });
+    expect(wcagAnchor.usedFor).toEqual(expect.arrayContaining(["verification", "eval"]));
     const conceptText = JSON.stringify(result.learnV2.currentRunConcepts.map((concept) => ({
       behavior: concept.canonicalBehavior,
       conditions: concept.conditions
@@ -2753,9 +2771,13 @@ describe("learn-v2 substrate", () => {
       promotedHypotheses: 3
     });
     expect(observability.skillOntology.labels).toContain("UI/UX design");
+    expect(observability.openWorldGrounding.anchors).toBeGreaterThanOrEqual(1);
+    expect(observability.openWorldGrounding.titles).toContain("W3C WCAG 2.2 Quick Reference");
     const observabilityMarkdown = await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`));
     expect(observabilityMarkdown).toContain("Conditional hypotheses: 3 (3 promoted)");
     expect(observabilityMarkdown).toContain("Namespace labels: UI/UX design");
+    expect(observabilityMarkdown).toContain("Open-world titles:");
+    expect(observabilityMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
   });
 
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
@@ -3056,7 +3078,9 @@ describe("learn-v2 substrate", () => {
     expect(extracted.atomCount).toBeGreaterThanOrEqual(1);
     expect(extracted.conceptCount).toBeGreaterThanOrEqual(1);
     expect(extracted.skillNamespaceCount).toBeGreaterThanOrEqual(1);
+    expect(extracted.openWorldAnchorCount).toBeGreaterThanOrEqual(1);
     expect(await readText(extracted.skillOntologyPath)).toContain("Skill Ontology");
+    expect(await readText(extracted.openWorldGroundingPath)).toContain("Open-World Grounding");
     const evaluated = await runPersistedLearnV2Eval(root, {}, new Date("2026-06-30T00:03:00Z"));
     expect(evaluated.evalStatus).toBe("pass");
     expect(await readText(evaluated.evalReportPath)).toContain("Counterfactual trace cases");
