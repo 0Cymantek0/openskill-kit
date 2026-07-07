@@ -65,6 +65,7 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--learn-v2-agent-eval <path>");
     expect(stdout).toContain("--debug-dashboard");
     expect(stdout).toContain("--debug-concept <conceptId>");
+    expect(stdout).toContain("--debug-source [sourceId]");
     expect(stdout).toContain("--debug-episode <episodeId>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
@@ -193,6 +194,124 @@ describe("osk CLI facade", () => {
     expect(concept.schemaVersion).toBe("openskill-kit.learn-v2.concept-debug-trace-view.v1");
     expect(concept.traces[0].conceptId).toBe("concept_debug_parser");
     expect(JSON.stringify(concept)).not.toContain(root);
+  });
+
+  it("renders Learn v2 source-gate debug without source snippets or local paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-debug-source-"));
+    await execCliJson(["init", "--json"], root);
+    const dir = path.join(root, ".openskill-kit", "learn-v2", "source-gate");
+    await mkdir(dir, { recursive: true });
+    const privateText = "PRIVATE_SOURCE_SNIPPET_SHOULD_NOT_PRINT";
+    const artifact = {
+      schemaVersion: "openskill-kit.learn-v2.source-gate-review.v1",
+      generatedAt: "2026-06-30T00:12:00.000Z",
+      projectRoot: "[PROJECT_ROOT]",
+      counts: {
+        total: 2,
+        accepted: 1,
+        review: 1,
+        rejected: 0,
+        extractionEligible: 1,
+        normalizedEvidenceSuppressed: 1
+      },
+      entries: [{
+        id: "source_cli_accept",
+        sourcePath: "[PROJECT_ROOT]/logs/session.md",
+        sourceHash: "sha256:source-cli-accept",
+        byteCount: 120,
+        lineCount: 4,
+        adapter: {
+          id: "manual-transcript",
+          label: "Manual transcript",
+          detectedFormat: "markdown",
+          normalizationProfile: "generic-transcript",
+          contentKind: "transcript",
+          detection: { matchedBy: "explicit", confidence: "high", reasons: ["surface-file"] },
+          policy: {
+            selection: "explicit-only",
+            read: "raw-local-file",
+            learnerInput: "raw-local-in-memory",
+            persistence: "preview-artifacts-or-apply-vault",
+            modelBoundary: "declassified-only",
+            rawRefsExportable: false,
+            sensitivity: "medium",
+            notes: ["test fixture"]
+          }
+        },
+        relevance: {
+          score: 0.91,
+          decision: "accept",
+          gate: "hard-accept",
+          featureValues: { projectPath: 1, packageName: 0.5 },
+          reasons: ["explicit-project-source"],
+          matchedPaths: [path.join(root, "packages", "core", "src", "parser.ts")],
+          matchedRemotes: ["https://private.example.invalid/repo"],
+          matchedCommits: []
+        },
+        extractionEligible: true,
+        decision: "accept",
+        artifactPolicy: {
+          normalizedEvidenceWritten: true,
+          rawVaultRecordWritten: true,
+          reviewSnippetIncluded: false,
+          tombstoneOnly: false
+        },
+        reviewSnippet: privateText,
+        declassification: { redacted: true, matches: ["secret"] },
+        nextAction: "Accepted source entered Learn v2 extraction."
+      }, {
+        id: "source_cli_review",
+        sourcePath: "[USER_HOME]/terminal.log",
+        sourceHash: "sha256:source-cli-review",
+        byteCount: 80,
+        lineCount: 2,
+        adapter: {
+          id: "terminal-history",
+          detectedFormat: "log",
+          contentKind: "log"
+        },
+        relevance: {
+          score: 0.5,
+          decision: "review",
+          gate: "hard-review",
+          featureValues: { commandLog: 1 },
+          reasons: ["unanchored-test-or-command-log"],
+          matchedPaths: [],
+          matchedRemotes: [],
+          matchedCommits: []
+        },
+        extractionEligible: false,
+        decision: "review",
+        artifactPolicy: {
+          normalizedEvidenceWritten: false,
+          rawVaultRecordWritten: false,
+          reviewSnippetIncluded: false,
+          tombstoneOnly: false
+        },
+        declassification: { redacted: false, matches: [] },
+        nextAction: "Review source relevance from metadata only."
+      }]
+    };
+    await writeFile(path.join(dir, "source-gate-review.json"), JSON.stringify(artifact, null, 2), "utf8");
+
+    const text = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--debug-source"], { cwd: root, windowsHide: true });
+    expect(text.stdout).toContain("Learn v2 source-gate dashboard");
+    expect(text.stdout).toContain("source_cli_accept");
+    expect(text.stdout).toContain("source_cli_review");
+    expect(text.stdout).toContain("[PROJECT_ROOT]/packages/core/src/parser.ts");
+    expect(text.stdout).toContain("Matched remotes: 1");
+    expect(text.stdout).not.toContain(root);
+    expect(text.stdout).not.toContain(privateText);
+    expect(text.stdout).not.toContain("private.example.invalid");
+
+    const parsed = await execCliJson(["osk", "learn", "--debug-source", "source_cli_accept", "--json"], root);
+    expect(parsed.schemaVersion).toBe("openskill-kit.learn-v2.source-gate-debug-view.v1");
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].id).toBe("source_cli_accept");
+    expect(parsed.entries[0].relevance.matchedRemoteCount).toBe(1);
+    expect(JSON.stringify(parsed)).not.toContain(root);
+    expect(JSON.stringify(parsed)).not.toContain(privateText);
+    expect(JSON.stringify(parsed)).not.toContain("private.example.invalid");
   });
 
   it("renders Learn v2 episode debug without raw episode text or local paths", async () => {

@@ -102,6 +102,7 @@ import {
   readLearnV2PipelineObservabilityReport,
   readLearnV2ConceptDebugTraceView,
   readLearnV2EpisodeDebugView,
+  readLearnV2SourceGateDebugView,
   getLearnV2ArtifactPathManifest,
   RawLearningModelModes,
   readEvidenceCards,
@@ -362,6 +363,8 @@ osk.command("learn")
   .option("--observability-file <path>", "Specific Learn-v2 pipeline observability JSON report")
   .option("--debug-dashboard", "Show latest Learn-v2 concept debug trace dashboard")
   .option("--debug-concept <conceptId>", "Show why-learned/why-active trace for one Learn-v2 concept")
+  .option("--debug-source [sourceId]", "Show declassified Learn-v2 source-gate decisions, or one source when id is supplied")
+  .option("--debug-source-file <path>", "Specific Learn-v2 source-gate review JSON artifact")
   .option("--debug-episode <episodeId>", "Show declassified Learn-v2 episode stitching, evidence, phase, tool, and patch summary")
   .option("--debug-trace-file <path>", "Specific Learn-v2 concept debug trace JSON artifact")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
@@ -437,6 +440,15 @@ osk.command("learn")
         conceptId: options.debugConcept
       });
       output(options.json, result, renderLearnV2DebugTraceView(result, Boolean(options.debugConcept)));
+      return;
+    }
+    if (options.debugSource !== undefined || options.debugSourceFile) {
+      const sourceId = typeof options.debugSource === "string" ? options.debugSource : undefined;
+      const result = await readLearnV2SourceGateDebugView(process.cwd(), {
+        sourceId,
+        sourceGatePath: options.debugSourceFile
+      });
+      output(options.json, result, renderLearnV2SourceGateDebugView(result, Boolean(sourceId)));
       return;
     }
     if (options.debugEpisode) {
@@ -2346,6 +2358,44 @@ function renderLearnV2DebugTraceView(
   if (!conceptOnly && view.traces.length > 12) lines.push(`Showing 12/${view.traces.length} traces. Use --debug-concept <id> for one concept.`);
   lines.push(`JSON: ${view.artifacts.json}`);
   lines.push(`Markdown: ${view.artifacts.markdown}`);
+  return lines.join("\n");
+}
+
+function renderLearnV2SourceGateDebugView(
+  view: Awaited<ReturnType<typeof readLearnV2SourceGateDebugView>>,
+  sourceOnly: boolean
+): string {
+  const lines = [
+    sourceOnly ? "Learn v2 source debug" : "Learn v2 source-gate dashboard",
+    "",
+    `Generated: ${view.generatedAt}`,
+    `Source: ${view.sourcePath}`,
+    `Sources: ${view.entries.length}/${view.counts.total} selected`,
+    `Accepted: ${view.counts.accepted}`,
+    `Review-needed: ${view.counts.review}`,
+    `Rejected: ${view.counts.rejected}`,
+    `Extraction eligible: ${view.counts.extractionEligible}`,
+    `Suppressed normalized evidence: ${view.counts.normalizedEvidenceSuppressed}`,
+    ""
+  ];
+  if (!view.entries.length) lines.push(sourceOnly ? "No matching source-gate entry found." : "No source-gate entries found.");
+  for (const entry of view.entries.slice(0, sourceOnly ? 1 : 12)) {
+    lines.push(`${entry.id}: ${entry.decision}; eligible=${entry.extractionEligible}; gate=${entry.relevance.gate}; score=${entry.relevance.score.toFixed(2)}`);
+    lines.push(`  Source: ${entry.sourcePath}`);
+    lines.push(`  Hash: ${entry.sourceHash}; bytes=${entry.byteCount}; lines=${entry.lineCount}`);
+    lines.push(`  Adapter: ${entry.adapter.id}; format=${entry.adapter.detectedFormat}; profile=${entry.adapter.normalizationProfile ?? "unknown"}; content=${entry.adapter.contentKind}`);
+    lines.push(`  Detection: matchedBy=${entry.adapter.detection?.matchedBy ?? "unknown"}; confidence=${entry.adapter.detection?.confidence ?? "unknown"}; reasons=${entry.adapter.detection?.reasons.join(", ") || "none"}`);
+    lines.push(`  Policy: selection=${entry.adapter.policy?.selection ?? "unknown"}; read=${entry.adapter.policy?.read ?? "unknown"}; modelBoundary=${entry.adapter.policy?.modelBoundary ?? "unknown"}; sensitivity=${entry.adapter.policy?.sensitivity ?? "unknown"}`);
+    lines.push(`  Reasons: ${entry.relevance.reasons.join(", ") || "none"}`);
+    lines.push(`  Features: ${renderLearnV2CountLine(entry.relevance.featureValues)}`);
+    lines.push(`  Matched paths: ${entry.relevance.matchedPaths.join(", ") || "none"}`);
+    lines.push(`  Matched remotes: ${entry.relevance.matchedRemoteCount}`);
+    lines.push(`  Artifacts: normalized=${entry.artifactPolicy.normalizedEvidenceWritten}, rawVault=${entry.artifactPolicy.rawVaultRecordWritten}, reviewSnippet=${entry.artifactPolicy.reviewSnippetIncluded}, tombstoneOnly=${entry.artifactPolicy.tombstoneOnly}`);
+    lines.push(`  Declassification: redacted=${entry.declassification.redacted}; matches=${entry.declassification.matches.join(", ") || "none"}`);
+    lines.push(`  Next: ${entry.nextAction}`);
+    lines.push("");
+  }
+  if (!sourceOnly && view.entries.length > 12) lines.push(`Showing 12/${view.entries.length} sources. Use --debug-source <id> for one source.`);
   return lines.join("\n");
 }
 

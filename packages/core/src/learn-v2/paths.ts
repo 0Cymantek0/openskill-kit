@@ -130,8 +130,8 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     kind: "file",
     lifecycle: "debug",
     sharePolicy: "local-declassified",
-    cli: "openskill-kit osk learn --raw --surface-file <path>",
-    notes: ["Shows accepted, rejected, and ask-for-review sources without exporting raw source contents."]
+    cli: "openskill-kit osk learn --debug-source",
+    notes: ["Shows accepted, rejected, and ask-for-review sources without exporting raw source contents. Produced by --raw --surface-file <path>."]
   },
   {
     key: "episode-store",

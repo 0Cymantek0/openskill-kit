@@ -63,6 +63,7 @@ import {
   writeLearnV2OutcomePolicyArtifact,
   writeLearnV2ConceptDebugTraceArtifact,
   readLearnV2EpisodeDebugView,
+  readLearnV2SourceGateDebugView,
   storeLearnV2RawEvidence,
   detectLearnV2ConceptDrift,
   runLearnV2Eval,
@@ -3029,6 +3030,20 @@ describe("learn-v2 substrate", () => {
     expect(sourceGateMarkdown).toContain("review-metadata-only");
     expect(sourceGateMarkdown).not.toContain("npm test");
     expect(sourceGateMarkdown).not.toContain("PRIVATE_REVIEW_ONLY_MARKER_12345");
+
+    const sourceDebug = await readLearnV2SourceGateDebugView(root);
+    expect(sourceDebug.schemaVersion).toBe("openskill-kit.learn-v2.source-gate-debug-view.v1");
+    expect(sourceDebug.counts.normalizedEvidenceSuppressed).toBe(2);
+    expect(sourceDebug.entries).toHaveLength(2);
+    expect(sourceDebug.entries.map((entry) => entry.decision)).toEqual(expect.arrayContaining(["review", "reject"]));
+    const debugJson = JSON.stringify(sourceDebug);
+    expect(debugJson).not.toContain("npm test");
+    expect(debugJson).not.toContain("PRIVATE_REVIEW_ONLY_MARKER_12345");
+    expect(debugJson).not.toContain(root);
+
+    const oneSourceDebug = await readLearnV2SourceGateDebugView(root, { sourceId: sourceDebug.entries[0]!.id });
+    expect(oneSourceDebug.entries).toHaveLength(1);
+    expect(oneSourceDebug.entries[0]!.id).toBe(sourceDebug.entries[0]!.id);
   });
 
   it("preserves canonical Learn v2 artifacts when a later raw run has no accepted sources", async () => {

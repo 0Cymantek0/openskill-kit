@@ -55,6 +55,37 @@ export const LearnV2SourceGateReviewArtifactSchema = z.object({
 });
 export type LearnV2SourceGateReviewArtifact = z.infer<typeof LearnV2SourceGateReviewArtifactSchema>;
 
+export interface LearnV2SourceGateDebugView {
+  schemaVersion: "openskill-kit.learn-v2.source-gate-debug-view.v1";
+  generatedAt: string;
+  sourcePath: string;
+  counts: LearnV2SourceGateReviewArtifact["counts"];
+  entries: LearnV2SourceGateDebugEntry[];
+}
+
+export interface LearnV2SourceGateDebugEntry {
+  id: string;
+  sourcePath: string;
+  sourceHash: string;
+  byteCount: number;
+  lineCount: number;
+  decision: LearnV2SourceGateReviewEntry["decision"];
+  extractionEligible: boolean;
+  adapter: LearnV2SourceGateReviewEntry["adapter"];
+  relevance: {
+    score: number;
+    gate: LearnV2ProjectRelevance["gate"];
+    decision: LearnV2ProjectRelevance["decision"];
+    reasons: string[];
+    featureValues: Record<string, number>;
+    matchedPaths: string[];
+    matchedRemoteCount: number;
+  };
+  artifactPolicy: LearnV2SourceGateReviewEntry["artifactPolicy"];
+  declassification: LearnV2SourceGateReviewEntry["declassification"];
+  nextAction: string;
+}
+
 export interface LearnV2SourceGateEntryInput {
   id: string;
   root: string;
@@ -135,6 +166,59 @@ export async function writeLearnV2SourceGateReviewArtifact(
   await writeJsonAtomic(json, artifact);
   await fs.writeFile(markdown, renderSourceGateReviewMarkdown(artifact), "utf8");
   return { artifact, paths: { json, markdown } };
+}
+
+export async function readLearnV2SourceGateDebugView(
+  rootInput: string,
+  options: { sourceId?: string; sourceGatePath?: string } = {}
+): Promise<LearnV2SourceGateDebugView> {
+  const root = path.resolve(rootInput);
+  const file = options.sourceGatePath
+    ? path.resolve(root, options.sourceGatePath)
+    : path.join(root, ".openskill-kit", "learn-v2", "source-gate", "source-gate-review.json");
+  const artifact = LearnV2SourceGateReviewArtifactSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+  const entries = options.sourceId
+    ? artifact.entries.filter((entry) => entry.id === options.sourceId)
+    : artifact.entries;
+  return {
+    schemaVersion: "openskill-kit.learn-v2.source-gate-debug-view.v1",
+    generatedAt: artifact.generatedAt,
+    sourcePath: learnV2SafeLocalPath(file, root),
+    counts: artifact.counts,
+    entries: entries.map((entry) => declassifySourceGateEntry(root, entry))
+  };
+}
+
+function declassifySourceGateEntry(root: string, entry: LearnV2SourceGateReviewEntry): LearnV2SourceGateDebugEntry {
+  return {
+    id: entry.id,
+    sourcePath: entry.sourcePath,
+    sourceHash: entry.sourceHash,
+    byteCount: entry.byteCount,
+    lineCount: entry.lineCount,
+    decision: entry.decision,
+    extractionEligible: entry.extractionEligible,
+    adapter: entry.adapter,
+    relevance: {
+      score: entry.relevance.score,
+      gate: entry.relevance.gate,
+      decision: entry.relevance.decision,
+      reasons: entry.relevance.reasons,
+      featureValues: entry.relevance.featureValues,
+      matchedPaths: entry.relevance.matchedPaths.map((item) => safePath(root, item)),
+      matchedRemoteCount: entry.relevance.matchedRemotes.length
+    },
+    artifactPolicy: entry.artifactPolicy,
+    declassification: entry.declassification,
+    nextAction: entry.nextAction
+  };
+}
+
+function safePath(root: string, value: string): string {
+  if (!value) return value;
+  if (path.resolve(value) === path.resolve(root)) return "[PROJECT_ROOT]";
+  if (path.isAbsolute(value)) return learnV2SafeLocalPath(value, root);
+  return value.replace(/\\/g, "/");
 }
 
 function renderSourceGateReviewMarkdown(artifact: LearnV2SourceGateReviewArtifact): string {
