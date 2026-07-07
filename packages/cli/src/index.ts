@@ -100,6 +100,7 @@ import {
   writeLearnV2BehaviorEvalRequests,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
+  readLearnV2ConceptDebugTraceView,
   getLearnV2ArtifactPathManifest,
   RawLearningModelModes,
   readEvidenceCards,
@@ -358,6 +359,9 @@ osk.command("learn")
   .option("--artifact-paths", "Show stable Learn-v2 artifact paths, share policy, CLI/MCP entry points, and production install notes")
   .option("--observability", "Show latest Learn-v2 pipeline observability dashboard")
   .option("--observability-file <path>", "Specific Learn-v2 pipeline observability JSON report")
+  .option("--debug-dashboard", "Show latest Learn-v2 concept debug trace dashboard")
+  .option("--debug-concept <conceptId>", "Show why-learned/why-active trace for one Learn-v2 concept")
+  .option("--debug-trace-file <path>", "Specific Learn-v2 concept debug trace JSON artifact")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
   .option("--max-pinned-raw-vault-bytes <number>", "Learn-v2 pinned raw vault byte budget", parseIntegerOption)
   .option("--max-total-raw-vault-bytes <number>", "Learn-v2 total raw vault byte budget across hot, pinned, and compacted records", parseIntegerOption)
@@ -423,6 +427,14 @@ osk.command("learn")
     if (options.artifactPaths === true) {
       const result = getLearnV2ArtifactPathManifest();
       output(options.json, result, renderLearnV2ArtifactPaths(result));
+      return;
+    }
+    if (options.debugDashboard === true || options.debugConcept) {
+      const result = await readLearnV2ConceptDebugTraceView(process.cwd(), {
+        tracePath: options.debugTraceFile,
+        conceptId: options.debugConcept
+      });
+      output(options.json, result, renderLearnV2DebugTraceView(result, Boolean(options.debugConcept)));
       return;
     }
     if (options.observability === true || options.observabilityFile) {
@@ -2285,6 +2297,48 @@ function renderLearnV2ArtifactPaths(manifest: ReturnType<typeof getLearnV2Artifa
   lines.push("");
   lines.push("Next actions:");
   lines.push(...manifest.nextActions.map((item) => `- ${item}`));
+  return lines.join("\n");
+}
+
+function renderLearnV2DebugTraceView(
+  view: Awaited<ReturnType<typeof readLearnV2ConceptDebugTraceView>>,
+  conceptOnly: boolean
+): string {
+  const lines = [
+    conceptOnly ? "Learn v2 concept debug" : "Learn v2 debug dashboard",
+    "",
+    `Generated: ${view.generatedAt}`,
+    `Source: ${view.sourcePath}`,
+    `Concepts: ${view.counts.tracedConcepts}/${view.counts.concepts} traced`,
+    `Conditional links: ${view.counts.conditionalLinks}`,
+    `Open-world links: ${view.counts.openWorldLinks}`,
+    `Review-blocked: ${view.counts.reviewBlockedConcepts}`,
+    `Outcome policy links: ${view.counts.outcomePolicyLinks}`,
+    `Outcome-suppressed: ${view.counts.outcomeSuppressedConcepts}`,
+    ""
+  ];
+  if (!view.traces.length) {
+    lines.push(conceptOnly ? "No matching concept trace found." : "No concept traces found.");
+  }
+  for (const trace of view.traces.slice(0, conceptOnly ? 1 : 12)) {
+    lines.push(`${trace.conceptId}: ${trace.title}`);
+    lines.push(`  Status: ${trace.status}; risk=${trace.risk}; confidence=${trace.whyLearned.confidence.toFixed(2)}; durability=${trace.whyLearned.durability.toFixed(2)}`);
+    lines.push(`  Behavior: ${trace.canonicalBehavior}`);
+    lines.push(`  Why learned: ${trace.whyLearned.summary}`);
+    lines.push(`  Why active: ${trace.whyActive.activationState}; ${trace.whyActive.reviewGate}`);
+    lines.push(`  Conditions: apply=${trace.whyActive.appliesWhen.join("; ") || "none"}; avoid=${trace.whyActive.doesNotApplyWhen.join("; ") || "none"}`);
+    lines.push(`  Factors: ${trace.conditional.factorLabels.join(", ") || "none"}`);
+    lines.push(`  Admission: ${trace.conditional.admissionDecisions.map((decision) => `${decision.subjectKind}:${decision.decision}`).join(", ") || "none"}`);
+    lines.push(`  Namespaces: ${trace.ontology.labels.join(", ") || "none"}`);
+    lines.push(`  Open-world: ${trace.openWorldGrounding.titles.join(", ") || "none"}`);
+    lines.push(`  Review: conflicts=${trace.review.conflictIds.length}, counterevidence=${trace.review.counterevidenceCount}, actions=${trace.review.reviewActionLabels.join(", ") || "none"}`);
+    lines.push(`  Outcome: action=${trace.outcomePolicy.action ?? "none"}, suppressed=${trace.outcomePolicy.suppressed}`);
+    lines.push(`  Evidence split: user=${trace.evidenceSeparation.userPreferenceEvidence}, project=${trace.evidenceSeparation.projectEvidence}, external=${trace.evidenceSeparation.externalGrounding}, model=${trace.evidenceSeparation.modelInterpretation}`);
+    lines.push("");
+  }
+  if (!conceptOnly && view.traces.length > 12) lines.push(`Showing 12/${view.traces.length} traces. Use --debug-concept <id> for one concept.`);
+  lines.push(`JSON: ${view.artifacts.json}`);
+  lines.push(`Markdown: ${view.artifacts.markdown}`);
   return lines.join("\n");
 }
 

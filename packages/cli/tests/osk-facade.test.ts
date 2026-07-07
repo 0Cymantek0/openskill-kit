@@ -63,6 +63,8 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--prepare-behavior-eval-requests");
     expect(stdout).toContain("--behavior-eval-output <path>");
     expect(stdout).toContain("--learn-v2-agent-eval <path>");
+    expect(stdout).toContain("--debug-dashboard");
+    expect(stdout).toContain("--debug-concept <conceptId>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
     expect(stdout).toContain("deterministic-only|opencode-host-sanitized-only");
@@ -95,6 +97,96 @@ describe("osk CLI facade", () => {
     expect(text.stdout).toContain("concept-debug-trace");
     expect(text.stdout).toContain("Team sharing:");
     expect(text.stdout).not.toContain(root);
+  });
+
+  it("renders Learn v2 debug dashboard and concept why trace without leaking local paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-debug-trace-"));
+    await execCliJson(["init", "--json"], root);
+    const dir = path.join(root, ".openskill-kit", "learn-v2", "concept-debug-trace");
+    await mkdir(dir, { recursive: true });
+    const tracePath = path.join(dir, "concept-debug-trace-20260630000000.json");
+    const markdownPath = path.join(dir, "concept-debug-trace-20260630000000.md");
+    const trace = {
+      schemaVersion: "openskill-kit.learn-v2.concept-debug-trace-artifact.v1",
+      generatedAt: "2026-06-30T00:00:00.000Z",
+      traces: [{
+        schemaVersion: "openskill-kit.learn-v2.concept-debug-trace-entry.v1",
+        conceptId: "concept_debug_parser",
+        title: "Focused parser regression",
+        status: "active",
+        risk: "medium",
+        canonicalBehavior: "Prefer focused parser regression tests before broad parser rewrites.",
+        behaviorDelta: "Adds focused regression verification before broad suite.",
+        whyLearned: {
+          summary: "1 declassified evidence item produced 1 support atom.",
+          evidenceIds: ["ev_parser"],
+          supportAtomIds: ["atom_parser"],
+          supportAtomStatements: ["Prefer focused parser regression tests before broad parser rewrites."],
+          scoringReasons: ["human-review"],
+          scoringPenalties: [],
+          rawRefCount: 1,
+          confidence: 0.82,
+          durability: 0.72,
+          sourceReliability: 0.8
+        },
+        whyActive: {
+          activationState: "active",
+          reviewGate: "Concept can activate when task context matches parser scope.",
+          phrases: ["parser regression"],
+          pathGlobs: ["packages/core/src/parser.ts"],
+          commands: ["npm test -- parser"],
+          appliesWhen: ["parser behavior changes"],
+          doesNotApplyWhen: ["docs-only"],
+          negativeTriggers: ["docs-only"]
+        },
+        conditional: {
+          observationIds: ["obs_parser"],
+          hypothesisIds: ["hyp_parser"],
+          factorLabels: ["task=parser-change"],
+          admissionDecisions: [{
+            id: "admit_parser",
+            subjectKind: "hypothesis",
+            subjectId: "hyp_parser",
+            decision: "candidate-concept",
+            requiredReview: true,
+            reviewPriority: "high",
+            riskLevel: "medium",
+            privacyBoundary: "low",
+            scopeLevel: "path",
+            reasons: ["repeated correction"]
+          }]
+        },
+        ontology: { namespaceIds: ["ns_parser"], labels: ["testing.parser-regression"], operationIds: ["op_create_parser"] },
+        openWorldGrounding: { anchorIds: ["anchor_parser"], titles: ["Project parser test guide"], trustTiers: ["project"], precedence: ["project-doc-over-external"] },
+        review: { conflictIds: [], counterevidenceCount: 0, driftReasons: [], evidenceSnippetIds: ["snippet_parser"], reviewActionLabels: ["Accept concept"] },
+        outcomePolicy: { action: "allow-activation", suppressed: false, reasons: ["no negative outcomes"], counts: { helpful: 1, ignored: 0, wrong: 0, harmful: 0, superseded: 0 } },
+        evidenceSeparation: { userPreferenceEvidence: 1, projectEvidence: 0, externalGrounding: 1, modelInterpretation: 1 }
+      }],
+      counts: {
+        concepts: 1,
+        tracedConcepts: 1,
+        conditionalLinks: 2,
+        openWorldLinks: 1,
+        reviewBlockedConcepts: 0,
+        outcomePolicyLinks: 1,
+        outcomeSuppressedConcepts: 0
+      },
+      artifacts: { json: tracePath, markdown: markdownPath }
+    };
+    await writeFile(tracePath, JSON.stringify(trace, null, 2), "utf8");
+    await writeFile(markdownPath, "# trace\n", "utf8");
+
+    const dashboard = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--debug-dashboard"], { cwd: root, windowsHide: true });
+    expect(dashboard.stdout).toContain("Learn v2 debug dashboard");
+    expect(dashboard.stdout).toContain("Conditional links: 2");
+    expect(dashboard.stdout).toContain("Focused parser regression");
+    expect(dashboard.stdout).toContain("testing.parser-regression");
+    expect(dashboard.stdout).not.toContain(root);
+
+    const concept = await execCliJson(["osk", "learn", "--debug-concept", "concept_debug_parser", "--json"], root);
+    expect(concept.schemaVersion).toBe("openskill-kit.learn-v2.concept-debug-trace-view.v1");
+    expect(concept.traces[0].conceptId).toBe("concept_debug_parser");
+    expect(JSON.stringify(concept)).not.toContain(root);
   });
 
   it("rejects malformed Learn v2 concept review JSON at the CLI boundary", async () => {

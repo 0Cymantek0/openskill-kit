@@ -24,6 +24,18 @@ export interface LearnV2ConceptDebugTraceContext {
   reviewQueue?: LearnV2ReviewQueue;
 }
 
+export interface LearnV2ConceptDebugTraceView {
+  schemaVersion: "openskill-kit.learn-v2.concept-debug-trace-view.v1";
+  generatedAt: string;
+  sourcePath: string;
+  counts: LearnV2ConceptDebugTraceArtifact["counts"];
+  traces: LearnV2ConceptDebugTraceEntry[];
+  artifacts: {
+    json: string;
+    markdown: string;
+  };
+}
+
 export async function writeLearnV2ConceptDebugTraceArtifact(
   rootInput: string,
   concepts: LearnV2ConceptCard[],
@@ -55,6 +67,40 @@ export async function writeLearnV2ConceptDebugTraceArtifact(
   await writeJsonAtomic(json, artifact);
   await fs.writeFile(markdown, renderConceptDebugTrace(root, artifact), "utf8");
   return artifact;
+}
+
+export async function readLearnV2ConceptDebugTraceView(
+  rootInput: string,
+  options: { tracePath?: string; conceptId?: string } = {}
+): Promise<LearnV2ConceptDebugTraceView> {
+  const root = path.resolve(rootInput);
+  const file = options.tracePath ? path.resolve(root, options.tracePath) : await latestConceptDebugTracePath(root);
+  const artifact = LearnV2ConceptDebugTraceArtifactSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+  const traces = options.conceptId
+    ? artifact.traces.filter((trace) => trace.conceptId === options.conceptId)
+    : artifact.traces;
+  return {
+    schemaVersion: "openskill-kit.learn-v2.concept-debug-trace-view.v1",
+    generatedAt: artifact.generatedAt,
+    sourcePath: learnV2SafeLocalPath(file, root),
+    counts: artifact.counts,
+    traces,
+    artifacts: {
+      json: learnV2SafeLocalPath(artifact.artifacts.json, root),
+      markdown: learnV2SafeLocalPath(artifact.artifacts.markdown, root)
+    }
+  };
+}
+
+async function latestConceptDebugTracePath(root: string): Promise<string> {
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "concept-debug-trace");
+  const files = await fs.readdir(dir).catch(() => []);
+  const jsonFiles = files
+    .filter((file) => /^concept-debug-trace-(?:\d{14}|\d{8,})\.json$/.test(file) || file === "concept-debug-trace.json")
+    .sort();
+  const latest = jsonFiles.at(-1);
+  if (!latest) throw new Error("No Learn v2 concept debug trace artifact found. Run `openskill-kit osk learn --raw --surface-file <path> --apply` or `openskill-kit osk learn --extract-concepts` first.");
+  return path.join(dir, latest);
 }
 
 function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTraceContext): LearnV2ConceptDebugTraceEntry {
