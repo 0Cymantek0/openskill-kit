@@ -194,6 +194,19 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     notes: ["Single dashboard entry point for Learn v2 run counts, gates, health, and artifact pointers."]
   },
   {
+    key: "behavior-agent-eval",
+    label: "Agent-backed behavior eval",
+    relativePath: ".openskill-kit/learn-v2/evals/agent/behavior-agent-eval-*.md",
+    kind: "glob",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --prepare-behavior-eval-requests --learn-v2-goldens <goldens.json>",
+    notes: [
+      "Validated behavior-evaluator results compare baseline and learned-behavior plans for configured behavior-delta goldens.",
+      "Use with --learn-v2-agent-eval during --run-learn-v2-eval to mark agent-backed behavior judgment in the proof boundary."
+    ]
+  },
+  {
     key: "model-requests",
     label: "Prompt-safe model request manifests",
     relativePath: ".openskill-kit/learn-v2/model-requests/*/request-manifest.json",

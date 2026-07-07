@@ -82,6 +82,11 @@ describe("osk CLI facade", () => {
     expect(parsed.stablePaths.some((item: { key: string; mcpTool?: string }) =>
       item.key === "review-queue" && item.mcpTool === "osk_get_concept_review_queue"
     )).toBe(true);
+    expect(parsed.stablePaths.some((item: { key: string; relativePath: string; cli: string }) =>
+      item.key === "behavior-agent-eval"
+      && item.relativePath === ".openskill-kit/learn-v2/evals/agent/behavior-agent-eval-*.md"
+      && item.cli.includes("--prepare-behavior-eval-requests")
+    )).toBe(true);
     expect(parsed.teamSharing.reviewedConcepts).toContain("compiled packs");
     expect(parsed.productionInstall.requiredStartup).toContain("openskill-kit osk learn --artifact-paths");
 
