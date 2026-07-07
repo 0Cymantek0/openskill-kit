@@ -12,6 +12,18 @@ import {
 } from "./schemas.js";
 import { learnV2SafeLocalPath, learnV2ShortHash } from "./utils.js";
 
+export interface LearnV2SkillOntologyDebugView {
+  schemaVersion: "openskill-kit.learn-v2.skill-ontology-debug-view.v1";
+  generatedAt: string;
+  sourcePath: string;
+  counts: LearnV2SkillOntologyArtifact["counts"] & {
+    selectedNamespaces: number;
+    selectedOperations: number;
+  };
+  namespaces: LearnV2SkillNamespaceCandidate[];
+  operations: LearnV2SkillOntologyOperation[];
+}
+
 const stopWords = new Set([
   "about", "after", "again", "before", "behavior", "broad", "change", "changes", "concept",
   "context", "default", "files", "first", "learned", "prefer", "project", "review",
@@ -136,6 +148,66 @@ export async function writeLearnV2SkillOntologyArtifact(
   await writeJsonAtomic(json, artifact);
   await fs.writeFile(markdown, renderSkillOntologyArtifact(root, artifact), "utf8");
   return artifact;
+}
+
+export async function readLearnV2SkillOntologyDebugView(
+  rootInput: string,
+  options: { ontologyPath?: string; namespaceId?: string; operationId?: string } = {}
+): Promise<LearnV2SkillOntologyDebugView> {
+  const root = path.resolve(rootInput);
+  const file = options.ontologyPath ? path.resolve(root, options.ontologyPath) : await latestSkillOntologyArtifactPath(root);
+  const artifact = LearnV2SkillOntologyArtifactSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+  const namespaceFocusIds = namespaceFocusSet(artifact, options.namespaceId, options.operationId);
+  const namespaces = artifact.namespaces.filter((namespace) =>
+    namespaceFocusIds ? namespaceFocusIds.has(namespace.id) : true
+  );
+  const selectedNamespaceIds = new Set(namespaces.map((namespace) => namespace.id));
+  const operations = artifact.operations.filter((operation) => {
+    if (options.operationId) return operation.id === options.operationId;
+    if (selectedNamespaceIds.size) return operation.namespaceIds.some((namespaceId) => selectedNamespaceIds.has(namespaceId));
+    return !options.namespaceId;
+  });
+
+  return {
+    schemaVersion: "openskill-kit.learn-v2.skill-ontology-debug-view.v1",
+    generatedAt: artifact.generatedAt,
+    sourcePath: learnV2SafeLocalPath(file, root),
+    counts: {
+      ...artifact.counts,
+      selectedNamespaces: namespaces.length,
+      selectedOperations: operations.length
+    },
+    namespaces,
+    operations
+  };
+}
+
+async function latestSkillOntologyArtifactPath(root: string): Promise<string> {
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "skill-ontology");
+  const files = await fs.readdir(dir).catch(() => []);
+  const jsonFiles = files
+    .filter((file) => /^skill-ontology-(?:\d{14}|\d{8,})\.json$/.test(file) || file === "skill-ontology.json")
+    .sort();
+  const latest = jsonFiles.at(-1);
+  if (!latest) throw new Error("No Learn v2 skill-ontology artifact found. Run `openskill-kit osk learn --raw --surface-file <path> --apply` or `openskill-kit osk learn --extract-concepts` first.");
+  return path.join(dir, latest);
+}
+
+function namespaceFocusSet(
+  artifact: LearnV2SkillOntologyArtifact,
+  namespaceId?: string,
+  operationId?: string
+): Set<string> | undefined {
+  if (operationId) {
+    const operation = artifact.operations.find((item) => item.id === operationId);
+    return new Set(operation?.namespaceIds ?? []);
+  }
+  if (!namespaceId) return undefined;
+  const normalized = namespaceId.toLowerCase();
+  const matches = artifact.namespaces.filter((namespace) =>
+    namespace.id === namespaceId || namespace.label.toLowerCase() === normalized
+  );
+  return new Set(matches.map((namespace) => namespace.id));
 }
 
 function namespaceSignature(concept: LearnV2ConceptCard): { key: string; label: string; signals: string[] } {

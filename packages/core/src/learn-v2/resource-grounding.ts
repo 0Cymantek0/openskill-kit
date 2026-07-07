@@ -13,6 +13,37 @@ import { learnV2DeclassifyText, learnV2SafeLocalPath, learnV2ShortHash, learnV2S
 
 type AnchorTemplate = Omit<LearnV2OpenWorldResourceAnchor, "schemaVersion" | "id" | "conceptId" | "evidenceConceptIds" | "retrievedAt">;
 
+export interface LearnV2OpenWorldGroundingDebugAnchor {
+  id: string;
+  conceptId: string;
+  title: string;
+  citation: string;
+  uriHash: string;
+  resourceKind: LearnV2OpenWorldResourceAnchor["resourceKind"];
+  trustTier: LearnV2OpenWorldResourceAnchor["trustTier"];
+  alignment: LearnV2OpenWorldResourceAnchor["alignment"];
+  precedence: LearnV2OpenWorldResourceAnchor["precedence"];
+  retrievedAt: string;
+  licenseRisk: LearnV2OpenWorldResourceAnchor["licenseRisk"];
+  usedFor: LearnV2OpenWorldResourceAnchor["usedFor"];
+  alignedClaimCount: number;
+  conflictingClaimCount: number;
+  declassifiedSnippetIds: string[];
+  evidenceConceptIds: string[];
+  rationaleHash: string;
+  rationaleChars: number;
+}
+
+export interface LearnV2OpenWorldGroundingDebugView {
+  schemaVersion: "openskill-kit.learn-v2.openworld-grounding-debug-view.v1";
+  generatedAt: string;
+  sourcePath: string;
+  counts: LearnV2OpenWorldGroundingArtifact["counts"] & {
+    selectedAnchors: number;
+  };
+  anchors: LearnV2OpenWorldGroundingDebugAnchor[];
+}
+
 const anchorTemplates: Array<{ key: string; test: RegExp; anchors: AnchorTemplate[] }> = [
   {
     key: "ui-accessibility",
@@ -137,6 +168,78 @@ export async function writeLearnV2OpenWorldGroundingArtifact(
   await writeJsonAtomic(json, artifact);
   await fs.writeFile(markdown, renderGroundingArtifact(root, artifact), "utf8");
   return artifact;
+}
+
+export async function readLearnV2OpenWorldGroundingDebugView(
+  rootInput: string,
+  options: { groundingPath?: string; anchorId?: string; conceptId?: string } = {}
+): Promise<LearnV2OpenWorldGroundingDebugView> {
+  const root = path.resolve(rootInput);
+  const file = options.groundingPath ? path.resolve(root, options.groundingPath) : await latestOpenWorldGroundingArtifactPath(root);
+  const artifact = LearnV2OpenWorldGroundingArtifactSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+  const anchors = artifact.anchors.filter((anchor) => {
+    if (options.anchorId && options.conceptId) {
+      return anchor.id === options.anchorId || anchor.conceptId === options.conceptId || anchor.evidenceConceptIds.includes(options.conceptId);
+    }
+    if (options.anchorId) return anchor.id === options.anchorId;
+    if (options.conceptId) return anchor.conceptId === options.conceptId || anchor.evidenceConceptIds.includes(options.conceptId);
+    return true;
+  });
+  return {
+    schemaVersion: "openskill-kit.learn-v2.openworld-grounding-debug-view.v1",
+    generatedAt: artifact.generatedAt,
+    sourcePath: learnV2SafeLocalPath(file, root),
+    counts: {
+      ...artifact.counts,
+      selectedAnchors: anchors.length
+    },
+    anchors: anchors.map(toDebugAnchor)
+  };
+}
+
+async function latestOpenWorldGroundingArtifactPath(root: string): Promise<string> {
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "open-world-grounding");
+  const files = await fs.readdir(dir).catch(() => []);
+  const jsonFiles = files
+    .filter((file) => /^open-world-grounding-(?:\d{14}|\d{8,})\.json$/.test(file) || file === "open-world-grounding.json")
+    .sort();
+  const latest = jsonFiles.at(-1);
+  if (!latest) throw new Error("No Learn v2 open-world-grounding artifact found. Run `openskill-kit osk learn --raw --surface-file <path> --apply` or `openskill-kit osk learn --extract-concepts` first.");
+  return path.join(dir, latest);
+}
+
+function toDebugAnchor(anchor: LearnV2OpenWorldResourceAnchor): LearnV2OpenWorldGroundingDebugAnchor {
+  return {
+    id: anchor.id,
+    conceptId: anchor.conceptId,
+    title: anchor.title,
+    citation: safeGroundingCitation(anchor.uri),
+    uriHash: `sha256:${learnV2ShortHash(anchor.uri)}`,
+    resourceKind: anchor.resourceKind,
+    trustTier: anchor.trustTier,
+    alignment: anchor.alignment,
+    precedence: anchor.precedence,
+    retrievedAt: anchor.retrievedAt,
+    licenseRisk: anchor.licenseRisk,
+    usedFor: anchor.usedFor,
+    alignedClaimCount: anchor.alignedClaims.length,
+    conflictingClaimCount: anchor.conflictingClaims.length,
+    declassifiedSnippetIds: anchor.declassifiedSnippetIds,
+    evidenceConceptIds: anchor.evidenceConceptIds,
+    rationaleHash: `sha256:${learnV2ShortHash(anchor.rationale)}`,
+    rationaleChars: anchor.rationale.length
+  };
+}
+
+function safeGroundingCitation(uri: string): string {
+  if (uri.startsWith("project://")) return uri.split(/[?#]/)[0] || "project://";
+  try {
+    const parsed = new URL(uri);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
+  } catch {
+    // Fall through to hashed opaque citation.
+  }
+  return `uri:${learnV2ShortHash(uri)}`;
 }
 
 function makeAnchor(conceptId: string, key: string, template: AnchorTemplate, now: Date): LearnV2OpenWorldResourceAnchor {

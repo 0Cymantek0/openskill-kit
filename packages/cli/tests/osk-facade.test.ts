@@ -70,6 +70,9 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--debug-learning");
     expect(stdout).toContain("--debug-observation <observationId>");
     expect(stdout).toContain("--debug-hypothesis <hypothesisId>");
+    expect(stdout).toContain("--debug-ontology [namespaceId]");
+    expect(stdout).toContain("--debug-ontology-operation <operationId>");
+    expect(stdout).toContain("--debug-grounding [id]");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
     expect(stdout).toContain("deterministic-only|opencode-host-sanitized-only");
@@ -91,6 +94,12 @@ describe("osk CLI facade", () => {
     )).toBe(true);
     expect(parsed.stablePaths.some((item: { key: string; cli: string }) =>
       item.key === "conditional-learning" && item.cli.includes("--debug-learning")
+    )).toBe(true);
+    expect(parsed.stablePaths.some((item: { key: string; cli: string }) =>
+      item.key === "skill-ontology" && item.cli.includes("--debug-ontology")
+    )).toBe(true);
+    expect(parsed.stablePaths.some((item: { key: string; cli: string }) =>
+      item.key === "open-world-grounding" && item.cli.includes("--debug-grounding")
     )).toBe(true);
     expect(parsed.stablePaths.some((item: { key: string; sharePolicy: string; cli: string }) =>
       item.key === "episode-store"
@@ -419,6 +428,124 @@ describe("osk CLI facade", () => {
     expect(JSON.stringify(parsed)).not.toContain(root);
     expect(JSON.stringify(parsed)).not.toContain(privateText);
     expect(JSON.stringify(parsed)).not.toContain("raw_cli_obs");
+  });
+
+  it("renders Learn v2 ontology and grounding debug without raw grounding claims or local paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-debug-ontology-grounding-"));
+    await execCliJson(["init", "--json"], root);
+    const ontologyDir = path.join(root, ".openskill-kit", "learn-v2", "skill-ontology");
+    const groundingDir = path.join(root, ".openskill-kit", "learn-v2", "open-world-grounding");
+    await mkdir(ontologyDir, { recursive: true });
+    await mkdir(groundingDir, { recursive: true });
+    const ontologyPath = path.join(ontologyDir, "skill-ontology-20260630001400.json");
+    const groundingPath = path.join(groundingDir, "open-world-grounding-20260630001400.json");
+    const ontology = {
+      schemaVersion: "openskill-kit.learn-v2.skill-ontology-artifact.v1",
+      generatedAt: "2026-06-30T00:14:00.000Z",
+      namespaces: [{
+        schemaVersion: "openskill-kit.learn-v2.skill-namespace-candidate.v1",
+        id: "namespace_cli_ui",
+        label: "UI/UX design",
+        status: "candidate",
+        confidence: 0.81,
+        conceptIds: ["concept_cli_cta"],
+        representativeSignals: ["ui:surface-design", "ui:theme"],
+        rationale: "Grouped declassified UI behavior by observed design signals."
+      }],
+      operations: [{
+        schemaVersion: "openskill-kit.learn-v2.skill-ontology-operation.v1",
+        id: "ontology_op_cli_create",
+        operation: "create-namespace",
+        status: "candidate",
+        namespaceIds: ["namespace_cli_ui"],
+        conceptIds: ["concept_cli_cta"],
+        confidence: 0.81,
+        rationale: "Create emergent skill namespace from declassified UI behavior.",
+        reviewHint: "Accept when label and scope match observed behavior."
+      }],
+      counts: {
+        namespaces: 1,
+        candidateNamespaces: 1,
+        reviewNamespaces: 0,
+        representedConcepts: 1,
+        operations: 1,
+        createOperations: 1,
+        mergeOperations: 0,
+        splitOperations: 0,
+        attachOperations: 0
+      },
+      artifacts: {
+        json: ontologyPath,
+        markdown: path.join(ontologyDir, "skill-ontology-20260630001400.md")
+      }
+    };
+    const privateClaim = "PRIVATE_GROUNDING_CLAIM_SHOULD_NOT_PRINT";
+    const privateUriToken = "secret-token-should-not-print";
+    const grounding = {
+      schemaVersion: "openskill-kit.learn-v2.openworld-grounding-artifact.v1",
+      generatedAt: "2026-06-30T00:14:00.000Z",
+      anchors: [{
+        schemaVersion: "openskill-kit.learn-v2.openworld-resource-anchor.v1",
+        id: "ground_cli_ui",
+        conceptId: "concept_cli_cta",
+        title: "Private design guide",
+        uri: `https://private.example.invalid/design-system?token=${privateUriToken}#raw`,
+        resourceKind: "reference",
+        trustTier: "community",
+        alignment: "supports-review",
+        precedence: "resource-informs-review-only",
+        retrievedAt: "2026-06-30T00:14:00.000Z",
+        licenseRisk: "unknown",
+        alignedClaims: [privateClaim],
+        conflictingClaims: [],
+        declassifiedSnippetIds: ["snippet_cli_private"],
+        usedFor: ["conditions", "eval"],
+        rationale: "Use as review-only design grounding; direct user correction remains authoritative.",
+        evidenceConceptIds: ["concept_cli_cta"]
+      }],
+      counts: {
+        anchors: 1,
+        conceptCount: 1,
+        officialAnchors: 0,
+        projectAnchors: 0,
+        reviewOnlyAnchors: 1
+      },
+      artifacts: {
+        json: groundingPath,
+        markdown: path.join(groundingDir, "open-world-grounding-20260630001400.md")
+      }
+    };
+    await writeFile(ontologyPath, JSON.stringify(ontology, null, 2), "utf8");
+    await writeFile(groundingPath, JSON.stringify(grounding, null, 2), "utf8");
+
+    const ontologyText = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--debug-ontology"], { cwd: root, windowsHide: true });
+    expect(ontologyText.stdout).toContain("Learn v2 skill ontology dashboard");
+    expect(ontologyText.stdout).toContain("UI/UX design");
+    expect(ontologyText.stdout).toContain("create-namespace");
+    expect(ontologyText.stdout).not.toContain(root);
+
+    const ontologyJson = await execCliJson(["osk", "learn", "--debug-ontology", "namespace_cli_ui", "--json"], root);
+    expect(ontologyJson.schemaVersion).toBe("openskill-kit.learn-v2.skill-ontology-debug-view.v1");
+    expect(ontologyJson.namespaces).toHaveLength(1);
+    expect(ontologyJson.operations[0].id).toBe("ontology_op_cli_create");
+    expect(JSON.stringify(ontologyJson)).not.toContain(root);
+
+    const groundingText = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--debug-grounding"], { cwd: root, windowsHide: true });
+    expect(groundingText.stdout).toContain("Learn v2 open-world grounding dashboard");
+    expect(groundingText.stdout).toContain("Private design guide");
+    expect(groundingText.stdout).toContain("uriHash=sha256:");
+    expect(groundingText.stdout).toContain("Claims: aligned=1");
+    expect(groundingText.stdout).not.toContain(root);
+    expect(groundingText.stdout).not.toContain(privateClaim);
+    expect(groundingText.stdout).not.toContain(privateUriToken);
+
+    const groundingJson = await execCliJson(["osk", "learn", "--debug-grounding", "concept_cli_cta", "--json"], root);
+    expect(groundingJson.schemaVersion).toBe("openskill-kit.learn-v2.openworld-grounding-debug-view.v1");
+    expect(groundingJson.anchors).toHaveLength(1);
+    expect(groundingJson.anchors[0].citation).toBe("https://private.example.invalid/design-system");
+    expect(JSON.stringify(groundingJson)).not.toContain(root);
+    expect(JSON.stringify(groundingJson)).not.toContain(privateClaim);
+    expect(JSON.stringify(groundingJson)).not.toContain(privateUriToken);
   });
 
   it("renders Learn v2 episode debug without raw episode text or local paths", async () => {

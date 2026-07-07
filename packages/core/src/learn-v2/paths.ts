@@ -160,7 +160,7 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     kind: "glob",
     lifecycle: "debug",
     sharePolicy: "local-declassified",
-    cli: "openskill-kit osk learn --raw --surface-file <path>",
+    cli: "openskill-kit osk learn --debug-ontology",
     notes: ["Dynamic namespace candidates plus create/merge/split/attach operations."]
   },
   {
@@ -170,7 +170,7 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     kind: "glob",
     lifecycle: "debug",
     sharePolicy: "local-declassified",
-    cli: "openskill-kit osk learn --raw --surface-file <path>",
+    cli: "openskill-kit osk learn --debug-grounding",
     notes: ["Local project anchors first, then authority-tiered external resources."]
   },
   {

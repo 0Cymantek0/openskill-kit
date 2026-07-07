@@ -79,7 +79,9 @@ import {
   readLearnV2ConditionalLearningDebugView,
   buildLearnV2SkillNamespaces,
   buildLearnV2SkillOntologyOperations,
+  readLearnV2SkillOntologyDebugView,
   writeLearnV2OpenWorldGroundingArtifact,
+  readLearnV2OpenWorldGroundingDebugView,
   readProjectConfig,
   type LearnV2BehaviorAtom,
   type LearnV2NormalizedEvidence,
@@ -2838,6 +2840,16 @@ describe("learn-v2 substrate", () => {
     expect(skillOntologyJson.operations.some((operation: { operation: string; status: string }) =>
       operation.operation === "create-namespace" && ["candidate", "needs-review"].includes(operation.status)
     )).toBe(true);
+    const ontologyDebug = await readLearnV2SkillOntologyDebugView(root);
+    expect(ontologyDebug.schemaVersion).toBe("openskill-kit.learn-v2.skill-ontology-debug-view.v1");
+    expect(ontologyDebug.namespaces.some((namespace) => namespace.label === "UI/UX design")).toBe(true);
+    expect(ontologyDebug.operations.some((operation) => operation.operation === "split-namespace")).toBe(true);
+    expect(JSON.stringify(ontologyDebug)).not.toContain(root);
+    const focusedOntologyDebug = await readLearnV2SkillOntologyDebugView(root, { namespaceId: ontologyDebug.namespaces[0]!.id });
+    expect(focusedOntologyDebug.namespaces).toHaveLength(1);
+    expect(focusedOntologyDebug.operations.every((operation) =>
+      operation.namespaceIds.includes(focusedOntologyDebug.namespaces[0]!.id)
+    )).toBe(true);
     expect(result.artifacts.learnV2OpenWorldGroundingPath).toContain("open-world-grounding");
     const groundingMarkdown = await readText(result.artifacts.learnV2OpenWorldGroundingPath);
     expect(groundingMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
@@ -2855,6 +2867,15 @@ describe("learn-v2 substrate", () => {
       licenseRisk: "low"
     });
     expect(wcagAnchor.usedFor).toEqual(expect.arrayContaining(["verification", "eval"]));
+    const groundingDebug = await readLearnV2OpenWorldGroundingDebugView(root);
+    expect(groundingDebug.schemaVersion).toBe("openskill-kit.learn-v2.openworld-grounding-debug-view.v1");
+    expect(groundingDebug.anchors.some((anchor) => anchor.title === "W3C WCAG 2.2 Quick Reference")).toBe(true);
+    expect(groundingDebug.anchors.every((anchor) => anchor.uriHash.startsWith("sha256:"))).toBe(true);
+    expect(groundingDebug.anchors.every((anchor) => anchor.rationaleHash.startsWith("sha256:"))).toBe(true);
+    expect(JSON.stringify(groundingDebug)).not.toContain(root);
+    const focusedGroundingDebug = await readLearnV2OpenWorldGroundingDebugView(root, { conceptId: wcagAnchor.conceptId });
+    expect(focusedGroundingDebug.anchors.length).toBeGreaterThanOrEqual(1);
+    expect(focusedGroundingDebug.anchors.every((anchor) => anchor.evidenceConceptIds.includes(wcagAnchor.conceptId))).toBe(true);
     expect(result.artifacts.learnV2ConceptDebugTracePath).toContain("concept-debug-trace");
     expect(result.digest.conceptDebugTraces).toBeGreaterThanOrEqual(3);
     const debugTraceMarkdown = await readText(result.artifacts.learnV2ConceptDebugTracePath);

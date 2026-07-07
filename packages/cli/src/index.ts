@@ -104,6 +104,8 @@ import {
   readLearnV2EpisodeDebugView,
   readLearnV2SourceGateDebugView,
   readLearnV2ConditionalLearningDebugView,
+  readLearnV2SkillOntologyDebugView,
+  readLearnV2OpenWorldGroundingDebugView,
   getLearnV2ArtifactPathManifest,
   RawLearningModelModes,
   readEvidenceCards,
@@ -371,6 +373,11 @@ osk.command("learn")
   .option("--debug-observation <observationId>", "Show one Learn-v2 learning observation without raw text")
   .option("--debug-hypothesis <hypothesisId>", "Show one Learn-v2 conditional hypothesis and linked observations")
   .option("--debug-learning-file <path>", "Specific Learn-v2 conditional-learning JSON artifact")
+  .option("--debug-ontology [namespaceId]", "Show declassified Learn-v2 emergent namespace candidates and ontology operations")
+  .option("--debug-ontology-operation <operationId>", "Show one Learn-v2 ontology operation and linked namespaces")
+  .option("--debug-ontology-file <path>", "Specific Learn-v2 skill-ontology JSON artifact")
+  .option("--debug-grounding [id]", "Show declassified Learn-v2 open-world grounding anchors, or one anchor/concept id")
+  .option("--debug-grounding-file <path>", "Specific Learn-v2 open-world-grounding JSON artifact")
   .option("--debug-trace-file <path>", "Specific Learn-v2 concept debug trace JSON artifact")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
   .option("--max-pinned-raw-vault-bytes <number>", "Learn-v2 pinned raw vault byte budget", parseIntegerOption)
@@ -468,6 +475,26 @@ osk.command("learn")
         hypothesisId: options.debugHypothesis
       });
       output(options.json, result, renderLearnV2ConditionalLearningDebugView(result, Boolean(options.debugObservation || options.debugHypothesis)));
+      return;
+    }
+    if (options.debugOntology !== undefined || options.debugOntologyOperation || options.debugOntologyFile) {
+      const namespaceId = typeof options.debugOntology === "string" ? options.debugOntology : undefined;
+      const result = await readLearnV2SkillOntologyDebugView(process.cwd(), {
+        ontologyPath: options.debugOntologyFile,
+        namespaceId,
+        operationId: options.debugOntologyOperation
+      });
+      output(options.json, result, renderLearnV2SkillOntologyDebugView(result, Boolean(namespaceId || options.debugOntologyOperation)));
+      return;
+    }
+    if (options.debugGrounding !== undefined || options.debugGroundingFile) {
+      const focusId = typeof options.debugGrounding === "string" ? options.debugGrounding : undefined;
+      const result = await readLearnV2OpenWorldGroundingDebugView(process.cwd(), {
+        groundingPath: options.debugGroundingFile,
+        anchorId: focusId,
+        conceptId: focusId
+      });
+      output(options.json, result, renderLearnV2OpenWorldGroundingDebugView(result, Boolean(focusId)));
       return;
     }
     if (options.observability === true || options.observabilityFile) {
@@ -2517,6 +2544,75 @@ function renderLearnV2ConditionalLearningDebugView(
     }
     if (!focused && view.admissionDecisions.length > 20) lines.push(`  showing 20/${view.admissionDecisions.length} admission decisions`);
   }
+  return lines.join("\n");
+}
+
+function renderLearnV2SkillOntologyDebugView(
+  view: Awaited<ReturnType<typeof readLearnV2SkillOntologyDebugView>>,
+  focused: boolean
+): string {
+  const lines = [
+    focused ? "Learn v2 skill ontology debug" : "Learn v2 skill ontology dashboard",
+    "",
+    `Generated: ${view.generatedAt}`,
+    `Source: ${view.sourcePath}`,
+    `Namespaces: ${view.counts.selectedNamespaces}/${view.counts.namespaces} selected`,
+    `Candidates: ${view.counts.candidateNamespaces}; review=${view.counts.reviewNamespaces}; representedConcepts=${view.counts.representedConcepts}`,
+    `Operations: ${view.counts.selectedOperations}/${view.counts.operations} selected; create=${view.counts.createOperations}, merge=${view.counts.mergeOperations}, split=${view.counts.splitOperations}, attach=${view.counts.attachOperations}`,
+    ""
+  ];
+  if (!view.namespaces.length && !view.operations.length) lines.push("No matching skill-ontology entries found.");
+  if (view.namespaces.length) {
+    lines.push("Namespaces:");
+    for (const namespace of view.namespaces.slice(0, focused ? 4 : 12)) {
+      lines.push(`  ${namespace.id}: ${namespace.label}; status=${namespace.status}; confidence=${namespace.confidence.toFixed(2)}`);
+      lines.push(`    Concepts: ${namespace.conceptIds.join(", ") || "none"}`);
+      lines.push(`    Signals: ${namespace.representativeSignals.join(", ") || "none"}`);
+      lines.push(`    Rationale: ${namespace.rationale}`);
+    }
+    if (!focused && view.namespaces.length > 12) lines.push(`  showing 12/${view.namespaces.length} namespaces`);
+    lines.push("");
+  }
+  if (view.operations.length) {
+    lines.push("Ontology operations:");
+    for (const operation of view.operations.slice(0, focused ? 8 : 16)) {
+      lines.push(`  ${operation.id}: ${operation.operation}; status=${operation.status}; confidence=${operation.confidence.toFixed(2)}`);
+      lines.push(`    Namespaces: ${operation.namespaceIds.join(", ") || "none"}`);
+      lines.push(`    Concepts: ${operation.conceptIds.join(", ") || "none"}`);
+      lines.push(`    Rationale: ${operation.rationale}`);
+      lines.push(`    Review hint: ${operation.reviewHint}`);
+    }
+    if (!focused && view.operations.length > 16) lines.push(`  showing 16/${view.operations.length} operations`);
+  }
+  return lines.join("\n");
+}
+
+function renderLearnV2OpenWorldGroundingDebugView(
+  view: Awaited<ReturnType<typeof readLearnV2OpenWorldGroundingDebugView>>,
+  focused: boolean
+): string {
+  const lines = [
+    focused ? "Learn v2 open-world grounding debug" : "Learn v2 open-world grounding dashboard",
+    "",
+    `Generated: ${view.generatedAt}`,
+    `Source: ${view.sourcePath}`,
+    `Anchors: ${view.counts.selectedAnchors}/${view.counts.anchors} selected`,
+    `Concepts grounded: ${view.counts.conceptCount}; project=${view.counts.projectAnchors}; official=${view.counts.officialAnchors}; reviewOnly=${view.counts.reviewOnlyAnchors}`,
+    "Precedence: user correction > project docs > approved/resource review anchors; model prior cannot become grounding evidence alone.",
+    ""
+  ];
+  if (!view.anchors.length) lines.push("No matching open-world grounding anchors found.");
+  for (const anchor of view.anchors.slice(0, focused ? 4 : 12)) {
+    lines.push(`${anchor.id}: ${anchor.title}`);
+    lines.push(`  Concept: ${anchor.conceptId}; evidence=${anchor.evidenceConceptIds.join(", ") || "none"}`);
+    lines.push(`  Citation: ${anchor.citation}; uriHash=${anchor.uriHash}`);
+    lines.push(`  Kind: ${anchor.resourceKind}; trust=${anchor.trustTier}; alignment=${anchor.alignment}; precedence=${anchor.precedence}`);
+    lines.push(`  Used for: ${anchor.usedFor.join(", ") || "review"}; license=${anchor.licenseRisk}; retrieved=${anchor.retrievedAt}`);
+    lines.push(`  Claims: aligned=${anchor.alignedClaimCount}, conflicting=${anchor.conflictingClaimCount}; snippets=${anchor.declassifiedSnippetIds.join(", ") || "none"}`);
+    lines.push(`  Rationale: hash=${anchor.rationaleHash}; chars=${anchor.rationaleChars}`);
+    lines.push("");
+  }
+  if (!focused && view.anchors.length > 12) lines.push(`Showing 12/${view.anchors.length} anchors. Use --debug-grounding <anchorOrConceptId> for one focus.`);
   return lines.join("\n");
 }
 
