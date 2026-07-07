@@ -435,6 +435,26 @@ export const LearnV2MemoryAdmissionDecisionSchema = z.object({
 });
 export type LearnV2MemoryAdmissionDecision = z.infer<typeof LearnV2MemoryAdmissionDecisionSchema>;
 
+export const LearnV2ConditionalLearningArtifactSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.conditional-learning-artifact.v1"),
+  generatedAt: z.string().datetime(),
+  observations: z.array(LearnV2LearningObservationSchema).default([]),
+  hypotheses: z.array(LearnV2ConditionalHypothesisSchema).default([]),
+  admissionDecisions: z.array(LearnV2MemoryAdmissionDecisionSchema).default([]),
+  counts: z.object({
+    observations: z.number().int().min(0),
+    hypotheses: z.number().int().min(0),
+    promotedHypotheses: z.number().int().min(0),
+    observeOnly: z.number().int().min(0),
+    rejectedNoise: z.number().int().min(0)
+  }),
+  artifacts: z.object({
+    json: z.string(),
+    markdown: z.string()
+  })
+});
+export type LearnV2ConditionalLearningArtifact = z.infer<typeof LearnV2ConditionalLearningArtifactSchema>;
+
 export const LearnV2LlmConceptExtractionOutputSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.llm-concept-extraction-output.v1"),
   atoms: z.array(z.object({

@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
+import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { runLearnV2Eval, type LearnV2EvalOptions } from "./eval.js";
@@ -24,9 +25,13 @@ export interface LearnV2ConceptExtractionResult {
   extractedAt: string;
   episodeCount: number;
   atomCount: number;
+  conditionalObservationCount: number;
+  conditionalHypothesisCount: number;
+  promotedConditionalHypothesisCount: number;
   rejectedAtomCount: number;
   conceptCount: number;
   conceptStorePath: string;
+  conditionalLearningPath: string;
 }
 
 export interface LearnV2PersistedEvalResult {
@@ -65,16 +70,22 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
   const root = path.resolve(rootInput);
   const episodeStore = await readLearnV2EpisodeStore(root);
   const extracted = extractLearnV2BehaviorAtoms(episodeStore.episodes);
-  const concepts = mergeLearnV2ConceptCards(extracted.atoms, now);
+  const conditionalLearning = await writeLearnV2ConditionalLearningArtifact(root, episodeStore.episodes, now);
+  const atoms = [...extracted.atoms, ...conditionalLearning.atoms];
+  const concepts = mergeLearnV2ConceptCards(atoms, now);
   const store = await writeLearnV2ConceptStore(root, concepts, now);
   return {
     schemaVersion: "openskill-kit.learn-v2.extract-concepts-result.v1",
     extractedAt: now.toISOString(),
     episodeCount: episodeStore.episodes.length,
-    atomCount: extracted.atoms.length,
+    atomCount: atoms.length,
+    conditionalObservationCount: conditionalLearning.counts.observations,
+    conditionalHypothesisCount: conditionalLearning.counts.hypotheses,
+    promotedConditionalHypothesisCount: conditionalLearning.counts.promotedHypotheses,
     rejectedAtomCount: extracted.rejected.length,
     conceptCount: store.cards.length,
-    conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json")
+    conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
+    conditionalLearningPath: conditionalLearning.artifacts.markdown
   };
 }
 

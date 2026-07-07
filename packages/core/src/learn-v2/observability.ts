@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
 import type { LearnV2ModelExecutionPolicyReport } from "./pipeline.js";
 import { readLearnV2ConceptOutcomeTelemetrySummary, type LearnV2ConceptOutcomeTelemetrySummary } from "./activation.js";
 import { learnV2SafeLocalPath } from "./utils.js";
@@ -151,6 +151,20 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
       harmfulOutcomeRecords: 0
     })
   }),
+  learningIntelligence: z.object({
+    observations: z.number().int().min(0),
+    hypotheses: z.number().int().min(0),
+    promotedHypotheses: z.number().int().min(0),
+    observeOnly: z.number().int().min(0),
+    rejectedNoise: z.number().int().min(0),
+    artifactPath: z.string().optional()
+  }).default({
+    observations: 0,
+    hypotheses: 0,
+    promotedHypotheses: 0,
+    observeOnly: 0,
+    rejectedNoise: 0
+  }),
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
     leakStatus: z.enum(["pass", "fail"]),
@@ -219,6 +233,7 @@ export interface LearnV2PipelineObservabilityInput {
   conflictLedger?: LearnV2ConflictLedger;
   conceptDrift?: LearnV2ConceptDriftReport;
   declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
+  conditionalLearning?: LearnV2ConditionalLearningArtifact;
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
   evidenceQualityScores?: LearnV2EvidenceQualityScore[];
@@ -353,6 +368,16 @@ export async function writeLearnV2PipelineObservabilityReport(
       driftReasonCounts: conceptDrift ? countBy(conceptDrift.staleCandidates.map((candidate) => candidate.reason)) : input.reviewQueue.driftSummary.reasonCounts,
       outcomeTelemetry
     },
+    learningIntelligence: {
+      observations: input.conditionalLearning?.counts.observations ?? 0,
+      hypotheses: input.conditionalLearning?.counts.hypotheses ?? 0,
+      promotedHypotheses: input.conditionalLearning?.counts.promotedHypotheses ?? 0,
+      observeOnly: input.conditionalLearning?.counts.observeOnly ?? 0,
+      rejectedNoise: input.conditionalLearning?.counts.rejectedNoise ?? 0,
+      artifactPath: input.conditionalLearning?.artifacts.markdown
+        ? learnV2SafeLocalPath(input.conditionalLearning.artifacts.markdown, root)
+        : undefined
+    },
     qualityGates: {
       evalStatus: input.evalReport.status,
       leakStatus: input.evalReport.leakCheck.status,
@@ -461,6 +486,10 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Concept cards: ${report.concepts.cards}`,
     `- Status: ${renderCounts(report.concepts.statusCounts)}`,
     `- Risk: ${renderCounts(report.concepts.riskCounts)}`,
+    `- Conditional observations: ${report.learningIntelligence.observations}`,
+    `- Conditional hypotheses: ${report.learningIntelligence.hypotheses} (${report.learningIntelligence.promotedHypotheses} promoted)`,
+    `- Memory admission: observe-only=${report.learningIntelligence.observeOnly}, rejected-noise=${report.learningIntelligence.rejectedNoise}`,
+    `- Conditional artifact: ${report.learningIntelligence.artifactPath ?? "none"}`,
     `- Review-ready cards: ${report.concepts.reviewReadyCards}`,
     `- Review focus: ${report.concepts.reviewFocusCards} focus, ${report.concepts.reviewAppendixCards} appendix`,
     `- Unresolved conflicts: ${report.concepts.unresolvedConflicts}`,

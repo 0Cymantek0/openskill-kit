@@ -11,6 +11,7 @@ import { readLearnV2Surface, type LearnV2SurfaceAdapterDetection, type LearnV2Su
 import { storeLearnV2RawEvidence, learnV2VaultRoot } from "./vault.js";
 import {
   LearnV2ConceptCardSchema,
+  LearnV2ConditionalLearningArtifactSchema,
   LearnV2ConceptDriftReportSchema,
   LearnV2ConflictLedgerSchema,
   LearnV2CounterevidenceLedgerSchema,
@@ -20,6 +21,7 @@ import {
   LearnV2ReviewQueueSchema,
   type LearnV2BehaviorAtom,
   type LearnV2ConceptCard,
+  type LearnV2ConditionalLearningArtifact,
   type LearnV2ConceptDriftReport,
   type LearnV2ConflictLedger,
   type LearnV2CounterevidenceLedger,
@@ -33,6 +35,7 @@ import {
 import { normalizeLearnV2Evidence } from "./normalize.js";
 import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
+import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { writeLearnV2ConflictLedger } from "./conflicts.js";
 import { writeLearnV2CounterevidenceLedger } from "./counterevidence-ledger.js";
@@ -174,6 +177,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2ConceptDriftPath: string;
     learnV2SourceGateReviewJsonPath: string;
     learnV2SourceGateReviewPath: string;
+    learnV2ConditionalLearningPath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -187,6 +191,9 @@ interface LearnV2RawLocalLearningRunCompat {
     analysisFramesWritten: number;
     learningWindows: number;
     behaviorAtoms: number;
+    conditionalObservations: number;
+    conditionalHypotheses: number;
+    promotedConditionalHypotheses: number;
     conceptCards: number;
     currentRunConceptCards: number;
     mergedConceptCards: number;
@@ -209,6 +216,7 @@ interface LearnV2RawLocalLearningRunCompat {
       mergedForArtifacts: number;
     };
     rejectedAtoms: ReturnType<typeof extractLearnV2BehaviorAtoms>["rejected"];
+    conditionalLearning: LearnV2ConditionalLearningArtifact;
     conceptStorePath: string;
     reviewQueuePath: string;
     compilePreviewPath: string;
@@ -450,8 +458,12 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     routingManifestPath: modelRequests.routingManifestPath,
     firstManifestPath: modelRequests.requests[0]?.manifestPath
   });
+  const conditionalLearning = shouldWriteDerivedArtifacts
+    ? await writeLearnV2ConditionalLearningArtifact(root, episodes, now)
+    : emptyConditionalLearningArtifact(root, now);
   const extracted = extractLearnV2BehaviorAtoms(rawEpisodes);
-  const concepts = declassifyLearnV2ConceptCards(mergeLearnV2ConceptCards(extracted.atoms, now), root, config);
+  const behaviorAtoms = [...extracted.atoms, ...conditionalLearning.atoms];
+  const concepts = declassifyLearnV2ConceptCards(mergeLearnV2ConceptCards(behaviorAtoms, now), root, config);
   const canonicalConceptStateWritten = !previewOnly && concepts.length > 0;
   const conceptStore = previewOnly
     ? await writePreviewLearnV2ConceptStore(root, config.projectId, concepts, now)
@@ -490,7 +502,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   for (const source of sourceDigests) {
     const rawRef = source.learnV2.rawRef;
     source.windowCount = episodes.filter((episode) => episode.rawRefs.includes(rawRef)).length;
-    source.atomCount = extracted.atoms.filter((atom) => atom.rawRefs.includes(rawRef)).length;
+    source.atomCount = behaviorAtoms.filter((atom) => atom.rawRefs.includes(rawRef)).length;
     source.conceptCount = concepts.filter((concept) => concept.rawRefs.includes(rawRef)).length;
   }
   const reviewQueue = shouldWriteDerivedArtifacts
@@ -562,12 +574,14 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
       learnV2ConceptDriftPath: conceptDrift.artifactPath,
       learnV2SourceGateReviewJsonPath: sourceGateReview.paths.json,
-      learnV2SourceGateReviewPath: sourceGateReview.paths.markdown
+      learnV2SourceGateReviewPath: sourceGateReview.paths.markdown,
+      learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown
     },
     conflictLedger: conflictLedger.ledger,
     conceptDrift: conceptDrift.report,
     declassifiedSnippets,
     evidenceQualityScores: evidenceQuality.scores,
+    conditionalLearning,
     nextActions
   });
   const result: LearnV2RawLocalLearningRunCompat = {
@@ -600,7 +614,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2DeclassifiedSnippetsPath: declassifiedSnippets.artifacts.markdown,
       learnV2ConceptDriftPath: conceptDrift.artifactPath,
       learnV2SourceGateReviewJsonPath: sourceGateReview.paths.json,
-      learnV2SourceGateReviewPath: sourceGateReview.paths.markdown
+      learnV2SourceGateReviewPath: sourceGateReview.paths.markdown,
+      learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown
     },
     lifecycle,
     digest: {
@@ -613,7 +628,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       canonicalConceptStateWritten,
       analysisFramesWritten: sourceDigests.length,
       learningWindows: episodes.length,
-      behaviorAtoms: extracted.atoms.length,
+      behaviorAtoms: behaviorAtoms.length,
+      conditionalObservations: conditionalLearning.counts.observations,
+      conditionalHypotheses: conditionalLearning.counts.hypotheses,
+      promotedConditionalHypotheses: conditionalLearning.counts.promotedHypotheses,
       conceptCards: concepts.length,
       currentRunConceptCards: concepts.length,
       mergedConceptCards: conceptCardsForArtifacts.length,
@@ -653,6 +671,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       },
       conceptStorePath,
       rejectedAtoms: extracted.rejected,
+      conditionalLearning,
       reviewQueuePath: reviewQueue.artifacts.markdown,
       compilePreviewPath: compilePreview.artifacts.markdown,
       evalReportPath: evalReport.artifacts.markdown,
@@ -702,6 +721,32 @@ function emptyEvalReport(root: string): LearnV2EvalReport {
       markdown: path.join(root, ".openskill-kit", "learn-v2", "evals", "source-gate-only", "learn-v2-eval.md")
     }
   });
+}
+
+function emptyConditionalLearningArtifact(root: string, now: Date): LearnV2ConditionalLearningArtifact & { atoms: LearnV2BehaviorAtom[] } {
+  const json = path.join(root, ".openskill-kit", "learn-v2", "conditional-learning", "conditional-learning.json");
+  const markdown = path.join(root, ".openskill-kit", "learn-v2", "conditional-learning", "conditional-learning.md");
+  return {
+    ...LearnV2ConditionalLearningArtifactSchema.parse({
+      schemaVersion: "openskill-kit.learn-v2.conditional-learning-artifact.v1",
+      generatedAt: now.toISOString(),
+      observations: [],
+      hypotheses: [],
+      admissionDecisions: [],
+      counts: {
+        observations: 0,
+        hypotheses: 0,
+        promotedHypotheses: 0,
+        observeOnly: 0,
+        rejectedNoise: 0
+      },
+      artifacts: {
+        json,
+        markdown
+      }
+    }),
+    atoms: []
+  };
 }
 
 function emptyCompilePreview(root: string, now: Date): LearnV2CompilePreview {
@@ -1191,6 +1236,9 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Learning input boundary: ${result.digest.learningInputBoundary}`,
     `- Task episodes: ${result.digest.learningWindows}`,
     `- Behavior atoms: ${result.digest.behaviorAtoms}`,
+    `- Conditional observations: ${result.digest.conditionalObservations}`,
+    `- Conditional hypotheses: ${result.digest.conditionalHypotheses}`,
+    `- Promoted conditional hypotheses: ${result.digest.promotedConditionalHypotheses}`,
     `- Concept cards: ${result.digest.conceptCards}`,
     `- Events appended: ${result.digest.eventsAppended}`,
     `- Overall quality: ${result.quality.overallScore.toFixed(2)}`,
@@ -1210,6 +1258,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Concept drift: ${result.artifacts.learnV2ConceptDriftPath}`,
     `- Source gate review: ${result.artifacts.learnV2SourceGateReviewPath}`,
     `- Source gate review JSON: ${result.artifacts.learnV2SourceGateReviewJsonPath}`,
+    `- Conditional learning: ${result.artifacts.learnV2ConditionalLearningPath}`,
     `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
     "",
     "## Quality",

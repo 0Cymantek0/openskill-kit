@@ -2708,6 +2708,48 @@ describe("learn-v2 substrate", () => {
     expect(result.learnV2).toBeTruthy();
   });
 
+  it("runs conditional learning inside raw-local pipeline and exposes debug artifacts", async () => {
+    const root = await tempProject();
+    const transcript = path.join(root, "ui-contrast-session.md");
+    await writeFile(transcript, [
+      `user: ${root} packages/site/src/LandingButton.tsx Make independent button green on white landing page.`,
+      "user: packages/site/src/DarkButton.tsx No, this time I want blue for independent button on dark page.",
+      "user: packages/site/src/CardButton.tsx For dark card button, make it orange."
+    ].join("\n"), "utf8");
+
+    const result = await runRawLocalLearning(root, {
+      sourceFiles: [transcript],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:00:20Z")
+    });
+
+    expect(result.artifacts.learnV2ConditionalLearningPath).toContain("conditional-learning");
+    expect(result.digest.conditionalObservations).toBe(3);
+    expect(result.digest.conditionalHypotheses).toBe(3);
+    expect(result.digest.promotedConditionalHypotheses).toBe(3);
+    expect(result.digest.behaviorAtoms).toBeGreaterThanOrEqual(3);
+    const conditionalMarkdown = await readText(result.artifacts.learnV2ConditionalLearningPath);
+    expect(conditionalMarkdown).toContain("Promoted hypotheses: 3");
+    expect(conditionalMarkdown).toContain("component.container=card");
+    expect(conditionalMarkdown).not.toContain(root);
+    const conceptText = JSON.stringify(result.learnV2.currentRunConcepts.map((concept) => ({
+      behavior: concept.canonicalBehavior,
+      conditions: concept.conditions
+    }))).toLowerCase();
+    expect(conceptText).toContain("prefer green for button color");
+    expect(conceptText).toContain("prefer blue for button color");
+    expect(conceptText).toContain("prefer orange for button color");
+    expect(conceptText).toContain("component is inside a card");
+    const observability = JSON.parse(await readText(result.artifacts.learnV2ObservabilityReportPath));
+    expect(observability.learningIntelligence).toMatchObject({
+      observations: 3,
+      hypotheses: 3,
+      promotedHypotheses: 3
+    });
+    expect(await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`))).toContain("Conditional hypotheses: 3 (3 promoted)");
+  });
+
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
     const root = await tempProject();
     const terminal = path.join(os.tmpdir(), `osk-review-needed-${Date.now()}.log`);

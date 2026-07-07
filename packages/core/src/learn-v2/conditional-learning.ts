@@ -1,10 +1,15 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { writeJsonAtomic } from "../storage/atomic.js";
 import {
   LearnV2BehaviorAtomSchema,
+  LearnV2ConditionalLearningArtifactSchema,
   LearnV2ConditionalHypothesisSchema,
   LearnV2ContextFactorSchema,
   LearnV2LearningObservationSchema,
   LearnV2MemoryAdmissionDecisionSchema,
   type LearnV2BehaviorAtom,
+  type LearnV2ConditionalLearningArtifact,
   type LearnV2ConditionalHypothesis,
   type LearnV2ContextFactor,
   type LearnV2LearningObservation,
@@ -12,9 +17,68 @@ import {
   type LearnV2NormalizedEvidence,
   type LearnV2TaskEpisode
 } from "./schemas.js";
-import { learnV2NormalizeStatement, learnV2ShortHash } from "./utils.js";
+import { learnV2NormalizeStatement, learnV2SafeLocalPath, learnV2ShortHash } from "./utils.js";
 
 const colorTerms = ["green", "blue", "orange", "red", "purple", "yellow", "black", "white", "gray", "grey"];
+
+export interface LearnV2ConditionalLearningResult {
+  observations: LearnV2LearningObservation[];
+  hypotheses: LearnV2ConditionalHypothesis[];
+  admissionDecisions: LearnV2MemoryAdmissionDecision[];
+  atoms: LearnV2BehaviorAtom[];
+}
+
+export function runLearnV2ConditionalLearning(episodes: LearnV2TaskEpisode[]): LearnV2ConditionalLearningResult {
+  const observations = buildLearnV2LearningObservations(episodes);
+  const hypotheses = inferLearnV2ConditionalHypotheses(observations);
+  const admissionDecisions = decideLearnV2MemoryAdmission({ observations, hypotheses });
+  const promotedHypothesisIds = new Set(admissionDecisions
+    .filter((item) => item.subjectKind === "hypothesis" && item.decision === "promote-candidate")
+    .map((item) => item.subjectId));
+  const atoms = learnV2ConditionalHypothesesToBehaviorAtoms(
+    hypotheses.filter((hypothesis) => promotedHypothesisIds.has(hypothesis.id)),
+    observations
+  );
+  return { observations, hypotheses, admissionDecisions, atoms };
+}
+
+export async function writeLearnV2ConditionalLearningArtifact(
+  rootInput: string,
+  episodes: LearnV2TaskEpisode[],
+  now = new Date()
+): Promise<LearnV2ConditionalLearningArtifact & { atoms: LearnV2BehaviorAtom[] }> {
+  const root = path.resolve(rootInput);
+  const stamp = now.toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "conditional-learning");
+  const json = path.join(dir, `conditional-learning-${stamp}.json`);
+  const markdown = path.join(dir, `conditional-learning-${stamp}.md`);
+  const result = runLearnV2ConditionalLearning(episodes);
+  const promotedHypothesisIds = new Set(result.admissionDecisions
+    .filter((item) => item.subjectKind === "hypothesis" && item.decision === "promote-candidate")
+    .map((item) => item.subjectId));
+  const artifact = LearnV2ConditionalLearningArtifactSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.conditional-learning-artifact.v1",
+    generatedAt: now.toISOString(),
+    observations: result.observations,
+    hypotheses: result.hypotheses,
+    admissionDecisions: result.admissionDecisions,
+    counts: {
+      observations: result.observations.length,
+      hypotheses: result.hypotheses.length,
+      promotedHypotheses: result.hypotheses.filter((item) => promotedHypothesisIds.has(item.id)).length,
+      observeOnly: result.admissionDecisions.filter((item) => item.decision === "observe-only").length,
+      rejectedNoise: result.admissionDecisions.filter((item) => item.decision === "reject-noise").length
+    },
+    artifacts: {
+      json,
+      markdown
+    }
+  });
+  await fs.mkdir(dir, { recursive: true });
+  await writeJsonAtomic(json, artifact);
+  await fs.writeFile(markdown, renderLearnV2ConditionalLearningArtifact(root, artifact), "utf8");
+  return { ...artifact, atoms: result.atoms };
+}
 
 export function extractLearnV2ContextFactors(input: {
   text?: string;
@@ -432,4 +496,58 @@ function normalize(value: string): string {
 
 function normalizeValue(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function renderLearnV2ConditionalLearningArtifact(root: string, artifact: LearnV2ConditionalLearningArtifact): string {
+  const lines = [
+    "# Learn v2 Conditional Learning",
+    "",
+    `Generated: ${artifact.generatedAt}`,
+    "",
+    "## Summary",
+    "",
+    `- Observations: ${artifact.counts.observations}`,
+    `- Hypotheses: ${artifact.counts.hypotheses}`,
+    `- Promoted hypotheses: ${artifact.counts.promotedHypotheses}`,
+    `- Observe-only decisions: ${artifact.counts.observeOnly}`,
+    `- Rejected noise: ${artifact.counts.rejectedNoise}`,
+    "",
+    "## Hypotheses",
+    ""
+  ];
+  if (!artifact.hypotheses.length) lines.push("No conditional hypotheses proposed.");
+  for (const hypothesis of artifact.hypotheses) {
+    lines.push(`### ${hypothesis.id}`);
+    lines.push("");
+    lines.push(`Statement: ${hypothesis.statement}`);
+    lines.push(`Status: ${hypothesis.status}`);
+    lines.push(`Confidence: ${hypothesis.confidence.toFixed(2)}`);
+    lines.push(`Precision/recall: ${hypothesis.precision.toFixed(2)} / ${hypothesis.recall.toFixed(2)}`);
+    lines.push(`Factors: ${hypothesis.factorSet.map((factor) => `${factor.key}=${factor.value}`).join(", ") || "none"}`);
+    lines.push(`Support: ${hypothesis.supportObservationIds.join(", ")}`);
+    if (hypothesis.counterObservationIds.length) lines.push(`Counterexamples: ${hypothesis.counterObservationIds.join(", ")}`);
+    lines.push("");
+  }
+  lines.push("## Admission Decisions");
+  lines.push("");
+  if (!artifact.admissionDecisions.length) lines.push("No admission decisions.");
+  for (const decision of artifact.admissionDecisions) {
+    lines.push(`- ${decision.subjectKind} ${decision.subjectId}: ${decision.decision}; review=${decision.requiredReview}; confidence=${decision.confidence.toFixed(2)}; reasons=${decision.reasons.join(", ")}`);
+  }
+  lines.push("");
+  lines.push("## Observations");
+  lines.push("");
+  if (!artifact.observations.length) lines.push("No observations.");
+  for (const observation of artifact.observations) {
+    lines.push(`### ${observation.id}`);
+    lines.push("");
+    lines.push(`Intent: ${observation.intent}`);
+    lines.push(`Target: ${observation.target}`);
+    if (observation.desiredOutcome) lines.push(`Desired outcome: ${observation.desiredOutcome}`);
+    if (observation.paths.length) lines.push(`Paths: ${observation.paths.map((file) => learnV2SafeLocalPath(file, root)).join(", ")}`);
+    lines.push(`Factors: ${observation.factors.map((factor) => `${factor.key}=${factor.value}`).join(", ") || "none"}`);
+    lines.push(`Durability: explicit=${observation.durabilitySignals.explicitDurable}, oneOff=${observation.durabilitySignals.oneOff}, recurrence=${observation.durabilitySignals.recurrenceCandidate}`);
+    lines.push("");
+  }
+  return `${lines.join("\n")}\n`;
 }
