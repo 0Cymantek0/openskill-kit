@@ -73,6 +73,7 @@ import {
   learnV2ConditionalHypothesesToBehaviorAtoms,
   buildLearnV2SkillNamespaces,
   buildLearnV2SkillOntologyOperations,
+  writeLearnV2OpenWorldGroundingArtifact,
   readProjectConfig,
   type LearnV2BehaviorAtom,
   type LearnV2NormalizedEvidence,
@@ -2845,6 +2846,37 @@ describe("learn-v2 substrate", () => {
     expect(operations.some((operation) => operation.operation === "merge-namespaces" && operation.status === "needs-review")).toBe(true);
     expect(operations.some((operation) => operation.operation === "split-namespace" && operation.status === "needs-review")).toBe(true);
     expect(operations.every((operation) => operation.reviewHint.length > 0 && operation.rationale.length > 0)).toBe(true);
+  });
+
+  it("grounds verification concepts in project resources before external references", async () => {
+    const root = await tempProject();
+    await writeFile(path.join(root, "package.json"), JSON.stringify({
+      name: "learn-v2-project",
+      scripts: {
+        test: "vitest --run"
+      }
+    }), "utf8");
+    const [card] = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("project_grounded_verification", "Prefer focused Vitest regression tests before parser changes.", "positive"),
+        kind: "verification"
+      }
+    ], new Date("2026-06-30T00:13:00Z"));
+
+    const artifact = await writeLearnV2OpenWorldGroundingArtifact(root, [card!], new Date("2026-06-30T00:14:00Z"));
+    const projectAnchor = artifact.anchors.find((anchor) => anchor.title === "Project package scripts");
+    expect(projectAnchor).toMatchObject({
+      trustTier: "project",
+      resourceKind: "project-doc",
+      precedence: "project-doc-over-external",
+      uri: "project://package.json#scripts"
+    });
+    expect(artifact.counts.projectAnchors).toBeGreaterThanOrEqual(1);
+    expect(artifact.anchors.some((anchor) => anchor.title === "Vitest Guide" && anchor.trustTier === "official")).toBe(true);
+    const markdown = await readText(artifact.artifacts.markdown);
+    expect(markdown).toContain("Project package scripts");
+    expect(markdown).toContain("Project package scripts are highest-authority local evidence");
+    expect(markdown).not.toContain(root);
   });
 
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {

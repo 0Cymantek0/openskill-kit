@@ -90,8 +90,13 @@ const anchorTemplates: Array<{ key: string; test: RegExp; anchors: AnchorTemplat
   }
 ];
 
-export function buildLearnV2OpenWorldGroundingAnchors(concepts: LearnV2ConceptCard[], now = new Date()): LearnV2OpenWorldResourceAnchor[] {
+export function buildLearnV2OpenWorldGroundingAnchors(
+  concepts: LearnV2ConceptCard[],
+  now = new Date(),
+  projectAnchors: Array<{ conceptId: string; key: string; template: AnchorTemplate }> = []
+): LearnV2OpenWorldResourceAnchor[] {
   const anchors: LearnV2OpenWorldResourceAnchor[] = [];
+  for (const anchor of projectAnchors) anchors.push(makeAnchor(anchor.conceptId, anchor.key, anchor.template, now));
   for (const concept of concepts.filter((item) => !["rejected", "one-off", "superseded"].includes(item.status))) {
     const text = conceptSearchText(concept);
     for (const templateGroup of anchorTemplates) {
@@ -112,7 +117,7 @@ export async function writeLearnV2OpenWorldGroundingArtifact(
   const dir = path.join(root, ".openskill-kit", "learn-v2", "open-world-grounding");
   const json = path.join(dir, `open-world-grounding-${stamp}.json`);
   const markdown = path.join(dir, `open-world-grounding-${stamp}.md`);
-  const anchors = buildLearnV2OpenWorldGroundingAnchors(concepts, now);
+  const anchors = buildLearnV2OpenWorldGroundingAnchors(concepts, now, await buildProjectGroundingAnchors(root, concepts));
   const conceptIds = new Set(anchors.map((anchor) => anchor.conceptId));
   const artifact = LearnV2OpenWorldGroundingArtifactSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.openworld-grounding-artifact.v1",
@@ -142,6 +147,76 @@ function makeAnchor(conceptId: string, key: string, template: AnchorTemplate, no
     evidenceConceptIds: [conceptId],
     ...template
   });
+}
+
+async function buildProjectGroundingAnchors(root: string, concepts: LearnV2ConceptCard[]): Promise<Array<{ conceptId: string; key: string; template: AnchorTemplate }>> {
+  const anchors: Array<{ conceptId: string; key: string; template: AnchorTemplate }> = [];
+  const packageJson = await readSmallProjectFile(root, "package.json");
+  const projectBehavior = await firstReadableSmallFile(root, [
+    ".openskill-kit/compiled/context-pack.md",
+    "AGENTS.md",
+    "README.md"
+  ]);
+  for (const concept of concepts.filter((item) => !["rejected", "one-off", "superseded"].includes(item.status))) {
+    const text = conceptSearchText(concept);
+    if (packageJson && /\b(test|fixture|regression|vitest|jest|pytest|verification|command)\b/i.test(text)) {
+      anchors.push({
+        conceptId: concept.id,
+        key: "project-package-scripts",
+        template: {
+          title: "Project package scripts",
+          uri: "project://package.json#scripts",
+          resourceKind: "project-doc",
+          trustTier: "project",
+          alignment: "supports-review",
+          precedence: "project-doc-over-external",
+          licenseRisk: "low",
+          alignedClaims: ["Project package scripts are highest-authority local evidence for verification command choices."],
+          conflictingClaims: [],
+          declassifiedSnippetIds: [],
+          usedFor: ["verification", "eval"],
+          rationale: "Search local project resources before external docs; package scripts constrain which verification commands should be proposed."
+        }
+      });
+    }
+    if (projectBehavior && /\b(security|privacy|secret|credential|token|permission|review|policy)\b/i.test(text)) {
+      anchors.push({
+        conceptId: concept.id,
+        key: "project-behavior-doc",
+        template: {
+          title: "Project behavior instructions",
+          uri: `project://${projectBehavior.relativePath}`,
+          resourceKind: "project-doc",
+          trustTier: "project",
+          alignment: "supports-review",
+          precedence: "project-doc-over-external",
+          licenseRisk: "low",
+          alignedClaims: ["Project behavior docs and repository instructions outrank external guidance for local policy boundaries."],
+          conflictingClaims: [],
+          declassifiedSnippetIds: [],
+          usedFor: ["conditions", "verification"],
+          rationale: "Search local project behavior resources before external standards; local instructions shape review gates and activation scope."
+        }
+      });
+    }
+  }
+  return anchors;
+}
+
+async function firstReadableSmallFile(root: string, relativePaths: string[]): Promise<{ relativePath: string; text: string } | undefined> {
+  for (const relativePath of relativePaths) {
+    const text = await readSmallProjectFile(root, relativePath);
+    if (text) return { relativePath: relativePath.replace(/\\/g, "/"), text };
+  }
+  return undefined;
+}
+
+async function readSmallProjectFile(root: string, relativePath: string): Promise<string | undefined> {
+  const absolute = path.resolve(root, relativePath);
+  if (!absolute.startsWith(root + path.sep) && absolute !== root) return undefined;
+  const stat = await fs.stat(absolute).catch(() => undefined);
+  if (!stat?.isFile() || stat.size > 256 * 1024) return undefined;
+  return fs.readFile(absolute, "utf8").catch(() => undefined);
 }
 
 function dedupeAnchors(anchors: LearnV2OpenWorldResourceAnchor[]): LearnV2OpenWorldResourceAnchor[] {
