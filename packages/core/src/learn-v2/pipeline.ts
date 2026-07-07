@@ -556,6 +556,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         conditionalLearning,
         skillOntology,
         openWorldGrounding,
+        outcomePolicy,
         reviewQueue
       })
     : emptyConceptDebugTraceArtifact(root, now);

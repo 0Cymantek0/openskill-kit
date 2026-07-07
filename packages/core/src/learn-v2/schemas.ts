@@ -590,6 +590,10 @@ export const LearnV2ConceptDebugTraceEntrySchema = z.object({
       subjectId: z.string().min(1),
       decision: LearnV2MemoryAdmissionDecisionSchema.shape.decision,
       requiredReview: z.boolean(),
+      reviewPriority: LearnV2MemoryAdmissionDecisionSchema.shape.reviewPriority,
+      riskLevel: LearnV2MemoryAdmissionDecisionSchema.shape.riskLevel,
+      privacyBoundary: LearnV2MemoryAdmissionDecisionSchema.shape.privacyBoundary,
+      scopeLevel: LearnV2MemoryAdmissionDecisionSchema.shape.scopeLevel,
       reasons: z.array(z.string().min(1)).default([])
     })).default([])
   }),
@@ -611,6 +615,23 @@ export const LearnV2ConceptDebugTraceEntrySchema = z.object({
     evidenceSnippetIds: z.array(z.string().min(1)).default([]),
     reviewActionLabels: z.array(z.string().min(1)).default([])
   }),
+  outcomePolicy: z.object({
+    action: z.enum(["allow-activation", "suppress-activation", "demote-review", "keep-monitoring"]).optional(),
+    suppressed: z.boolean().default(false),
+    reasons: z.array(z.string().min(1)).default([]),
+    counts: z.object({
+      helpful: z.number().int().min(0),
+      ignored: z.number().int().min(0),
+      wrong: z.number().int().min(0),
+      harmful: z.number().int().min(0),
+      superseded: z.number().int().min(0)
+    }).default({ helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 }),
+    lastRecordedAt: z.string().datetime().optional()
+  }).default({
+    suppressed: false,
+    reasons: [],
+    counts: { helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 }
+  }),
   evidenceSeparation: z.object({
     userPreferenceEvidence: z.number().int().min(0),
     projectEvidence: z.number().int().min(0),
@@ -629,7 +650,9 @@ export const LearnV2ConceptDebugTraceArtifactSchema = z.object({
     tracedConcepts: z.number().int().min(0),
     conditionalLinks: z.number().int().min(0),
     openWorldLinks: z.number().int().min(0),
-    reviewBlockedConcepts: z.number().int().min(0)
+    reviewBlockedConcepts: z.number().int().min(0),
+    outcomePolicyLinks: z.number().int().min(0).default(0),
+    outcomeSuppressedConcepts: z.number().int().min(0).default(0)
   }),
   artifacts: z.object({
     json: z.string(),

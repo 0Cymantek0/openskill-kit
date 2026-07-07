@@ -10,6 +10,7 @@ import {
   type LearnV2ConditionalLearningArtifact,
   type LearnV2LearningObservation,
   type LearnV2OpenWorldGroundingArtifact,
+  type LearnV2OutcomePolicyArtifact,
   type LearnV2ReviewQueue,
   type LearnV2SkillOntologyArtifact
 } from "./schemas.js";
@@ -19,6 +20,7 @@ export interface LearnV2ConceptDebugTraceContext {
   conditionalLearning?: LearnV2ConditionalLearningArtifact;
   skillOntology?: LearnV2SkillOntologyArtifact;
   openWorldGrounding?: LearnV2OpenWorldGroundingArtifact;
+  outcomePolicy?: LearnV2OutcomePolicyArtifact;
   reviewQueue?: LearnV2ReviewQueue;
 }
 
@@ -43,7 +45,9 @@ export async function writeLearnV2ConceptDebugTraceArtifact(
       tracedConcepts: traces.length,
       conditionalLinks: traces.reduce((sum, trace) => sum + trace.conditional.hypothesisIds.length + trace.conditional.observationIds.length, 0),
       openWorldLinks: traces.reduce((sum, trace) => sum + trace.openWorldGrounding.anchorIds.length, 0),
-      reviewBlockedConcepts: traces.filter((trace) => trace.whyActive.activationState === "inactive-review-required" || trace.review.conflictIds.length || trace.review.driftReasons.length).length
+      reviewBlockedConcepts: traces.filter((trace) => trace.whyActive.activationState === "inactive-review-required" || trace.review.conflictIds.length || trace.review.driftReasons.length).length,
+      outcomePolicyLinks: traces.filter((trace) => trace.outcomePolicy.action).length,
+      outcomeSuppressedConcepts: traces.filter((trace) => trace.outcomePolicy.suppressed).length
     },
     artifacts: { json, markdown }
   });
@@ -73,6 +77,10 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
       subjectId: decision.subjectId,
       decision: decision.decision,
       requiredReview: decision.requiredReview,
+      reviewPriority: decision.reviewPriority,
+      riskLevel: decision.riskLevel,
+      privacyBoundary: decision.privacyBoundary,
+      scopeLevel: decision.scopeLevel,
       reasons: decision.reasons
     }));
   const namespaces = (context.skillOntology?.namespaces ?? []).filter((namespace) => namespace.conceptIds.includes(concept.id));
@@ -89,6 +97,7 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
   const ontologyOperations = (context.skillOntology?.operations ?? []).filter((operation) =>
     operation.conceptIds.includes(concept.id) || operation.namespaceIds.some((id) => namespaceIds.has(id))
   );
+  const outcomePolicyDecision = context.outcomePolicy?.decisions.find((decision) => decision.conceptId === concept.id);
   const userPreferenceEvidence = observations.filter((observation) => ["user", "reviewer"].includes(observation.actor)).length;
   const modelInterpretation = hypotheses.length + namespaces.length;
   return LearnV2ConceptDebugTraceEntrySchema.parse({
@@ -147,6 +156,19 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
       evidenceSnippetIds: snippets.map((snippet) => snippet.snippetId),
       reviewActionLabels: reviewActions.map((action) => action.label)
     },
+    outcomePolicy: outcomePolicyDecision
+      ? {
+          action: outcomePolicyDecision.action,
+          suppressed: outcomePolicyDecision.action === "suppress-activation",
+          reasons: outcomePolicyDecision.reasons,
+          counts: outcomePolicyDecision.counts,
+          lastRecordedAt: outcomePolicyDecision.lastRecordedAt
+        }
+      : {
+          suppressed: false,
+          reasons: [],
+          counts: { helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 }
+        },
     evidenceSeparation: {
       userPreferenceEvidence,
       projectEvidence: Math.max(0, concept.evidenceIds.length - userPreferenceEvidence),
@@ -200,6 +222,8 @@ function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTrac
     `- Conditional links: ${artifact.counts.conditionalLinks}`,
     `- Open-world links: ${artifact.counts.openWorldLinks}`,
     `- Review-blocked concepts: ${artifact.counts.reviewBlockedConcepts}`,
+    `- Outcome policy links: ${artifact.counts.outcomePolicyLinks}`,
+    `- Outcome-suppressed concepts: ${artifact.counts.outcomeSuppressedConcepts}`,
     "",
     "## Traces",
     ""
@@ -227,6 +251,13 @@ function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTrac
     lines.push(`- Do not apply when: ${trace.whyActive.doesNotApplyWhen.join("; ") || "none"}`);
     lines.push(`- Activation phrases: ${trace.whyActive.phrases.join(", ") || "none"}`);
     lines.push(`- Commands: ${trace.whyActive.commands.join(", ") || "none"}`);
+    lines.push("");
+    lines.push("Outcome policy:");
+    lines.push(`- Action: ${trace.outcomePolicy.action ?? "none"}`);
+    lines.push(`- Suppressed: ${trace.outcomePolicy.suppressed}`);
+    lines.push(`- Reasons: ${trace.outcomePolicy.reasons.join(", ") || "none"}`);
+    lines.push(`- Counts: helpful=${trace.outcomePolicy.counts.helpful}, ignored=${trace.outcomePolicy.counts.ignored}, wrong=${trace.outcomePolicy.counts.wrong}, harmful=${trace.outcomePolicy.counts.harmful}, superseded=${trace.outcomePolicy.counts.superseded}`);
+    lines.push(`- Last outcome: ${trace.outcomePolicy.lastRecordedAt ?? "none"}`);
     lines.push("");
     lines.push("Conditional reasoning:");
     lines.push(`- Observations: ${trace.conditional.observationIds.join(", ") || "none"}`);

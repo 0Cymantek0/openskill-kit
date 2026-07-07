@@ -59,6 +59,7 @@ import {
   writeLearnV2CounterevidenceLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
   writeLearnV2OutcomePolicyArtifact,
+  writeLearnV2ConceptDebugTraceArtifact,
   storeLearnV2RawEvidence,
   detectLearnV2ConceptDrift,
   runLearnV2Eval,
@@ -2775,6 +2776,8 @@ describe("learn-v2 substrate", () => {
     const debugTraceMarkdown = await readText(result.artifacts.learnV2ConceptDebugTracePath);
     expect(debugTraceMarkdown).toContain("Why learned:");
     expect(debugTraceMarkdown).toContain("Why active:");
+    expect(debugTraceMarkdown).toContain("Outcome policy:");
+    expect(debugTraceMarkdown).toContain("Action: keep-monitoring");
     expect(debugTraceMarkdown).toContain("Conditional reasoning:");
     expect(debugTraceMarkdown).toContain("Source separation:");
     expect(debugTraceMarkdown).toContain("UI/UX design");
@@ -2786,6 +2789,10 @@ describe("learn-v2 substrate", () => {
     expect(debugTraceJson.counts.tracedConcepts).toBeGreaterThanOrEqual(3);
     expect(debugTraceJson.counts.conditionalLinks).toBeGreaterThanOrEqual(3);
     expect(debugTraceJson.counts.openWorldLinks).toBeGreaterThanOrEqual(1);
+    expect(debugTraceJson.counts.outcomePolicyLinks).toBeGreaterThanOrEqual(3);
+    expect(debugTraceJson.traces.every((trace: { outcomePolicy: { action?: string; counts: { wrong: number; ignored: number } } }) =>
+      trace.outcomePolicy.action && trace.outcomePolicy.counts.wrong >= 0 && trace.outcomePolicy.counts.ignored >= 0
+    )).toBe(true);
     expect(debugTraceJson.traces.some((trace: { conditional: { factorLabels: string[] } }) => trace.conditional.factorLabels.includes("component.container=card"))).toBe(true);
     expect(debugTraceJson.traces.some((trace: { evidenceSeparation: { userPreferenceEvidence: number; externalGrounding: number; modelInterpretation: number } }) =>
       trace.evidenceSeparation.userPreferenceEvidence > 0 &&
@@ -5277,6 +5284,25 @@ describe("learn-v2 substrate", () => {
     expect(policyMarkdown).toContain("Suppress ignored count: 3");
     expect(policyMarkdown).not.toContain("parser changes parser snapshot reports");
     expect(policyMarkdown).not.toContain(root);
+    const trace = await writeLearnV2ConceptDebugTraceArtifact(root, [wrongActive, ignoredActive], new Date("2026-06-30T00:09:10Z"), {
+      outcomePolicy: policy
+    });
+    expect(trace.counts.outcomePolicyLinks).toBe(2);
+    expect(trace.counts.outcomeSuppressedConcepts).toBe(2);
+    const wrongTrace = trace.traces.find((item) => item.conceptId === wrongActive.id)!;
+    expect(wrongTrace.outcomePolicy).toMatchObject({
+      action: "suppress-activation",
+      suppressed: true,
+      counts: {
+        wrong: 2
+      }
+    });
+    expect(wrongTrace.outcomePolicy.reasons).toContain("outcome:wrong-threshold:2");
+    const traceMarkdown = await readText(trace.artifacts.markdown);
+    expect(traceMarkdown).toContain("Outcome policy:");
+    expect(traceMarkdown).toContain("Action: suppress-activation");
+    expect(traceMarkdown).toContain("outcome:wrong-threshold:2");
+    expect(traceMarkdown).not.toContain(root);
   });
 
   it("includes active Learn v2 activation in normal task context and suppresses explicit negative triggers", async () => {

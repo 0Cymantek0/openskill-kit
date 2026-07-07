@@ -92,7 +92,8 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
   const conceptDebugTrace = await writeLearnV2ConceptDebugTraceArtifact(root, store.cards, now, {
     conditionalLearning,
     skillOntology,
-    openWorldGrounding
+    openWorldGrounding,
+    outcomePolicy
   });
   return {
     schemaVersion: "openskill-kit.learn-v2.extract-concepts-result.v1",
