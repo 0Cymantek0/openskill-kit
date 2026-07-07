@@ -13,6 +13,7 @@ import {
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { scoreLearnV2ActivationEntries } from "./activation.js";
 import { buildLearnV2ActivationIndexEntry, filterLearnV2ActivationEligibleConcepts } from "./activation-signals.js";
+import { runLearnV2ConditionalLearning } from "./conditional-learning.js";
 import { evaluateLearnV2ConceptQualityGates } from "./concept-quality-gates.js";
 import { createLocalSandboxPolicy } from "../sandbox/policy.js";
 import { runSandboxCommand, type SandboxCommandResult } from "../sandbox/runner.js";
@@ -193,6 +194,7 @@ export async function runLearnV2Eval(
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
   const memoryAdmissionBoundary = evaluateMemoryAdmissionBoundary(concepts);
+  const conditionalAdmissionBoundary = evaluateConditionalAdmissionBoundary(episodes);
   const openWorldGroundingBoundary = evaluateOpenWorldGroundingBoundary(concepts, now);
   const activationReplay = evaluateActivationReplay(episodes, concepts);
   const counterfactualTrace = evaluateCounterfactualTraceCases(concepts, counterfactualCases);
@@ -233,6 +235,7 @@ export async function runLearnV2Eval(
     },
     evaluateLearnV2ConceptQualityGates(concepts),
     memoryAdmissionBoundary,
+    conditionalAdmissionBoundary,
     openWorldGroundingBoundary,
     activationReplay.result,
     counterfactualTrace.result,
@@ -812,6 +815,72 @@ function evaluateMemoryAdmissionBoundary(concepts: LearnV2ConceptCard[]): LearnV
   ];
   return {
     id: "memory-admission-boundary",
+    status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
+    checks
+  };
+}
+
+function evaluateConditionalAdmissionBoundary(episodes: LearnV2TaskEpisode[]): LearnV2EvalResultRow {
+  const conditional = runLearnV2ConditionalLearning(episodes);
+  const observationsById = new Map(conditional.observations.map((observation) => [observation.id, observation]));
+  const decisionsByHypothesisId = new Map(conditional.admissionDecisions
+    .filter((decision) => decision.subjectKind === "hypothesis")
+    .map((decision) => [decision.subjectId, decision]));
+  const oneOffObservationDecisions = conditional.observations
+    .filter((observation) => observation.durabilitySignals.oneOff && !observation.durabilitySignals.explicitDurable)
+    .map((observation) => conditional.admissionDecisions.find((decision) => decision.subjectKind === "observation" && decision.subjectId === observation.id));
+  const prematurelyPromoted = conditional.hypotheses.filter((hypothesis) => {
+    const decision = decisionsByHypothesisId.get(hypothesis.id);
+    const support = hypothesis.supportObservationIds
+      .map((id) => observationsById.get(id))
+      .filter((observation): observation is NonNullable<typeof observation> => Boolean(observation));
+    const durableSupportCount = support.filter((observation) => !observation.durabilitySignals.oneOff || observation.durabilitySignals.explicitDurable).length;
+    const explicitlyDurable = support.some((observation) => observation.durabilitySignals.explicitDurable);
+    return (hypothesis.status === "candidate" || decision?.decision === "candidate-concept" || decision?.decision === "requires-human-review")
+      && !explicitlyDurable
+      && durableSupportCount < 2;
+  });
+  const missingWeakReason = conditional.hypotheses.filter((hypothesis) => {
+    const decision = decisionsByHypothesisId.get(hypothesis.id);
+    const support = hypothesis.supportObservationIds
+      .map((id) => observationsById.get(id))
+      .filter((observation): observation is NonNullable<typeof observation> => Boolean(observation));
+    const durableSupportCount = support.filter((observation) => !observation.durabilitySignals.oneOff || observation.durabilitySignals.explicitDurable).length;
+    const explicitlyDurable = support.some((observation) => observation.durabilitySignals.explicitDurable);
+    return !explicitlyDurable
+      && durableSupportCount < 2
+      && decision?.decision === "weak-observation"
+      && !decision.reasons.includes("single-support-hypothesis-kept-weak");
+  });
+  const oneOffNotTraceOnly = oneOffObservationDecisions.filter((decision) => decision?.decision !== "episode-note");
+  const promotedDecisionCount = conditional.admissionDecisions.filter((decision) =>
+    decision.subjectKind === "hypothesis" && (decision.decision === "candidate-concept" || decision.decision === "requires-human-review")
+  ).length;
+  const checks = [
+    check(
+      "sparse-hypotheses-kept-weak",
+      prematurelyPromoted.length === 0,
+      prematurelyPromoted.length
+        ? `prematurely promoted hypotheses: ${prematurelyPromoted.map((hypothesis) => hypothesis.id).slice(0, 6).join(", ")}`
+        : `${conditional.hypotheses.length} conditional hypothesis/hypotheses checked; promoted=${promotedDecisionCount}`
+    ),
+    check(
+      "weak-hypotheses-explain-admission",
+      missingWeakReason.length === 0,
+      missingWeakReason.length
+        ? `weak hypotheses missing reason: ${missingWeakReason.map((hypothesis) => hypothesis.id).slice(0, 6).join(", ")}`
+        : "sparse weak hypotheses carry admission rationale"
+    ),
+    check(
+      "one-off-observations-trace-only",
+      oneOffNotTraceOnly.length === 0,
+      oneOffNotTraceOnly.length
+        ? `${oneOffNotTraceOnly.length} one-off observation(s) escaped episode-note admission`
+        : `${oneOffObservationDecisions.length} one-off observation(s) kept trace-only`
+    )
+  ];
+  return {
+    id: "conditional-admission-boundary",
     status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
     checks
   };
@@ -1641,6 +1710,7 @@ function learnV2EvalProofBoundary(input: {
     "concept retrieval from stored episodes",
     "deterministic activation scoring",
     "memory-admission activation exclusion for one-off/rejected/superseded concepts",
+    "conditional memory admission non-overlearning checks",
     "open-world grounding authority and evidence-separation checks"
   ];
   const doesNotProve = [

@@ -2298,6 +2298,7 @@ describe("learn-v2 substrate", () => {
     expect(report.proofBoundary.proves).toEqual(expect.arrayContaining([
       "configured behavior-delta golden checks",
       "deterministic counterfactual trace activation checks",
+      "conditional memory admission non-overlearning checks",
       "open-world grounding authority and evidence-separation checks",
       "local sandbox verifier command execution"
     ]));
@@ -2306,6 +2307,13 @@ describe("learn-v2 substrate", () => {
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "behavior-delta:parser-plan-delta" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
+    const conditionalBoundary = report.results.find((result) => result.id === "conditional-admission-boundary");
+    expect(conditionalBoundary?.status).toBe("pass");
+    expect(conditionalBoundary?.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
+      "sparse-hypotheses-kept-weak",
+      "weak-hypotheses-explain-admission",
+      "one-off-observations-trace-only"
+    ]));
     const groundingBoundary = report.results.find((result) => result.id === "open-world-grounding-boundary");
     expect(groundingBoundary?.status).toBe("pass");
     expect(groundingBoundary?.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
@@ -6115,6 +6123,38 @@ describe("learn-v2 substrate", () => {
     });
     expect(atoms).toHaveLength(1);
     expect(atoms.every((atom) => atom.scope.taskTypes.includes("ui-design-change"))).toBe(true);
+  });
+
+  it("keeps repeated explicit one-off conditional support out of durable candidates", () => {
+    const evidence = [
+      {
+        ...normalizedMessage("ui_oneoff_green_first", "This time make independent button green on white landing page.", "user"),
+        paths: ["packages/site/src/LandingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ui_oneoff_green_second", "Only here make independent button green on light marketing page.", "user"),
+        paths: ["packages/site/src/MarketingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ui_oneoff_blue_counter", "No, this time I want blue for independent button on dark page.", "user"),
+        paths: ["packages/site/src/DarkButton.tsx"],
+        metadata: { theme: "dark", container: "independent", componentRole: "button" }
+      }
+    ];
+
+    const observations = buildLearnV2LearningObservationsFromEvidence(evidence);
+    const hypotheses = inferLearnV2ConditionalHypotheses(observations);
+    const admission = decideLearnV2MemoryAdmission({ observations, hypotheses });
+    const atoms = learnV2ConditionalHypothesesToBehaviorAtoms(hypotheses, observations);
+
+    expect(observations.every((observation) => observation.durabilitySignals.oneOff)).toBe(true);
+    expect(hypotheses.length).toBeGreaterThan(0);
+    expect(hypotheses.every((hypothesis) => hypothesis.status === "weak")).toBe(true);
+    expect(admission.filter((item) => item.subjectKind === "observation").every((item) => item.decision === "episode-note")).toBe(true);
+    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.decision === "weak-observation")).toBe(true);
+    expect(atoms).toHaveLength(0);
   });
 
   it("renders behavior-visible Learn v2 activation payload in task context", async () => {
