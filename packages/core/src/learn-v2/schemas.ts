@@ -372,6 +372,69 @@ export const LearnV2BehaviorAtomSchema = z.object({
 });
 export type LearnV2BehaviorAtom = z.infer<typeof LearnV2BehaviorAtomSchema>;
 
+export const LearnV2ContextFactorSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.context-factor.v1"),
+  id: z.string().min(1),
+  key: z.string().min(1),
+  value: z.string().min(1),
+  label: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  evidenceIds: z.array(z.string()).default([]),
+  source: z.enum(["text", "path", "metadata", "patch", "model-proposal"]).default("text")
+});
+export type LearnV2ContextFactor = z.infer<typeof LearnV2ContextFactorSchema>;
+
+export const LearnV2LearningObservationSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.learning-observation.v1"),
+  id: z.string().min(1),
+  episodeId: z.string().optional(),
+  evidenceIds: z.array(z.string().min(1)).min(1),
+  rawRefs: z.array(z.string().min(1)).min(1),
+  paths: z.array(z.string()).default([]),
+  actor: LearnV2NormalizedEvidenceSchema.shape.actor,
+  intent: z.enum(["correction", "preference", "rejection", "manual-edit", "outcome"]),
+  target: z.string().min(1),
+  desiredOutcome: z.string().optional(),
+  text: z.string().min(1).max(1200),
+  factors: z.array(LearnV2ContextFactorSchema).default([]),
+  durabilitySignals: z.object({
+    explicitDurable: z.boolean().default(false),
+    oneOff: z.boolean().default(false),
+    recurrenceCandidate: z.boolean().default(false)
+  }).default({ explicitDurable: false, oneOff: false, recurrenceCandidate: false }),
+  confidence: z.number().min(0).max(1)
+});
+export type LearnV2LearningObservation = z.infer<typeof LearnV2LearningObservationSchema>;
+
+export const LearnV2ConditionalHypothesisSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.conditional-hypothesis.v1"),
+  id: z.string().min(1),
+  target: z.string().min(1),
+  desiredOutcome: z.string().min(1),
+  statement: z.string().min(1),
+  factorSet: z.array(LearnV2ContextFactorSchema).default([]),
+  supportObservationIds: z.array(z.string().min(1)).min(1),
+  counterObservationIds: z.array(z.string().min(1)).default([]),
+  precision: z.number().min(0).max(1),
+  recall: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  status: z.enum(["candidate", "weak", "rejected"]),
+  rationale: z.string().min(1)
+});
+export type LearnV2ConditionalHypothesis = z.infer<typeof LearnV2ConditionalHypothesisSchema>;
+
+export const LearnV2MemoryAdmissionDecisionSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.memory-admission-decision.v1"),
+  id: z.string().min(1),
+  subjectKind: z.enum(["observation", "hypothesis"]),
+  subjectId: z.string().min(1),
+  decision: z.enum(["observe-only", "promote-candidate", "reject-noise"]),
+  requiredReview: z.boolean(),
+  confidence: z.number().min(0).max(1),
+  reasons: z.array(z.string().min(1)).default([])
+});
+export type LearnV2MemoryAdmissionDecision = z.infer<typeof LearnV2MemoryAdmissionDecisionSchema>;
+
 export const LearnV2LlmConceptExtractionOutputSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.llm-concept-extraction-output.v1"),
   atoms: z.array(z.object({

@@ -58,6 +58,10 @@ export interface LearnV2ConceptActivationQuery {
 export interface LearnV2ConceptActivationMatch {
   conceptId: string;
   title: string;
+  behavior: string;
+  appliesWhen: string[];
+  doesNotApplyWhen: string[];
+  preferredCommands: string[];
   status: LearnV2ActivationIndex["entries"][number]["status"];
   risk: LearnV2ActivationIndex["entries"][number]["risk"];
   confidence: number;
@@ -65,6 +69,7 @@ export interface LearnV2ConceptActivationMatch {
   reasons: string[];
   suppressed: boolean;
   counterevidenceCount: number;
+  tokenCost: number;
   behaviorKey?: string;
   outcomeFeedback?: LearnV2ConceptOutcomeFeedback;
 }
@@ -447,6 +452,10 @@ function baseMatch(
   return {
     conceptId: entry.conceptId,
     title: entry.title,
+    behavior: entry.behavior ?? entry.title,
+    appliesWhen: entry.appliesWhen ?? [],
+    doesNotApplyWhen: entry.doesNotApplyWhen ?? [],
+    preferredCommands: entry.commands,
     status: entry.status,
     risk: entry.risk,
     confidence: entry.confidence,
@@ -454,6 +463,7 @@ function baseMatch(
     reasons,
     suppressed,
     counterevidenceCount: entry.counterevidenceCount ?? 0,
+    tokenCost: estimateActivationTokenCost(entry),
     behaviorKey: entry.behaviorKey,
     outcomeFeedback
   };
@@ -589,6 +599,9 @@ function scoreActivationBm25(entry: LearnV2ActivationIndex["entries"][number], q
 function activationDocumentTokens(entry: LearnV2ActivationIndex["entries"][number]): string[] {
   const textParts = [
     entry.title,
+    entry.behavior ?? "",
+    ...(entry.appliesWhen ?? []),
+    ...(entry.doesNotApplyWhen ?? []),
     ...entry.phrases,
     ...entry.taskTypes,
     ...entry.commands,
@@ -598,6 +611,17 @@ function activationDocumentTokens(entry: LearnV2ActivationIndex["entries"][numbe
     ...entry.pathGlobs.flatMap(pathTokens)
   ];
   return textParts.flatMap((part) => [...tokenSet(part)]);
+}
+
+function estimateActivationTokenCost(entry: LearnV2ActivationIndex["entries"][number]): number {
+  const chars = [
+    entry.title,
+    entry.behavior ?? "",
+    ...(entry.appliesWhen ?? []),
+    ...(entry.doesNotApplyWhen ?? []),
+    ...entry.commands
+  ].join(" ").length;
+  return Math.max(1, Math.ceil(chars / 4));
 }
 
 function keywordFingerprintOverlap(entryFingerprint: string[], queryFingerprint: string[]): { score: number; hits: string[] } {

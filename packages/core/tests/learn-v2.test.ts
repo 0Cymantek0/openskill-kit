@@ -66,6 +66,10 @@ import {
   validateLearnV2LlmExtractionProposal,
   validateLearnV2ModelOutputBoundary,
   readLearnV2ConceptActivationRuns,
+  buildLearnV2LearningObservationsFromEvidence,
+  inferLearnV2ConditionalHypotheses,
+  decideLearnV2MemoryAdmission,
+  learnV2ConditionalHypothesesToBehaviorAtoms,
   readProjectConfig,
   type LearnV2BehaviorAtom,
   type LearnV2NormalizedEvidence,
@@ -5347,6 +5351,120 @@ describe("learn-v2 substrate", () => {
 
     expect(reviewed.store.cards.find((card) => card.id === narrowSafe.id)?.status).toBe("active");
     expect(reviewed.store.cards.find((card) => card.id === broadUnsafe.id)?.status).toBe("candidate");
+  });
+
+  it("keeps one-off UI corrections as observations without durable concept admission", async () => {
+    const evidence = [{
+      ...normalizedMessage("ui_one_off_green", "Make this button green for this landing page only here. It is light and independent.", "user"),
+      paths: ["packages/site/src/LandingButton.tsx"],
+      metadata: {
+        theme: "light",
+        container: "independent",
+        componentRole: "button",
+        surfaceKind: "landing-page"
+      }
+    }];
+
+    const observations = buildLearnV2LearningObservationsFromEvidence(evidence);
+    const hypotheses = inferLearnV2ConditionalHypotheses(observations);
+    const admission = decideLearnV2MemoryAdmission({ observations, hypotheses });
+
+    expect(observations).toHaveLength(1);
+    expect(observations[0]!.desiredOutcome).toBe("green");
+    expect(observations[0]!.durabilitySignals.oneOff).toBe(true);
+    expect(hypotheses).toHaveLength(0);
+    expect(admission.find((item) => item.subjectId === observations[0]!.id)).toMatchObject({
+      subjectKind: "observation",
+      decision: "observe-only",
+      requiredReview: false
+    });
+    expect(learnV2ConditionalHypothesesToBehaviorAtoms(hypotheses, observations)).toHaveLength(0);
+  });
+
+  it("infers contrastive UI color hypotheses from theme and card factors instead of global preferences", async () => {
+    const evidence = [
+      {
+        ...normalizedMessage("ui_light_green", "Make independent button green on white landing page.", "user"),
+        paths: ["packages/site/src/LandingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ui_dark_blue", "No, this time I want blue for independent button on dark page.", "user"),
+        paths: ["packages/site/src/DarkButton.tsx"],
+        metadata: { theme: "dark", container: "independent", componentRole: "button" }
+      },
+      {
+        ...normalizedMessage("ui_dark_card_orange", "For dark card button, make it orange.", "user"),
+        paths: ["packages/site/src/CardButton.tsx"],
+        metadata: { theme: "dark", container: "card", componentRole: "button" }
+      }
+    ];
+
+    const observations = buildLearnV2LearningObservationsFromEvidence(evidence);
+    const hypotheses = inferLearnV2ConditionalHypotheses(observations);
+    const admission = decideLearnV2MemoryAdmission({ observations, hypotheses });
+    const atoms = learnV2ConditionalHypothesesToBehaviorAtoms(hypotheses, observations);
+
+    expect(observations).toHaveLength(3);
+    expect(hypotheses.map((item) => item.desiredOutcome).sort()).toEqual(["blue", "green", "orange"]);
+    expect(hypotheses.every((item) => item.status === "candidate")).toBe(true);
+    expect(hypotheses.every((item) => item.statement.includes("When "))).toBe(true);
+    expect(hypotheses.some((item) => item.statement.includes("buttons are green"))).toBe(false);
+    expect(hypotheses.find((item) => item.desiredOutcome === "orange")!.factorSet.map((factor) => `${factor.key}:${factor.value}`))
+      .toContain("component.container:card");
+    expect(hypotheses.find((item) => item.desiredOutcome === "blue")!.factorSet.map((factor) => `${factor.key}:${factor.value}`))
+      .toEqual(expect.arrayContaining(["ui.theme:dark", "component.container:independent"]));
+    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.decision === "promote-candidate" && item.requiredReview)).toBe(true);
+    expect(atoms).toHaveLength(3);
+    expect(atoms.every((atom) => atom.scope.taskTypes.includes("ui-design-change"))).toBe(true);
+  });
+
+  it("renders behavior-visible Learn v2 activation payload in task context", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:12:00Z");
+    const [base] = mergeLearnV2ConceptCards([
+      behaviorAtom("task_context_behavior_payload", "Run focused parser regression before parser edits.", "positive")
+    ], now);
+    const active = {
+      ...base!,
+      title: "Parser Verification Rule",
+      canonicalBehavior: "Run focused parser regression before parser edits.",
+      status: "active" as const,
+      conditions: {
+        appliesWhen: ["Task changes parser source files"],
+        doesNotApplyWhen: ["User explicitly asks to skip parser tests"]
+      },
+      activation: {
+        phrases: ["parser edits", "parser regression"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: ["npm test -- parser"]
+      },
+      scope: {
+        ...base!.scope,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"]
+      }
+    };
+    await writeLearnV2ConceptStore(root, [active], now);
+
+    const context = await getAgentTaskContext({
+      projectRoot: root,
+      query: "parser edits need verification",
+      paths: ["packages/core/src/parser.ts"],
+      limit: 8
+    });
+
+    expect(context.learnV2Activation.matches[0]).toMatchObject({
+      conceptId: active.id,
+      behavior: "Run focused parser regression before parser edits.",
+      appliesWhen: ["Task changes parser source files"],
+      doesNotApplyWhen: ["User explicitly asks to skip parser tests"],
+      preferredCommands: ["npm test -- parser"]
+    });
+    expect(context.compactMarkdown).toContain("Parser Verification Rule: Run focused parser regression before parser edits.");
+    expect(context.compactMarkdown).toContain("Apply when: Task changes parser source files");
+    expect(context.compactMarkdown).toContain("Do not apply when: User explicitly asks to skip parser tests");
+    expect(context.compactMarkdown).toContain("Commands: npm test -- parser");
   });
 });
 

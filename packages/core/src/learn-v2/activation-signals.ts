@@ -11,6 +11,9 @@ export interface LearnV2ActivationIndexEntry {
   conceptId: string;
   status: LearnV2ConceptCard["status"];
   title: string;
+  behavior: string;
+  appliesWhen: string[];
+  doesNotApplyWhen: string[];
   phrases: string[];
   pathGlobs: string[];
   commands: string[];
@@ -98,6 +101,9 @@ export function buildLearnV2ActivationIndexEntry(card: LearnV2ConceptCard): Lear
     conceptId: card.id,
     status: card.status,
     title: card.title,
+    behavior: card.canonicalBehavior,
+    appliesWhen: card.conditions?.appliesWhen ?? [],
+    doesNotApplyWhen: card.conditions?.doesNotApplyWhen ?? [],
     phrases: card.activation.phrases,
     pathGlobs: card.activation.pathGlobs,
     commands: card.activation.commands,

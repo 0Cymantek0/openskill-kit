@@ -36,6 +36,9 @@ export interface LearnV2ActivationIndex {
     conceptId: string;
     status: LearnV2ConceptCard["status"];
     title: string;
+    behavior?: string;
+    appliesWhen?: string[];
+    doesNotApplyWhen?: string[];
     phrases: string[];
     pathGlobs: string[];
     commands: string[];

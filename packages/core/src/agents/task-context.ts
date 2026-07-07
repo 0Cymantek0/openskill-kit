@@ -294,7 +294,11 @@ function renderLearnV2ActivationMarkdown(learnedConcepts: AgentTaskContextResult
     return lines.join("\n");
   }
   for (const match of learnedConcepts.shown) {
-    lines.push(`- ${match.title}: score ${match.score}; confidence ${match.confidence}; reasons ${match.reasons.join(", ") || "matched"}`);
+    lines.push(`- ${match.title}: ${match.behavior}`);
+    lines.push(`  Score ${match.score}; confidence ${match.confidence}; risk ${match.risk}; token cost ~${match.tokenCost}; reasons ${match.reasons.join(", ") || "matched"}.`);
+    if (match.appliesWhen.length) lines.push(`  Apply when: ${match.appliesWhen.join("; ")}`);
+    if (match.doesNotApplyWhen.length) lines.push(`  Do not apply when: ${match.doesNotApplyWhen.join("; ")}`);
+    if (match.preferredCommands.length) lines.push(`  Commands: ${match.preferredCommands.slice(0, 4).join("; ")}`);
   }
   if (learnedConcepts.dedupedByPreference.length) {
     lines.push(`- ${learnedConcepts.dedupedByPreference.length} Learn v2 concept(s) already covered by relevant preference nodes.`);
