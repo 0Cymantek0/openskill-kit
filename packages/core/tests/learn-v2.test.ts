@@ -4223,6 +4223,15 @@ describe("learn-v2 substrate", () => {
     const artifact = JSON.parse(await readText(applied.artifactPath!));
     expect(artifact.agentExecuted).toBe(true);
     expect(JSON.stringify(artifact)).not.toContain(root);
+    const evalReport = await runLearnV2Eval(root, [], [card], new Date("2026-06-30T00:03:33Z"), {
+      goldensPath,
+      behaviorAgentEvalPath: applied.artifactPath
+    });
+    expect(evalReport.summary.behaviorDelta.agentStatus).toBe("pass");
+    expect(evalReport.summary.behaviorDelta.agentResultCount).toBe(1);
+    expect(evalReport.proofBoundary.agentExecuted).toBe(true);
+    expect(evalReport.proofBoundary.proves).toContain("agent-backed behavior-delta judgment");
+    expect(evalReport.results.some((result) => result.id === "behavior-agent-eval" && result.status === "pass")).toBe(true);
 
     await writeFile(path.resolve(root, request.expectedOutputPath), JSON.stringify({
       ...behaviorOutput,

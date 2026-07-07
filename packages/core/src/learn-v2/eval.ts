@@ -57,6 +57,7 @@ export interface LearnV2EvalOptions {
   goldensPath?: string;
   sandboxProbe?: boolean;
   allowUnreviewedProposal?: boolean;
+  behaviorAgentEvalPath?: string;
 }
 
 export interface LearnV2EvalGoldenLoadOptions {
@@ -140,6 +141,32 @@ export interface LearnV2BehaviorDeltaEvalCase {
 
 type LearnV2EvalResultRow = LearnV2EvalReport["results"][number];
 type LearnV2EvalSummary = LearnV2EvalReport["summary"];
+type LearnV2BehaviorAgentEvalSummary = {
+  status: "pass" | "fail" | "needs-review" | "not-run";
+  resultCount: number;
+  failedScenarioIds: string[];
+  needsReviewScenarioIds: string[];
+  artifactPath?: string;
+};
+type LearnV2BehaviorAgentEvalCheck = {
+  result?: LearnV2EvalResultRow;
+  summary: LearnV2BehaviorAgentEvalSummary;
+};
+
+const LearnV2BehaviorAgentEvalArtifactSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.behavior-agent-eval-artifact.v1"),
+  generatedAt: z.string().datetime(),
+  status: z.enum(["pass", "fail", "needs-review"]),
+  agentExecuted: z.literal(true),
+  sourceResponseHashes: z.array(z.string()).default([]),
+  evals: z.array(z.object({
+    evalId: z.string().min(1),
+    resultCount: z.number().int().min(0),
+    caseIds: z.array(z.string().min(1)).default([]),
+    results: LearnV2LlmBehaviorEvalOutputSchema.shape.results,
+    rejected: LearnV2LlmBehaviorEvalOutputSchema.shape.rejected.default([])
+  })).default([])
+});
 
 export async function runLearnV2Eval(
   rootInput: string,
@@ -170,6 +197,9 @@ export async function runLearnV2Eval(
   const sandboxProbe = options.sandboxProbe
     ? await runLearnV2EvalSandboxProbe(root, runDir, behaviorDeltaCases, counterfactualCases)
     : undefined;
+  const behaviorAgentEval: LearnV2BehaviorAgentEvalCheck = options.behaviorAgentEvalPath
+    ? await evaluateLearnV2BehaviorAgentEvalArtifact(root, options.behaviorAgentEvalPath, behaviorDeltaCases)
+    : { summary: emptyBehaviorAgentEvalSummary() };
   const results = [
     {
       id: "concept-evidence-grounding",
@@ -202,10 +232,11 @@ export async function runLearnV2Eval(
     activationReplay.result,
     counterfactualTrace.result,
     ...(sandboxProbe ? [sandboxProbe.result] : []),
+    ...(behaviorAgentEval.result ? [behaviorAgentEval.result] : []),
     ...behaviorDeltaResults,
     ...goldens.map((golden) => evaluateGolden(golden, episodes, concepts))
   ];
-  const summary = summarizeLearnV2Eval(results, activationReplay.summary, counterfactualTrace.summary, behaviorDeltaCases, behaviorDeltaResults);
+  const summary = summarizeLearnV2Eval(results, activationReplay.summary, counterfactualTrace.summary, behaviorDeltaCases, behaviorDeltaResults, behaviorAgentEval.summary);
   const report = LearnV2EvalReportSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.eval-report.v1",
     status: results.every((result) => result.status === "pass") ? "pass" : "fail",
@@ -217,6 +248,7 @@ export async function runLearnV2Eval(
       behaviorDeltaScenarioCount: behaviorDeltaCases.length,
       counterfactualTraceCaseCount: counterfactualCases.length,
       sandboxProbeStatus: sandboxProbe?.result.status,
+      behaviorAgentEvalStatus: behaviorAgentEval.summary.status,
       unreviewedGoldenProposal: goldenFile.unreviewedProposal
     }),
     summary,
@@ -235,6 +267,7 @@ export async function runLearnV2Eval(
       markdown,
       counterfactualCases: counterfactualCasesPath,
       behaviorDeltaCases: behaviorDeltaCasesPath,
+      behaviorAgentEval: behaviorAgentEval.summary.artifactPath,
       sandboxProbe: sandboxProbe?.artifactPath
     }
   });
@@ -492,6 +525,90 @@ export async function applyLearnV2BehaviorEvalOutputs(
     artifactPath,
     markdownPath,
     status: accepted.length ? status : "not-run"
+  };
+}
+
+async function evaluateLearnV2BehaviorAgentEvalArtifact(
+  root: string,
+  artifactPathInput: string,
+  behaviorDeltaCases: LearnV2BehaviorDeltaEvalCase[]
+): Promise<LearnV2BehaviorAgentEvalCheck> {
+  const config = await readProjectConfig(root);
+  const artifactPath = path.resolve(root, artifactPathInput);
+  const currentCaseIds = new Set(behaviorDeltaCases.map((item) => item.id));
+  const relativeArtifactPath = learnV2ProjectRelativePath(root, artifactPath);
+  const fail = (name: string, details: string): LearnV2BehaviorAgentEvalCheck => ({
+    result: {
+      id: "behavior-agent-eval",
+      status: "fail",
+      checks: [check(name, false, details)]
+    },
+    summary: {
+      status: "fail",
+      resultCount: 0,
+      failedScenarioIds: [],
+      needsReviewScenarioIds: [],
+      artifactPath: relativeArtifactPath
+    }
+  });
+
+  if (!learnV2IsInside(path.resolve(root), artifactPath)) {
+    return fail("artifact-path", "behavior agent eval artifact must be inside the project");
+  }
+  const text = await fs.readFile(artifactPath, "utf8").catch((error: unknown) => {
+    return { readError: error instanceof Error ? error.message : String(error) };
+  });
+  if (typeof text !== "string") return fail("artifact-read", text.readError);
+  let artifact: z.infer<typeof LearnV2BehaviorAgentEvalArtifactSchema>;
+  try {
+    artifact = LearnV2BehaviorAgentEvalArtifactSchema.parse(JSON.parse(text));
+  } catch (error) {
+    return fail("artifact-schema", error instanceof Error ? error.message : String(error));
+  }
+  const boundary = scanLearnV2OutputArtifactBoundary(root, config, [{ label: "behavior-agent-eval", content: artifact }]);
+  if (boundary.status === "fail") {
+    return fail("artifact-boundary", `behavior agent eval artifact crosses output boundary: ${boundary.issues.slice(0, 8).join(", ")}`);
+  }
+  const results = artifact.evals.flatMap((item) => item.results);
+  const resultIds = results.map((item) => item.scenarioId);
+  const unknownScenarioIds = resultIds.filter((id) => !currentCaseIds.has(id));
+  const missingScenarioIds = [...currentCaseIds].filter((id) => !resultIds.includes(id));
+  const duplicateScenarioIds = resultIds.filter((id, index) => resultIds.indexOf(id) !== index);
+  const failedScenarioIds = results.filter((item) => item.status === "fail").map((item) => item.scenarioId);
+  const needsReviewScenarioIds = results.filter((item) => item.status === "needs-review").map((item) => item.scenarioId);
+  const checks = [
+    check("agent-executed", artifact.agentExecuted === true, "behavior-evaluator artifact records agent execution"),
+    check("scenario-id-match", unknownScenarioIds.length === 0 && duplicateScenarioIds.length === 0, unknownScenarioIds.length || duplicateScenarioIds.length
+      ? `unknown=${unknownScenarioIds.slice(0, 6).join(", ") || "none"} duplicate=${duplicateScenarioIds.slice(0, 6).join(", ") || "none"}`
+      : "agent scenario ids match behavior-delta cases"),
+    check("covers-current-behavior-delta-cases", missingScenarioIds.length === 0 && currentCaseIds.size > 0, missingScenarioIds.length
+      ? `missing scenario ids: ${missingScenarioIds.slice(0, 6).join(", ")}`
+      : currentCaseIds.size ? "agent artifact covers all current behavior-delta cases" : "no current behavior-delta cases configured"),
+    check("agent-status", artifact.status === "pass" && failedScenarioIds.length === 0 && needsReviewScenarioIds.length === 0, `status=${artifact.status}, failed=${failedScenarioIds.length}, needsReview=${needsReviewScenarioIds.length}`)
+  ];
+  const pass = checks.every((item) => item.status === "pass");
+  return {
+    result: {
+      id: "behavior-agent-eval",
+      status: pass ? "pass" : "fail",
+      checks
+    },
+    summary: {
+      status: artifact.status,
+      resultCount: results.length,
+      failedScenarioIds,
+      needsReviewScenarioIds,
+      artifactPath: relativeArtifactPath
+    }
+  };
+}
+
+function emptyBehaviorAgentEvalSummary(): LearnV2BehaviorAgentEvalSummary {
+  return {
+    status: "not-run",
+    resultCount: 0,
+    failedScenarioIds: [],
+    needsReviewScenarioIds: []
   };
 }
 
@@ -926,7 +1043,8 @@ function summarizeLearnV2Eval(
   activationReplay: LearnV2EvalSummary["activationReplay"],
   counterfactualTrace: LearnV2EvalSummary["counterfactualTrace"],
   behaviorDeltaCases: LearnV2BehaviorDeltaEvalCase[],
-  behaviorDeltaResults: LearnV2EvalResultRow[]
+  behaviorDeltaResults: LearnV2EvalResultRow[],
+  behaviorAgentEval: LearnV2BehaviorAgentEvalSummary
 ): LearnV2EvalSummary {
   const failedBehaviorDeltaIds = behaviorDeltaResults
     .filter((result) => result.status === "fail")
@@ -949,6 +1067,10 @@ function summarizeLearnV2Eval(
       passedScenarios: behaviorDeltaResults.filter((result) => result.status === "pass").length,
       failedScenarios: failedBehaviorDeltaIds.length,
       activatedConceptCount: activatedConceptIds.size,
+      agentStatus: behaviorAgentEval.status,
+      agentResultCount: behaviorAgentEval.resultCount,
+      agentFailedScenarioIds: behaviorAgentEval.failedScenarioIds,
+      agentNeedsReviewScenarioIds: behaviorAgentEval.needsReviewScenarioIds,
       tokenOverheadChars: behaviorDeltaCases.reduce((sum, item) => sum + item.tokenOverheadChars, 0),
       tokenOverheadTokens,
       averageTokenOverheadTokens: behaviorDeltaCases.length ? Number((tokenOverheadTokens / behaviorDeltaCases.length).toFixed(2)) : 0,
@@ -1371,6 +1493,9 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     `Status: ${report.summary.behaviorDelta.status}`,
     `Scenarios: ${report.summary.behaviorDelta.passedScenarios}/${report.summary.behaviorDelta.scenarioCount} pass`,
     `Activated concepts: ${report.summary.behaviorDelta.activatedConceptCount}`,
+    `Agent eval: ${report.summary.behaviorDelta.agentStatus} (${report.summary.behaviorDelta.agentResultCount} result(s))`,
+    report.summary.behaviorDelta.agentFailedScenarioIds.length ? `Agent failed scenarios: ${report.summary.behaviorDelta.agentFailedScenarioIds.join(", ")}` : "Agent failed scenarios: none",
+    report.summary.behaviorDelta.agentNeedsReviewScenarioIds.length ? `Agent needs-review scenarios: ${report.summary.behaviorDelta.agentNeedsReviewScenarioIds.join(", ")}` : "Agent needs-review scenarios: none",
     `Token overhead: ${report.summary.behaviorDelta.tokenOverheadTokens} estimated token(s) total, average ${report.summary.behaviorDelta.averageTokenOverheadTokens}, max ${report.summary.behaviorDelta.maxTokenOverheadTokens}`,
     `Regression findings: ${report.summary.behaviorDelta.regressionFindingCount}`,
     report.summary.behaviorDelta.failedScenarioIds.length ? `Failed scenarios: ${report.summary.behaviorDelta.failedScenarioIds.join(", ")}` : "Failed scenarios: none",
@@ -1406,6 +1531,7 @@ function learnV2EvalProofBoundary(input: {
   behaviorDeltaScenarioCount: number;
   counterfactualTraceCaseCount: number;
   sandboxProbeStatus?: "pass" | "fail";
+  behaviorAgentEvalStatus?: "pass" | "fail" | "needs-review" | "not-run";
   unreviewedGoldenProposal?: boolean;
 }): LearnV2EvalReport["proofBoundary"] {
   const proves = [
@@ -1432,13 +1558,21 @@ function learnV2EvalProofBoundary(input: {
   } else {
     doesNotProve.push("sandbox execution success");
   }
+  const agentExecuted = input.behaviorAgentEvalStatus === "pass";
+  if (agentExecuted) {
+    proves.push("agent-backed behavior-delta judgment");
+  } else if (input.behaviorAgentEvalStatus === "fail" || input.behaviorAgentEvalStatus === "needs-review") {
+    doesNotProve.push(`passing agent-backed behavior judgment (${input.behaviorAgentEvalStatus})`);
+  } else {
+    doesNotProve.push("agent-backed behavior judgment");
+  }
   if (input.unreviewedGoldenProposal) {
     doesNotProve.push("reviewed eval golden quality");
   }
   return {
     method: "deterministic-local-replay",
     sandboxExecuted,
-    agentExecuted: false,
+    agentExecuted,
     proves,
     doesNotProve
   };

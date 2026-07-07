@@ -398,6 +398,7 @@ osk.command("learn")
   .option("--surface-file <path>", "Raw local learning source file", collectOption, [])
   .option("--surface-adapter <adapter>", "Learn v2 raw surface adapter override for --raw --surface-file")
   .option("--learn-v2-goldens <path>", "Learn-v2 eval golden JSON file with extraction and optional behavior-delta scenarios")
+  .option("--learn-v2-agent-eval <path>", "Validated Learn-v2 behavior-agent eval artifact to include in --run-learn-v2-eval proof boundary")
   .option("--allow-unreviewed-eval-proposal", "Preview model-planned Learn v2 eval-golden proposals before review; proof boundary marks golden quality as unreviewed")
   .option("--model-mode <mode>", `Learn v2 execution policy: ${RawLearningPublicModelModes.join("|")}; sanitized OpenCode execution uses --execute-model-requests; reserved raw-to-model dispatch requires --experimental-raw-model-dispatch and remains rejected`, parseRawLearningModelMode)
   .option("--experimental-raw-model-dispatch", "Acknowledge reserved raw OpenCode dispatch policy; currently still blocked pending UX, route display, and privacy review")
@@ -444,6 +445,7 @@ osk.command("learn")
       const result = withLearnV2EvalProofBoundary(await runPersistedLearnV2Eval(process.cwd(), {
         goldensPath: options.learnV2Goldens,
         sandboxProbe: options.learnV2EvalSandboxProbe === true,
+        behaviorAgentEvalPath: options.learnV2AgentEval,
         allowUnreviewedProposal: options.allowUnreviewedEvalProposal === true
       }));
       output(options.json, result, renderLearnV2PersistedEval(result));
@@ -2496,6 +2498,7 @@ function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersist
     `Proves: ${proofBoundary.proves.join("; ")}`,
     `Does not prove: ${proofBoundary.doesNotProve.join("; ")}`,
     `Behavior delta: ${result.summary.behaviorDelta.status} (${result.summary.behaviorDelta.passedScenarios}/${result.summary.behaviorDelta.scenarioCount} scenarios, ${result.summary.behaviorDelta.activatedConceptCount} activated concepts)`,
+    `Behavior agent eval: ${result.summary.behaviorDelta.agentStatus ?? "not-run"} (${result.summary.behaviorDelta.agentResultCount ?? 0} result(s))`,
     `Behavior-delta overhead: ${result.summary.behaviorDelta.tokenOverheadTokens ?? 0} estimated token(s), regressions ${result.summary.behaviorDelta.regressionFindingCount ?? 0}`,
     `Activation replay: ${result.summary.activationReplay.status} (${result.summary.activationReplay.retrievedConcepts}/${result.summary.activationReplay.replayableConcepts}, rate ${result.summary.activationReplay.retrievalRate})`,
     `Counterfactual trace: ${result.summary.counterfactualTrace.status} (${result.summary.counterfactualTrace.activatedCases}/${result.summary.counterfactualTrace.caseCount}, rate ${result.summary.counterfactualTrace.activationRate})`,
@@ -2511,7 +2514,7 @@ function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersist
 type LearnV2EvalProofBoundary = {
   method: "deterministic-local-replay";
   sandboxExecuted: boolean;
-  agentExecuted: false;
+  agentExecuted: boolean;
   proves: string[];
   doesNotProve: string[];
 };

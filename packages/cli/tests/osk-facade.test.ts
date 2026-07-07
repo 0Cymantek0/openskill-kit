@@ -62,6 +62,7 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--eval-output <path>");
     expect(stdout).toContain("--prepare-behavior-eval-requests");
     expect(stdout).toContain("--behavior-eval-output <path>");
+    expect(stdout).toContain("--learn-v2-agent-eval <path>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
     expect(stdout).toContain("deterministic-only|opencode-host-sanitized-only");
