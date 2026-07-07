@@ -19,6 +19,8 @@ export * from "./conditional-learning.js";
 export * from "./skill-ontology.js";
 export * from "./resource-grounding.js";
 export * from "./concept-debug-trace.js";
+export * from "./outcome-policy-core.js";
+export * from "./outcome-policy.js";
 export * from "./model-routing.js";
 export * from "./model-proposals.js";
 export * from "./scope-proposals.js";

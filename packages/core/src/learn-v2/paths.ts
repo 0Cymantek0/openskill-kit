@@ -48,6 +48,7 @@ export const LEARN_V2_GENERATED_DIRS = [
   ".openskill-kit/learn-v2/skill-ontology/",
   ".openskill-kit/learn-v2/open-world-grounding/",
   ".openskill-kit/learn-v2/concept-debug-trace/",
+  ".openskill-kit/learn-v2/outcome-policy/",
 
   // Compiled/preview local output
   ".openskill-kit/learn-v2/compiled-preview/",

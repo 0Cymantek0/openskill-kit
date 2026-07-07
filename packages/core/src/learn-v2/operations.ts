@@ -6,6 +6,7 @@ import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.
 import { writeLearnV2SkillOntologyArtifact } from "./skill-ontology.js";
 import { writeLearnV2OpenWorldGroundingArtifact } from "./resource-grounding.js";
 import { writeLearnV2ConceptDebugTraceArtifact } from "./concept-debug-trace.js";
+import { writeLearnV2OutcomePolicyArtifact } from "./outcome-policy.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { runLearnV2Eval, type LearnV2EvalOptions } from "./eval.js";
@@ -34,6 +35,7 @@ export interface LearnV2ConceptExtractionResult {
   skillNamespaceCount: number;
   openWorldAnchorCount: number;
   conceptDebugTraceCount: number;
+  outcomePolicySuppressionCount: number;
   rejectedAtomCount: number;
   conceptCount: number;
   conceptStorePath: string;
@@ -41,6 +43,7 @@ export interface LearnV2ConceptExtractionResult {
   skillOntologyPath: string;
   openWorldGroundingPath: string;
   conceptDebugTracePath: string;
+  outcomePolicyPath: string;
 }
 
 export interface LearnV2PersistedEvalResult {
@@ -85,6 +88,7 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
   const store = await writeLearnV2ConceptStore(root, concepts, now);
   const skillOntology = await writeLearnV2SkillOntologyArtifact(root, store.cards, now);
   const openWorldGrounding = await writeLearnV2OpenWorldGroundingArtifact(root, store.cards, now);
+  const outcomePolicy = await writeLearnV2OutcomePolicyArtifact(root, store.cards, now);
   const conceptDebugTrace = await writeLearnV2ConceptDebugTraceArtifact(root, store.cards, now, {
     conditionalLearning,
     skillOntology,
@@ -101,13 +105,15 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
     skillNamespaceCount: skillOntology.counts.namespaces,
     openWorldAnchorCount: openWorldGrounding.counts.anchors,
     conceptDebugTraceCount: conceptDebugTrace.counts.tracedConcepts,
+    outcomePolicySuppressionCount: outcomePolicy.counts.suppressed,
     rejectedAtomCount: extracted.rejected.length,
     conceptCount: store.cards.length,
     conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
     conditionalLearningPath: conditionalLearning.artifacts.markdown,
     skillOntologyPath: skillOntology.artifacts.markdown,
     openWorldGroundingPath: openWorldGrounding.artifacts.markdown,
-    conceptDebugTracePath: conceptDebugTrace.artifacts.markdown
+    conceptDebugTracePath: conceptDebugTrace.artifacts.markdown,
+    outcomePolicyPath: outcomePolicy.artifacts.markdown
   };
 }
 

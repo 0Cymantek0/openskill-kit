@@ -58,6 +58,7 @@ import {
   writeLearnV2ConflictLedger,
   writeLearnV2CounterevidenceLedger,
   writeLearnV2DeclassifiedSnippetArtifact,
+  writeLearnV2OutcomePolicyArtifact,
   storeLearnV2RawEvidence,
   detectLearnV2ConceptDrift,
   runLearnV2Eval,
@@ -2795,12 +2796,14 @@ describe("learn-v2 substrate", () => {
     expect(observability.openWorldGrounding.anchors).toBeGreaterThanOrEqual(1);
     expect(observability.openWorldGrounding.titles).toContain("W3C WCAG 2.2 Quick Reference");
     expect(observability.conceptDebugTrace.tracedConcepts).toBeGreaterThanOrEqual(3);
+    expect(observability.outcomePolicy.decisions).toBeGreaterThanOrEqual(3);
     const observabilityMarkdown = await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`));
     expect(observabilityMarkdown).toContain("Conditional hypotheses: 3 (3 promoted)");
     expect(observabilityMarkdown).toContain("Namespace labels: UI/UX design");
     expect(observabilityMarkdown).toContain("Open-world titles:");
     expect(observabilityMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
     expect(observabilityMarkdown).toContain("Concept debug traces:");
+    expect(observabilityMarkdown).toContain("Outcome policy:");
   });
 
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
@@ -3103,9 +3106,11 @@ describe("learn-v2 substrate", () => {
     expect(extracted.skillNamespaceCount).toBeGreaterThanOrEqual(1);
     expect(extracted.openWorldAnchorCount).toBeGreaterThanOrEqual(1);
     expect(extracted.conceptDebugTraceCount).toBeGreaterThanOrEqual(1);
+    expect(extracted.outcomePolicySuppressionCount).toBe(0);
     expect(await readText(extracted.skillOntologyPath)).toContain("Skill Ontology");
     expect(await readText(extracted.openWorldGroundingPath)).toContain("Open-World Grounding");
     expect(await readText(extracted.conceptDebugTracePath)).toContain("Concept Debug Trace");
+    expect(await readText(extracted.outcomePolicyPath)).toContain("Outcome Policy");
     const evaluated = await runPersistedLearnV2Eval(root, {}, new Date("2026-06-30T00:03:00Z"));
     expect(evaluated.evalStatus).toBe("pass");
     expect(await readText(evaluated.evalReportPath)).toContain("Counterfactual trace cases");
@@ -5107,6 +5112,98 @@ describe("learn-v2 substrate", () => {
     }, new Date("2026-06-30T00:07:00Z"));
     expect(suppressed.matches.some((match) => match.conceptId === concept.id)).toBe(false);
     expect(suppressed.suppressed.find((match) => match.conceptId === concept.id)?.reasons).toContain("outcome:harmful");
+
+    const [wrongBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("outcome_wrong_threshold", "Prefer broad parser rewrite for parser changes.", "positive")
+    ], new Date("2026-06-30T00:07:10Z"));
+    const wrongActive = {
+      ...wrongBase!,
+      status: "active" as const,
+      activation: {
+        phrases: ["broad parser rewrite", "parser changes"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: []
+      },
+      scope: {
+        ...wrongBase!.scope,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: []
+      }
+    };
+    await writeLearnV2ConceptStore(root, [wrongActive], new Date("2026-06-30T00:07:15Z"));
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: wrongActive.id,
+      outcome: "wrong",
+      query: "parser changes broad parser rewrite",
+      reason: "first wrong activation"
+    }, new Date("2026-06-30T00:07:20Z"));
+    const oneWrong = await activateLearnV2Concepts(root, {
+      query: "parser changes broad parser rewrite",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    }, new Date("2026-06-30T00:07:30Z"));
+    expect(oneWrong.matches.some((match) => match.conceptId === wrongActive.id)).toBe(true);
+    expect(oneWrong.matches.find((match) => match.conceptId === wrongActive.id)?.reasons.join(",")).toContain("outcome:wrong:1");
+    await recordLearnV2ConceptOutcome(root, {
+      conceptId: wrongActive.id,
+      outcome: "wrong",
+      query: "parser changes broad parser rewrite",
+      reason: "second wrong activation"
+    }, new Date("2026-06-30T00:07:40Z"));
+    const wrongSuppressed = await activateLearnV2Concepts(root, {
+      query: "parser changes broad parser rewrite",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    }, new Date("2026-06-30T00:07:50Z"));
+    expect(wrongSuppressed.matches.some((match) => match.conceptId === wrongActive.id)).toBe(false);
+    expect(wrongSuppressed.suppressed.find((match) => match.conceptId === wrongActive.id)?.reasons).toContain("outcome:wrong-threshold:2");
+
+    const [ignoredBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("outcome_ignored_threshold", "Prefer parser snapshot reports for parser changes.", "positive")
+    ], new Date("2026-06-30T00:08:00Z"));
+    const ignoredActive = {
+      ...ignoredBase!,
+      status: "active" as const,
+      activation: {
+        phrases: ["parser snapshot reports", "parser changes"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: []
+      },
+      scope: {
+        ...ignoredBase!.scope,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: []
+      }
+    };
+    await writeLearnV2ConceptStore(root, [ignoredActive], new Date("2026-06-30T00:08:10Z"));
+    for (const offset of [20, 30, 40]) {
+      await recordLearnV2ConceptOutcome(root, {
+        conceptId: ignoredActive.id,
+        outcome: "ignored",
+        query: "parser changes parser snapshot reports",
+        reason: `ignored activation ${offset}`
+      }, new Date(`2026-06-30T00:08:${offset}Z`));
+    }
+    const ignoredSuppressed = await activateLearnV2Concepts(root, {
+      query: "parser changes parser snapshot reports",
+      paths: ["packages/core/src/parser.ts"],
+      taskTypes: ["parser-change"]
+    }, new Date("2026-06-30T00:08:50Z"));
+    expect(ignoredSuppressed.matches.some((match) => match.conceptId === ignoredActive.id)).toBe(false);
+    expect(ignoredSuppressed.suppressed.find((match) => match.conceptId === ignoredActive.id)?.reasons).toContain("outcome:ignored-threshold:3");
+
+    const policy = await writeLearnV2OutcomePolicyArtifact(root, [wrongActive, ignoredActive], new Date("2026-06-30T00:09:00Z"));
+    expect(policy.counts.suppressed).toBe(2);
+    expect(policy.decisions.find((decision) => decision.conceptId === wrongActive.id)?.reasons).toContain("outcome:wrong-threshold:2");
+    expect(policy.decisions.find((decision) => decision.conceptId === ignoredActive.id)?.reasons).toContain("outcome:ignored-threshold:3");
+    const policyMarkdown = await readText(policy.artifacts.markdown);
+    expect(policyMarkdown).toContain("Outcome Policy");
+    expect(policyMarkdown).toContain("Suppress wrong count: 2");
+    expect(policyMarkdown).toContain("Suppress ignored count: 3");
+    expect(policyMarkdown).not.toContain("parser changes parser snapshot reports");
+    expect(policyMarkdown).not.toContain(root);
   });
 
   it("includes active Learn v2 activation in normal task context and suppresses explicit negative triggers", async () => {

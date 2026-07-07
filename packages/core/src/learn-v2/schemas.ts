@@ -610,6 +610,46 @@ export const LearnV2ConceptDebugTraceArtifactSchema = z.object({
 });
 export type LearnV2ConceptDebugTraceArtifact = z.infer<typeof LearnV2ConceptDebugTraceArtifactSchema>;
 
+export const LearnV2OutcomePolicyDecisionSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.outcome-policy-decision.v1"),
+  conceptId: z.string().min(1),
+  action: z.enum(["allow-activation", "suppress-activation", "demote-review", "keep-monitoring"]),
+  reasons: z.array(z.string().min(1)).default([]),
+  counts: z.object({
+    helpful: z.number().int().min(0),
+    ignored: z.number().int().min(0),
+    wrong: z.number().int().min(0),
+    harmful: z.number().int().min(0),
+    superseded: z.number().int().min(0)
+  }),
+  lastRecordedAt: z.string().datetime().optional()
+});
+export type LearnV2OutcomePolicyDecision = z.infer<typeof LearnV2OutcomePolicyDecisionSchema>;
+
+export const LearnV2OutcomePolicyArtifactSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.outcome-policy-artifact.v1"),
+  generatedAt: z.string().datetime(),
+  decisions: z.array(LearnV2OutcomePolicyDecisionSchema).default([]),
+  thresholds: z.object({
+    suppressWrongCount: z.number().int().min(1),
+    suppressIgnoredCount: z.number().int().min(1),
+    suppressHarmfulCount: z.number().int().min(1),
+    suppressSupersededCount: z.number().int().min(1)
+  }),
+  counts: z.object({
+    concepts: z.number().int().min(0),
+    decisions: z.number().int().min(0),
+    suppressed: z.number().int().min(0),
+    demoteReview: z.number().int().min(0),
+    monitoring: z.number().int().min(0)
+  }),
+  artifacts: z.object({
+    json: z.string(),
+    markdown: z.string()
+  })
+});
+export type LearnV2OutcomePolicyArtifact = z.infer<typeof LearnV2OutcomePolicyArtifactSchema>;
+
 export const LearnV2LlmConceptExtractionOutputSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.llm-concept-extraction-output.v1"),
   atoms: z.array(z.object({

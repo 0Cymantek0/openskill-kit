@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2ConceptDebugTraceArtifact, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2OpenWorldGroundingArtifact, LearnV2ReviewQueue, LearnV2SkillOntologyArtifact, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConceptDebugTraceArtifact, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2OpenWorldGroundingArtifact, LearnV2OutcomePolicyArtifact, LearnV2ReviewQueue, LearnV2SkillOntologyArtifact, LearnV2TaskEpisode } from "./schemas.js";
 import type { LearnV2ModelExecutionPolicyReport } from "./pipeline.js";
 import { readLearnV2ConceptOutcomeTelemetrySummary, type LearnV2ConceptOutcomeTelemetrySummary } from "./activation.js";
 import { learnV2SafeLocalPath } from "./utils.js";
@@ -209,6 +209,18 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     openWorldLinks: 0,
     reviewBlockedConcepts: 0
   }),
+  outcomePolicy: z.object({
+    decisions: z.number().int().min(0),
+    suppressed: z.number().int().min(0),
+    demoteReview: z.number().int().min(0),
+    monitoring: z.number().int().min(0),
+    artifactPath: z.string().optional()
+  }).default({
+    decisions: 0,
+    suppressed: 0,
+    demoteReview: 0,
+    monitoring: 0
+  }),
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
     leakStatus: z.enum(["pass", "fail"]),
@@ -281,6 +293,7 @@ export interface LearnV2PipelineObservabilityInput {
   skillOntology?: LearnV2SkillOntologyArtifact;
   openWorldGrounding?: LearnV2OpenWorldGroundingArtifact;
   conceptDebugTrace?: LearnV2ConceptDebugTraceArtifact;
+  outcomePolicy?: LearnV2OutcomePolicyArtifact;
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
   evidenceQualityScores?: LearnV2EvidenceQualityScore[];
@@ -456,6 +469,15 @@ export async function writeLearnV2PipelineObservabilityReport(
         ? learnV2SafeLocalPath(input.conceptDebugTrace.artifacts.markdown, root)
         : undefined
     },
+    outcomePolicy: {
+      decisions: input.outcomePolicy?.counts.decisions ?? 0,
+      suppressed: input.outcomePolicy?.counts.suppressed ?? 0,
+      demoteReview: input.outcomePolicy?.counts.demoteReview ?? 0,
+      monitoring: input.outcomePolicy?.counts.monitoring ?? 0,
+      artifactPath: input.outcomePolicy?.artifacts.markdown
+        ? learnV2SafeLocalPath(input.outcomePolicy.artifacts.markdown, root)
+        : undefined
+    },
     qualityGates: {
       evalStatus: input.evalReport.status,
       leakStatus: input.evalReport.leakCheck.status,
@@ -578,6 +600,8 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Concept debug traces: ${report.conceptDebugTrace.tracedConcepts} / ${report.conceptDebugTrace.concepts} concept(s)`,
     `- Concept debug links: conditional=${report.conceptDebugTrace.conditionalLinks}, open-world=${report.conceptDebugTrace.openWorldLinks}, review-blocked=${report.conceptDebugTrace.reviewBlockedConcepts}`,
     `- Concept debug artifact: ${report.conceptDebugTrace.artifactPath ?? "none"}`,
+    `- Outcome policy: decisions=${report.outcomePolicy.decisions}, suppressed=${report.outcomePolicy.suppressed}, demote-review=${report.outcomePolicy.demoteReview}, monitoring=${report.outcomePolicy.monitoring}`,
+    `- Outcome policy artifact: ${report.outcomePolicy.artifactPath ?? "none"}`,
     `- Review-ready cards: ${report.concepts.reviewReadyCards}`,
     `- Review focus: ${report.concepts.reviewFocusCards} focus, ${report.concepts.reviewAppendixCards} appendix`,
     `- Unresolved conflicts: ${report.concepts.unresolvedConflicts}`,

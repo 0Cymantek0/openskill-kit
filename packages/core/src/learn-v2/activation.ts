@@ -4,6 +4,7 @@ import { z } from "zod";
 import { readProjectConfig } from "../events/store.js";
 import { deriveActivationSignalsFromText, deriveLearnV2SubsystemLabels } from "./activation-signals.js";
 import { readLearnV2ConceptStore, writeLearnV2ActivationIndex, type LearnV2ActivationIndex } from "./store.js";
+import { decideLearnV2OutcomePolicy } from "./outcome-policy-core.js";
 import { learnV2Hash, learnV2ShortHash } from "./utils.js";
 
 export const LearnV2ConceptOutcomeSchema = z.object({
@@ -354,9 +355,11 @@ function scoreEntry(
   if (suppressedBy.length) {
     return baseMatch(entry, 0, suppressedBy.map((trigger) => `negative-trigger:${trigger}`), true, feedback);
   }
-  if (feedback && (feedback.harmful > 0 || feedback.superseded > 0)) {
-    const reason = feedback.harmful > 0 ? "outcome:harmful" : "outcome:superseded";
-    return baseMatch(entry, 0, [reason], true, feedback);
+  if (feedback) {
+    const policy = decideLearnV2OutcomePolicy(entry.conceptId, feedback);
+    if (policy.action === "suppress-activation") {
+      return baseMatch(entry, 0, policy.reasons, true, feedback);
+    }
   }
 
   let score = entry.confidence * 0.22;
