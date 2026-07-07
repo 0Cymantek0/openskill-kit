@@ -156,7 +156,7 @@ export const LearnV2PatchComparisonSchema = z.object({
       changedImports: z.array(z.string()).default([]),
       addedLines: z.number().int().min(0),
       removedLines: z.number().int().min(0),
-      parserBackend: z.enum(["typescript-compiler", "language-structural-scanner", "heuristic-fallback", "none"]).default("none"),
+      parserBackend: z.enum(["typescript-compiler", "python-ast", "language-structural-scanner", "heuristic-fallback", "none"]).default("none"),
       structuralConfidence: z.enum(["parser", "fallback", "none"]).default("none"),
       confidenceCap: z.number().min(0).max(1).default(0.35),
       parserCapabilities: z.array(z.enum([

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import ts from "typescript";
 import type { LearnV2PatchComparison } from "./schemas.js";
 import { learnV2IsGeneratedPath } from "./utils.js";
@@ -36,7 +37,17 @@ interface StructuralParser {
   confidenceCap: number;
   capabilities: FileSummary["parserCapabilities"];
   limitations: FileSummary["parserLimitations"];
-  signal(file: DiffFile): { symbols: string[]; imports: string[] };
+  signal(file: DiffFile): StructuralSignal;
+}
+
+interface StructuralSignal {
+  symbols: string[];
+  imports: string[];
+  backend?: FileSummary["parserBackend"];
+  confidence?: FileSummary["structuralConfidence"];
+  confidenceCap?: number;
+  capabilities?: FileSummary["parserCapabilities"];
+  limitations?: FileSummary["parserLimitations"];
 }
 
 const STRUCTURAL_PARSERS: StructuralParser[] = [
@@ -60,12 +71,12 @@ const STRUCTURAL_PARSERS: StructuralParser[] = [
   },
   {
     language: "python",
-    backend: "language-structural-scanner",
-    confidence: "fallback",
-    confidenceCap: 0.78,
-    capabilities: ["block-scope", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
-    limitations: ["fallback-confidence-cap", "hunk-context-dependent", "not-ast-equivalent"],
-    signal: (file) => blockStructuralSignal(file, "python")
+    backend: "python-ast",
+    confidence: "parser",
+    confidenceCap: 0.94,
+    capabilities: ["ast-declarations", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
+    limitations: ["hunk-context-dependent"],
+    signal: pythonStructuralSignal
   },
   {
     language: "go",
@@ -175,6 +186,11 @@ function summarizeFile(file: DiffFile): FileSummary {
   const allChanged = [...file.added, ...file.removed];
   const parser = structuralParserForLanguage(language);
   const parserSignal = parser.signal(file);
+  const parserBackend = parserSignal.backend ?? parser.backend;
+  const structuralConfidence = parserSignal.confidence ?? parser.confidence;
+  const confidenceCap = parserSignal.confidenceCap ?? parser.confidenceCap;
+  const parserCapabilities = parserSignal.capabilities ?? parser.capabilities;
+  const parserLimitations = parserSignal.limitations ?? parser.limitations;
   const changedSymbols = [...new Set([
     ...parserSignal.symbols,
     ...allChanged.flatMap((line) => symbolsForLine(language, line)),
@@ -196,11 +212,11 @@ function summarizeFile(file: DiffFile): FileSummary {
     changedImports,
     addedLines: file.added.length,
     removedLines: file.removed.length,
-    parserBackend: parser.backend,
-    structuralConfidence: parser.confidence,
-    confidenceCap: parser.confidenceCap,
-    parserCapabilities: parser.capabilities,
-    parserLimitations: parser.limitations,
+    parserBackend,
+    structuralConfidence,
+    confidenceCap,
+    parserCapabilities,
+    parserLimitations,
     semanticChange
   };
 }
@@ -235,6 +251,102 @@ function typeScriptStructuralSignal(file: DiffFile, language: StructuralLanguage
     imports: [...new Set(signals.flatMap((signal) => signal.imports))].sort()
   };
 }
+
+function pythonStructuralSignal(file: DiffFile): StructuralSignal {
+  const astSignals: StructuralSignal[] = [];
+  for (const hunk of file.hunks) {
+    const after = pythonAstSignalFromLines(sourceLinesFromHunk(hunk, "after"));
+    const before = pythonAstSignalFromLines(sourceLinesFromHunk(hunk, "before"));
+    if (after) astSignals.push(after);
+    if (before) astSignals.push(before);
+  }
+  if (!file.hunks.length) {
+    const added = pythonAstSignalFromLines(file.added);
+    const removed = pythonAstSignalFromLines(file.removed);
+    if (added) astSignals.push(added);
+    if (removed) astSignals.push(removed);
+  }
+  if (astSignals.length) {
+    return {
+      symbols: [...new Set(astSignals.flatMap((signal) => signal.symbols))].sort(),
+      imports: [...new Set(astSignals.flatMap((signal) => signal.imports))].sort(),
+      backend: "python-ast",
+      confidence: "parser",
+      confidenceCap: 0.94,
+      capabilities: ["ast-declarations", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
+      limitations: ["hunk-context-dependent"]
+    };
+  }
+  return {
+    ...blockStructuralSignal(file, "python"),
+    backend: "language-structural-scanner",
+    confidence: "fallback",
+    confidenceCap: 0.78,
+    capabilities: ["block-scope", "hunk-scope", "import-tracking", "metadata-adjacent-declarations"],
+    limitations: ["fallback-confidence-cap", "hunk-context-dependent", "not-ast-equivalent"]
+  };
+}
+
+function sourceLinesFromHunk(hunk: DiffHunk, side: "after" | "before"): string[] {
+  const lines: string[] = [];
+  const headerContext = /^@@[^@]*@@\s*(.*)$/.exec(hunk.header)?.[1]?.trim();
+  if (headerContext) lines.push(headerContext);
+  for (const line of hunk.lines) {
+    if (line.kind === "context" || (side === "after" && line.kind === "added") || (side === "before" && line.kind === "removed")) {
+      lines.push(line.text);
+    }
+  }
+  return lines;
+}
+
+function pythonAstSignalFromLines(lines: string[]): StructuralSignal | undefined {
+  const source = lines.join("\n").trimEnd();
+  if (!source.trim()) return undefined;
+  const result = spawnSync(process.env.OPENSKILLKIT_PYTHON ?? "python", ["-c", PYTHON_AST_SIGNAL_SCRIPT], {
+    input: source,
+    encoding: "utf8",
+    timeout: 4000,
+    maxBuffer: 256 * 1024,
+    windowsHide: true
+  });
+  if (result.status !== 0 || !result.stdout.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(result.stdout) as { symbols?: unknown; imports?: unknown };
+    return {
+      symbols: Array.isArray(parsed.symbols) ? parsed.symbols.filter((item): item is string => typeof item === "string").sort() : [],
+      imports: Array.isArray(parsed.imports) ? parsed.imports.filter((item): item is string => typeof item === "string").sort() : []
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+const PYTHON_AST_SIGNAL_SCRIPT = String.raw`
+import ast, json, sys
+source = sys.stdin.read()
+tree = ast.parse(source)
+symbols = set()
+imports = set()
+for node in ast.walk(tree):
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        symbols.add(node.name)
+    elif isinstance(node, ast.Import):
+        for alias in node.names:
+            imports.add(alias.name.split(".")[0])
+    elif isinstance(node, ast.ImportFrom):
+        if node.module:
+            imports.add(node.module)
+            for alias in node.names:
+                if alias.name != "*":
+                    imports.add(f"{node.module}.{alias.name}")
+    elif isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                symbols.add(target.id)
+    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        symbols.add(node.target.id)
+print(json.dumps({"symbols": sorted(symbols), "imports": sorted(imports)}))
+`;
 
 function blockStructuralSignal(file: DiffFile, language: StructuralLanguage): BlockStructuralSignal {
   if (language !== "python" && language !== "go" && language !== "rust") return { symbols: [], imports: [] };

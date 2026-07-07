@@ -817,7 +817,14 @@ describe("learn-v2 substrate", () => {
       capabilities: expect.arrayContaining(["ast-declarations", "hunk-scope", "import-tracking"]),
       limitations: ["hunk-context-dependent"]
     });
-    for (const language of ["python", "go", "rust"] as const) {
+    expect(byLanguage.get("python")).toMatchObject({
+      backend: "python-ast",
+      confidence: "parser",
+      confidenceCap: 0.94,
+      capabilities: expect.arrayContaining(["ast-declarations", "hunk-scope", "import-tracking"]),
+      limitations: ["hunk-context-dependent"]
+    });
+    for (const language of ["go", "rust"] as const) {
       expect(byLanguage.get(language)).toMatchObject({
         backend: "language-structural-scanner",
         confidence: "fallback",
@@ -951,13 +958,20 @@ describe("learn-v2 substrate", () => {
       "crate::parser::Parser",
       "crate::parser::parse_skill"
     ]));
-    expect(summary.fileSummaries.every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.structuralConfidence === "fallback")).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.confidenceCap === 0.78)).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.parserCapabilities.includes("block-scope"))).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.parserCapabilities.includes("metadata-adjacent-declarations"))).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.parserLimitations.includes("not-ast-equivalent"))).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.parserLimitations.includes("fallback-confidence-cap"))).toBe(true);
+    const pythonSummary = summary.fileSummaries.find((file) => file.language === "python")!;
+    expect(pythonSummary.parserBackend).toBe("python-ast");
+    expect(pythonSummary.structuralConfidence).toBe("parser");
+    expect(pythonSummary.confidenceCap).toBe(0.94);
+    expect(pythonSummary.parserCapabilities).toEqual(expect.arrayContaining(["ast-declarations", "hunk-scope", "import-tracking"]));
+    expect(pythonSummary.parserLimitations).not.toContain("not-ast-equivalent");
+    const fallbackSummaries = summary.fileSummaries.filter((file) => file.language === "go" || file.language === "rust");
+    expect(fallbackSummaries.every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
+    expect(fallbackSummaries.every((file) => file.structuralConfidence === "fallback")).toBe(true);
+    expect(fallbackSummaries.every((file) => file.confidenceCap === 0.78)).toBe(true);
+    expect(fallbackSummaries.every((file) => file.parserCapabilities.includes("block-scope"))).toBe(true);
+    expect(fallbackSummaries.every((file) => file.parserCapabilities.includes("metadata-adjacent-declarations"))).toBe(true);
+    expect(fallbackSummaries.every((file) => file.parserLimitations.includes("not-ast-equivalent"))).toBe(true);
+    expect(fallbackSummaries.every((file) => file.parserLimitations.includes("fallback-confidence-cap"))).toBe(true);
     expect(summary.fileSummaries.every((file) => file.semanticChange === true)).toBe(true);
   });
 
@@ -1769,7 +1783,7 @@ describe("learn-v2 substrate", () => {
     expect(learnV2Markdown).toContain(`openskill-kit osk review --concept-demote ${active.id}`);
   });
 
-  it("detects Python Go and Rust structural symbols with confidence-capped fallback parsers", async () => {
+  it("detects Python AST symbols and Go/Rust structural symbols with honest fallback metadata", async () => {
     const diff = [
       "diff --git a/python/openskillkit_evolution/cli.py b/python/openskillkit_evolution/cli.py",
       "--- a/python/openskillkit_evolution/cli.py",
@@ -1826,31 +1840,36 @@ describe("learn-v2 substrate", () => {
     ]));
     expect(summary.semanticChange).toBe(true);
     expect(summary.fileSummaries.every((file) => file.classes.includes("api"))).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.structuralConfidence === "fallback")).toBe(true);
-    expect(summary.fileSummaries.every((file) => file.confidenceCap === 0.78)).toBe(true);
+    const pythonSummary = summary.fileSummaries.find((file) => file.language === "python")!;
+    expect(pythonSummary.parserBackend).toBe("python-ast");
+    expect(pythonSummary.structuralConfidence).toBe("parser");
+    expect(pythonSummary.confidenceCap).toBe(0.94);
+    expect(pythonSummary.parserLimitations).not.toContain("not-ast-equivalent");
+    expect(summary.fileSummaries.filter((file) => file.language === "go" || file.language === "rust").every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
+    expect(summary.fileSummaries.filter((file) => file.language === "go" || file.language === "rust").every((file) => file.structuralConfidence === "fallback")).toBe(true);
+    expect(summary.fileSummaries.filter((file) => file.language === "go" || file.language === "rust").every((file) => file.confidenceCap === 0.78)).toBe(true);
   });
 
   it("caps patch-pair confidence when only fallback structural parsers are available", async () => {
     const proposed = [
-      "diff --git a/python/openskillkit_evolution/report.py b/python/openskillkit_evolution/report.py",
-      "--- a/python/openskillkit_evolution/report.py",
-      "+++ b/python/openskillkit_evolution/report.py",
+      "diff --git a/src/report.go b/src/report.go",
+      "--- a/src/report.go",
+      "+++ b/src/report.go",
       "@@",
-      " class ReportBuilder:",
-      "     def build(self, value):",
-      "-        return old_report(value)",
-      "+        return proposed_report(value)"
+      " func BuildReport(value string) string {",
+      "-  return oldReport(value)",
+      "+  return proposedReport(value)",
+      " }"
     ].join("\n");
     const finalPatch = [
-      "diff --git a/python/openskillkit_evolution/report.py b/python/openskillkit_evolution/report.py",
-      "--- a/python/openskillkit_evolution/report.py",
-      "+++ b/python/openskillkit_evolution/report.py",
+      "diff --git a/src/report.go b/src/report.go",
+      "--- a/src/report.go",
+      "+++ b/src/report.go",
       "@@",
-      " class ReportBuilder:",
-      "     def build(self, value):",
-      "-        return old_report(value)",
-      "+        return final_regression_report(value)"
+      " func BuildReport(value string) string {",
+      "-  return oldReport(value)",
+      "+  return finalRegressionReport(value)",
+      " }"
     ].join("\n");
     const patches = summarizeLearnV2Patches([
       normalizedFileChange("ev_agent_fallback_patch", proposed, { metadata: { patchKind: "proposed patch" } }),
@@ -1861,7 +1880,7 @@ describe("learn-v2 substrate", () => {
     expect(final.structuralSummary.fileSummaries.every((file) => file.parserBackend === "language-structural-scanner")).toBe(true);
     expect(final.comparison?.confidence).toBeLessThanOrEqual(0.78);
     expect(final.comparison?.confidence).toBeGreaterThanOrEqual(0.5);
-    expect(final.summary).toContain("structural=python:language-structural-scanner:fallback");
+    expect(final.summary).toContain("structural=go:language-structural-scanner:fallback");
   });
 
   it("recovers enclosing symbols from hunk headers and context for body-only edits", async () => {
