@@ -54,6 +54,8 @@ import {
   applyLearnV2ContradictionReviewOutputs,
   writeLearnV2EvalPlannerRequests,
   applyLearnV2EvalPlannerOutputs,
+  writeLearnV2BehaviorEvalRequests,
+  applyLearnV2BehaviorEvalOutputs,
   writeLearnV2EpisodeStore,
   writeLearnV2ConflictLedger,
   writeLearnV2CounterevidenceLedger,
@@ -4132,6 +4134,105 @@ describe("learn-v2 substrate", () => {
     expect(rejected.rejected[0]?.reason).toBe("invalid-request-manifest");
   });
 
+  it("prepares executes and applies behavior-evaluator outputs for agent-backed behavior proof", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:32Z");
+    const [baseCard] = mergeLearnV2ConceptCards([
+      behaviorAtom("behavior_eval_parser", "Prefer focused parser regression tests before broad parser rewrites.", "positive")
+    ], now);
+    const card = {
+      ...baseCard!,
+      status: "active" as const,
+      risk: "medium" as const,
+      scope: { ...baseCard!.scope, paths: ["packages/core/src/parser.ts"], taskTypes: ["parser-change"] },
+      activation: { ...baseCard!.activation, pathGlobs: ["packages/core/src/**"], commands: ["npm test -- parser"] },
+      conditions: { appliesWhen: ["parser behavior changes"], doesNotApplyWhen: ["docs-only"] }
+    };
+    await writeLearnV2ConceptStore(root, [card], now);
+
+    const goldensPath = path.join(root, "behavior-eval-goldens.json");
+    await writeFile(goldensPath, JSON.stringify({
+      behaviorDeltaScenarios: [{
+        schemaVersion: "openskill-kit.learn-v2.behavior-delta-golden.v1",
+        id: "delta_agent_parser_regression",
+        title: "Agent parser behavior eval",
+        task: {
+          prompt: "Change parser behavior without broad rewrite",
+          paths: ["packages/core/src/parser.ts"],
+          commands: ["npm test -- parser"],
+          taskTypes: ["parser-change"],
+          negativeSignals: []
+        },
+        expectedConceptText: ["focused parser regression"],
+        expectedKinds: ["verification"],
+        expectedPlanIncludes: ["focused parser regression"],
+        expectedPlanExcludes: ["broad rewrite only"],
+        minActivatedConcepts: 1
+      }]
+    }), "utf8");
+
+    const prepared = await writeLearnV2BehaviorEvalRequests(root, goldensPath, now);
+    expect(prepared.schemaVersion).toBe("openskill-kit.learn-v2.behavior-eval-request-result.v1");
+    expect(prepared.requestCount).toBe(1);
+    const request = prepared.requests[0]!;
+    const manifest = JSON.parse(await readText(path.resolve(root, request.manifestPath)));
+    expect(manifest.modelRole).toBe("behavior-evaluator");
+    expect(manifest.outputSchema).toBe("openskill-kit.learn-v2.llm-behavior-eval-output.v1");
+    expect(manifest.opencodeAgentId).toBe("osk-learn-v2-behavior-evaluator");
+    expect(manifest.executionBoundary).toBe("opencode-host-sanitized-only");
+    expect(manifest.rawRefsIncluded).toBe(false);
+    expect(JSON.stringify(manifest)).not.toContain(root);
+    expect(await readText(path.resolve(root, request.promptPath))).toContain("Learn v2 behavior evaluator");
+    expect(await readText(path.resolve(root, request.bundlePath))).not.toContain(root);
+
+    const behaviorOutput = {
+      schemaVersion: "openskill-kit.learn-v2.llm-behavior-eval-output.v1",
+      evalId: request.evalId,
+      results: [{
+        scenarioId: "delta_agent_parser_regression",
+        status: "pass",
+        behaviorImproved: true,
+        baselineOutcome: "Baseline plan changes parser and runs broad verification.",
+        withConceptOutcome: "Learned plan adds focused parser regression test before broad suite.",
+        regressions: [],
+        tokenOverheadAssessment: "acceptable",
+        rationale: "With learned concept, plan includes focused parser regression without forbidden broad rewrite only behavior."
+      }],
+      rejected: []
+    };
+    const executed = await executeLearnV2ModelRequests(root, {
+      requestManifests: [request.manifestPath],
+      opencodeCommand: "opencode-test",
+      runner: async (invocation) => {
+        expect(invocation.args).toContain("osk-learn-v2-behavior-evaluator");
+        expect(path.basename(invocation.args[invocation.args.indexOf("--file") + 1])).toBe("behavior-eval-prompt.md");
+        expect(path.basename(invocation.args[invocation.args.lastIndexOf("--file") + 1])).toBe("behavior-eval-bundle.json");
+        expect(JSON.stringify(invocation.args)).not.toContain(root);
+        return { exitCode: 0, stdout: JSON.stringify(behaviorOutput), stderr: "behavior eval stderr must be hash-only" };
+      }
+    });
+    expect(executed.writtenCount).toBe(1);
+    expect(executed.results[0]?.modelRole).toBe("behavior-evaluator");
+    expect(await readText(executed.executionReportPath)).not.toContain("behavior eval stderr must be hash-only");
+
+    const applied = await applyLearnV2BehaviorEvalOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:33Z"));
+    expect(applied.rejected).toEqual([]);
+    expect(applied.status).toBe("pass");
+    expect(applied.resultCount).toBe(1);
+    expect(applied.artifactPath).toContain(".openskill-kit");
+    const artifact = JSON.parse(await readText(applied.artifactPath!));
+    expect(artifact.agentExecuted).toBe(true);
+    expect(JSON.stringify(artifact)).not.toContain(root);
+
+    await writeFile(path.resolve(root, request.expectedOutputPath), JSON.stringify({
+      ...behaviorOutput,
+      results: [{ ...behaviorOutput.results[0], scenarioId: "unknown_delta" }]
+    }), "utf8");
+    const rejected = await applyLearnV2BehaviorEvalOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:34Z"));
+    expect(rejected.resultCount).toBe(0);
+    expect(rejected.rejected[0]?.reason).toBe("invalid-behavior-eval-output");
+  });
+
   it("rejects unsafe or malformed OpenCode execution outputs before writing response files", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:03:30Z");
@@ -4273,11 +4374,13 @@ describe("learn-v2 substrate", () => {
       "scope-inferencer",
       "declassification-reviewer",
       "eval-planner",
+      "behavior-evaluator",
       "publish-export-auditor"
     ]);
     const routeJson = await readText(path.join(root, artifact.artifacts.routingJson));
     expect(routeJson).toContain("deterministicFallback");
     expect(routeJson).toContain("behavior pack publish audit scanners");
+    expect(routeJson).toContain("Compare baseline and learned-behavior eval plans");
     expect(routeJson).toContain("opencodeAgentIndex");
     expect(routeJson).not.toContain("ollama");
     const agentIndex = await readText(path.join(root, artifact.artifacts.opencodeAgentIndex));

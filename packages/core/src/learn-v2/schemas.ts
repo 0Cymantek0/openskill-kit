@@ -844,6 +844,26 @@ export const LearnV2LlmEvalPlannerOutputSchema = z.object({
 });
 export type LearnV2LlmEvalPlannerOutput = z.infer<typeof LearnV2LlmEvalPlannerOutputSchema>;
 
+export const LearnV2LlmBehaviorEvalOutputSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.llm-behavior-eval-output.v1"),
+  evalId: z.string().min(1).max(160),
+  results: z.array(z.object({
+    scenarioId: z.string().min(1).max(160),
+    status: z.enum(["pass", "fail", "needs-review"]),
+    behaviorImproved: z.boolean(),
+    baselineOutcome: z.string().min(1).max(800),
+    withConceptOutcome: z.string().min(1).max(800),
+    regressions: z.array(z.string().min(1).max(300)).default([]),
+    tokenOverheadAssessment: z.enum(["acceptable", "too-high", "unknown"]).default("unknown"),
+    rationale: z.string().min(1).max(1000)
+  })).default([]),
+  rejected: z.array(z.object({
+    scenarioId: z.string().min(1).max(160).optional(),
+    reason: z.string().min(1).max(300)
+  })).default([])
+});
+export type LearnV2LlmBehaviorEvalOutput = z.infer<typeof LearnV2LlmBehaviorEvalOutputSchema>;
+
 export const LearnV2ConceptCardSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.concept-card.v1"),
   id: z.string().min(1),

@@ -87,6 +87,7 @@ import {
   applyLearnV2ScopeInferenceOutputs,
   applyLearnV2ContradictionReviewOutputs,
   applyLearnV2EvalPlannerOutputs,
+  applyLearnV2BehaviorEvalOutputs,
   activateLearnV2Concepts,
   recordLearnV2ConceptOutcome,
   reconstructPersistedLearnV2Episodes,
@@ -96,6 +97,7 @@ import {
   writeLearnV2ScopeInferenceRequests,
   writeLearnV2ContradictionReviewRequests,
   writeLearnV2EvalPlannerRequests,
+  writeLearnV2BehaviorEvalRequests,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
   getLearnV2ArtifactPathManifest,
@@ -372,6 +374,7 @@ osk.command("learn")
   .option("--contradiction-concept <conceptId>", "Concept id to include for --prepare-contradiction-requests", collectOption, [])
   .option("--prepare-eval-requests", "Write prompt-safe Learn-v2 eval-planner request artifacts from reviewed concept cards")
   .option("--eval-concept <conceptId>", "Concept id to prepare for --prepare-eval-requests", collectOption, [])
+  .option("--prepare-behavior-eval-requests", "Write prompt-safe Learn-v2 behavior-evaluator request artifacts from behavior-delta goldens")
   .option("--execute-model-requests", "Run sanitized Learn-v2 model requests through OpenCode and write validated response.json files")
   .option("--apply-model-responses", "After --execute-model-requests, validate and merge written response.json files into the Learn-v2 concept store")
   .option("--model-request <path>", "Learn-v2 request directory or request-manifest.json to execute; defaults to every prepared request", collectOption, [])
@@ -382,6 +385,7 @@ osk.command("learn")
   .option("--scope-output <path>", "Learn-v2 scope-inference response.json or request-manifest.json to validate and merge", collectOption, [])
   .option("--contradiction-output <path>", "Learn-v2 contradiction-review response.json or request-manifest.json to validate and merge", collectOption, [])
   .option("--eval-output <path>", "Learn-v2 eval-planner response.json or request-manifest.json to validate into proposed eval goldens", collectOption, [])
+  .option("--behavior-eval-output <path>", "Learn-v2 behavior-evaluator response.json or request-manifest.json to validate into agent behavior eval artifacts", collectOption, [])
   .option("--activation-query <text>", "Score reviewed Learn-v2 concepts for a task query; appends local hashed activation-run telemetry under .openskill-kit/learn-v2/activation-runs (query/path/command hashes only, never raw values)")
   .option("--activation-path <path>", "Path hint for --activation-query (stored as a hash in activation-run telemetry)", collectOption, [])
   .option("--activation-command <command>", "Command hint for --activation-query (stored as a hash in activation-run telemetry)", collectOption, [])
@@ -465,6 +469,11 @@ osk.command("learn")
       output(options.json, result, renderLearnV2EvalPlannerRequests(result));
       return;
     }
+    if (options.prepareBehaviorEvalRequests === true) {
+      const result = await writeLearnV2BehaviorEvalRequests(process.cwd(), options.learnV2Goldens);
+      output(options.json, result, renderLearnV2BehaviorEvalRequests(result));
+      return;
+    }
     if (options.executeModelRequests === true) {
       const result = await executeLearnV2ModelRequests(process.cwd(), {
         requestManifests: options.modelRequest,
@@ -505,6 +514,11 @@ osk.command("learn")
     if (options.evalOutput.length > 0) {
       const result = await applyLearnV2EvalPlannerOutputs(process.cwd(), options.evalOutput);
       output(options.json, result, renderLearnV2EvalPlannerApply(result));
+      return;
+    }
+    if (options.behaviorEvalOutput.length > 0) {
+      const result = await applyLearnV2BehaviorEvalOutputs(process.cwd(), options.behaviorEvalOutput);
+      output(options.json, result, renderLearnV2BehaviorEvalApply(result));
       return;
     }
     if (options.recordConceptOutcome) {
@@ -2438,6 +2452,19 @@ function renderLearnV2EvalPlannerRequests(result: Awaited<ReturnType<typeof writ
   return lines.join("\n");
 }
 
+function renderLearnV2BehaviorEvalRequests(result: Awaited<ReturnType<typeof writeLearnV2BehaviorEvalRequests>>): string {
+  const lines = [
+    `Learn v2 behavior eval requests: ${result.requestCount}`,
+    `Skipped: ${result.skipped.length}`,
+    `Routing manifest: ${result.routingManifestPath}`,
+    ...result.requests.map((request) => `  ${request.evalId}: ${request.scenarioCount} scenario(s) -> ${request.expectedOutputPath}`),
+    ...result.requests.map((request) => `  manifest: ${request.manifestPath}`)
+  ];
+  for (const item of result.skipped.slice(0, 20)) lines.push(`SKIPPED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
+  lines.push(...result.instructions);
+  return lines.join("\n");
+}
+
 function renderLearnV2Reconstruct(result: Awaited<ReturnType<typeof reconstructPersistedLearnV2Episodes>>): string {
   return [
     `Learn v2 analysis frames: ${result.analysisFrameCount}`,
@@ -2532,6 +2559,7 @@ type LearnV2ExecutedModelApplyByRole = {
   scopeInferencer?: Awaited<ReturnType<typeof applyLearnV2ScopeInferenceOutputs>>;
   contradictionReviewer?: Awaited<ReturnType<typeof applyLearnV2ContradictionReviewOutputs>>;
   evalPlanner?: Awaited<ReturnType<typeof applyLearnV2EvalPlannerOutputs>>;
+  behaviorEvaluator?: Awaited<ReturnType<typeof applyLearnV2BehaviorEvalOutputs>>;
   skipped: Array<{ outputPath: string; manifestPath: string; reason: string }>;
 };
 
@@ -2543,6 +2571,7 @@ async function applyExecutedLearnV2ModelResponses(
   const scopeOutputs: string[] = [];
   const contradictionOutputs: string[] = [];
   const evalOutputs: string[] = [];
+  const behaviorEvalOutputs: string[] = [];
   const skipped: LearnV2ExecutedModelApplyByRole["skipped"] = [];
 
   for (const item of execution.results) {
@@ -2551,6 +2580,7 @@ async function applyExecutedLearnV2ModelResponses(
     else if (item.modelRole === "scope-inferencer") scopeOutputs.push(item.outputPath);
     else if (item.modelRole === "contradiction-reviewer") contradictionOutputs.push(item.outputPath);
     else if (item.modelRole === "eval-planner") evalOutputs.push(item.outputPath);
+    else if (item.modelRole === "behavior-evaluator") behaviorEvalOutputs.push(item.outputPath);
     else skipped.push({ outputPath: item.outputPath, manifestPath: item.manifestPath, reason: "missing-model-role" });
   }
 
@@ -2559,11 +2589,12 @@ async function applyExecutedLearnV2ModelResponses(
   if (scopeOutputs.length > 0) byRole.scopeInferencer = await applyLearnV2ScopeInferenceOutputs(root, scopeOutputs);
   if (contradictionOutputs.length > 0) byRole.contradictionReviewer = await applyLearnV2ContradictionReviewOutputs(root, contradictionOutputs);
   if (evalOutputs.length > 0) byRole.evalPlanner = await applyLearnV2EvalPlannerOutputs(root, evalOutputs);
+  if (behaviorEvalOutputs.length > 0) byRole.behaviorEvaluator = await applyLearnV2BehaviorEvalOutputs(root, behaviorEvalOutputs);
   return byRole;
 }
 
 function selectPrimaryExecutedLearnV2ApplyResult(applied: LearnV2ExecutedModelApplyByRole) {
-  return applied.conceptExtractor ?? applied.scopeInferencer ?? applied.contradictionReviewer ?? applied.evalPlanner ?? null;
+  return applied.conceptExtractor ?? applied.scopeInferencer ?? applied.contradictionReviewer ?? applied.evalPlanner ?? applied.behaviorEvaluator ?? null;
 }
 
 function renderLearnV2ModelRequestExecutionApply(
@@ -2575,6 +2606,7 @@ function renderLearnV2ModelRequestExecutionApply(
   if (applied.scopeInferencer) sections.push(renderLearnV2ScopeInferenceApply(applied.scopeInferencer));
   if (applied.contradictionReviewer) sections.push(renderLearnV2ContradictionReviewApply(applied.contradictionReviewer));
   if (applied.evalPlanner) sections.push(renderLearnV2EvalPlannerApply(applied.evalPlanner));
+  if (applied.behaviorEvaluator) sections.push(renderLearnV2BehaviorEvalApply(applied.behaviorEvaluator));
   if (applied.skipped.length > 0) {
     const lines = ["Skipped model response apply:"];
     for (const item of applied.skipped.slice(0, 20)) lines.push(`SKIPPED ${item.outputPath}: ${item.reason}`);
@@ -2647,6 +2679,19 @@ function renderLearnV2EvalPlannerApply(result: Awaited<ReturnType<typeof applyLe
   ];
   for (const item of result.rejected.slice(0, 20)) lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
   lines.push(...result.instructions);
+  return lines.join("\n");
+}
+
+function renderLearnV2BehaviorEvalApply(result: Awaited<ReturnType<typeof applyLearnV2BehaviorEvalOutputs>>): string {
+  const lines = [
+    `Learn v2 behavior eval outputs applied: ${result.outputFiles.length}`,
+    `Results: ${result.resultCount}`,
+    `Status: ${result.status}`,
+    `Rejected outputs: ${result.rejected.length}`,
+    `Artifact: ${result.artifactPath ?? "not written"}`,
+    `Markdown: ${result.markdownPath ?? "not written"}`
+  ];
+  for (const item of result.rejected.slice(0, 20)) lines.push(`REJECTED ${item.id}: ${item.reason}${item.detail ? ` (${item.detail})` : ""}`);
   return lines.join("\n");
 }
 

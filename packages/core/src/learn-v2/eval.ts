@@ -1,13 +1,25 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { LearnV2EvalReportSchema, type LearnV2ConceptCard, type LearnV2EvalReport, type LearnV2TaskEpisode } from "./schemas.js";
+import { readProjectConfig } from "../events/store.js";
+import {
+  LearnV2EvalReportSchema,
+  LearnV2LlmBehaviorEvalOutputSchema,
+  type LearnV2ConceptCard,
+  type LearnV2EvalReport,
+  type LearnV2LlmBehaviorEvalOutput,
+  type LearnV2TaskEpisode
+} from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { scoreLearnV2ActivationEntries } from "./activation.js";
 import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
 import { evaluateLearnV2ConceptQualityGates } from "./concept-quality-gates.js";
 import { createLocalSandboxPolicy } from "../sandbox/policy.js";
 import { runSandboxCommand, type SandboxCommandResult } from "../sandbox/runner.js";
+import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
+import { scanLearnV2OutputArtifactBoundary, validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
+import { readLearnV2ConceptStore } from "./store.js";
+import { learnV2Hash, learnV2IsInside } from "./utils.js";
 
 export const LearnV2ExtractionGoldenScenarioSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.extraction-golden.v1"),
@@ -49,6 +61,43 @@ export interface LearnV2EvalOptions {
 
 export interface LearnV2EvalGoldenLoadOptions {
   allowUnreviewedProposal?: boolean;
+}
+
+export interface LearnV2BehaviorEvalRequest {
+  evalId: string;
+  promptPath: string;
+  bundlePath: string;
+  promptHash: string;
+  bundleHash: string;
+  manifestPath: string;
+  expectedOutputPath: string;
+  outputSchema: "openskill-kit.learn-v2.llm-behavior-eval-output.v1";
+  opencodeAgentId: string;
+  agentFile: string;
+  scenarioCount: number;
+}
+
+export interface LearnV2BehaviorEvalRequestResult {
+  schemaVersion: "openskill-kit.learn-v2.behavior-eval-request-result.v1";
+  generatedAt: string;
+  requestCount: number;
+  requests: LearnV2BehaviorEvalRequest[];
+  skipped: Array<{ id: string; reason: string; detail?: string }>;
+  routingManifestPath: string;
+  modelRoutingArtifactPath: string;
+  opencodeAgentIndexPath: string;
+  instructions: string[];
+}
+
+export interface LearnV2BehaviorEvalApplyResult {
+  schemaVersion: "openskill-kit.learn-v2.behavior-eval-apply-result.v1";
+  appliedAt: string;
+  outputFiles: string[];
+  resultCount: number;
+  rejected: Array<{ outputPath: string; id: string; reason: string; detail?: string }>;
+  artifactPath?: string;
+  markdownPath?: string;
+  status: "pass" | "fail" | "needs-review" | "not-run";
 }
 
 export interface LearnV2CounterfactualTraceEvalCase {
@@ -112,7 +161,7 @@ export async function runLearnV2Eval(
   const goldens = goldenFile.extraction;
   const behaviorDeltaGoldens = goldenFile.behaviorDelta;
   const counterfactualCases = buildCounterfactualTraceCases(episodes, concepts);
-  const behaviorDeltaCases = buildBehaviorDeltaEvalCases(concepts, behaviorDeltaGoldens);
+  const behaviorDeltaCases = buildLearnV2BehaviorDeltaEvalCases(concepts, behaviorDeltaGoldens);
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
   const activationReplay = evaluateActivationReplay(episodes, concepts);
@@ -248,6 +297,202 @@ export async function loadLearnV2EvalGoldens(
     .filter(isBehaviorDeltaGoldenLike)
     .map((item: unknown) => LearnV2BehaviorDeltaGoldenScenarioSchema.parse(item));
   return { extraction, behaviorDelta, unreviewedProposal };
+}
+
+export function parseLearnV2LlmBehaviorEvalOutput(text: string): LearnV2LlmBehaviorEvalOutput {
+  return LearnV2LlmBehaviorEvalOutputSchema.parse(JSON.parse(extractFirstJsonObject(text)));
+}
+
+export async function writeLearnV2BehaviorEvalRequests(
+  rootInput: string,
+  goldensPathInput: string | undefined,
+  now = new Date()
+): Promise<LearnV2BehaviorEvalRequestResult> {
+  const root = path.resolve(rootInput);
+  const routing = await ensureLearnV2ModelRoutingArtifacts(root, now);
+  const agent = routing.agents["behavior-evaluator"];
+  const skipped: LearnV2BehaviorEvalRequestResult["skipped"] = [];
+  const requests: LearnV2BehaviorEvalRequest[] = [];
+  const config = await readProjectConfig(root);
+  const routingManifestPath = path.join(root, ".openskill-kit", "model-routing", "osk-model-routing.json");
+
+  if (!goldensPathInput) {
+    skipped.push({ id: "goldens", reason: "missing-goldens", detail: "Provide --learn-v2-goldens so behavior-delta scenarios are explicit and reviewed." });
+  } else {
+    const store = await readLearnV2ConceptStore(root);
+    const goldens = await loadLearnV2EvalGoldens(root, goldensPathInput, { allowUnreviewedProposal: false });
+    const cases = buildLearnV2BehaviorDeltaEvalCases(store.cards, goldens.behaviorDelta);
+    if (!cases.length) {
+      skipped.push({ id: "behavior-delta", reason: "no-behavior-delta-cases", detail: "Goldens file did not contain behavior-delta scenarios." });
+    } else {
+      const evalHash = learnV2Hash(JSON.stringify({ goldensPathInput, caseIds: cases.map((item) => item.id) })).replace(/[^a-z0-9]/gi, "").slice(0, 16);
+      const evalId = `behavior-eval-${evalHash}`;
+      const requestDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", evalId);
+      const promptPath = path.join(requestDir, "behavior-eval-prompt.md");
+      const bundlePath = path.join(requestDir, "behavior-eval-bundle.json");
+      const manifestPath = path.join(requestDir, "request-manifest.json");
+      const expectedOutputPath = path.join(requestDir, "response.json");
+      const bundle = {
+        schemaVersion: "openskill-kit.learn-v2.behavior-eval-bundle.v1",
+        generatedAt: now.toISOString(),
+        evalId,
+        sourceGoldensPath: scrubEvalText(root, goldensPathInput),
+        cases: cases.map((item) => declassifyBehaviorDeltaCase(root, item)),
+        policy: {
+          rawRefsIncluded: false,
+          modelOutputTrusted: false,
+          reviewerTask: "Compare baselinePlan and withConceptPlan for behavior improvement, regressions, and token overhead."
+        }
+      };
+      const prompt = renderBehaviorEvalPrompt(evalId, cases.length);
+      const boundary = scanLearnV2OutputArtifactBoundary(root, config, [
+        { label: "behavior-eval-prompt", content: prompt },
+        { label: "behavior-eval-bundle", content: bundle }
+      ]);
+      if (boundary.status === "fail") {
+        skipped.push({ id: evalId, reason: "unsafe-request-content", detail: boundary.issues.slice(0, 8).join("; ") });
+      } else {
+        await fs.mkdir(requestDir, { recursive: true });
+        const bundleText = `${JSON.stringify(bundle, null, 2)}\n`;
+        await fs.writeFile(promptPath, prompt, "utf8");
+        await fs.writeFile(bundlePath, bundleText, "utf8");
+        const manifest = {
+          schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1",
+          generatedAt: now.toISOString(),
+          episodeId: evalId,
+          reviewId: evalId,
+          conceptIds: [...new Set(cases.flatMap((item) => item.activatedConceptIds))].sort(),
+          modelRole: "behavior-evaluator",
+          routingPolicy: "learn-v2-roi-v1",
+          routingReasons: ["behavior-delta-golden", "agent-backed-behavior-proof"],
+          priority: 0.9,
+          promptPath: learnV2ProjectRelativePath(root, promptPath),
+          bundlePath: learnV2ProjectRelativePath(root, bundlePath),
+          promptHash: learnV2Hash(prompt),
+          bundleHash: learnV2Hash(bundleText),
+          expectedOutputPath: learnV2ProjectRelativePath(root, expectedOutputPath),
+          outputSchema: "openskill-kit.learn-v2.llm-behavior-eval-output.v1",
+          opencodeAgentId: agent.opencodeAgentId,
+          agentFile: agent.agentFile,
+          modelRoutingArtifactPath: learnV2ProjectRelativePath(root, routingManifestPath),
+          opencodeAgentIndexPath: routing.artifacts.opencodeAgentIndex,
+          executionBoundary: "opencode-host-sanitized-only",
+          evidenceIds: [],
+          rawRefsIncluded: false
+        };
+        await writeJsonAtomic(manifestPath, manifest);
+        requests.push({
+          evalId,
+          promptPath: learnV2ProjectRelativePath(root, promptPath),
+          bundlePath: learnV2ProjectRelativePath(root, bundlePath),
+          promptHash: manifest.promptHash,
+          bundleHash: manifest.bundleHash,
+          manifestPath: learnV2ProjectRelativePath(root, manifestPath),
+          expectedOutputPath: learnV2ProjectRelativePath(root, expectedOutputPath),
+          outputSchema: "openskill-kit.learn-v2.llm-behavior-eval-output.v1",
+          opencodeAgentId: agent.opencodeAgentId,
+          agentFile: agent.agentFile,
+          scenarioCount: cases.length
+        });
+      }
+    }
+  }
+
+  return {
+    schemaVersion: "openskill-kit.learn-v2.behavior-eval-request-result.v1",
+    generatedAt: now.toISOString(),
+    requestCount: requests.length,
+    requests,
+    skipped,
+    routingManifestPath: learnV2ProjectRelativePath(root, routingManifestPath),
+    modelRoutingArtifactPath: learnV2ProjectRelativePath(root, routingManifestPath),
+    opencodeAgentIndexPath: routing.artifacts.opencodeAgentIndex,
+    instructions: requests.length ? [
+      "Run: openskill-kit osk learn --execute-model-requests --model-request <manifest> --apply-model-responses",
+      "Or apply a returned response directly with: openskill-kit osk learn --behavior-eval-output <response.json>"
+    ] : ["No behavior-evaluator request was written."]
+  };
+}
+
+export async function applyLearnV2BehaviorEvalOutputs(
+  rootInput: string,
+  outputPathsInput: string[],
+  now = new Date()
+): Promise<LearnV2BehaviorEvalApplyResult> {
+  const root = path.resolve(rootInput);
+  const config = await readProjectConfig(root);
+  const rejected: LearnV2BehaviorEvalApplyResult["rejected"] = [];
+  const outputFiles = (await Promise.all(outputPathsInput.map((file) => resolveBehaviorEvalOutputInputPath(root, file, rejected)))).filter((file): file is string => Boolean(file));
+  const accepted: Array<{ outputPath: string; manifest: BehaviorEvalManifest; output: LearnV2LlmBehaviorEvalOutput; caseIds: string[] }> = [];
+
+  for (const outputPath of outputFiles) {
+    const manifestRead = await readBehaviorEvalManifest(root, outputPath, rejected);
+    if (!manifestRead) continue;
+    const bundle = await readBehaviorEvalBundle(root, manifestRead.manifest, outputPath, rejected);
+    if (!bundle) continue;
+    const text = await fs.readFile(outputPath, "utf8").catch((error: unknown) => {
+      rejected.push({ outputPath, id: "file", reason: "read-failed", detail: error instanceof Error ? error.message : String(error) });
+      return undefined;
+    });
+    if (text === undefined) continue;
+    let parsed: LearnV2LlmBehaviorEvalOutput;
+    try {
+      parsed = parseLearnV2LlmBehaviorEvalOutput(text);
+    } catch (error) {
+      rejected.push({ outputPath, id: "file", reason: "invalid-json-or-schema", detail: error instanceof Error ? error.message : String(error) });
+      continue;
+    }
+    const validation = validateLearnV2BehaviorEvalOutput(root, config, manifestRead.manifest, bundle, parsed);
+    if (!validation.ok) {
+      rejected.push({ outputPath, id: parsed.evalId ?? "file", reason: validation.reason, detail: validation.detail });
+      continue;
+    }
+    accepted.push({ outputPath, manifest: manifestRead.manifest, output: parsed, caseIds: bundle.cases.map((item) => item.id) });
+  }
+
+  const status = summarizeBehaviorEvalStatus(accepted.flatMap((item) => item.output.results));
+  let artifactPath: string | undefined;
+  let markdownPath: string | undefined;
+  if (accepted.length) {
+    const dir = path.join(root, ".openskill-kit", "learn-v2", "evals", "agent");
+    const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    artifactPath = path.join(dir, `behavior-agent-eval-${stamp}.json`);
+    markdownPath = path.join(dir, `behavior-agent-eval-${stamp}.md`);
+    const artifact = {
+      schemaVersion: "openskill-kit.learn-v2.behavior-agent-eval-artifact.v1",
+      generatedAt: now.toISOString(),
+      status,
+      agentExecuted: true,
+      sourceResponseHashes: accepted.map((item) => learnV2Hash(item.outputPath)),
+      evals: accepted.map((item) => ({
+        evalId: item.output.evalId,
+        resultCount: item.output.results.length,
+        caseIds: item.caseIds,
+        results: item.output.results,
+        rejected: item.output.rejected
+      }))
+    };
+    const boundary = scanLearnV2OutputArtifactBoundary(root, config, [{ label: "behavior-agent-eval", content: artifact }]);
+    if (boundary.status === "fail") {
+      rejected.push({ outputPath: artifactPath, id: "behavior-agent-eval", reason: "unsafe-output-content", detail: boundary.issues.slice(0, 8).join("; ") });
+      artifactPath = undefined;
+      markdownPath = undefined;
+    } else {
+      await writeJsonAtomic(artifactPath, artifact);
+      await fs.writeFile(markdownPath, renderBehaviorEvalApplyMarkdown(artifact), "utf8");
+    }
+  }
+
+  return {
+    schemaVersion: "openskill-kit.learn-v2.behavior-eval-apply-result.v1",
+    appliedAt: now.toISOString(),
+    outputFiles,
+    resultCount: accepted.reduce((sum, item) => sum + item.output.results.length, 0),
+    rejected,
+    artifactPath,
+    markdownPath,
+    status: accepted.length ? status : "not-run"
+  };
 }
 
 function isUnreviewedEvalGoldenProposal(value: unknown): boolean {
@@ -514,7 +759,7 @@ function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases:
   };
 }
 
-function buildBehaviorDeltaEvalCases(
+export function buildLearnV2BehaviorDeltaEvalCases(
   concepts: LearnV2ConceptCard[],
   scenarios: LearnV2BehaviorDeltaGoldenScenario[]
 ): LearnV2BehaviorDeltaEvalCase[] {
@@ -725,6 +970,259 @@ function isBehaviorDeltaGoldenLike(item: unknown): item is { schemaVersion: stri
     && (item as { schemaVersion?: unknown }).schemaVersion === "openskill-kit.learn-v2.behavior-delta-golden.v1";
 }
 
+type BehaviorEvalManifest = {
+  schemaVersion: "openskill-kit.learn-v2.model-request-manifest.v1";
+  episodeId: string;
+  reviewId?: string;
+  conceptIds?: string[];
+  modelRole: "behavior-evaluator";
+  promptPath: string;
+  bundlePath: string;
+  promptHash: string;
+  bundleHash: string;
+  expectedOutputPath: string;
+  outputSchema: "openskill-kit.learn-v2.llm-behavior-eval-output.v1";
+  opencodeAgentId: "osk-learn-v2-behavior-evaluator";
+  executionBoundary: "opencode-host-sanitized-only";
+  rawRefsIncluded: false;
+};
+
+type BehaviorEvalBundle = {
+  schemaVersion: "openskill-kit.learn-v2.behavior-eval-bundle.v1";
+  evalId: string;
+  cases: LearnV2BehaviorDeltaEvalCase[];
+};
+
+function renderBehaviorEvalPrompt(evalId: string, scenarioCount: number): string {
+  return [
+    "# Learn v2 behavior evaluator",
+    "",
+    "Use only `behavior-eval-bundle.json`. Do not inspect repo files, raw vaults, local paths, network, or shell.",
+    "Compare each case's `baselinePlan` with `withConceptPlan`.",
+    "Return strict JSON only. No markdown fences.",
+    "",
+    "Output schema:",
+    "{",
+    '  "schemaVersion": "openskill-kit.learn-v2.llm-behavior-eval-output.v1",',
+    `  "evalId": ${JSON.stringify(evalId)},`,
+    '  "results": [',
+    '    { "scenarioId": "case id", "status": "pass|fail|needs-review", "behaviorImproved": true, "baselineOutcome": "...", "withConceptOutcome": "...", "regressions": [], "tokenOverheadAssessment": "acceptable|too-high|unknown", "rationale": "..." }',
+    "  ],",
+    '  "rejected": []',
+    "}",
+    "",
+    `Evaluate ${scenarioCount} scenario(s). A pass means learned context changes the plan toward expected behavior without adding forbidden regressions.`
+  ].join("\n");
+}
+
+function validateLearnV2BehaviorEvalOutput(
+  root: string,
+  config: Awaited<ReturnType<typeof readProjectConfig>>,
+  manifest: BehaviorEvalManifest,
+  bundle: BehaviorEvalBundle,
+  output: LearnV2LlmBehaviorEvalOutput
+): { ok: true } | { ok: false; reason: "unsafe-output-content" | "invalid-behavior-eval-output"; detail: string } {
+  const boundary = validateLearnV2ModelOutputBoundary(root, config, output);
+  if (!boundary.ok) return boundary;
+  if (output.evalId !== manifest.episodeId || output.evalId !== bundle.evalId) {
+    return { ok: false, reason: "invalid-behavior-eval-output", detail: "Output evalId must match request manifest and bundle." };
+  }
+  const caseIds = new Set(bundle.cases.map((item) => item.id));
+  const resultIds = output.results.map((item) => item.scenarioId);
+  if (new Set(resultIds).size !== resultIds.length) {
+    return { ok: false, reason: "invalid-behavior-eval-output", detail: "Scenario ids must be unique in behavior eval output." };
+  }
+  const unknown = resultIds.filter((id) => !caseIds.has(id));
+  if (unknown.length) {
+    return { ok: false, reason: "invalid-behavior-eval-output", detail: `Unknown scenario ids: ${unknown.slice(0, 5).join(", ")}` };
+  }
+  return { ok: true };
+}
+
+async function resolveBehaviorEvalOutputInputPath(
+  root: string,
+  inputPath: string,
+  rejected: LearnV2BehaviorEvalApplyResult["rejected"]
+): Promise<string | undefined> {
+  const absolute = path.resolve(root, inputPath);
+  if (path.basename(absolute) !== "request-manifest.json") {
+    if (!isBehaviorEvalOutputPath(root, absolute)) {
+      rejected.push({ outputPath: absolute, id: "file", reason: "unexpected-request-file-path", detail: "Behavior eval outputs must be request-local response.json files." });
+      return undefined;
+    }
+    return absolute;
+  }
+  if (!isBehaviorEvalManifestPath(root, absolute)) {
+    rejected.push({ outputPath: absolute, id: "file", reason: "request-manifest-outside-model-requests", detail: "Behavior eval manifests must live in .openskill-kit/learn-v2/model-requests/." });
+    return undefined;
+  }
+  const manifest = await readBehaviorEvalManifestFromPath(absolute).catch((error: unknown) => {
+    rejected.push({ outputPath: absolute, id: "file", reason: "invalid-request-manifest", detail: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  });
+  if (!manifest) return undefined;
+  const expected = path.resolve(root, manifest.expectedOutputPath);
+  if (!isBehaviorEvalOutputPath(root, expected)) {
+    rejected.push({ outputPath: absolute, id: "file", reason: "unexpected-request-file-path", detail: "Expected output must be a request-local response.json." });
+    return undefined;
+  }
+  return expected;
+}
+
+async function readBehaviorEvalManifest(
+  root: string,
+  outputPath: string,
+  rejected: LearnV2BehaviorEvalApplyResult["rejected"]
+): Promise<{ manifest: BehaviorEvalManifest; manifestPath: string } | undefined> {
+  if (!isBehaviorEvalOutputPath(root, outputPath)) {
+    rejected.push({ outputPath, id: "file", reason: "unexpected-request-file-path", detail: "Behavior eval outputs must be response.json files inside model-requests." });
+    return undefined;
+  }
+  const manifestPath = path.join(path.dirname(outputPath), "request-manifest.json");
+  const manifest = await readBehaviorEvalManifestFromPath(manifestPath).catch((error: unknown) => {
+    rejected.push({ outputPath, id: "file", reason: "invalid-request-manifest", detail: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  });
+  if (!manifest) return undefined;
+  const expectedOutput = path.resolve(root, manifest.expectedOutputPath);
+  if (path.resolve(outputPath) !== expectedOutput) {
+    rejected.push({ outputPath, id: manifest.episodeId, reason: "unexpected-output-path", detail: `Expected ${expectedOutput}` });
+    return undefined;
+  }
+  if (!(await validateBehaviorEvalRequestFiles(root, manifestPath, manifest, outputPath, rejected))) return undefined;
+  return { manifest, manifestPath };
+}
+
+async function readBehaviorEvalManifestFromPath(manifestPath: string): Promise<BehaviorEvalManifest> {
+  const value = JSON.parse(await fs.readFile(manifestPath, "utf8")) as Partial<BehaviorEvalManifest>;
+  if (
+    value.schemaVersion !== "openskill-kit.learn-v2.model-request-manifest.v1" ||
+    typeof value.episodeId !== "string" ||
+    value.modelRole !== "behavior-evaluator" ||
+    value.outputSchema !== "openskill-kit.learn-v2.llm-behavior-eval-output.v1" ||
+    value.opencodeAgentId !== "osk-learn-v2-behavior-evaluator" ||
+    typeof value.promptPath !== "string" ||
+    typeof value.bundlePath !== "string" ||
+    typeof value.promptHash !== "string" ||
+    typeof value.bundleHash !== "string" ||
+    typeof value.expectedOutputPath !== "string" ||
+    value.executionBoundary !== "opencode-host-sanitized-only" ||
+    value.rawRefsIncluded !== false
+  ) {
+    throw new Error(`Invalid Learn v2 behavior eval request manifest: ${manifestPath}`);
+  }
+  return value as BehaviorEvalManifest;
+}
+
+async function readBehaviorEvalBundle(
+  root: string,
+  manifest: BehaviorEvalManifest,
+  outputPath: string,
+  rejected: LearnV2BehaviorEvalApplyResult["rejected"]
+): Promise<BehaviorEvalBundle | undefined> {
+  const bundlePath = path.resolve(root, manifest.bundlePath);
+  try {
+    const parsed = JSON.parse(await fs.readFile(bundlePath, "utf8")) as Partial<BehaviorEvalBundle>;
+    if (parsed.schemaVersion !== "openskill-kit.learn-v2.behavior-eval-bundle.v1" || parsed.evalId !== manifest.episodeId || !Array.isArray(parsed.cases)) {
+      rejected.push({ outputPath, id: manifest.episodeId, reason: "invalid-request-bundle", detail: "Behavior eval bundle shape does not match request manifest." });
+      return undefined;
+    }
+    return parsed as BehaviorEvalBundle;
+  } catch (error) {
+    rejected.push({ outputPath, id: manifest.episodeId, reason: "invalid-request-bundle", detail: error instanceof Error ? error.message : String(error) });
+    return undefined;
+  }
+}
+
+async function validateBehaviorEvalRequestFiles(
+  root: string,
+  manifestPath: string,
+  manifest: BehaviorEvalManifest,
+  outputPath: string,
+  rejected: LearnV2BehaviorEvalApplyResult["rejected"]
+): Promise<boolean> {
+  const requestDir = path.dirname(path.resolve(manifestPath));
+  const promptPath = resolveEvalProjectPath(root, manifest.promptPath);
+  const bundlePath = resolveEvalProjectPath(root, manifest.bundlePath);
+  const expectedOutputPath = resolveEvalProjectPath(root, manifest.expectedOutputPath);
+  if (!isBehaviorEvalManifestPath(root, manifestPath) || !promptPath || !bundlePath || !expectedOutputPath) {
+    rejected.push({ outputPath, id: manifest.episodeId, reason: "unexpected-request-file-path", detail: "Behavior eval request paths must stay project-relative and request-local." });
+    return false;
+  }
+  const expected = [
+    { file: promptPath, basename: "behavior-eval-prompt.md" },
+    { file: bundlePath, basename: "behavior-eval-bundle.json" },
+    { file: expectedOutputPath, basename: "response.json" }
+  ];
+  if (expected.some((item) => path.dirname(item.file) !== requestDir || path.basename(item.file) !== item.basename)) {
+    rejected.push({ outputPath, id: manifest.episodeId, reason: "unexpected-request-file-path", detail: "Prompt, bundle, and response must be request-local behavior eval files." });
+    return false;
+  }
+  const [promptText, bundleText] = await Promise.all([fs.readFile(promptPath, "utf8"), fs.readFile(bundlePath, "utf8")]);
+  if (learnV2Hash(promptText) !== manifest.promptHash || learnV2Hash(bundleText) !== manifest.bundleHash) {
+    rejected.push({ outputPath, id: manifest.episodeId, reason: "request-file-hash-mismatch", detail: "Behavior eval prompt or bundle hash does not match manifest." });
+    return false;
+  }
+  return true;
+}
+
+function isBehaviorEvalManifestPath(root: string, manifestPath: string): boolean {
+  const requestRoot = path.join(path.resolve(root), ".openskill-kit", "learn-v2", "model-requests");
+  const resolved = path.resolve(manifestPath);
+  return path.basename(resolved) === "request-manifest.json" && path.dirname(path.dirname(resolved)) === requestRoot && learnV2IsInside(requestRoot, path.dirname(resolved));
+}
+
+function isBehaviorEvalOutputPath(root: string, outputPath: string): boolean {
+  const requestRoot = path.join(path.resolve(root), ".openskill-kit", "learn-v2", "model-requests");
+  const resolved = path.resolve(outputPath);
+  return path.basename(resolved) === "response.json" && path.dirname(path.dirname(resolved)) === requestRoot && learnV2IsInside(requestRoot, path.dirname(resolved));
+}
+
+function resolveEvalProjectPath(root: string, value: string | undefined): string | undefined {
+  if (!value || path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value) || value.includes("\\") || /(^|\/)\.\.(\/|$)/.test(value)) return undefined;
+  const resolved = path.resolve(root, value);
+  return learnV2IsInside(path.resolve(root), resolved) ? resolved : undefined;
+}
+
+function summarizeBehaviorEvalStatus(results: LearnV2LlmBehaviorEvalOutput["results"]): "pass" | "fail" | "needs-review" | "not-run" {
+  if (!results.length) return "not-run";
+  if (results.some((item) => item.status === "fail")) return "fail";
+  if (results.some((item) => item.status === "needs-review")) return "needs-review";
+  return "pass";
+}
+
+function renderBehaviorEvalApplyMarkdown(artifact: {
+  generatedAt: string;
+  status: string;
+  evals: Array<{ evalId: string; resultCount: number; results: LearnV2LlmBehaviorEvalOutput["results"] }>;
+}): string {
+  const lines = [
+    "# Learn v2 Agent Behavior Eval",
+    "",
+    `Generated: ${artifact.generatedAt}`,
+    `Status: ${artifact.status}`,
+    ""
+  ];
+  for (const evaluation of artifact.evals) {
+    lines.push(`## ${evaluation.evalId}`, "", `Results: ${evaluation.resultCount}`, "");
+    for (const result of evaluation.results) {
+      lines.push(`- ${result.scenarioId}: ${result.status} (improved=${result.behaviorImproved}, regressions=${result.regressions.length}, overhead=${result.tokenOverheadAssessment})`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function extractFirstJsonObject(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Model output is empty");
+  if (trimmed.startsWith("{")) return trimmed;
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) throw new Error("Model output did not contain a JSON object");
+  return trimmed.slice(start, end + 1);
+}
+
 function renderBaselineEvalPlan(scenario: LearnV2BehaviorDeltaGoldenScenario): string[] {
   return [
     `Task: ${scenario.title}`,
@@ -805,6 +1303,11 @@ function scrubEvalText(root: string, value: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function learnV2ProjectRelativePath(root: string, file: string): string {
+  const relative = path.relative(root, file).replace(/\\/g, "/");
+  return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : file;
 }
 
 function tokenOverlapRatio(expected: string, actual: string): number {

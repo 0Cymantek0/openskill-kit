@@ -9,7 +9,7 @@ import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { writeLearnV2ConflictLedger } from "./conflicts.js";
 import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
 import { detectLearnV2ConceptDrift } from "./drift.js";
-import { runLearnV2Eval } from "./eval.js";
+import { parseLearnV2LlmBehaviorEvalOutput, runLearnV2Eval } from "./eval.js";
 import {
   buildLearnV2EpisodeLearningBundle,
   parseLearnV2LlmConceptExtractionOutput,
@@ -23,6 +23,7 @@ import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { parseLearnV2LlmEvalPlannerOutput, validateLearnV2EvalPlannerOutput } from "./eval-planner.js";
 import {
   type LearnV2BehaviorAtom,
+  type LearnV2LlmBehaviorEvalOutput,
   type LearnV2LlmConceptExtractionOutput,
   type LearnV2LlmContradictionReviewOutput,
   type LearnV2LlmEvalPlannerOutput,
@@ -143,7 +144,7 @@ interface LearnV2ModelRequestManifest {
   conceptId?: string;
   reviewId?: string;
   conceptIds?: string[];
-  modelRole: "concept-extractor" | "scope-inferencer" | "contradiction-reviewer" | "eval-planner";
+  modelRole: "concept-extractor" | "scope-inferencer" | "contradiction-reviewer" | "eval-planner" | "behavior-evaluator";
   routingPolicy: "learn-v2-roi-v1";
   routingReasons: string[];
   priority: number;
@@ -152,7 +153,7 @@ interface LearnV2ModelRequestManifest {
   promptHash: string;
   bundleHash: string;
   expectedOutputPath: string;
-  outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1" | "openskill-kit.learn-v2.llm-scope-inference-output.v1" | "openskill-kit.learn-v2.llm-contradiction-review-output.v1" | "openskill-kit.learn-v2.llm-eval-plan-output.v1";
+  outputSchema: "openskill-kit.learn-v2.llm-concept-extraction-output.v1" | "openskill-kit.learn-v2.llm-scope-inference-output.v1" | "openskill-kit.learn-v2.llm-contradiction-review-output.v1" | "openskill-kit.learn-v2.llm-eval-plan-output.v1" | "openskill-kit.learn-v2.llm-behavior-eval-output.v1";
   opencodeAgentId: string;
   agentFile: string;
   modelRoutingArtifactPath: string;
@@ -603,9 +604,20 @@ export async function executeLearnV2ModelRequests(
 async function validateExecutedModelOutput(
   root: string,
   manifest: LearnV2ModelRequestManifest,
-  parsed: LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput | LearnV2LlmContradictionReviewOutput | LearnV2LlmEvalPlannerOutput
+  parsed: LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput | LearnV2LlmContradictionReviewOutput | LearnV2LlmEvalPlannerOutput | LearnV2LlmBehaviorEvalOutput
 ): Promise<{ ok: true } | { ok: false; reason: "missing-episode-store" | "missing-concept-store" | "stale-request-manifest" | "model-output-evidence-validation-failed"; detail: string }> {
   const config = await readProjectConfig(root);
+  if (manifest.modelRole === "behavior-evaluator" && manifest.outputSchema === "openskill-kit.learn-v2.llm-behavior-eval-output.v1") {
+    const boundary = validateLearnV2ModelOutputBoundary(root, config, parsed);
+    if (!boundary.ok) {
+      return { ok: false, reason: "model-output-evidence-validation-failed", detail: `${boundary.reason}: ${boundary.detail}` };
+    }
+    const output = parsed as LearnV2LlmBehaviorEvalOutput;
+    if (output.evalId !== manifest.episodeId) {
+      return { ok: false, reason: "model-output-evidence-validation-failed", detail: "behavior eval output evalId does not match request manifest" };
+    }
+    return { ok: true };
+  }
   if (manifest.modelRole === "eval-planner" && manifest.outputSchema === "openskill-kit.learn-v2.llm-eval-plan-output.v1") {
     const validation = validateLearnV2EvalPlannerOutput(root, config, manifest, parsed as LearnV2LlmEvalPlannerOutput);
     if (!validation.ok) {
@@ -749,11 +761,12 @@ function safeParseModelOutput(
   outputPath: string,
   rejected: LearnV2ModelProposalApplyResult["rejected"],
   outputSchema: LearnV2ModelRequestManifest["outputSchema"] = "openskill-kit.learn-v2.llm-concept-extraction-output.v1"
-): LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput | LearnV2LlmContradictionReviewOutput | LearnV2LlmEvalPlannerOutput | undefined {
+): LearnV2LlmConceptExtractionOutput | LearnV2LlmScopeInferenceOutput | LearnV2LlmContradictionReviewOutput | LearnV2LlmEvalPlannerOutput | LearnV2LlmBehaviorEvalOutput | undefined {
   try {
     if (outputSchema === "openskill-kit.learn-v2.llm-scope-inference-output.v1") return parseLearnV2LlmScopeInferenceOutput(text);
     if (outputSchema === "openskill-kit.learn-v2.llm-contradiction-review-output.v1") return parseLearnV2LlmContradictionReviewOutput(text);
     if (outputSchema === "openskill-kit.learn-v2.llm-eval-plan-output.v1") return parseLearnV2LlmEvalPlannerOutput(text);
+    if (outputSchema === "openskill-kit.learn-v2.llm-behavior-eval-output.v1") return parseLearnV2LlmBehaviorEvalOutput(text);
     return parseLearnV2LlmConceptExtractionOutput(text);
   } catch (error) {
     rejected.push({ outputPath, id: "file", reason: "invalid-json-or-schema", detail: error instanceof Error ? error.message : String(error) });
@@ -904,6 +917,13 @@ function parseModelRequestManifest(text: string, manifestPath: string): LearnV2M
     value.modelRole === "eval-planner" &&
     value.outputSchema === "openskill-kit.learn-v2.llm-eval-plan-output.v1" &&
     value.opencodeAgentId === "osk-learn-v2-eval-planner" &&
+    typeof value.reviewId === "string" &&
+    Array.isArray(value.conceptIds) &&
+    value.conceptIds.every((item) => typeof item === "string")
+  ) || (
+    value.modelRole === "behavior-evaluator" &&
+    value.outputSchema === "openskill-kit.learn-v2.llm-behavior-eval-output.v1" &&
+    value.opencodeAgentId === "osk-learn-v2-behavior-evaluator" &&
     typeof value.reviewId === "string" &&
     Array.isArray(value.conceptIds) &&
     value.conceptIds.every((item) => typeof item === "string")
@@ -1106,6 +1126,7 @@ function shapeOpenCodeArgs(args: string[]): string[] {
 }
 
 function promptBasenameForModelRole(role: LearnV2ModelRequestManifest["modelRole"]): string {
+  if (role === "behavior-evaluator") return "behavior-eval-prompt.md";
   if (role === "eval-planner") return "eval-planner-prompt.md";
   if (role === "scope-inferencer") return "scope-inference-prompt.md";
   if (role === "contradiction-reviewer") return "contradiction-review-prompt.md";
@@ -1113,6 +1134,7 @@ function promptBasenameForModelRole(role: LearnV2ModelRequestManifest["modelRole
 }
 
 function bundleBasenameForModelRole(role: LearnV2ModelRequestManifest["modelRole"]): string {
+  if (role === "behavior-evaluator") return "behavior-eval-bundle.json";
   if (role === "eval-planner") return "eval-planner-bundle.json";
   if (role === "scope-inferencer") return "concept-scope-bundle.json";
   if (role === "contradiction-reviewer") return "contradiction-review-bundle.json";

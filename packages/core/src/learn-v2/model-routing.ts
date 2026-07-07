@@ -19,6 +19,7 @@ export const LearnV2ModelAgentRoles = [
   "scope-inferencer",
   "declassification-reviewer",
   "eval-planner",
+  "behavior-evaluator",
   "publish-export-auditor"
 ] as const;
 export type LearnV2ModelAgentRole = typeof LearnV2ModelAgentRoles[number];
@@ -53,6 +54,7 @@ const roleToRoute: Record<LearnV2ModelAgentRole, ModelRouteName> = {
   "scope-inferencer": "reviewer",
   "declassification-reviewer": "reviewer",
   "eval-planner": "evaluator",
+  "behavior-evaluator": "evaluator",
   "publish-export-auditor": "reviewer"
 };
 
@@ -63,6 +65,7 @@ const rolePurpose: Record<LearnV2ModelAgentRole, string> = {
   "scope-inferencer": "Infer narrow path/task scopes and negative triggers for concept activation.",
   "declassification-reviewer": "Check proposed review/compile/eval artifacts for raw refs, local paths, secrets, and private identifiers.",
   "eval-planner": "Generate replay and extraction-golden checks for reviewed learn-v2 concepts.",
+  "behavior-evaluator": "Compare baseline and learned-behavior eval plans from declassified behavior-delta cases and report behavior improvement or regressions.",
   "publish-export-auditor": "Review compiled/exportable behavior artifacts for unsupported rules, stale concepts, unsafe command policies, raw evidence leaks, local identity leaks, and share-boundary privacy risks."
 };
 
@@ -193,5 +196,6 @@ function deterministicFallback(role: LearnV2ModelAgentRole): string {
   if (role === "scope-inferencer") return "Use path clusters, structural classes, task hints, and commands.";
   if (role === "declassification-reviewer") return "Use regex placeholder, raw-ref, secret, and local-path leak checks.";
   if (role === "publish-export-auditor") return "Use behavior pack publish audit scanners, compiled-output hygiene checks, concept quality gates, and manifest privacy checks.";
+  if (role === "behavior-evaluator") return "Use deterministic behavior-delta replay checks, sandbox probe shape validation, token overhead reports, and regression findings.";
   return "Use replay eval, extraction golden checks, leak checks, and token budget reports.";
 }
