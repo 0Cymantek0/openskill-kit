@@ -3047,15 +3047,44 @@ function renderLearnV2Activation(result: Awaited<ReturnType<typeof activateLearn
   }
   for (const match of result.matches) {
     lines.push(`  [${match.score.toFixed(3)}] ${match.conceptId} ${match.title} (${match.status}${renderActivationCounterevidence(match.counterevidenceCount)}; ${match.reasons.join(", ")})`);
+    lines.push(`      Behavior: ${match.behavior}`);
+    if (match.appliesWhen.length) lines.push(`      Apply when: ${match.appliesWhen.join("; ")}`);
+    if (match.doesNotApplyWhen.length) lines.push(`      Do not apply when: ${match.doesNotApplyWhen.join("; ")}`);
+    if (match.negativeTriggers.length) lines.push(`      Negative triggers: ${match.negativeTriggers.join("; ")}`);
+    if (match.preferredCommands.length) lines.push(`      Commands: ${match.preferredCommands.slice(0, 4).join("; ")}`);
+    lines.push(`      Activation payload: tokenCost=${match.tokenCost}; counterevidence=${match.counterevidenceCount}`);
+    const outcome = renderActivationOutcomeFeedback(match.outcomeFeedback);
+    if (outcome) lines.push(`      Outcome feedback: ${outcome}`);
   }
   for (const match of result.suppressed.slice(0, 8)) {
     lines.push(`  SUPPRESSED ${match.conceptId}${renderActivationCounterevidence(match.counterevidenceCount)} (${match.reasons.join(", ")})`);
+    lines.push(`      Behavior: ${match.behavior}`);
+    if (match.appliesWhen.length) lines.push(`      Apply when: ${match.appliesWhen.join("; ")}`);
+    if (match.doesNotApplyWhen.length) lines.push(`      Do not apply when: ${match.doesNotApplyWhen.join("; ")}`);
+    if (match.negativeTriggers.length) lines.push(`      Negative triggers: ${match.negativeTriggers.join("; ")}`);
+    if (match.preferredCommands.length) lines.push(`      Commands: ${match.preferredCommands.slice(0, 4).join("; ")}`);
+    lines.push(`      Activation payload: tokenCost=${match.tokenCost}; counterevidence=${match.counterevidenceCount}`);
+    const outcome = renderActivationOutcomeFeedback(match.outcomeFeedback);
+    if (outcome) lines.push(`      Outcome feedback: ${outcome}`);
   }
   return lines.join("\n");
 }
 
 function renderActivationCounterevidence(count: number | undefined): string {
   return count && count > 0 ? `; counterevidence=${count}` : "";
+}
+
+function renderActivationOutcomeFeedback(feedback: Awaited<ReturnType<typeof activateLearnV2Concepts>>["matches"][number]["outcomeFeedback"]): string {
+  if (!feedback) return "";
+  const parts = [
+    `helpful=${feedback.helpful}`,
+    `ignored=${feedback.ignored}`,
+    `wrong=${feedback.wrong}`,
+    `harmful=${feedback.harmful}`,
+    `superseded=${feedback.superseded}`
+  ];
+  if (feedback.lastRecordedAt) parts.push(`latest=${feedback.lastRecordedAt}`);
+  return parts.join(", ");
 }
 
 function formatProjectLocalPath(file: string): string {

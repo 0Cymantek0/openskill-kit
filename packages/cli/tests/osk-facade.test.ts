@@ -1081,6 +1081,71 @@ describe("osk CLI facade", () => {
     expect(result.stdout).not.toContain(root);
   });
 
+  it("renders behavior-visible Learn v2 activation matches in terminal output", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-activation-behavior-"));
+    await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
+    const dir = path.join(root, ".openskill-kit", "learn-v2");
+    await mkdir(path.join(dir, "outcomes"), { recursive: true });
+    await writeFile(path.join(dir, "activation-index.json"), JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.activation-index.v1",
+      projectId: "project",
+      updatedAt: "2026-06-30T00:00:00.000Z",
+      entries: [{
+        conceptId: "concept_activation_behavior",
+        status: "active",
+        title: "Parser Verification Rule",
+        behavior: "Run focused parser regression before parser edits.",
+        appliesWhen: ["Task changes parser source files"],
+        doesNotApplyWhen: ["User explicitly asks to skip parser tests"],
+        phrases: ["parser edits", "parser regression"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: ["npm test -- parser"],
+        taskTypes: ["parser-change"],
+        negativeTriggers: ["docs-only"],
+        confidence: 0.82,
+        risk: "low",
+        counterevidenceCount: 0
+      }]
+    }, null, 2), "utf8");
+    await writeFile(path.join(dir, "outcomes", "2026-06.jsonl"), `${JSON.stringify({
+      schemaVersion: "openskill-kit.learn-v2.concept-outcome.v1",
+      id: "outcome_cli_behavior",
+      projectId: "project",
+      conceptId: "concept_activation_behavior",
+      recordedAt: "2026-06-30T00:01:00.000Z",
+      outcome: "helpful",
+      queryHash: "sha256:query",
+      pathHashes: [],
+      commandHashes: [],
+      reasonKinds: ["accepted"],
+      reasonPlaceholders: [],
+      reasonRedactionMatches: [],
+      reasonRedacted: true
+    })}\n`, "utf8");
+
+    const result = await execFileAsync(process.execPath, [
+      tsxBin,
+      cli,
+      "osk",
+      "learn",
+      "--activation-query",
+      "parser edits need verification",
+      "--activation-path",
+      "packages/core/src/parser.ts",
+      "--activation-task-type",
+      "parser-change"
+    ], { cwd: root, windowsHide: true });
+    expect(result.stdout).toContain("Parser Verification Rule");
+    expect(result.stdout).toContain("Behavior: Run focused parser regression before parser edits.");
+    expect(result.stdout).toContain("Apply when: Task changes parser source files");
+    expect(result.stdout).toContain("Do not apply when: User explicitly asks to skip parser tests");
+    expect(result.stdout).toContain("Negative triggers: docs-only");
+    expect(result.stdout).toContain("Commands: npm test -- parser");
+    expect(result.stdout).toContain("Activation payload: tokenCost=");
+    expect(result.stdout).toContain("Outcome feedback: helpful=1");
+    expect(result.stdout).not.toContain(root);
+  });
+
   it("passes Learn v2 negative signals through task context and exposes actionable learnedConcepts", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-task-context-learn-v2-"));
     await execFileAsync(process.execPath, [tsxBin, cli, "init", "--json"], { cwd: root, windowsHide: true });
