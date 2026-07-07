@@ -71,6 +71,8 @@ import {
   inferLearnV2ConditionalHypotheses,
   decideLearnV2MemoryAdmission,
   learnV2ConditionalHypothesesToBehaviorAtoms,
+  buildLearnV2SkillNamespaces,
+  buildLearnV2SkillOntologyOperations,
   readProjectConfig,
   type LearnV2BehaviorAtom,
   type LearnV2NormalizedEvidence,
@@ -2739,7 +2741,17 @@ describe("learn-v2 substrate", () => {
     const skillOntologyMarkdown = await readText(result.artifacts.learnV2SkillOntologyPath);
     expect(skillOntologyMarkdown).toContain("UI/UX design");
     expect(skillOntologyMarkdown).toContain("ui:surface-design");
+    expect(skillOntologyMarkdown).toContain("## Ontology Operations");
+    expect(skillOntologyMarkdown).toContain("create-namespace");
+    expect(skillOntologyMarkdown).toContain("split-namespace");
     expect(skillOntologyMarkdown).not.toContain(root);
+    const skillOntologyJson = JSON.parse(await readText(result.artifacts.learnV2SkillOntologyPath.replace(/\.md$/, ".json")));
+    expect(skillOntologyJson.counts.operations).toBeGreaterThanOrEqual(skillOntologyJson.counts.namespaces);
+    expect(skillOntologyJson.counts.createOperations).toBeGreaterThanOrEqual(1);
+    expect(skillOntologyJson.counts.splitOperations).toBeGreaterThanOrEqual(1);
+    expect(skillOntologyJson.operations.some((operation: { operation: string; status: string }) =>
+      operation.operation === "create-namespace" && ["candidate", "needs-review"].includes(operation.status)
+    )).toBe(true);
     expect(result.artifacts.learnV2OpenWorldGroundingPath).toContain("open-world-grounding");
     const groundingMarkdown = await readText(result.artifacts.learnV2OpenWorldGroundingPath);
     expect(groundingMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
@@ -2765,6 +2777,7 @@ describe("learn-v2 substrate", () => {
     expect(debugTraceMarkdown).toContain("Conditional reasoning:");
     expect(debugTraceMarkdown).toContain("Source separation:");
     expect(debugTraceMarkdown).toContain("UI/UX design");
+    expect(debugTraceMarkdown).toContain("Ontology operations:");
     expect(debugTraceMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
     expect(debugTraceMarkdown).toContain("component.container=card");
     expect(debugTraceMarkdown).not.toContain(root);
@@ -2793,17 +2806,45 @@ describe("learn-v2 substrate", () => {
       promotedHypotheses: 3
     });
     expect(observability.skillOntology.labels).toContain("UI/UX design");
+    expect(observability.skillOntology.operations).toBeGreaterThanOrEqual(1);
+    expect(observability.skillOntology.createOperations).toBeGreaterThanOrEqual(1);
+    expect(observability.skillOntology.splitOperations).toBeGreaterThanOrEqual(1);
     expect(observability.openWorldGrounding.anchors).toBeGreaterThanOrEqual(1);
     expect(observability.openWorldGrounding.titles).toContain("W3C WCAG 2.2 Quick Reference");
     expect(observability.conceptDebugTrace.tracedConcepts).toBeGreaterThanOrEqual(3);
     expect(observability.outcomePolicy.decisions).toBeGreaterThanOrEqual(3);
     const observabilityMarkdown = await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`));
     expect(observabilityMarkdown).toContain("Conditional hypotheses: 3 (3 promoted)");
+    expect(observabilityMarkdown).toContain("Ontology operations:");
     expect(observabilityMarkdown).toContain("Namespace labels: UI/UX design");
     expect(observabilityMarkdown).toContain("Open-world titles:");
     expect(observabilityMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
     expect(observabilityMarkdown).toContain("Concept debug traces:");
     expect(observabilityMarkdown).toContain("Outcome policy:");
+  });
+
+  it("builds reviewable ontology operations for multi-namespace concepts", () => {
+    const [card] = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom(
+          "parser_verification_multi_namespace",
+          "Prefer parser grammar regression tests and verification fixtures for parser syntax changes.",
+          "positive"
+        ),
+        kind: "workflow"
+      }
+    ], new Date("2026-06-30T00:00:00Z"));
+
+    const namespaces = buildLearnV2SkillNamespaces([card!]);
+    const labels = namespaces.map((namespace) => namespace.label);
+    expect(labels).toEqual(expect.arrayContaining(["Parser behavior", "Verification workflow"]));
+
+    const operations = buildLearnV2SkillOntologyOperations([card!], namespaces);
+    expect(operations.some((operation) => operation.operation === "create-namespace")).toBe(true);
+    expect(operations.some((operation) => operation.operation === "attach-concept" && operation.namespaceIds.length >= 2)).toBe(true);
+    expect(operations.some((operation) => operation.operation === "merge-namespaces" && operation.status === "needs-review")).toBe(true);
+    expect(operations.some((operation) => operation.operation === "split-namespace" && operation.status === "needs-review")).toBe(true);
+    expect(operations.every((operation) => operation.reviewHint.length > 0 && operation.rationale.length > 0)).toBe(true);
   });
 
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {

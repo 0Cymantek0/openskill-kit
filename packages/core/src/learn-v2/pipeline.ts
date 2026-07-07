@@ -211,6 +211,7 @@ interface LearnV2RawLocalLearningRunCompat {
     conditionalHypotheses: number;
     promotedConditionalHypotheses: number;
     skillNamespaces: number;
+    skillOntologyOperations: number;
     openWorldAnchors: number;
     conceptDebugTraces: number;
     outcomePolicySuppressions: number;
@@ -686,6 +687,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       conditionalHypotheses: conditionalLearning.counts.hypotheses,
       promotedConditionalHypotheses: conditionalLearning.counts.promotedHypotheses,
       skillNamespaces: skillOntology.counts.namespaces,
+      skillOntologyOperations: skillOntology.counts.operations,
       openWorldAnchors: openWorldGrounding.counts.anchors,
       conceptDebugTraces: conceptDebugTrace.counts.tracedConcepts,
       outcomePolicySuppressions: outcomePolicy.counts.suppressed,
@@ -1378,6 +1380,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Conditional hypotheses: ${result.digest.conditionalHypotheses}`,
     `- Promoted conditional hypotheses: ${result.digest.promotedConditionalHypotheses}`,
     `- Skill namespaces: ${result.digest.skillNamespaces}`,
+    `- Skill ontology operations: ${result.digest.skillOntologyOperations}`,
     `- Open-world grounding anchors: ${result.digest.openWorldAnchors}`,
     `- Concept debug traces: ${result.digest.conceptDebugTraces}`,
     `- Outcome policy suppressions: ${result.digest.outcomePolicySuppressions}`,

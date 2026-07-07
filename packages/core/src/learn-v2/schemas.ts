@@ -467,15 +467,34 @@ export const LearnV2SkillNamespaceCandidateSchema = z.object({
 });
 export type LearnV2SkillNamespaceCandidate = z.infer<typeof LearnV2SkillNamespaceCandidateSchema>;
 
+export const LearnV2SkillOntologyOperationSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.skill-ontology-operation.v1"),
+  id: z.string().min(1),
+  operation: z.enum(["create-namespace", "merge-namespaces", "split-namespace", "attach-concept"]),
+  status: z.enum(["candidate", "needs-review"]).default("needs-review"),
+  namespaceIds: z.array(z.string().min(1)).default([]),
+  conceptIds: z.array(z.string().min(1)).default([]),
+  confidence: z.number().min(0).max(1),
+  rationale: z.string().min(1),
+  reviewHint: z.string().min(1)
+});
+export type LearnV2SkillOntologyOperation = z.infer<typeof LearnV2SkillOntologyOperationSchema>;
+
 export const LearnV2SkillOntologyArtifactSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.skill-ontology-artifact.v1"),
   generatedAt: z.string().datetime(),
   namespaces: z.array(LearnV2SkillNamespaceCandidateSchema).default([]),
+  operations: z.array(LearnV2SkillOntologyOperationSchema).default([]),
   counts: z.object({
     namespaces: z.number().int().min(0),
     candidateNamespaces: z.number().int().min(0),
     reviewNamespaces: z.number().int().min(0),
-    representedConcepts: z.number().int().min(0)
+    representedConcepts: z.number().int().min(0),
+    operations: z.number().int().min(0).default(0),
+    createOperations: z.number().int().min(0).default(0),
+    mergeOperations: z.number().int().min(0).default(0),
+    splitOperations: z.number().int().min(0).default(0),
+    attachOperations: z.number().int().min(0).default(0)
   }),
   artifacts: z.object({
     json: z.string(),
@@ -568,7 +587,8 @@ export const LearnV2ConceptDebugTraceEntrySchema = z.object({
   }),
   ontology: z.object({
     namespaceIds: z.array(z.string().min(1)).default([]),
-    labels: z.array(z.string().min(1)).default([])
+    labels: z.array(z.string().min(1)).default([]),
+    operationIds: z.array(z.string().min(1)).default([])
   }),
   openWorldGrounding: z.object({
     anchorIds: z.array(z.string().min(1)).default([]),

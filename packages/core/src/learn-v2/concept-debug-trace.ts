@@ -85,6 +85,10 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
     ...observations.flatMap((observation) => observation.factors.map((factor) => `${factor.key}=${factor.value}`)),
     ...hypotheses.flatMap((hypothesis) => hypothesis.factorSet.map((factor) => `${factor.key}=${factor.value}`))
   ]);
+  const namespaceIds = new Set(namespaces.map((namespace) => namespace.id));
+  const ontologyOperations = (context.skillOntology?.operations ?? []).filter((operation) =>
+    operation.conceptIds.includes(concept.id) || operation.namespaceIds.some((id) => namespaceIds.has(id))
+  );
   const userPreferenceEvidence = observations.filter((observation) => ["user", "reviewer"].includes(observation.actor)).length;
   const modelInterpretation = hypotheses.length + namespaces.length;
   return LearnV2ConceptDebugTraceEntrySchema.parse({
@@ -127,7 +131,8 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
     },
     ontology: {
       namespaceIds: namespaces.map((namespace) => namespace.id),
-      labels: namespaces.map((namespace) => namespace.label)
+      labels: namespaces.map((namespace) => namespace.label),
+      operationIds: ontologyOperations.map((operation) => operation.id)
     },
     openWorldGrounding: {
       anchorIds: anchors.map((anchor) => anchor.id),
@@ -237,6 +242,7 @@ function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTrac
     lines.push("");
     lines.push("Ontology and grounding:");
     lines.push(`- Namespaces: ${trace.ontology.labels.join(", ") || "none"}`);
+    lines.push(`- Ontology operations: ${trace.ontology.operationIds.join(", ") || "none"}`);
     lines.push(`- Open-world anchors: ${trace.openWorldGrounding.titles.join(", ") || "none"}`);
     lines.push(`- Anchor precedence: ${trace.openWorldGrounding.precedence.join(", ") || "none"}`);
     lines.push("");

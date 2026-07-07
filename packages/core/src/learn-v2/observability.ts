@@ -170,6 +170,11 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     candidateNamespaces: z.number().int().min(0),
     reviewNamespaces: z.number().int().min(0),
     representedConcepts: z.number().int().min(0),
+    operations: z.number().int().min(0),
+    createOperations: z.number().int().min(0),
+    mergeOperations: z.number().int().min(0),
+    splitOperations: z.number().int().min(0),
+    attachOperations: z.number().int().min(0),
     labels: z.array(z.string()).default([]),
     artifactPath: z.string().optional()
   }).default({
@@ -177,6 +182,11 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     candidateNamespaces: 0,
     reviewNamespaces: 0,
     representedConcepts: 0,
+    operations: 0,
+    createOperations: 0,
+    mergeOperations: 0,
+    splitOperations: 0,
+    attachOperations: 0,
     labels: []
   }),
   openWorldGrounding: z.object({
@@ -443,6 +453,11 @@ export async function writeLearnV2PipelineObservabilityReport(
       candidateNamespaces: input.skillOntology?.counts.candidateNamespaces ?? 0,
       reviewNamespaces: input.skillOntology?.counts.reviewNamespaces ?? 0,
       representedConcepts: input.skillOntology?.counts.representedConcepts ?? 0,
+      operations: input.skillOntology?.counts.operations ?? 0,
+      createOperations: input.skillOntology?.counts.createOperations ?? 0,
+      mergeOperations: input.skillOntology?.counts.mergeOperations ?? 0,
+      splitOperations: input.skillOntology?.counts.splitOperations ?? 0,
+      attachOperations: input.skillOntology?.counts.attachOperations ?? 0,
       labels: input.skillOntology?.namespaces.map((item) => item.label).sort() ?? [],
       artifactPath: input.skillOntology?.artifacts.markdown
         ? learnV2SafeLocalPath(input.skillOntology.artifacts.markdown, root)
@@ -591,6 +606,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Memory admission: observe-only=${report.learningIntelligence.observeOnly}, rejected-noise=${report.learningIntelligence.rejectedNoise}`,
     `- Conditional artifact: ${report.learningIntelligence.artifactPath ?? "none"}`,
     `- Skill namespaces: ${report.skillOntology.namespaces} (${report.skillOntology.candidateNamespaces} candidate, ${report.skillOntology.reviewNamespaces} needs review)`,
+    `- Ontology operations: ${report.skillOntology.operations} (create=${report.skillOntology.createOperations}, merge=${report.skillOntology.mergeOperations}, split=${report.skillOntology.splitOperations}, attach=${report.skillOntology.attachOperations})`,
     `- Namespace labels: ${report.skillOntology.labels.join(", ") || "none"}`,
     `- Skill ontology artifact: ${report.skillOntology.artifactPath ?? "none"}`,
     `- Open-world anchors: ${report.openWorldGrounding.anchors} across ${report.openWorldGrounding.conceptCount} concept(s)`,
