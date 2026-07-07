@@ -5,7 +5,23 @@ import { readProjectConfig } from "../events/store.js";
 import { deriveActivationSignalsFromText, deriveLearnV2SubsystemLabels } from "./activation-signals.js";
 import { readLearnV2ConceptStore, writeLearnV2ActivationIndex, type LearnV2ActivationIndex } from "./store.js";
 import { decideLearnV2OutcomePolicy } from "./outcome-policy-core.js";
-import { learnV2Hash, learnV2ShortHash } from "./utils.js";
+import { learnV2DeclassifyText, learnV2Hash, learnV2ShortHash } from "./utils.js";
+
+const LearnV2OutcomeReasonKinds = [
+  "accepted",
+  "wrong",
+  "harmful",
+  "ignored",
+  "superseded",
+  "correction",
+  "path",
+  "command",
+  "test",
+  "task",
+  "contact",
+  "security",
+  "unknown"
+] as const;
 
 export const LearnV2ConceptOutcomeSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.concept-outcome.v1"),
@@ -19,6 +35,13 @@ export const LearnV2ConceptOutcomeSchema = z.object({
   taskIdHash: z.string().optional(),
   pathHashes: z.array(z.string()).default([]),
   commandHashes: z.array(z.string()).default([]),
+  reasonHash: z.string().optional(),
+  reasonKinds: z.array(z.enum(LearnV2OutcomeReasonKinds)).default([]),
+  reasonPlaceholders: z.array(z.string()).default([]),
+  reasonRedactionMatches: z.array(z.string()).default([]),
+  reasonRedacted: z.boolean().default(false),
+  // Legacy local records may still contain this field. New writes do not persist
+  // free-form reason text; use reasonHash/reasonKinds for product telemetry.
   reason: z.string().max(500).optional()
 });
 export type LearnV2ConceptOutcome = z.infer<typeof LearnV2ConceptOutcomeSchema>;
@@ -192,6 +215,7 @@ export async function recordLearnV2ConceptOutcome(
 ): Promise<LearnV2ConceptOutcomeResult> {
   const root = path.resolve(rootInput);
   const config = await readProjectConfig(root);
+  const reasonTelemetry = buildOutcomeReasonTelemetry(input.reason, root, config);
   const record = LearnV2ConceptOutcomeSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.concept-outcome.v1",
     id: `outcome_${learnV2ShortHash(`${input.conceptId}:${input.outcome}:${now.toISOString()}:${input.query ?? ""}`)}`,
@@ -204,7 +228,7 @@ export async function recordLearnV2ConceptOutcome(
     taskIdHash: input.taskId ? learnV2Hash(input.taskId) : undefined,
     pathHashes: (input.paths ?? []).map((item) => learnV2Hash(normalizePath(item))).sort(),
     commandHashes: (input.commands ?? []).map((item) => learnV2Hash(normalizeText(item))).sort(),
-    reason: input.reason
+    ...reasonTelemetry
   });
   const outcomePath = learnV2ConceptOutcomePath(root, now);
   await fs.mkdir(path.dirname(outcomePath), { recursive: true });
@@ -214,6 +238,42 @@ export async function recordLearnV2ConceptOutcome(
     outcomePath,
     record
   };
+}
+
+function buildOutcomeReasonTelemetry(
+  reason: string | undefined,
+  root: string,
+  config: Awaited<ReturnType<typeof readProjectConfig>>
+): Partial<LearnV2ConceptOutcome> {
+  const trimmed = reason?.trim();
+  if (!trimmed) return {};
+  const declassified = learnV2DeclassifyText(trimmed, root, config);
+  return {
+    reasonHash: learnV2Hash(normalizeText(trimmed)),
+    reasonKinds: classifyOutcomeReason(declassified.text),
+    reasonPlaceholders: declassified.placeholders,
+    reasonRedactionMatches: declassified.matches,
+    reasonRedacted: true
+  };
+}
+
+function classifyOutcomeReason(reason: string): Array<typeof LearnV2OutcomeReasonKinds[number]> {
+  const text = normalizeText(reason);
+  const kinds = new Set<typeof LearnV2OutcomeReasonKinds[number]>();
+  if (/\b(helpful|accepted|approved|works|good)\b/.test(text)) kinds.add("accepted");
+  if (/\b(wrong|incorrect|bad|regression|failed|failure)\b/.test(text)) kinds.add("wrong");
+  if (/\b(harmful|dangerous|unsafe|destructive)\b/.test(text)) kinds.add("harmful");
+  if (/\b(ignored|unused|irrelevant|not used)\b/.test(text)) kinds.add("ignored");
+  if (/\b(superseded|replaced|stale|obsolete)\b/.test(text)) kinds.add("superseded");
+  if (/\b(correction|corrected|edited|changed|manual edit|reviewer)\b/.test(text)) kinds.add("correction");
+  if (/\b(project_root|user_home|absolute_path|path|file|src|packages|lib)\b/.test(text)) kinds.add("path");
+  if (/\b(npm|pnpm|yarn|vitest|jest|pytest|go test|cargo test|command|cli)\b/.test(text)) kinds.add("command");
+  if (/\b(test|spec|fixture|regression)\b/.test(text)) kinds.add("test");
+  if (/\b(task|issue|ticket|prompt|request)\b/.test(text)) kinds.add("task");
+  if (/\b(redacted:email|email|contact)\b/.test(text)) kinds.add("contact");
+  if (/\b(secret|token|password|credential|privacy|security)\b/.test(text)) kinds.add("security");
+  if (!kinds.size) kinds.add("unknown");
+  return [...kinds].sort();
 }
 
 export function learnV2ConceptOutcomePath(root: string, now = new Date()): string {

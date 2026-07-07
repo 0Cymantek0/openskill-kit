@@ -5153,6 +5153,7 @@ describe("learn-v2 substrate", () => {
     expect(activationRuns[0]!.suppressedCount).toBe(activationRunRecord.suppressedCount);
     expect(activationRuns[0]!.matches.some((match) => match.conceptId === concept.id)).toBe(true);
 
+    const sensitiveOutcomeReason = `matched future parser task at ${path.join(root, "packages/core/src/parser.ts")} using npm test -- parser for reviewer shuva@example.com`;
     const outcome = await recordLearnV2ConceptOutcome(root, {
       conceptId: concept.id,
       outcome: "helpful",
@@ -5160,14 +5161,34 @@ describe("learn-v2 substrate", () => {
       query: `${root} parser change needs focused test`,
       paths: [path.join(root, "packages/core/src/parser.ts")],
       commands: ["npm test -- parser"],
-      reason: "matched future parser task"
+      reason: sensitiveOutcomeReason
     }, new Date("2026-06-30T00:04:00Z"));
     const rawOutcome = await readText(outcome.outcomePath);
     expect(rawOutcome).toContain(concept.id);
     expect(rawOutcome).toContain("queryHash");
+    expect(rawOutcome).toContain("reasonHash");
+    expect(rawOutcome).toContain("reasonKinds");
     expect(rawOutcome).not.toContain(root);
     expect(rawOutcome).not.toContain("npm test -- parser");
     expect(rawOutcome).not.toContain("packages/core/src/parser.ts");
+    expect(rawOutcome).not.toContain("matched future parser task");
+    expect(rawOutcome).not.toContain("shuva@example.com");
+    const outcomeLines = rawOutcome.split(/\r?\n/).filter(Boolean);
+    expect(outcomeLines).toHaveLength(1);
+    const outcomeRecord = JSON.parse(outcomeLines[0]!) as {
+      reason?: string;
+      reasonHash?: string;
+      reasonKinds: string[];
+      reasonPlaceholders: string[];
+      reasonRedactionMatches: string[];
+      reasonRedacted: boolean;
+    };
+    expect(outcomeRecord.reason).toBeUndefined();
+    expect(outcomeRecord.reasonHash).toMatch(/^sha256:[0-9a-f]+$/);
+    expect(outcomeRecord.reasonKinds).toEqual(expect.arrayContaining(["path", "command", "test", "task", "correction", "contact"]));
+    expect(outcomeRecord.reasonPlaceholders).toEqual(expect.arrayContaining(["[PROJECT_ROOT]", "[REDACTED:email]"]));
+    expect(outcomeRecord.reasonRedactionMatches).toEqual(expect.arrayContaining(["project-root", "email"]));
+    expect(outcomeRecord.reasonRedacted).toBe(true);
 
     const boosted = await activateLearnV2Concepts(root, {
       query: "parser change needs focused test",
