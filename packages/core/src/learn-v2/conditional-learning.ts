@@ -234,10 +234,20 @@ export function extractLearnV2ContextFactors(input: {
 
   for (const file of input.paths ?? []) {
     const normalizedPath = file.replace(/\\/g, "/").toLowerCase();
+    const pathText = pathSignalText(file);
     if (/\.(tsx|jsx)$/.test(normalizedPath)) add("framework", "react", "Framework is React", "path", 0.72);
     if (normalizedPath.includes("/tests/") || /\.test\./.test(normalizedPath)) add("file.layer", "test", "File layer is test", "path", 0.72);
     if (normalizedPath.includes("/src/")) add("file.layer", "source", "File layer is source", "path", 0.68);
     if (normalizedPath.includes("/docs/") || normalizedPath.endsWith(".md")) add("file.layer", "docs", "File layer is docs", "path", 0.68);
+    if (/\b(light|white)\b/.test(pathText)) add("ui.theme", "light", "UI theme is light", "path", 0.7);
+    if (/\b(dark|black)\b/.test(pathText)) add("ui.theme", "dark", "UI theme is dark", "path", 0.7);
+    if (/\b(card|panel|tile)\b/.test(pathText)) add("component.container", "card", "Component is inside a card", "path", 0.7);
+    if (/\b(independent|standalone)\b/.test(pathText)) add("component.container", "independent", "Component is independent", "path", 0.68);
+    if (/\b(primary cta|cta)\b/.test(pathText)) add("component.role", "primary-cta", "Component role is primary CTA", "path", 0.7);
+    if (/\bbutton\b/.test(pathText)) add("component.role", "button", "Component role is button", "path", 0.68);
+    if (/\blanding\b/.test(pathText)) add("surface.kind", "landing-page", "Surface is landing page", "path", 0.68);
+    if (/\bmarketing\b/.test(pathText)) add("surface.kind", "marketing-page", "Surface is marketing page", "path", 0.68);
+    if (/\bdashboard\b/.test(pathText)) add("surface.kind", "dashboard", "Surface is dashboard", "path", 0.68);
   }
 
   return uniqueFactors(out);
@@ -740,6 +750,16 @@ function normalize(value: string): string {
 
 function normalizeValue(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function pathSignalText(value: string): string {
+  return value
+    .replace(/\\/g, "/")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[^A-Za-z0-9]+/g, " ")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function renderLearnV2ConditionalLearningArtifact(root: string, artifact: LearnV2ConditionalLearningArtifact): string {
