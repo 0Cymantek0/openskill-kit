@@ -62,6 +62,7 @@ export interface LearnV2ConceptActivationMatch {
   behavior: string;
   appliesWhen: string[];
   doesNotApplyWhen: string[];
+  negativeTriggers: string[];
   preferredCommands: string[];
   status: LearnV2ActivationIndex["entries"][number]["status"];
   risk: LearnV2ActivationIndex["entries"][number]["risk"];
@@ -458,6 +459,7 @@ function baseMatch(
     behavior: entry.behavior ?? entry.title,
     appliesWhen: entry.appliesWhen ?? [],
     doesNotApplyWhen: entry.doesNotApplyWhen ?? [],
+    negativeTriggers: entry.negativeTriggers ?? [],
     preferredCommands: entry.commands,
     status: entry.status,
     risk: entry.risk,

@@ -5681,7 +5681,8 @@ describe("learn-v2 substrate", () => {
       scope: {
         ...base!.scope,
         paths: ["packages/core/src/parser.ts"],
-        taskTypes: ["parser-change"]
+        taskTypes: ["parser-change"],
+        negativeTriggers: ["user says skip parser tests"]
       }
     };
     await writeLearnV2ConceptStore(root, [active], now);
@@ -5698,11 +5699,13 @@ describe("learn-v2 substrate", () => {
       behavior: "Run focused parser regression before parser edits.",
       appliesWhen: ["Task changes parser source files"],
       doesNotApplyWhen: ["User explicitly asks to skip parser tests"],
+      negativeTriggers: ["user says skip parser tests"],
       preferredCommands: ["npm test -- parser"]
     });
     expect(context.compactMarkdown).toContain("Parser Verification Rule: Run focused parser regression before parser edits.");
     expect(context.compactMarkdown).toContain("Apply when: Task changes parser source files");
     expect(context.compactMarkdown).toContain("Do not apply when: User explicitly asks to skip parser tests");
+    expect(context.compactMarkdown).toContain("Negative triggers: user says skip parser tests");
     expect(context.compactMarkdown).toContain("Commands: npm test -- parser");
   });
 });
