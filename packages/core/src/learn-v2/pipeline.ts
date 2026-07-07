@@ -19,6 +19,7 @@ import {
   LearnV2EvalReportSchema,
   LearnV2RawEvidenceRecordSchema,
   LearnV2ReviewQueueSchema,
+  LearnV2SkillOntologyArtifactSchema,
   type LearnV2BehaviorAtom,
   type LearnV2ConceptCard,
   type LearnV2ConditionalLearningArtifact,
@@ -30,12 +31,14 @@ import {
   type LearnV2NormalizedEvidence,
   type LearnV2RawEvidenceRecord,
   type LearnV2ReviewQueue,
+  type LearnV2SkillOntologyArtifact,
   type LearnV2TaskEpisode
 } from "./schemas.js";
 import { normalizeLearnV2Evidence } from "./normalize.js";
 import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
+import { writeLearnV2SkillOntologyArtifact } from "./skill-ontology.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { writeLearnV2ConflictLedger } from "./conflicts.js";
 import { writeLearnV2CounterevidenceLedger } from "./counterevidence-ledger.js";
@@ -178,6 +181,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2SourceGateReviewJsonPath: string;
     learnV2SourceGateReviewPath: string;
     learnV2ConditionalLearningPath: string;
+    learnV2SkillOntologyPath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -194,6 +198,7 @@ interface LearnV2RawLocalLearningRunCompat {
     conditionalObservations: number;
     conditionalHypotheses: number;
     promotedConditionalHypotheses: number;
+    skillNamespaces: number;
     conceptCards: number;
     currentRunConceptCards: number;
     mergedConceptCards: number;
@@ -217,6 +222,7 @@ interface LearnV2RawLocalLearningRunCompat {
     };
     rejectedAtoms: ReturnType<typeof extractLearnV2BehaviorAtoms>["rejected"];
     conditionalLearning: LearnV2ConditionalLearningArtifact;
+    skillOntology: LearnV2SkillOntologyArtifact;
     conceptStorePath: string;
     reviewQueuePath: string;
     compilePreviewPath: string;
@@ -471,6 +477,9 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       ? await writeLearnV2ConceptStore(root, concepts, now)
       : await readLearnV2ConceptStore(root, now);
   const conceptCardsForArtifacts = conceptStore.cards;
+  const skillOntology = shouldWriteDerivedArtifacts
+    ? await writeLearnV2SkillOntologyArtifact(root, conceptCardsForArtifacts, now)
+    : emptySkillOntologyArtifact(root, now);
   const conceptStorePath = previewOnly
     ? previewLearnV2ConceptStorePath(root, generatedAt)
     : path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json");
@@ -575,13 +584,15 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ConceptDriftPath: conceptDrift.artifactPath,
       learnV2SourceGateReviewJsonPath: sourceGateReview.paths.json,
       learnV2SourceGateReviewPath: sourceGateReview.paths.markdown,
-      learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown
+      learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown,
+      learnV2SkillOntologyPath: skillOntology.artifacts.markdown
     },
     conflictLedger: conflictLedger.ledger,
     conceptDrift: conceptDrift.report,
     declassifiedSnippets,
     evidenceQualityScores: evidenceQuality.scores,
     conditionalLearning,
+    skillOntology,
     nextActions
   });
   const result: LearnV2RawLocalLearningRunCompat = {
@@ -615,7 +626,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ConceptDriftPath: conceptDrift.artifactPath,
       learnV2SourceGateReviewJsonPath: sourceGateReview.paths.json,
       learnV2SourceGateReviewPath: sourceGateReview.paths.markdown,
-      learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown
+      learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown,
+      learnV2SkillOntologyPath: skillOntology.artifacts.markdown
     },
     lifecycle,
     digest: {
@@ -632,6 +644,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       conditionalObservations: conditionalLearning.counts.observations,
       conditionalHypotheses: conditionalLearning.counts.hypotheses,
       promotedConditionalHypotheses: conditionalLearning.counts.promotedHypotheses,
+      skillNamespaces: skillOntology.counts.namespaces,
       conceptCards: concepts.length,
       currentRunConceptCards: concepts.length,
       mergedConceptCards: conceptCardsForArtifacts.length,
@@ -672,6 +685,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       conceptStorePath,
       rejectedAtoms: extracted.rejected,
       conditionalLearning,
+      skillOntology,
       reviewQueuePath: reviewQueue.artifacts.markdown,
       compilePreviewPath: compilePreview.artifacts.markdown,
       evalReportPath: evalReport.artifacts.markdown,
@@ -747,6 +761,23 @@ function emptyConditionalLearningArtifact(root: string, now: Date): LearnV2Condi
     }),
     atoms: []
   };
+}
+
+function emptySkillOntologyArtifact(root: string, now: Date): LearnV2SkillOntologyArtifact {
+  const json = path.join(root, ".openskill-kit", "learn-v2", "skill-ontology", "skill-ontology.json");
+  const markdown = path.join(root, ".openskill-kit", "learn-v2", "skill-ontology", "skill-ontology.md");
+  return LearnV2SkillOntologyArtifactSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.skill-ontology-artifact.v1",
+    generatedAt: now.toISOString(),
+    namespaces: [],
+    counts: {
+      namespaces: 0,
+      candidateNamespaces: 0,
+      reviewNamespaces: 0,
+      representedConcepts: 0
+    },
+    artifacts: { json, markdown }
+  });
 }
 
 function emptyCompilePreview(root: string, now: Date): LearnV2CompilePreview {
@@ -1239,6 +1270,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Conditional observations: ${result.digest.conditionalObservations}`,
     `- Conditional hypotheses: ${result.digest.conditionalHypotheses}`,
     `- Promoted conditional hypotheses: ${result.digest.promotedConditionalHypotheses}`,
+    `- Skill namespaces: ${result.digest.skillNamespaces}`,
     `- Concept cards: ${result.digest.conceptCards}`,
     `- Events appended: ${result.digest.eventsAppended}`,
     `- Overall quality: ${result.quality.overallScore.toFixed(2)}`,
@@ -1259,6 +1291,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Source gate review: ${result.artifacts.learnV2SourceGateReviewPath}`,
     `- Source gate review JSON: ${result.artifacts.learnV2SourceGateReviewJsonPath}`,
     `- Conditional learning: ${result.artifacts.learnV2ConditionalLearningPath}`,
+    `- Skill ontology: ${result.artifacts.learnV2SkillOntologyPath}`,
     `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
     "",
     "## Quality",

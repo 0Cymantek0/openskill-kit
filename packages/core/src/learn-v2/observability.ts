@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2ReviewQueue, LearnV2SkillOntologyArtifact, LearnV2TaskEpisode } from "./schemas.js";
 import type { LearnV2ModelExecutionPolicyReport } from "./pipeline.js";
 import { readLearnV2ConceptOutcomeTelemetrySummary, type LearnV2ConceptOutcomeTelemetrySummary } from "./activation.js";
 import { learnV2SafeLocalPath } from "./utils.js";
@@ -165,6 +165,20 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     observeOnly: 0,
     rejectedNoise: 0
   }),
+  skillOntology: z.object({
+    namespaces: z.number().int().min(0),
+    candidateNamespaces: z.number().int().min(0),
+    reviewNamespaces: z.number().int().min(0),
+    representedConcepts: z.number().int().min(0),
+    labels: z.array(z.string()).default([]),
+    artifactPath: z.string().optional()
+  }).default({
+    namespaces: 0,
+    candidateNamespaces: 0,
+    reviewNamespaces: 0,
+    representedConcepts: 0,
+    labels: []
+  }),
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
     leakStatus: z.enum(["pass", "fail"]),
@@ -234,6 +248,7 @@ export interface LearnV2PipelineObservabilityInput {
   conceptDrift?: LearnV2ConceptDriftReport;
   declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
   conditionalLearning?: LearnV2ConditionalLearningArtifact;
+  skillOntology?: LearnV2SkillOntologyArtifact;
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
   evidenceQualityScores?: LearnV2EvidenceQualityScore[];
@@ -378,6 +393,16 @@ export async function writeLearnV2PipelineObservabilityReport(
         ? learnV2SafeLocalPath(input.conditionalLearning.artifacts.markdown, root)
         : undefined
     },
+    skillOntology: {
+      namespaces: input.skillOntology?.counts.namespaces ?? 0,
+      candidateNamespaces: input.skillOntology?.counts.candidateNamespaces ?? 0,
+      reviewNamespaces: input.skillOntology?.counts.reviewNamespaces ?? 0,
+      representedConcepts: input.skillOntology?.counts.representedConcepts ?? 0,
+      labels: input.skillOntology?.namespaces.map((item) => item.label).sort() ?? [],
+      artifactPath: input.skillOntology?.artifacts.markdown
+        ? learnV2SafeLocalPath(input.skillOntology.artifacts.markdown, root)
+        : undefined
+    },
     qualityGates: {
       evalStatus: input.evalReport.status,
       leakStatus: input.evalReport.leakCheck.status,
@@ -490,6 +515,9 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Conditional hypotheses: ${report.learningIntelligence.hypotheses} (${report.learningIntelligence.promotedHypotheses} promoted)`,
     `- Memory admission: observe-only=${report.learningIntelligence.observeOnly}, rejected-noise=${report.learningIntelligence.rejectedNoise}`,
     `- Conditional artifact: ${report.learningIntelligence.artifactPath ?? "none"}`,
+    `- Skill namespaces: ${report.skillOntology.namespaces} (${report.skillOntology.candidateNamespaces} candidate, ${report.skillOntology.reviewNamespaces} needs review)`,
+    `- Namespace labels: ${report.skillOntology.labels.join(", ") || "none"}`,
+    `- Skill ontology artifact: ${report.skillOntology.artifactPath ?? "none"}`,
     `- Review-ready cards: ${report.concepts.reviewReadyCards}`,
     `- Review focus: ${report.concepts.reviewFocusCards} focus, ${report.concepts.reviewAppendixCards} appendix`,
     `- Unresolved conflicts: ${report.concepts.unresolvedConflicts}`,

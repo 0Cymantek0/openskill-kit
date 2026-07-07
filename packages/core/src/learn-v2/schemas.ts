@@ -455,6 +455,35 @@ export const LearnV2ConditionalLearningArtifactSchema = z.object({
 });
 export type LearnV2ConditionalLearningArtifact = z.infer<typeof LearnV2ConditionalLearningArtifactSchema>;
 
+export const LearnV2SkillNamespaceCandidateSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.skill-namespace-candidate.v1"),
+  id: z.string().min(1),
+  label: z.string().min(1),
+  status: z.enum(["candidate", "needs-review"]).default("candidate"),
+  confidence: z.number().min(0).max(1),
+  conceptIds: z.array(z.string().min(1)).min(1),
+  representativeSignals: z.array(z.string().min(1)).default([]),
+  rationale: z.string().min(1)
+});
+export type LearnV2SkillNamespaceCandidate = z.infer<typeof LearnV2SkillNamespaceCandidateSchema>;
+
+export const LearnV2SkillOntologyArtifactSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.skill-ontology-artifact.v1"),
+  generatedAt: z.string().datetime(),
+  namespaces: z.array(LearnV2SkillNamespaceCandidateSchema).default([]),
+  counts: z.object({
+    namespaces: z.number().int().min(0),
+    candidateNamespaces: z.number().int().min(0),
+    reviewNamespaces: z.number().int().min(0),
+    representedConcepts: z.number().int().min(0)
+  }),
+  artifacts: z.object({
+    json: z.string(),
+    markdown: z.string()
+  })
+});
+export type LearnV2SkillOntologyArtifact = z.infer<typeof LearnV2SkillOntologyArtifactSchema>;
+
 export const LearnV2LlmConceptExtractionOutputSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.llm-concept-extraction-output.v1"),
   atoms: z.array(z.object({

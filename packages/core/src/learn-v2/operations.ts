@@ -3,6 +3,7 @@ import path from "node:path";
 import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
+import { writeLearnV2SkillOntologyArtifact } from "./skill-ontology.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { readLearnV2ConceptStore, writeLearnV2ConceptStore } from "./store.js";
 import { runLearnV2Eval, type LearnV2EvalOptions } from "./eval.js";
@@ -28,10 +29,12 @@ export interface LearnV2ConceptExtractionResult {
   conditionalObservationCount: number;
   conditionalHypothesisCount: number;
   promotedConditionalHypothesisCount: number;
+  skillNamespaceCount: number;
   rejectedAtomCount: number;
   conceptCount: number;
   conceptStorePath: string;
   conditionalLearningPath: string;
+  skillOntologyPath: string;
 }
 
 export interface LearnV2PersistedEvalResult {
@@ -74,6 +77,7 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
   const atoms = [...extracted.atoms, ...conditionalLearning.atoms];
   const concepts = mergeLearnV2ConceptCards(atoms, now);
   const store = await writeLearnV2ConceptStore(root, concepts, now);
+  const skillOntology = await writeLearnV2SkillOntologyArtifact(root, store.cards, now);
   return {
     schemaVersion: "openskill-kit.learn-v2.extract-concepts-result.v1",
     extractedAt: now.toISOString(),
@@ -82,10 +86,12 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
     conditionalObservationCount: conditionalLearning.counts.observations,
     conditionalHypothesisCount: conditionalLearning.counts.hypotheses,
     promotedConditionalHypothesisCount: conditionalLearning.counts.promotedHypotheses,
+    skillNamespaceCount: skillOntology.counts.namespaces,
     rejectedAtomCount: extracted.rejected.length,
     conceptCount: store.cards.length,
     conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
-    conditionalLearningPath: conditionalLearning.artifacts.markdown
+    conditionalLearningPath: conditionalLearning.artifacts.markdown,
+    skillOntologyPath: skillOntology.artifacts.markdown
   };
 }
 

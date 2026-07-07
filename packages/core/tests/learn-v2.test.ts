@@ -2728,11 +2728,16 @@ describe("learn-v2 substrate", () => {
     expect(result.digest.conditionalObservations).toBe(3);
     expect(result.digest.conditionalHypotheses).toBe(3);
     expect(result.digest.promotedConditionalHypotheses).toBe(3);
+    expect(result.digest.skillNamespaces).toBeGreaterThanOrEqual(1);
     expect(result.digest.behaviorAtoms).toBeGreaterThanOrEqual(3);
     const conditionalMarkdown = await readText(result.artifacts.learnV2ConditionalLearningPath);
     expect(conditionalMarkdown).toContain("Promoted hypotheses: 3");
     expect(conditionalMarkdown).toContain("component.container=card");
     expect(conditionalMarkdown).not.toContain(root);
+    const skillOntologyMarkdown = await readText(result.artifacts.learnV2SkillOntologyPath);
+    expect(skillOntologyMarkdown).toContain("UI/UX design");
+    expect(skillOntologyMarkdown).toContain("ui:surface-design");
+    expect(skillOntologyMarkdown).not.toContain(root);
     const conceptText = JSON.stringify(result.learnV2.currentRunConcepts.map((concept) => ({
       behavior: concept.canonicalBehavior,
       conditions: concept.conditions
@@ -2747,7 +2752,10 @@ describe("learn-v2 substrate", () => {
       hypotheses: 3,
       promotedHypotheses: 3
     });
-    expect(await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`))).toContain("Conditional hypotheses: 3 (3 promoted)");
+    expect(observability.skillOntology.labels).toContain("UI/UX design");
+    const observabilityMarkdown = await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`));
+    expect(observabilityMarkdown).toContain("Conditional hypotheses: 3 (3 promoted)");
+    expect(observabilityMarkdown).toContain("Namespace labels: UI/UX design");
   });
 
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
@@ -3047,6 +3055,8 @@ describe("learn-v2 substrate", () => {
     const extracted = await extractPersistedLearnV2Concepts(root, new Date("2026-06-30T00:02:00Z"));
     expect(extracted.atomCount).toBeGreaterThanOrEqual(1);
     expect(extracted.conceptCount).toBeGreaterThanOrEqual(1);
+    expect(extracted.skillNamespaceCount).toBeGreaterThanOrEqual(1);
+    expect(await readText(extracted.skillOntologyPath)).toContain("Skill Ontology");
     const evaluated = await runPersistedLearnV2Eval(root, {}, new Date("2026-06-30T00:03:00Z"));
     expect(evaluated.evalStatus).toBe("pass");
     expect(await readText(evaluated.evalReportPath)).toContain("Counterfactual trace cases");
