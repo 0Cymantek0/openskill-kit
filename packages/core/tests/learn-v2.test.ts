@@ -62,6 +62,7 @@ import {
   writeLearnV2DeclassifiedSnippetArtifact,
   writeLearnV2OutcomePolicyArtifact,
   writeLearnV2ConceptDebugTraceArtifact,
+  readLearnV2EpisodeDebugView,
   storeLearnV2RawEvidence,
   detectLearnV2ConceptDrift,
   runLearnV2Eval,
@@ -5520,6 +5521,63 @@ describe("learn-v2 substrate", () => {
     expect(traceMarkdown).toContain("Action: suppress-activation");
     expect(traceMarkdown).toContain("outcome:wrong-threshold:2");
     expect(traceMarkdown).not.toContain(root);
+  });
+
+  it("builds declassified Learn v2 episode debug views without raw text or absolute paths", async () => {
+    const root = await tempProject();
+    const secretInstruction = "raw private instruction: use secret token abc123";
+    const absoluteParserPath = path.join(root, "packages", "core", "src", "parser.ts");
+    const episode: LearnV2TaskEpisode = {
+      ...episodeWithCommand("debug_episode", "npm test -- --runInBand", "pass", ["parser-change"]),
+      id: "episode_debug_parser",
+      traceIds: ["trace_debug"],
+      evidenceIds: ["ev_message", "ev_tool"],
+      rawRefs: ["raw_message", "raw_tool"],
+      cwdHints: [root],
+      pathCluster: [absoluteParserPath, "packages/core/src/parser.ts"],
+      phases: [{
+        phase: "review/correction",
+        evidenceIds: ["ev_message"],
+        summary: secretInstruction,
+        confidence: 0.76
+      }],
+      messages: [{
+        ...normalizedMessage("ev_message", secretInstruction, "user"),
+        paths: [absoluteParserPath],
+        commands: ["npm test -- --runInBand"]
+      }],
+      toolSummaries: [{
+        ...episodeWithCommand("debug_tool", "npm test -- --runInBand", "pass").toolSummaries[0]!,
+        id: "tool_debug",
+        evidenceId: "ev_tool",
+        paths: [absoluteParserPath]
+      }],
+      tokenBudget: {
+        inputChars: 120,
+        compressedChars: 40,
+        compressionRatio: 0.33
+      }
+    };
+    await writeLearnV2EpisodeStore(root, [episode], new Date("2026-06-30T00:10:00Z"));
+
+    const view = await readLearnV2EpisodeDebugView(root, { episodeId: "episode_debug_parser" });
+    expect(view.schemaVersion).toBe("openskill-kit.learn-v2.episode-debug-view.v1");
+    expect(view.counts.selectedEpisodes).toBe(1);
+    expect(view.episodes[0]!.phases[0]!.summaryHash).toMatch(/^sha256:/);
+    expect(view.episodes[0]!.phases[0]!.summaryChars).toBe(secretInstruction.length);
+    expect(view.episodes[0]!.messageSummary).toMatchObject({
+      total: 1,
+      pathMentions: 1,
+      commandMentions: 1,
+      textChars: secretInstruction.length
+    });
+    expect(view.episodes[0]!.cwdHints).toEqual(["[PROJECT_ROOT]"]);
+    expect(view.episodes[0]!.pathCluster).toContain("[PROJECT_ROOT]/packages/core/src/parser.ts");
+    expect(view.episodes[0]!.toolSummaries[0]!.paths).toEqual(["[PROJECT_ROOT]/packages/core/src/parser.ts"]);
+    const serialized = JSON.stringify(view);
+    expect(serialized).not.toContain(root);
+    expect(serialized).not.toContain(secretInstruction);
+    expect(serialized).not.toContain("raw_message");
   });
 
   it("includes active Learn v2 activation in normal task context and suppresses explicit negative triggers", async () => {

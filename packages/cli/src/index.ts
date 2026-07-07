@@ -101,6 +101,7 @@ import {
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
   readLearnV2ConceptDebugTraceView,
+  readLearnV2EpisodeDebugView,
   getLearnV2ArtifactPathManifest,
   RawLearningModelModes,
   readEvidenceCards,
@@ -361,6 +362,7 @@ osk.command("learn")
   .option("--observability-file <path>", "Specific Learn-v2 pipeline observability JSON report")
   .option("--debug-dashboard", "Show latest Learn-v2 concept debug trace dashboard")
   .option("--debug-concept <conceptId>", "Show why-learned/why-active trace for one Learn-v2 concept")
+  .option("--debug-episode <episodeId>", "Show declassified Learn-v2 episode stitching, evidence, phase, tool, and patch summary")
   .option("--debug-trace-file <path>", "Specific Learn-v2 concept debug trace JSON artifact")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
   .option("--max-pinned-raw-vault-bytes <number>", "Learn-v2 pinned raw vault byte budget", parseIntegerOption)
@@ -435,6 +437,11 @@ osk.command("learn")
         conceptId: options.debugConcept
       });
       output(options.json, result, renderLearnV2DebugTraceView(result, Boolean(options.debugConcept)));
+      return;
+    }
+    if (options.debugEpisode) {
+      const result = await readLearnV2EpisodeDebugView(process.cwd(), { episodeId: options.debugEpisode });
+      output(options.json, result, renderLearnV2EpisodeDebugView(result, true));
       return;
     }
     if (options.observability === true || options.observabilityFile) {
@@ -2339,6 +2346,60 @@ function renderLearnV2DebugTraceView(
   if (!conceptOnly && view.traces.length > 12) lines.push(`Showing 12/${view.traces.length} traces. Use --debug-concept <id> for one concept.`);
   lines.push(`JSON: ${view.artifacts.json}`);
   lines.push(`Markdown: ${view.artifacts.markdown}`);
+  return lines.join("\n");
+}
+
+function renderLearnV2EpisodeDebugView(
+  view: Awaited<ReturnType<typeof readLearnV2EpisodeDebugView>>,
+  episodeOnly: boolean
+): string {
+  const lines = [
+    episodeOnly ? "Learn v2 episode debug" : "Learn v2 episode dashboard",
+    "",
+    `Updated: ${view.generatedAt}`,
+    `Source: ${view.sourcePath}`,
+    `Episodes: ${view.counts.selectedEpisodes}/${view.counts.totalEpisodes} selected`,
+    `Outcomes: ${renderLearnV2CountLine(view.counts.outcomeCounts)}`,
+    `Stitching: ${renderLearnV2CountLine(view.counts.stitchingMethodCounts)}`,
+    `Risks: ${renderLearnV2CountLine(view.counts.riskCounts)}`,
+    `Phases: ${renderLearnV2CountLine(view.counts.phaseCounts)}`,
+    ""
+  ];
+  if (!view.episodes.length) lines.push(episodeOnly ? "No matching episode found." : "No episodes found.");
+  for (const episode of view.episodes.slice(0, episodeOnly ? 1 : 12)) {
+    lines.push(`${episode.id}: outcome=${episode.outcome}; confidence=${episode.episodeConfidence.toFixed(2)}; method=${episode.stitching.method}`);
+    if (episode.startedAt || episode.endedAt) lines.push(`  Window: ${episode.startedAt ?? "unknown"} -> ${episode.endedAt ?? "unknown"}`);
+    if (episode.branch) lines.push(`  Branch: ${episode.branch}`);
+    lines.push(`  Evidence: ${episode.evidenceIds.join(", ") || "none"}; rawRefs=${episode.rawRefCount}`);
+    lines.push(`  Trace/session: traces=${episode.traceIds.join(", ") || "none"}; sessions=${episode.sessionIds.join(", ") || "none"}`);
+    lines.push(`  Paths: ${episode.pathCluster.join(", ") || "none"}`);
+    lines.push(`  CWD hints: ${episode.cwdHints.join(", ") || "none"}`);
+    lines.push(`  Task hints: ${episode.taskHints.join(", ") || "none"}`);
+    lines.push(`  Confidence risks: ${episode.confidenceBreakdown?.risks.join(", ") || "none"}`);
+    lines.push(`  Confidence reasons: ${episode.confidenceBreakdown?.reasons.join("; ") || "none"}`);
+    lines.push(`  Messages: total=${episode.messageSummary.total}; actors=${renderLearnV2CountLine(episode.messageSummary.byActor)}; kinds=${renderLearnV2CountLine(episode.messageSummary.byKind)}; statuses=${renderLearnV2CountLine(episode.messageSummary.byStatus)}; pathRefs=${episode.messageSummary.pathMentions}; commandRefs=${episode.messageSummary.commandMentions}; textChars=${episode.messageSummary.textChars}`);
+    lines.push(`  Token budget: input=${episode.tokenBudget.inputChars}; compressed=${episode.tokenBudget.compressedChars}; ratio=${episode.tokenBudget.compressionRatio.toFixed(2)}`);
+    lines.push("  Phases:");
+    for (const phase of episode.phases) {
+      lines.push(`    - ${phase.phase}: confidence=${phase.confidence.toFixed(2)}; evidence=${phase.evidenceIds.join(", ") || "none"}; summaryHash=${phase.summaryHash}; summaryChars=${phase.summaryChars}`);
+    }
+    lines.push("  Tools:");
+    if (!episode.toolSummaries.length) lines.push("    - none");
+    for (const tool of episode.toolSummaries.slice(0, 8)) {
+      lines.push(`    - ${tool.toolName}:${tool.status}; base=${tool.commandBase ?? "none"}; args=${tool.argsShape.join(" ") || "none"}; risk=${tool.riskFlags.join(", ") || "none"}; paths=${tool.paths.join(", ") || "none"}; output=${tool.outputStrategy}; omitted=${tool.omittedBytes}`);
+    }
+    if (episode.toolSummaries.length > 8) lines.push(`    - showing 8/${episode.toolSummaries.length} tools`);
+    lines.push("  Patches:");
+    if (!episode.patchComparisons.length) lines.push("    - none");
+    for (const patch of episode.patchComparisons.slice(0, 8)) {
+      lines.push(`    - ${patch.kind}:${patch.id}; +${patch.addedLines}/-${patch.removedLines}; eligible=${patch.behaviorEligible ?? "unknown"}; classes=${patch.structuralClasses.join(", ") || "none"}; paths=${patch.paths.join(", ") || "none"}`);
+      if (patch.comparison) lines.push(`      comparison=${patch.comparison.evidenceStrength}/${patch.comparison.confidence.toFixed(2)} ${patch.comparison.behaviorSignal}; relation=${patch.comparison.relation}; reasons=${patch.comparison.reasons.join(", ") || "none"}`);
+      if (patch.changedSymbols.length || patch.changedImports.length) lines.push(`      symbols=${patch.changedSymbols.join(", ") || "none"}; imports=${patch.changedImports.join(", ") || "none"}`);
+    }
+    if (episode.patchComparisons.length > 8) lines.push(`    - showing 8/${episode.patchComparisons.length} patches`);
+    lines.push("");
+  }
+  if (!episodeOnly && view.episodes.length > 12) lines.push(`Showing 12/${view.episodes.length} episodes. Use --debug-episode <id> for one episode.`);
   return lines.join("\n");
 }
 

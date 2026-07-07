@@ -65,6 +65,7 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--learn-v2-agent-eval <path>");
     expect(stdout).toContain("--debug-dashboard");
     expect(stdout).toContain("--debug-concept <conceptId>");
+    expect(stdout).toContain("--debug-episode <episodeId>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
     expect(stdout).toContain("deterministic-only|opencode-host-sanitized-only");
@@ -83,6 +84,11 @@ describe("osk CLI facade", () => {
     )).toBe(true);
     expect(parsed.stablePaths.some((item: { key: string; mcpTool?: string }) =>
       item.key === "review-queue" && item.mcpTool === "osk_get_concept_review_queue"
+    )).toBe(true);
+    expect(parsed.stablePaths.some((item: { key: string; sharePolicy: string; cli: string }) =>
+      item.key === "episode-store"
+      && item.sharePolicy === "local-only"
+      && item.cli.includes("--debug-episode")
     )).toBe(true);
     expect(parsed.stablePaths.some((item: { key: string; relativePath: string; cli: string }) =>
       item.key === "behavior-agent-eval"
@@ -187,6 +193,91 @@ describe("osk CLI facade", () => {
     expect(concept.schemaVersion).toBe("openskill-kit.learn-v2.concept-debug-trace-view.v1");
     expect(concept.traces[0].conceptId).toBe("concept_debug_parser");
     expect(JSON.stringify(concept)).not.toContain(root);
+  });
+
+  it("renders Learn v2 episode debug without raw episode text or local paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-debug-episode-"));
+    await execCliJson(["init", "--json"], root);
+    const dir = path.join(root, ".openskill-kit", "learn-v2", "episodes");
+    await mkdir(dir, { recursive: true });
+    const privateText = "raw private episode text should not print";
+    const episodeStore = {
+      schemaVersion: "openskill-kit.learn-v2.episode-store.v1",
+      updatedAt: "2026-06-30T00:11:00.000Z",
+      episodes: [{
+        schemaVersion: "openskill-kit.learn-v2.task-episode.v1",
+        id: "episode_cli_debug",
+        traceIds: ["trace_cli"],
+        sessionIds: ["session_cli"],
+        evidenceIds: ["ev_cli_message", "ev_cli_tool"],
+        rawRefs: ["raw_cli_message"],
+        startedAt: "2026-06-30T00:10:00.000Z",
+        endedAt: "2026-06-30T00:11:00.000Z",
+        cwdHints: [root],
+        branch: "codex/test",
+        pathCluster: [path.join(root, "packages", "core", "src", "parser.ts")],
+        taskHints: ["parser-change"],
+        outcome: "edited",
+        episodeConfidence: 0.81,
+        episodeConfidenceBreakdown: {
+          schemaVersion: "openskill-kit.learn-v2.episode-confidence.v1",
+          score: 0.81,
+          linkage: { traceId: 0.8, sessionId: 0.7, branch: 0.6, pathCluster: 0.8, semanticTaskSimilarity: 0.7, timeWindow: 0.6, outcomeLink: 0.9 },
+          risks: ["missing-outcome"],
+          reasons: ["test fixture confidence"]
+        },
+        stitching: { method: "trace-id", reasons: ["shared trace id"] },
+        phases: [{
+          phase: "review/correction",
+          evidenceIds: ["ev_cli_message"],
+          summary: privateText,
+          confidence: 0.75
+        }],
+        messages: [{
+          schemaVersion: "openskill-kit.learn-v2.normalized-evidence.v1",
+          id: "ev_cli_message",
+          rawRef: "raw_cli_message",
+          sourceHash: "sha256:ev_cli_message",
+          kind: "message",
+          actor: "user",
+          text: privateText,
+          status: "unknown",
+          paths: [path.join(root, "packages", "core", "src", "parser.ts")],
+          commands: ["npm test -- parser"],
+          metadata: {}
+        }],
+        toolSummaries: [{
+          id: "tool_cli",
+          evidenceId: "ev_cli_tool",
+          toolName: "shell",
+          status: "pass",
+          command: "npm test -- parser",
+          commandShape: { rendered: "npm test -- parser", base: "npm", argsShape: ["test", "[ARG]"], riskFlags: [] },
+          paths: [path.join(root, "packages", "core", "src", "parser.ts")],
+          summary: privateText,
+          omittedBytes: 0,
+          outputCompression: { strategy: "status-only", summary: privateText, omittedBytes: 0, signatures: ["PASS parser"] }
+        }],
+        patchComparisons: [],
+        tokenBudget: { inputChars: 90, compressedChars: 30, compressionRatio: 0.33 }
+      }]
+    };
+    await writeFile(path.join(dir, "store.json"), JSON.stringify(episodeStore, null, 2), "utf8");
+
+    const text = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--debug-episode", "episode_cli_debug"], { cwd: root, windowsHide: true });
+    expect(text.stdout).toContain("Learn v2 episode debug");
+    expect(text.stdout).toContain("episode_cli_debug");
+    expect(text.stdout).toContain("summaryHash=sha256:");
+    expect(text.stdout).toContain("[PROJECT_ROOT]/packages/core/src/parser.ts");
+    expect(text.stdout).not.toContain(root);
+    expect(text.stdout).not.toContain(privateText);
+    expect(text.stdout).not.toContain("raw_cli_message");
+
+    const parsed = await execCliJson(["osk", "learn", "--debug-episode", "episode_cli_debug", "--json"], root);
+    expect(parsed.schemaVersion).toBe("openskill-kit.learn-v2.episode-debug-view.v1");
+    expect(parsed.episodes[0].messageSummary.textChars).toBe(privateText.length);
+    expect(JSON.stringify(parsed)).not.toContain(root);
+    expect(JSON.stringify(parsed)).not.toContain(privateText);
   });
 
   it("rejects malformed Learn v2 concept review JSON at the CLI boundary", async () => {

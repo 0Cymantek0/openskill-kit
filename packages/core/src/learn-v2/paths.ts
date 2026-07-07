@@ -134,6 +134,16 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     notes: ["Shows accepted, rejected, and ask-for-review sources without exporting raw source contents."]
   },
   {
+    key: "episode-store",
+    label: "Reconstructed task episode store",
+    relativePath: ".openskill-kit/learn-v2/episodes/store.json",
+    kind: "file",
+    lifecycle: "debug",
+    sharePolicy: "local-only",
+    cli: "openskill-kit osk learn --debug-episode <episodeId>",
+    notes: ["Local episode stitching source. Use --debug-episode for declassified summaries; do not pack, compile, or share the raw store."]
+  },
+  {
     key: "conditional-learning",
     label: "Conditional learning traces",
     relativePath: ".openskill-kit/learn-v2/conditional-learning/conditional-learning-*.md",
