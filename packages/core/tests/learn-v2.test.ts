@@ -76,6 +76,7 @@ import {
   inferLearnV2ConditionalHypotheses,
   decideLearnV2MemoryAdmission,
   learnV2ConditionalHypothesesToBehaviorAtoms,
+  readLearnV2ConditionalLearningDebugView,
   buildLearnV2SkillNamespaces,
   buildLearnV2SkillOntologyOperations,
   writeLearnV2OpenWorldGroundingArtifact,
@@ -2807,6 +2808,22 @@ describe("learn-v2 substrate", () => {
     expect(conditionalMarkdown).toContain("Promoted hypotheses: 3");
     expect(conditionalMarkdown).toContain("component.container=card");
     expect(conditionalMarkdown).not.toContain(root);
+    const conditionalDebug = await readLearnV2ConditionalLearningDebugView(root);
+    expect(conditionalDebug.schemaVersion).toBe("openskill-kit.learn-v2.conditional-learning-debug-view.v1");
+    expect(conditionalDebug.observations).toHaveLength(3);
+    expect(conditionalDebug.hypotheses).toHaveLength(3);
+    expect(conditionalDebug.admissionDecisions.some((decision) => decision.decision === "candidate-concept")).toBe(true);
+    expect(conditionalDebug.observations.some((observation) =>
+      observation.factors.some((factor) => factor.key === "component.container" && factor.value === "card")
+    )).toBe(true);
+    const conditionalDebugText = JSON.stringify(conditionalDebug);
+    expect(conditionalDebugText).toContain("textHash");
+    expect(conditionalDebugText).not.toContain(root);
+    expect(conditionalDebugText).not.toContain("Make independent button green");
+    expect(conditionalDebugText).not.toContain("No, this time I want blue");
+    const focusedConditionalDebug = await readLearnV2ConditionalLearningDebugView(root, { hypothesisId: conditionalDebug.hypotheses[0]!.id });
+    expect(focusedConditionalDebug.hypotheses).toHaveLength(1);
+    expect(focusedConditionalDebug.observations.length).toBeGreaterThanOrEqual(1);
     const skillOntologyMarkdown = await readText(result.artifacts.learnV2SkillOntologyPath);
     expect(skillOntologyMarkdown).toContain("UI/UX design");
     expect(skillOntologyMarkdown).toContain("ui:surface-design");

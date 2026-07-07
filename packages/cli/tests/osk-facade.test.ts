@@ -67,6 +67,9 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--debug-concept <conceptId>");
     expect(stdout).toContain("--debug-source [sourceId]");
     expect(stdout).toContain("--debug-episode <episodeId>");
+    expect(stdout).toContain("--debug-learning");
+    expect(stdout).toContain("--debug-observation <observationId>");
+    expect(stdout).toContain("--debug-hypothesis <hypothesisId>");
     expect(stdout).toContain("sanitized OpenCode execution uses");
     expect(stdout).toContain("raw-to-model");
     expect(stdout).toContain("deterministic-only|opencode-host-sanitized-only");
@@ -85,6 +88,9 @@ describe("osk CLI facade", () => {
     )).toBe(true);
     expect(parsed.stablePaths.some((item: { key: string; mcpTool?: string }) =>
       item.key === "review-queue" && item.mcpTool === "osk_get_concept_review_queue"
+    )).toBe(true);
+    expect(parsed.stablePaths.some((item: { key: string; cli: string }) =>
+      item.key === "conditional-learning" && item.cli.includes("--debug-learning")
     )).toBe(true);
     expect(parsed.stablePaths.some((item: { key: string; sharePolicy: string; cli: string }) =>
       item.key === "episode-store"
@@ -312,6 +318,107 @@ describe("osk CLI facade", () => {
     expect(JSON.stringify(parsed)).not.toContain(root);
     expect(JSON.stringify(parsed)).not.toContain(privateText);
     expect(JSON.stringify(parsed)).not.toContain("private.example.invalid");
+  });
+
+  it("renders Learn v2 conditional learning debug without raw observation text or local paths", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-debug-learning-"));
+    await execCliJson(["init", "--json"], root);
+    const dir = path.join(root, ".openskill-kit", "learn-v2", "conditional-learning");
+    await mkdir(dir, { recursive: true });
+    const privateText = "Make independent button green on white landing page with PRIVATE_DEBUG_TEXT";
+    const factor = {
+      schemaVersion: "openskill-kit.learn-v2.context-factor.v1",
+      id: "factor_cli_theme_light",
+      key: "ui.theme",
+      value: "light",
+      label: "UI theme is light",
+      confidence: 0.88,
+      evidenceIds: ["ev_cli_obs"],
+      source: "text"
+    };
+    const artifact = {
+      schemaVersion: "openskill-kit.learn-v2.conditional-learning-artifact.v1",
+      generatedAt: "2026-06-30T00:13:00.000Z",
+      observations: [{
+        schemaVersion: "openskill-kit.learn-v2.learning-observation.v1",
+        id: "obs_cli_light_green",
+        episodeId: "episode_cli_debug",
+        evidenceIds: ["ev_cli_obs"],
+        rawRefs: ["raw_cli_obs"],
+        paths: [path.join(root, "packages", "site", "src", "LandingButton.tsx")],
+        actor: "user",
+        intent: "correction",
+        target: "button color",
+        desiredOutcome: "green",
+        text: privateText,
+        factors: [factor],
+        durabilitySignals: { explicitDurable: false, oneOff: false, recurrenceCandidate: true },
+        confidence: 0.66
+      }],
+      hypotheses: [{
+        schemaVersion: "openskill-kit.learn-v2.conditional-hypothesis.v1",
+        id: "hyp_cli_light_green",
+        target: "button color",
+        desiredOutcome: "green",
+        statement: "When UI theme is light, prefer green for button color.",
+        factorSet: [factor],
+        supportObservationIds: ["obs_cli_light_green"],
+        counterObservationIds: [],
+        precision: 1,
+        recall: 1,
+        confidence: 0.58,
+        status: "candidate",
+        rationale: "Contrastive observations distinguish the condition."
+      }],
+      admissionDecisions: [{
+        schemaVersion: "openskill-kit.learn-v2.memory-admission-decision.v1",
+        id: "admission_cli",
+        subjectKind: "hypothesis",
+        subjectId: "hyp_cli_light_green",
+        decision: "candidate-concept",
+        requiredReview: true,
+        reviewPriority: "normal",
+        riskLevel: "low",
+        privacyBoundary: "low",
+        scopeLevel: "path",
+        confidence: 0.58,
+        reasons: ["conditional-hypothesis-supported"]
+      }],
+      counts: {
+        observations: 1,
+        hypotheses: 1,
+        promotedHypotheses: 1,
+        observeOnly: 0,
+        rejectedNoise: 0,
+        episodeNotes: 0,
+        weakObservations: 0,
+        candidateConcepts: 1,
+        requiresHumanReview: 0
+      },
+      artifacts: {
+        json: path.join(dir, "conditional-learning-20260630001300.json"),
+        markdown: path.join(dir, "conditional-learning-20260630001300.md")
+      }
+    };
+    await writeFile(path.join(dir, "conditional-learning-20260630001300.json"), JSON.stringify(artifact, null, 2), "utf8");
+
+    const text = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--debug-learning"], { cwd: root, windowsHide: true });
+    expect(text.stdout).toContain("Learn v2 conditional learning dashboard");
+    expect(text.stdout).toContain("hyp_cli_light_green");
+    expect(text.stdout).toContain("obs_cli_light_green");
+    expect(text.stdout).toContain("Text: hash=sha256:");
+    expect(text.stdout).toContain("[PROJECT_ROOT]/packages/site/src/LandingButton.tsx");
+    expect(text.stdout).not.toContain(root);
+    expect(text.stdout).not.toContain(privateText);
+    expect(text.stdout).not.toContain("raw_cli_obs");
+
+    const parsed = await execCliJson(["osk", "learn", "--debug-hypothesis", "hyp_cli_light_green", "--json"], root);
+    expect(parsed.schemaVersion).toBe("openskill-kit.learn-v2.conditional-learning-debug-view.v1");
+    expect(parsed.hypotheses).toHaveLength(1);
+    expect(parsed.observations[0].textHash).toMatch(/^sha256:/);
+    expect(JSON.stringify(parsed)).not.toContain(root);
+    expect(JSON.stringify(parsed)).not.toContain(privateText);
+    expect(JSON.stringify(parsed)).not.toContain("raw_cli_obs");
   });
 
   it("renders Learn v2 episode debug without raw episode text or local paths", async () => {

@@ -29,6 +29,33 @@ export interface LearnV2ConditionalLearningResult {
   atoms: LearnV2BehaviorAtom[];
 }
 
+export interface LearnV2ConditionalLearningDebugView {
+  schemaVersion: "openskill-kit.learn-v2.conditional-learning-debug-view.v1";
+  generatedAt: string;
+  sourcePath: string;
+  counts: LearnV2ConditionalLearningArtifact["counts"];
+  observations: LearnV2LearningObservationDebugEntry[];
+  hypotheses: LearnV2ConditionalHypothesis[];
+  admissionDecisions: LearnV2MemoryAdmissionDecision[];
+}
+
+export interface LearnV2LearningObservationDebugEntry {
+  id: string;
+  episodeId?: string;
+  evidenceIds: string[];
+  rawRefCount: number;
+  paths: string[];
+  actor: LearnV2LearningObservation["actor"];
+  intent: LearnV2LearningObservation["intent"];
+  target: string;
+  desiredOutcome?: string;
+  textHash: string;
+  textChars: number;
+  factors: LearnV2ContextFactor[];
+  durabilitySignals: LearnV2LearningObservation["durabilitySignals"];
+  confidence: number;
+}
+
 export function runLearnV2ConditionalLearning(episodes: LearnV2TaskEpisode[]): LearnV2ConditionalLearningResult {
   const observations = buildLearnV2LearningObservations(episodes);
   const hypotheses = inferLearnV2ConditionalHypotheses(observations);
@@ -83,6 +110,88 @@ export async function writeLearnV2ConditionalLearningArtifact(
   await writeJsonAtomic(json, artifact);
   await fs.writeFile(markdown, renderLearnV2ConditionalLearningArtifact(root, artifact), "utf8");
   return { ...artifact, atoms: result.atoms };
+}
+
+export async function readLearnV2ConditionalLearningDebugView(
+  rootInput: string,
+  options: { learningPath?: string; observationId?: string; hypothesisId?: string } = {}
+): Promise<LearnV2ConditionalLearningDebugView> {
+  const root = path.resolve(rootInput);
+  const file = options.learningPath ? path.resolve(root, options.learningPath) : await latestConditionalLearningArtifactPath(root);
+  const artifact = LearnV2ConditionalLearningArtifactSchema.parse(JSON.parse(await fs.readFile(file, "utf8")));
+  const observationIdsForHypothesis = new Set(
+    options.hypothesisId
+      ? artifact.hypotheses
+        .filter((hypothesis) => hypothesis.id === options.hypothesisId)
+        .flatMap((hypothesis) => [...hypothesis.supportObservationIds, ...hypothesis.counterObservationIds])
+      : []
+  );
+  const observations = artifact.observations.filter((observation) =>
+    options.observationId
+      ? observation.id === options.observationId
+      : options.hypothesisId
+        ? observationIdsForHypothesis.has(observation.id)
+        : true
+  );
+  const hypotheses = artifact.hypotheses.filter((hypothesis) =>
+    options.hypothesisId
+      ? hypothesis.id === options.hypothesisId
+      : options.observationId
+        ? hypothesis.supportObservationIds.includes(options.observationId) || hypothesis.counterObservationIds.includes(options.observationId)
+        : true
+  );
+  const visibleIds = new Set([
+    ...observations.map((observation) => observation.id),
+    ...hypotheses.map((hypothesis) => hypothesis.id)
+  ]);
+  return {
+    schemaVersion: "openskill-kit.learn-v2.conditional-learning-debug-view.v1",
+    generatedAt: artifact.generatedAt,
+    sourcePath: learnV2SafeLocalPath(file, root),
+    counts: artifact.counts,
+    observations: observations.map((observation) => summarizeObservation(root, observation)),
+    hypotheses,
+    admissionDecisions: artifact.admissionDecisions.filter((decision) =>
+      visibleIds.has(decision.subjectId) || (!options.observationId && !options.hypothesisId)
+    )
+  };
+}
+
+async function latestConditionalLearningArtifactPath(root: string): Promise<string> {
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "conditional-learning");
+  const files = await fs.readdir(dir).catch(() => []);
+  const jsonFiles = files
+    .filter((file) => /^conditional-learning-(?:\d{14}|\d{8,})\.json$/.test(file) || file === "conditional-learning.json")
+    .sort();
+  const latest = jsonFiles.at(-1);
+  if (!latest) throw new Error("No Learn v2 conditional-learning artifact found. Run `openskill-kit osk learn --raw --surface-file <path> --apply` or `openskill-kit osk learn --extract-concepts` first.");
+  return path.join(dir, latest);
+}
+
+function summarizeObservation(root: string, observation: LearnV2LearningObservation): LearnV2LearningObservationDebugEntry {
+  return {
+    id: observation.id,
+    episodeId: observation.episodeId,
+    evidenceIds: observation.evidenceIds,
+    rawRefCount: observation.rawRefs.length,
+    paths: observation.paths.map((file) => safePath(root, file)),
+    actor: observation.actor,
+    intent: observation.intent,
+    target: observation.target,
+    desiredOutcome: observation.desiredOutcome,
+    textHash: `sha256:${learnV2ShortHash(observation.text)}`,
+    textChars: observation.text.length,
+    factors: observation.factors,
+    durabilitySignals: observation.durabilitySignals,
+    confidence: observation.confidence
+  };
+}
+
+function safePath(root: string, value: string): string {
+  if (!value) return value;
+  if (path.resolve(value) === path.resolve(root)) return "[PROJECT_ROOT]";
+  if (path.isAbsolute(value)) return learnV2SafeLocalPath(value, root);
+  return value.replace(/\\/g, "/");
 }
 
 export function extractLearnV2ContextFactors(input: {

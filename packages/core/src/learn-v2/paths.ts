@@ -150,8 +150,8 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     kind: "glob",
     lifecycle: "debug",
     sharePolicy: "local-declassified",
-    cli: "openskill-kit osk learn --raw --surface-file <path>",
-    notes: ["Observation, factor, hypothesis, and memory-admission audit trail."]
+    cli: "openskill-kit osk learn --debug-learning",
+    notes: ["Observation, factor, hypothesis, and memory-admission audit trail. Produced by --raw --surface-file <path>."]
   },
   {
     key: "skill-ontology",

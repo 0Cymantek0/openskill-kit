@@ -103,6 +103,7 @@ import {
   readLearnV2ConceptDebugTraceView,
   readLearnV2EpisodeDebugView,
   readLearnV2SourceGateDebugView,
+  readLearnV2ConditionalLearningDebugView,
   getLearnV2ArtifactPathManifest,
   RawLearningModelModes,
   readEvidenceCards,
@@ -366,6 +367,10 @@ osk.command("learn")
   .option("--debug-source [sourceId]", "Show declassified Learn-v2 source-gate decisions, or one source when id is supplied")
   .option("--debug-source-file <path>", "Specific Learn-v2 source-gate review JSON artifact")
   .option("--debug-episode <episodeId>", "Show declassified Learn-v2 episode stitching, evidence, phase, tool, and patch summary")
+  .option("--debug-learning", "Show declassified Learn-v2 conditional observations, hypotheses, and admission decisions")
+  .option("--debug-observation <observationId>", "Show one Learn-v2 learning observation without raw text")
+  .option("--debug-hypothesis <hypothesisId>", "Show one Learn-v2 conditional hypothesis and linked observations")
+  .option("--debug-learning-file <path>", "Specific Learn-v2 conditional-learning JSON artifact")
   .option("--debug-trace-file <path>", "Specific Learn-v2 concept debug trace JSON artifact")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
   .option("--max-pinned-raw-vault-bytes <number>", "Learn-v2 pinned raw vault byte budget", parseIntegerOption)
@@ -454,6 +459,15 @@ osk.command("learn")
     if (options.debugEpisode) {
       const result = await readLearnV2EpisodeDebugView(process.cwd(), { episodeId: options.debugEpisode });
       output(options.json, result, renderLearnV2EpisodeDebugView(result, true));
+      return;
+    }
+    if (options.debugLearning === true || options.debugObservation || options.debugHypothesis || options.debugLearningFile) {
+      const result = await readLearnV2ConditionalLearningDebugView(process.cwd(), {
+        learningPath: options.debugLearningFile,
+        observationId: options.debugObservation,
+        hypothesisId: options.debugHypothesis
+      });
+      output(options.json, result, renderLearnV2ConditionalLearningDebugView(result, Boolean(options.debugObservation || options.debugHypothesis)));
       return;
     }
     if (options.observability === true || options.observabilityFile) {
@@ -2450,6 +2464,59 @@ function renderLearnV2EpisodeDebugView(
     lines.push("");
   }
   if (!episodeOnly && view.episodes.length > 12) lines.push(`Showing 12/${view.episodes.length} episodes. Use --debug-episode <id> for one episode.`);
+  return lines.join("\n");
+}
+
+function renderLearnV2ConditionalLearningDebugView(
+  view: Awaited<ReturnType<typeof readLearnV2ConditionalLearningDebugView>>,
+  focused: boolean
+): string {
+  const lines = [
+    focused ? "Learn v2 conditional learning debug" : "Learn v2 conditional learning dashboard",
+    "",
+    `Generated: ${view.generatedAt}`,
+    `Source: ${view.sourcePath}`,
+    `Observations: ${view.observations.length}/${view.counts.observations} selected`,
+    `Hypotheses: ${view.hypotheses.length}/${view.counts.hypotheses} selected`,
+    `Promoted hypotheses: ${view.counts.promotedHypotheses}`,
+    `Admission: episodeNotes=${view.counts.episodeNotes}, weak=${view.counts.weakObservations}, candidates=${view.counts.candidateConcepts}, review=${view.counts.requiresHumanReview}, rejected=${view.counts.rejectedNoise}`,
+    ""
+  ];
+  if (!view.observations.length && !view.hypotheses.length) lines.push("No matching conditional-learning entries found.");
+  if (view.hypotheses.length) {
+    lines.push("Hypotheses:");
+    for (const hypothesis of view.hypotheses.slice(0, focused ? 3 : 12)) {
+      lines.push(`  ${hypothesis.id}: ${hypothesis.status}; confidence=${hypothesis.confidence.toFixed(2)}; precision=${hypothesis.precision.toFixed(2)}; recall=${hypothesis.recall.toFixed(2)}`);
+      lines.push(`    Target: ${hypothesis.target}; outcome=${hypothesis.desiredOutcome}`);
+      lines.push(`    Statement: ${hypothesis.statement}`);
+      lines.push(`    Factors: ${hypothesis.factorSet.map((factor) => `${factor.key}=${factor.value}`).join(", ") || "none"}`);
+      lines.push(`    Support: ${hypothesis.supportObservationIds.join(", ") || "none"}; Counter: ${hypothesis.counterObservationIds.join(", ") || "none"}`);
+      lines.push(`    Rationale: ${hypothesis.rationale}`);
+    }
+    if (!focused && view.hypotheses.length > 12) lines.push(`  showing 12/${view.hypotheses.length} hypotheses`);
+    lines.push("");
+  }
+  if (view.observations.length) {
+    lines.push("Observations:");
+    for (const observation of view.observations.slice(0, focused ? 8 : 12)) {
+      lines.push(`  ${observation.id}: intent=${observation.intent}; actor=${observation.actor}; confidence=${observation.confidence.toFixed(2)}`);
+      lines.push(`    Episode: ${observation.episodeId ?? "none"}; evidence=${observation.evidenceIds.join(", ") || "none"}; rawRefs=${observation.rawRefCount}`);
+      lines.push(`    Target: ${observation.target}; outcome=${observation.desiredOutcome ?? "none"}`);
+      lines.push(`    Text: hash=${observation.textHash}; chars=${observation.textChars}`);
+      lines.push(`    Paths: ${observation.paths.join(", ") || "none"}`);
+      lines.push(`    Factors: ${observation.factors.map((factor) => `${factor.key}=${factor.value}@${factor.confidence.toFixed(2)}`).join(", ") || "none"}`);
+      lines.push(`    Durability: explicit=${observation.durabilitySignals.explicitDurable}, oneOff=${observation.durabilitySignals.oneOff}, recurrence=${observation.durabilitySignals.recurrenceCandidate}`);
+    }
+    if (!focused && view.observations.length > 12) lines.push(`  showing 12/${view.observations.length} observations`);
+    lines.push("");
+  }
+  if (view.admissionDecisions.length) {
+    lines.push("Admission decisions:");
+    for (const decision of view.admissionDecisions.slice(0, focused ? 12 : 20)) {
+      lines.push(`  ${decision.id}: ${decision.subjectKind}:${decision.subjectId} -> ${decision.decision}; review=${decision.requiredReview}; priority=${decision.reviewPriority}; risk=${decision.riskLevel}; privacy=${decision.privacyBoundary}; scope=${decision.scopeLevel}; confidence=${decision.confidence.toFixed(2)}; reasons=${decision.reasons.join(", ") || "none"}`);
+    }
+    if (!focused && view.admissionDecisions.length > 20) lines.push(`  showing 20/${view.admissionDecisions.length} admission decisions`);
+  }
   return lines.join("\n");
 }
 
