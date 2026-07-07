@@ -1850,6 +1850,32 @@ describe("learn-v2 substrate", () => {
     expect(summary.fileSummaries.filter((file) => file.language === "go" || file.language === "rust").every((file) => file.confidenceCap === 0.78)).toBe(true);
   });
 
+  it("falls back to capped Python structural scanner when Python AST runtime is unavailable", () => {
+    const previous = process.env.OPENSKILLKIT_PYTHON;
+    process.env.OPENSKILLKIT_PYTHON = "__openskillkit_missing_python__";
+    try {
+      const diff = [
+        "diff --git a/python/openskillkit_evolution/report.py b/python/openskillkit_evolution/report.py",
+        "--- a/python/openskillkit_evolution/report.py",
+        "+++ b/python/openskillkit_evolution/report.py",
+        "@@",
+        "+class ReportBuilder:",
+        "+    def build(self, value):",
+        "+        return value"
+      ].join("\n");
+      const summary = analyzeLearnV2StructuralDiff(diff);
+      const pythonSummary = summary.fileSummaries[0]!;
+      expect(pythonSummary.parserBackend).toBe("language-structural-scanner");
+      expect(pythonSummary.structuralConfidence).toBe("fallback");
+      expect(pythonSummary.confidenceCap).toBe(0.78);
+      expect(pythonSummary.parserLimitations).toEqual(expect.arrayContaining(["fallback-confidence-cap", "not-ast-equivalent"]));
+      expect(summary.changedSymbols).toEqual(expect.arrayContaining(["ReportBuilder", "build"]));
+    } finally {
+      if (previous === undefined) delete process.env.OPENSKILLKIT_PYTHON;
+      else process.env.OPENSKILLKIT_PYTHON = previous;
+    }
+  });
+
   it("caps patch-pair confidence when only fallback structural parsers are available", async () => {
     const proposed = [
       "diff --git a/src/report.go b/src/report.go",

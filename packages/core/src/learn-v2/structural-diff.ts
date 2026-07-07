@@ -50,6 +50,18 @@ interface StructuralSignal {
   limitations?: FileSummary["parserLimitations"];
 }
 
+interface PythonCommandCandidate {
+  command: string;
+  argsPrefix: string[];
+}
+
+interface PythonAstCommandResult {
+  status: number | null;
+  stdout: string;
+}
+
+let cachedPythonAstCommand: PythonCommandCandidate | undefined;
+
 const STRUCTURAL_PARSERS: StructuralParser[] = [
   {
     language: "typescript",
@@ -302,13 +314,7 @@ function sourceLinesFromHunk(hunk: DiffHunk, side: "after" | "before"): string[]
 function pythonAstSignalFromLines(lines: string[]): StructuralSignal | undefined {
   const source = lines.join("\n").trimEnd();
   if (!source.trim()) return undefined;
-  const result = spawnSync(process.env.OPENSKILLKIT_PYTHON ?? "python", ["-c", PYTHON_AST_SIGNAL_SCRIPT], {
-    input: source,
-    encoding: "utf8",
-    timeout: 4000,
-    maxBuffer: 256 * 1024,
-    windowsHide: true
-  });
+  const result = runPythonAstSignal(source);
   if (result.status !== 0 || !result.stdout.trim()) return undefined;
   try {
     const parsed = JSON.parse(result.stdout) as { symbols?: unknown; imports?: unknown };
@@ -319,6 +325,41 @@ function pythonAstSignalFromLines(lines: string[]): StructuralSignal | undefined
   } catch {
     return undefined;
   }
+}
+
+function runPythonAstSignal(source: string): PythonAstCommandResult {
+  const candidates = pythonAstCommandCandidates();
+  let lastResult: PythonAstCommandResult | undefined;
+  for (const candidate of candidates) {
+    const spawned = spawnSync(candidate.command, [...candidate.argsPrefix, "-c", PYTHON_AST_SIGNAL_SCRIPT], {
+      input: source,
+      encoding: "utf8",
+      timeout: 4000,
+      maxBuffer: 256 * 1024,
+      windowsHide: true
+    });
+    const result: PythonAstCommandResult = {
+      status: spawned.status,
+      stdout: (spawned.stdout ?? "") as string
+    };
+    if (result.status === 0 && result.stdout.trim()) {
+      if (!process.env.OPENSKILLKIT_PYTHON) cachedPythonAstCommand = candidate;
+      return result;
+    }
+    lastResult = result;
+  }
+  return lastResult ?? { status: null, stdout: "" };
+}
+
+function pythonAstCommandCandidates(): PythonCommandCandidate[] {
+  const configured = process.env.OPENSKILLKIT_PYTHON?.trim();
+  if (configured) return [{ command: configured, argsPrefix: [] }];
+  if (cachedPythonAstCommand) return [cachedPythonAstCommand];
+  return [
+    { command: "python", argsPrefix: [] },
+    { command: "python3", argsPrefix: [] },
+    { command: "py", argsPrefix: ["-3"] }
+  ];
 }
 
 const PYTHON_AST_SIGNAL_SCRIPT = String.raw`
