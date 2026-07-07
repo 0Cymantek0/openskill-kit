@@ -2469,6 +2469,7 @@ function renderLearnV2PersistedEval(result: Awaited<ReturnType<typeof runPersist
     `Proves: ${proofBoundary.proves.join("; ")}`,
     `Does not prove: ${proofBoundary.doesNotProve.join("; ")}`,
     `Behavior delta: ${result.summary.behaviorDelta.status} (${result.summary.behaviorDelta.passedScenarios}/${result.summary.behaviorDelta.scenarioCount} scenarios, ${result.summary.behaviorDelta.activatedConceptCount} activated concepts)`,
+    `Behavior-delta overhead: ${result.summary.behaviorDelta.tokenOverheadTokens ?? 0} estimated token(s), regressions ${result.summary.behaviorDelta.regressionFindingCount ?? 0}`,
     `Activation replay: ${result.summary.activationReplay.status} (${result.summary.activationReplay.retrievedConcepts}/${result.summary.activationReplay.replayableConcepts}, rate ${result.summary.activationReplay.retrievalRate})`,
     `Counterfactual trace: ${result.summary.counterfactualTrace.status} (${result.summary.counterfactualTrace.activatedCases}/${result.summary.counterfactualTrace.caseCount}, rate ${result.summary.counterfactualTrace.activationRate})`,
     `Leak check: ${result.leakCheck.status}`,

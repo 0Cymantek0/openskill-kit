@@ -79,6 +79,11 @@ export interface LearnV2BehaviorDeltaEvalCase {
   expectedKinds: LearnV2ConceptCard["atoms"][number]["kind"][];
   baselinePlan: string[];
   withConceptPlan: string[];
+  baselinePlanChars: number;
+  withConceptPlanChars: number;
+  tokenOverheadChars: number;
+  tokenOverheadTokens: number;
+  regressionFindings: string[];
   expectedPlanIncludes: string[];
   expectedPlanExcludes: string[];
   minActivatedConcepts: number;
@@ -530,6 +535,11 @@ function buildBehaviorDeltaEvalCases(
       .slice(0, 5)
       .map((match) => match.conceptId);
     const activatedConcepts = concepts.filter((concept) => activatedConceptIds.includes(concept.id));
+    const baselinePlan = renderBaselineEvalPlan(scenario);
+    const withConceptPlan = renderWithConceptEvalPlan(scenario, activatedConcepts);
+    const baselinePlanChars = planChars(baselinePlan);
+    const withConceptPlanChars = planChars(withConceptPlan);
+    const regressionFindings = planRegressionFindings(scenario, withConceptPlan);
     return {
       schemaVersion: "openskill-kit.behavior-delta-eval-case.v1",
       id: scenario.id,
@@ -543,8 +553,13 @@ function buildBehaviorDeltaEvalCases(
       activatedKinds: [...new Set(activatedConcepts.flatMap((concept) => concept.atoms.map((atom) => atom.kind)))],
       expectedConceptText: scenario.expectedConceptText,
       expectedKinds: scenario.expectedKinds,
-      baselinePlan: renderBaselineEvalPlan(scenario),
-      withConceptPlan: renderWithConceptEvalPlan(scenario, activatedConcepts),
+      baselinePlan,
+      withConceptPlan,
+      baselinePlanChars,
+      withConceptPlanChars,
+      tokenOverheadChars: Math.max(0, withConceptPlanChars - baselinePlanChars),
+      tokenOverheadTokens: estimateTokens(Math.max(0, withConceptPlanChars - baselinePlanChars)),
+      regressionFindings,
       expectedPlanIncludes: scenario.expectedPlanIncludes,
       expectedPlanExcludes: scenario.expectedPlanExcludes,
       minActivatedConcepts: scenario.minActivatedConcepts
@@ -595,6 +610,16 @@ function evaluateBehaviorDeltaCase(item: LearnV2BehaviorDeltaEvalCase): LearnV2E
       "with-concept-plan-excludes-forbidden-text",
       forbiddenPresent.length === 0,
       forbiddenPresent.length ? `forbidden plan text present: ${forbiddenPresent.slice(0, 6).join(", ")}` : "no forbidden plan text present"
+    ),
+    check(
+      "learned-context-token-overhead-measured",
+      item.withConceptPlanChars >= item.baselinePlanChars && item.tokenOverheadTokens >= 0,
+      `baseline=${item.baselinePlanChars} chars, withConcept=${item.withConceptPlanChars} chars, overhead=${item.tokenOverheadTokens} token(s) estimated`
+    ),
+    check(
+      "learned-context-regression-findings",
+      item.regressionFindings.length === 0,
+      item.regressionFindings.length ? `regression findings: ${item.regressionFindings.slice(0, 6).join(", ")}` : "no learned-plan regression findings"
     )
   ];
   return {
@@ -662,6 +687,9 @@ function summarizeLearnV2Eval(
     .filter((result) => result.status === "fail")
     .map((result) => result.id.replace(/^behavior-delta:/, ""));
   const activatedConceptIds = new Set(behaviorDeltaCases.flatMap((item) => item.activatedConceptIds));
+  const tokenOverheadTokens = behaviorDeltaCases.reduce((sum, item) => sum + item.tokenOverheadTokens, 0);
+  const maxTokenOverheadTokens = behaviorDeltaCases.reduce((max, item) => Math.max(max, item.tokenOverheadTokens), 0);
+  const regressionFindingCount = behaviorDeltaCases.reduce((sum, item) => sum + item.regressionFindings.length, 0);
   return {
     resultCounts: {
       total: results.length,
@@ -676,6 +704,11 @@ function summarizeLearnV2Eval(
       passedScenarios: behaviorDeltaResults.filter((result) => result.status === "pass").length,
       failedScenarios: failedBehaviorDeltaIds.length,
       activatedConceptCount: activatedConceptIds.size,
+      tokenOverheadChars: behaviorDeltaCases.reduce((sum, item) => sum + item.tokenOverheadChars, 0),
+      tokenOverheadTokens,
+      averageTokenOverheadTokens: behaviorDeltaCases.length ? Number((tokenOverheadTokens / behaviorDeltaCases.length).toFixed(2)) : 0,
+      maxTokenOverheadTokens,
+      regressionFindingCount,
       failedScenarioIds: failedBehaviorDeltaIds
     }
   };
@@ -713,6 +746,22 @@ function renderWithConceptEvalPlan(scenario: LearnV2BehaviorDeltaGoldenScenario,
   return lines;
 }
 
+function planChars(lines: string[]): number {
+  return lines.join("\n").length;
+}
+
+function estimateTokens(chars: number): number {
+  return Math.max(0, Math.ceil(chars / 4));
+}
+
+function planRegressionFindings(scenario: LearnV2BehaviorDeltaGoldenScenario, withConceptPlan: string[]): string[] {
+  const text = withConceptPlan.join("\n").toLowerCase();
+  return scenario.expectedPlanExcludes
+    .map((value) => value.toLowerCase())
+    .filter((value) => value && text.includes(value))
+    .map((value) => `forbidden-text:${value}`);
+}
+
 function declassifyBehaviorDeltaCase(root: string, item: LearnV2BehaviorDeltaEvalCase): LearnV2BehaviorDeltaEvalCase {
   const scrub = (value: string) => scrubEvalText(root, value);
   return {
@@ -725,6 +774,7 @@ function declassifyBehaviorDeltaCase(root: string, item: LearnV2BehaviorDeltaEva
     expectedConceptText: item.expectedConceptText.map(scrub),
     baselinePlan: item.baselinePlan.map(scrub),
     withConceptPlan: item.withConceptPlan.map(scrub),
+    regressionFindings: item.regressionFindings.map(scrub),
     expectedPlanIncludes: item.expectedPlanIncludes.map(scrub),
     expectedPlanExcludes: item.expectedPlanExcludes.map(scrub)
   };
@@ -818,6 +868,8 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     `Status: ${report.summary.behaviorDelta.status}`,
     `Scenarios: ${report.summary.behaviorDelta.passedScenarios}/${report.summary.behaviorDelta.scenarioCount} pass`,
     `Activated concepts: ${report.summary.behaviorDelta.activatedConceptCount}`,
+    `Token overhead: ${report.summary.behaviorDelta.tokenOverheadTokens} estimated token(s) total, average ${report.summary.behaviorDelta.averageTokenOverheadTokens}, max ${report.summary.behaviorDelta.maxTokenOverheadTokens}`,
+    `Regression findings: ${report.summary.behaviorDelta.regressionFindingCount}`,
     report.summary.behaviorDelta.failedScenarioIds.length ? `Failed scenarios: ${report.summary.behaviorDelta.failedScenarioIds.join(", ")}` : "Failed scenarios: none",
     "",
     "## Activation Replay",

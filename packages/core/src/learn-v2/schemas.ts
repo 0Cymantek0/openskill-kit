@@ -1129,13 +1129,18 @@ export const LearnV2EvalReportSchema = z.object({
       passedScenarios: z.number().int().min(0),
       failedScenarios: z.number().int().min(0),
       activatedConceptCount: z.number().int().min(0),
+      tokenOverheadChars: z.number().int().min(0).default(0),
+      tokenOverheadTokens: z.number().int().min(0).default(0),
+      averageTokenOverheadTokens: z.number().min(0).default(0),
+      maxTokenOverheadTokens: z.number().int().min(0).default(0),
+      regressionFindingCount: z.number().int().min(0).default(0),
       failedScenarioIds: z.array(z.string()).default([])
     })
   }).default({
     resultCounts: { total: 0, pass: 0, fail: 0 },
     activationReplay: { status: "pass", replayableConcepts: 0, retrievedConcepts: 0, retrievalRate: 1, misses: [] },
     counterfactualTrace: { status: "pass", caseCount: 0, activatedCases: 0, activationRate: 1, misses: [], suppressionMisses: [], behaviorMismatches: [] },
-    behaviorDelta: { status: "not-configured", scenarioCount: 0, passedScenarios: 0, failedScenarios: 0, activatedConceptCount: 0, failedScenarioIds: [] }
+    behaviorDelta: { status: "not-configured", scenarioCount: 0, passedScenarios: 0, failedScenarios: 0, activatedConceptCount: 0, tokenOverheadChars: 0, tokenOverheadTokens: 0, averageTokenOverheadTokens: 0, maxTokenOverheadTokens: 0, regressionFindingCount: 0, failedScenarioIds: [] }
   }),
   leakCheck: z.object({
     status: z.enum(["pass", "fail"]),

@@ -2228,8 +2228,12 @@ describe("learn-v2 substrate", () => {
       status: "pass",
       scenarioCount: 1,
       passedScenarios: 1,
-      failedScenarios: 0
+      failedScenarios: 0,
+      regressionFindingCount: 0
     });
+    expect(report.summary.behaviorDelta.tokenOverheadTokens).toBeGreaterThan(0);
+    expect(report.summary.behaviorDelta.averageTokenOverheadTokens).toBeGreaterThan(0);
+    expect(report.summary.behaviorDelta.maxTokenOverheadTokens).toBeGreaterThan(0);
     expect(report.summary.activationReplay.retrievalRate).toBeGreaterThan(0);
     expect(report.summary.counterfactualTrace.activationRate).toBe(1);
     expect(report.proofBoundary).toMatchObject({
@@ -2256,8 +2260,20 @@ describe("learn-v2 substrate", () => {
     const behaviorDeltaCases = await readText(report.artifacts.behaviorDeltaCases!);
     expect(behaviorDeltaCases).toContain("openskill-kit.behavior-delta-eval-case.v1");
     expect(behaviorDeltaCases).toContain("parser regression tests");
+    expect(behaviorDeltaCases).toContain("tokenOverheadTokens");
+    expect(behaviorDeltaCases).toContain("regressionFindings");
     expect(behaviorDeltaCases).not.toContain("raw_");
     expect(behaviorDeltaCases).not.toContain(root);
+    const behaviorDeltaCasesJson = JSON.parse(behaviorDeltaCases);
+    expect(behaviorDeltaCasesJson.cases[0]).toMatchObject({
+      id: "parser-plan-delta",
+      regressionFindings: [],
+      baselinePlanChars: expect.any(Number),
+      withConceptPlanChars: expect.any(Number),
+      tokenOverheadChars: expect.any(Number),
+      tokenOverheadTokens: expect.any(Number)
+    });
+    expect(behaviorDeltaCasesJson.cases[0].withConceptPlanChars).toBeGreaterThan(behaviorDeltaCasesJson.cases[0].baselinePlanChars);
     const sandboxProbe = await readText(report.artifacts.sandboxProbe!);
     expect(sandboxProbe).toContain("openskill-kit.learn-v2.sandbox-probe-result.v1");
     expect(JSON.parse(sandboxProbe).status).toBe("pass");
@@ -2267,6 +2283,8 @@ describe("learn-v2 substrate", () => {
     expect(markdown).toContain("Sandbox executed: true");
     expect(markdown).toContain("Does not prove: real agent task success");
     expect(markdown).toContain("## Behavior Delta");
+    expect(markdown).toContain("Token overhead:");
+    expect(markdown).toContain("Regression findings: 0");
     expect(markdown).toContain("Result rows:");
     expect(markdown).toContain("Activated cases:");
 
