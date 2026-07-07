@@ -2472,6 +2472,63 @@ describe("learn-v2 substrate", () => {
     expect(replay.checks[0]!.details).toContain("1/1 concept(s) retrieved");
   });
 
+  it("proves memory admission keeps one-off concepts out of activation eval artifacts", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:01:40Z");
+    const [episode] = reconstructLearnV2Episodes([
+      normalizedMessage("ev_one_off_eval", "Make this button green for this landing page only here.", "user"),
+      normalizedMessage("ev_parser_eval", "Prefer focused parser regression fixtures before parser edits.", "user")
+    ]);
+    const [oneOffBase, activeBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("one_off_eval", "Prefer green button color for this landing page only here.", "positive"),
+      behaviorAtom("active_eval", "Prefer focused parser regression fixtures before parser edits.", "positive")
+    ], now);
+    const oneOff = {
+      ...oneOffBase!,
+      id: "concept_one_off_eval",
+      status: "one-off" as const,
+      evidenceIds: ["ev_one_off_eval"],
+      rawRefs: ["raw_one_off_eval"],
+      activation: {
+        phrases: ["green button", "landing page"],
+        pathGlobs: ["packages/site/src/LandingButton.tsx"],
+        commands: []
+      }
+    };
+    const active = {
+      ...activeBase!,
+      id: "concept_active_eval",
+      status: "active" as const,
+      evidenceIds: ["ev_parser_eval"],
+      rawRefs: ["raw_active_eval"],
+      activation: {
+        phrases: ["parser edits", "parser regression"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: []
+      },
+      scope: {
+        ...activeBase!.scope,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"]
+      }
+    };
+
+    const report = await runLearnV2Eval(root, [episode!], [oneOff, active], now);
+    const boundary = report.results.find((result) => result.id === "memory-admission-boundary")!;
+    expect(boundary.status).toBe("pass");
+    expect(boundary.checks.find((item) => item.name === "one-off-excluded-from-activation")?.details)
+      .toContain("1 one-off concept(s) excluded");
+    expect(report.summary.activationReplay.replayableConcepts).toBe(1);
+    expect(report.summary.counterfactualTrace.caseCount).toBe(1);
+    expect(report.proofBoundary.proves).toContain("memory-admission activation exclusion for one-off/rejected/superseded concepts");
+    const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
+    expect(counterfactualCases).toContain("concept_active_eval");
+    expect(counterfactualCases).not.toContain("concept_one_off_eval");
+    const markdown = await readText(report.artifacts.markdown);
+    expect(markdown).toContain("### memory-admission-boundary");
+    expect(markdown).toContain("one-off-excluded-from-activation");
+  });
+
   it("surfaces counterevidence in activation and suppresses active counterevidenced concepts", () => {
     const baseEntry = {
       conceptId: "concept_counterevidence_activation",

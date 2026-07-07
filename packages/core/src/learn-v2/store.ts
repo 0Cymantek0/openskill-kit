@@ -13,7 +13,7 @@ import {
   learnV2ConceptSemanticSignatureForKey,
   learnV2ConceptSemanticSignatureForCard
 } from "./concepts.js";
-import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
+import { buildLearnV2ActivationIndexEntry, filterLearnV2ActivationEligibleConcepts } from "./activation-signals.js";
 import { findLearnV2ActivationGateFailures } from "./concept-quality-gates.js";
 import { detectLearnV2ConceptDrift } from "./drift.js";
 import { calculateLearnV2ConceptScoring, withLearnV2ConceptScoring, type LearnV2ConceptOutcomeCalibrationInput } from "./scoring.js";
@@ -391,8 +391,7 @@ export async function writeLearnV2ActivationIndex(rootInput: string, store: Lear
     schemaVersion: "openskill-kit.learn-v2.activation-index.v1",
     projectId: store.projectId,
     updatedAt: now.toISOString(),
-    entries: store.cards
-      .filter((card) => card.status !== "rejected" && card.status !== "one-off" && card.status !== "superseded")
+    entries: filterLearnV2ActivationEligibleConcepts(store.cards)
       .map(buildLearnV2ActivationIndexEntry)
       .sort((a, b) => b.confidence - a.confidence || a.title.localeCompare(b.title))
   };

@@ -1014,7 +1014,7 @@ describe("osk CLI facade", () => {
     const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--run-learn-v2-eval", "--learn-v2-goldens", goldensPath, "--learn-v2-eval-sandbox-probe"], { cwd: root, windowsHide: true });
     expect(textResult.stdout).toContain("Behavior delta: pass");
     expect(textResult.stdout).toContain("Proof boundary: deterministic-local-replay (sandbox=true, agent=false)");
-    expect(textResult.stdout).toContain("Proves: concept retrieval from stored episodes; deterministic activation scoring; configured behavior-delta golden checks; deterministic counterfactual trace activation checks; local sandbox verifier command execution");
+    expect(textResult.stdout).toContain("Proves: concept retrieval from stored episodes; deterministic activation scoring; memory-admission activation exclusion for one-off/rejected/superseded concepts; configured behavior-delta golden checks; deterministic counterfactual trace activation checks; local sandbox verifier command execution");
     expect(textResult.stdout).toContain("Does not prove: real agent task success; external model judgment quality");
     expect(textResult.stdout).toContain("Activation replay: pass");
     expect(textResult.stdout).toContain("Counterfactual trace: pass");

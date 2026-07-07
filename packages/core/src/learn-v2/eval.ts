@@ -12,7 +12,7 @@ import {
 } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { scoreLearnV2ActivationEntries } from "./activation.js";
-import { buildLearnV2ActivationIndexEntry } from "./activation-signals.js";
+import { buildLearnV2ActivationIndexEntry, filterLearnV2ActivationEligibleConcepts } from "./activation-signals.js";
 import { evaluateLearnV2ConceptQualityGates } from "./concept-quality-gates.js";
 import { createLocalSandboxPolicy } from "../sandbox/policy.js";
 import { runSandboxCommand, type SandboxCommandResult } from "../sandbox/runner.js";
@@ -191,6 +191,7 @@ export async function runLearnV2Eval(
   const behaviorDeltaCases = buildLearnV2BehaviorDeltaEvalCases(concepts, behaviorDeltaGoldens);
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
+  const memoryAdmissionBoundary = evaluateMemoryAdmissionBoundary(concepts);
   const activationReplay = evaluateActivationReplay(episodes, concepts);
   const counterfactualTrace = evaluateCounterfactualTraceCases(concepts, counterfactualCases);
   const behaviorDeltaResults = behaviorDeltaCases.map((item) => evaluateBehaviorDeltaCase(item));
@@ -229,6 +230,7 @@ export async function runLearnV2Eval(
       }]
     },
     evaluateLearnV2ConceptQualityGates(concepts),
+    memoryAdmissionBoundary,
     activationReplay.result,
     counterfactualTrace.result,
     ...(sandboxProbe ? [sandboxProbe.result] : []),
@@ -781,9 +783,39 @@ function sandboxProbeInputIssues(text: string): string[] {
   return [...new Set(issues)].sort();
 }
 
+function evaluateMemoryAdmissionBoundary(concepts: LearnV2ConceptCard[]): LearnV2EvalResultRow {
+  const eligibleIds = new Set(filterLearnV2ActivationEligibleConcepts(concepts).map((concept) => concept.id));
+  const oneOffConcepts = concepts.filter((concept) => concept.status === "one-off");
+  const inactiveConcepts = concepts.filter((concept) =>
+    concept.status === "rejected" || concept.status === "one-off" || concept.status === "superseded"
+  );
+  const oneOffEligible = oneOffConcepts.filter((concept) => eligibleIds.has(concept.id));
+  const inactiveEligible = inactiveConcepts.filter((concept) => eligibleIds.has(concept.id));
+  const checks = [
+    check(
+      "one-off-excluded-from-activation",
+      oneOffEligible.length === 0,
+      oneOffEligible.length
+        ? `one-off concepts activation-eligible: ${oneOffEligible.map((concept) => concept.id).slice(0, 8).join(", ")}`
+        : `${oneOffConcepts.length} one-off concept(s) excluded from activation/counterfactual replay`
+    ),
+    check(
+      "inactive-status-excluded-from-activation",
+      inactiveEligible.length === 0,
+      inactiveEligible.length
+        ? `inactive concepts activation-eligible: ${inactiveEligible.map((concept) => concept.id).slice(0, 8).join(", ")}`
+        : `${inactiveConcepts.length} rejected/one-off/superseded concept(s) excluded from activation artifacts`
+    )
+  ];
+  return {
+    id: "memory-admission-boundary",
+    status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
+    checks
+  };
+}
+
 function buildCounterfactualTraceCases(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2CounterfactualTraceEvalCase[] {
-  return concepts
-    .filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded")
+  return filterLearnV2ActivationEligibleConcepts(concepts)
     .map((concept) => {
       const episode = episodes.find((item) => item.evidenceIds.some((id) => concept.evidenceIds.includes(id)));
       const promptParts = [
@@ -811,9 +843,7 @@ function evaluateCounterfactualTraceCases(concepts: LearnV2ConceptCard[], cases:
   result: LearnV2EvalResultRow;
   summary: LearnV2EvalSummary["counterfactualTrace"];
 } {
-  const entries = concepts
-    .filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded")
-    .map(buildLearnV2ActivationIndexEntry);
+  const entries = filterLearnV2ActivationEligibleConcepts(concepts).map(buildLearnV2ActivationIndexEntry);
   const misses: string[] = [];
   const suppressionMisses: string[] = [];
   const behaviorMismatches: string[] = [];
@@ -880,9 +910,7 @@ export function buildLearnV2BehaviorDeltaEvalCases(
   concepts: LearnV2ConceptCard[],
   scenarios: LearnV2BehaviorDeltaGoldenScenario[]
 ): LearnV2BehaviorDeltaEvalCase[] {
-  const entries = concepts
-    .filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded")
-    .map(buildLearnV2ActivationIndexEntry);
+  const entries = filterLearnV2ActivationEligibleConcepts(concepts).map(buildLearnV2ActivationIndexEntry);
   return scenarios.map((scenario) => {
     const ranked = scoreLearnV2ActivationEntries(entries, {
       includeCandidates: true,
@@ -995,7 +1023,7 @@ function evaluateActivationReplay(episodes: LearnV2TaskEpisode[], concepts: Lear
   result: LearnV2EvalResultRow;
   summary: LearnV2EvalSummary["activationReplay"];
 } {
-  const replayable = concepts.filter((concept) => concept.status !== "rejected" && concept.status !== "one-off" && concept.status !== "superseded");
+  const replayable = filterLearnV2ActivationEligibleConcepts(concepts);
   const entries = replayable.map(buildLearnV2ActivationIndexEntry);
   const misses: string[] = [];
   for (const concept of replayable) {
@@ -1536,7 +1564,8 @@ function learnV2EvalProofBoundary(input: {
 }): LearnV2EvalReport["proofBoundary"] {
   const proves = [
     "concept retrieval from stored episodes",
-    "deterministic activation scoring"
+    "deterministic activation scoring",
+    "memory-admission activation exclusion for one-off/rejected/superseded concepts"
   ];
   const doesNotProve = [
     "real agent task success",

@@ -28,6 +28,14 @@ export interface LearnV2ActivationIndexEntry {
   behaviorKey?: string;
 }
 
+export function isLearnV2ActivationEligibleStatus(status: LearnV2ConceptCard["status"]): boolean {
+  return status !== "rejected" && status !== "one-off" && status !== "superseded";
+}
+
+export function filterLearnV2ActivationEligibleConcepts(concepts: LearnV2ConceptCard[]): LearnV2ConceptCard[] {
+  return concepts.filter((concept) => isLearnV2ActivationEligibleStatus(concept.status));
+}
+
 const semanticFamilies: Array<{ id: string; terms: string[] }> = [
   { id: "test", terms: ["test", "tests", "spec", "specs", "fixture", "fixtures", "regression", "coverage", "assert", "assertion"] },
   { id: "parser", terms: ["parser", "parse", "parsing", "syntax", "grammar", "ast", "token", "lexer"] },
