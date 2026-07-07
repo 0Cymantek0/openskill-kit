@@ -285,7 +285,8 @@ export function inferLearnV2ConditionalHypotheses(observations: LearnV2LearningO
       const precision = support.length / Math.max(1, support.length + counterCovered);
       const recall = support.filter((item) => factorSet.every((factor) => hasFactor(item, factor))).length / Math.max(1, support.length);
       const confidence = hypothesisConfidence({ supportCount: support.length, totalCount: targetObservations.length, precision, recall, explicitDurable, factorCount: factorSet.length });
-      const status: LearnV2ConditionalHypothesis["status"] = confidence >= 0.5 ? "candidate" : "weak";
+      const candidateEligible = explicitDurable || support.length >= 2;
+      const status: LearnV2ConditionalHypothesis["status"] = candidateEligible && confidence >= 0.5 ? "candidate" : "weak";
       const condition = factorSet.length ? factorSet.map((factor) => factor.label).join(" and ") : "explicit durable user instruction";
       hypotheses.push(LearnV2ConditionalHypothesisSchema.parse({
         schemaVersion: "openskill-kit.learn-v2.conditional-hypothesis.v1",
@@ -580,6 +581,7 @@ function admissionPolicyForHypothesis(hypothesis: LearnV2ConditionalHypothesis, 
     : ["weak-conditional-hypothesis"];
   if (hypothesis.counterObservationIds.length) reasons.push("counterexamples-preserved");
   if (hypothesis.factorSet.length) reasons.push("stable-context-factors");
+  if (support.length < 2 && !support.some((item) => item.durabilitySignals.explicitDurable)) reasons.push("single-support-hypothesis-kept-weak");
   if (risk.privacyBoundary !== "low") reasons.push(`privacy-boundary:${risk.privacyBoundary}`);
 
   if (risk.riskLevel === "high" || risk.privacyBoundary !== "low" || scopeLevel === "project") {

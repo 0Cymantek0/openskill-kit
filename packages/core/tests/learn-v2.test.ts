@@ -2869,19 +2869,22 @@ describe("learn-v2 substrate", () => {
     expect(result.artifacts.learnV2ConditionalLearningPath).toContain("conditional-learning");
     expect(result.digest.conditionalObservations).toBe(3);
     expect(result.digest.conditionalHypotheses).toBe(3);
-    expect(result.digest.promotedConditionalHypotheses).toBe(3);
-    expect(result.digest.skillNamespaces).toBeGreaterThanOrEqual(1);
-    expect(result.digest.openWorldAnchors).toBeGreaterThanOrEqual(1);
-    expect(result.digest.behaviorAtoms).toBeGreaterThanOrEqual(3);
+    expect(result.digest.promotedConditionalHypotheses).toBe(0);
+    expect(result.digest.behaviorAtoms).toBe(0);
+    expect(result.digest.currentRunConceptCards).toBe(0);
     const conditionalMarkdown = await readText(result.artifacts.learnV2ConditionalLearningPath);
-    expect(conditionalMarkdown).toContain("Promoted hypotheses: 3");
+    expect(conditionalMarkdown).toContain("Promoted hypotheses: 0");
+    expect(conditionalMarkdown).toContain("Weak observations:");
     expect(conditionalMarkdown).toContain("component.container=card");
     expect(conditionalMarkdown).not.toContain(root);
     const conditionalDebug = await readLearnV2ConditionalLearningDebugView(root);
     expect(conditionalDebug.schemaVersion).toBe("openskill-kit.learn-v2.conditional-learning-debug-view.v1");
     expect(conditionalDebug.observations).toHaveLength(3);
     expect(conditionalDebug.hypotheses).toHaveLength(3);
-    expect(conditionalDebug.admissionDecisions.some((decision) => decision.decision === "candidate-concept")).toBe(true);
+    expect(conditionalDebug.hypotheses.every((hypothesis) => hypothesis.status === "weak")).toBe(true);
+    expect(conditionalDebug.admissionDecisions.filter((decision) => decision.subjectKind === "hypothesis").every((decision) =>
+      decision.decision === "weak-observation" && decision.reasons.includes("single-support-hypothesis-kept-weak")
+    )).toBe(true);
     expect(conditionalDebug.observations.some((observation) =>
       observation.factors.some((factor) => factor.key === "component.container" && factor.value === "card")
     )).toBe(true);
@@ -2893,114 +2896,42 @@ describe("learn-v2 substrate", () => {
     const focusedConditionalDebug = await readLearnV2ConditionalLearningDebugView(root, { hypothesisId: conditionalDebug.hypotheses[0]!.id });
     expect(focusedConditionalDebug.hypotheses).toHaveLength(1);
     expect(focusedConditionalDebug.observations.length).toBeGreaterThanOrEqual(1);
-    const skillOntologyMarkdown = await readText(result.artifacts.learnV2SkillOntologyPath);
-    expect(skillOntologyMarkdown).toContain("UI/UX design");
-    expect(skillOntologyMarkdown).toContain("ui:surface-design");
-    expect(skillOntologyMarkdown).toContain("## Ontology Operations");
-    expect(skillOntologyMarkdown).toContain("create-namespace");
-    expect(skillOntologyMarkdown).toContain("split-namespace");
-    expect(skillOntologyMarkdown).not.toContain(root);
+    expect(result.learnV2.currentRunConcepts).toHaveLength(0);
     const skillOntologyJson = JSON.parse(await readText(result.artifacts.learnV2SkillOntologyPath.replace(/\.md$/, ".json")));
-    expect(skillOntologyJson.counts.operations).toBeGreaterThanOrEqual(skillOntologyJson.counts.namespaces);
-    expect(skillOntologyJson.counts.createOperations).toBeGreaterThanOrEqual(1);
-    expect(skillOntologyJson.counts.splitOperations).toBeGreaterThanOrEqual(1);
-    expect(skillOntologyJson.operations.some((operation: { operation: string; status: string }) =>
-      operation.operation === "create-namespace" && ["candidate", "needs-review"].includes(operation.status)
-    )).toBe(true);
-    const ontologyDebug = await readLearnV2SkillOntologyDebugView(root);
-    expect(ontologyDebug.schemaVersion).toBe("openskill-kit.learn-v2.skill-ontology-debug-view.v1");
-    expect(ontologyDebug.namespaces.some((namespace) => namespace.label === "UI/UX design")).toBe(true);
-    expect(ontologyDebug.operations.some((operation) => operation.operation === "split-namespace")).toBe(true);
-    expect(JSON.stringify(ontologyDebug)).not.toContain(root);
-    const focusedOntologyDebug = await readLearnV2SkillOntologyDebugView(root, { namespaceId: ontologyDebug.namespaces[0]!.id });
-    expect(focusedOntologyDebug.namespaces).toHaveLength(1);
-    expect(focusedOntologyDebug.operations.every((operation) =>
-      operation.namespaceIds.includes(focusedOntologyDebug.namespaces[0]!.id)
-    )).toBe(true);
-    expect(result.artifacts.learnV2OpenWorldGroundingPath).toContain("open-world-grounding");
-    const groundingMarkdown = await readText(result.artifacts.learnV2OpenWorldGroundingPath);
-    expect(groundingMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
-    expect(groundingMarkdown).toContain("user-correction-over-resource");
-    expect(groundingMarkdown).toContain("Direct user corrections and reviewed project behavior remain authoritative.");
-    expect(groundingMarkdown).toContain("User preference evidence, project evidence, external grounding, and model interpretation stay separate.");
-    expect(groundingMarkdown).not.toContain(root);
+    expect(skillOntologyJson.counts.namespaces).toBe(0);
     const groundingJson = JSON.parse(await readText(result.artifacts.learnV2OpenWorldGroundingPath.replace(/\.md$/, ".json")));
-    expect(groundingJson.counts.anchors).toBeGreaterThanOrEqual(1);
-    const wcagAnchor = groundingJson.anchors.find((anchor: { title: string }) => anchor.title === "W3C WCAG 2.2 Quick Reference");
-    expect(wcagAnchor).toMatchObject({
-      title: "W3C WCAG 2.2 Quick Reference",
-      trustTier: "official",
-      precedence: "user-correction-over-resource",
-      licenseRisk: "low"
-    });
-    expect(wcagAnchor.usedFor).toEqual(expect.arrayContaining(["verification", "eval"]));
-    const groundingDebug = await readLearnV2OpenWorldGroundingDebugView(root);
-    expect(groundingDebug.schemaVersion).toBe("openskill-kit.learn-v2.openworld-grounding-debug-view.v1");
-    expect(groundingDebug.anchors.some((anchor) => anchor.title === "W3C WCAG 2.2 Quick Reference")).toBe(true);
-    expect(groundingDebug.anchors.every((anchor) => anchor.uriHash.startsWith("sha256:"))).toBe(true);
-    expect(groundingDebug.anchors.every((anchor) => anchor.rationaleHash.startsWith("sha256:"))).toBe(true);
-    expect(JSON.stringify(groundingDebug)).not.toContain(root);
-    const focusedGroundingDebug = await readLearnV2OpenWorldGroundingDebugView(root, { conceptId: wcagAnchor.conceptId });
-    expect(focusedGroundingDebug.anchors.length).toBeGreaterThanOrEqual(1);
-    expect(focusedGroundingDebug.anchors.every((anchor) => anchor.evidenceConceptIds.includes(wcagAnchor.conceptId))).toBe(true);
+    expect(groundingJson.counts.anchors).toBe(0);
     expect(result.artifacts.learnV2ConceptDebugTracePath).toContain("concept-debug-trace");
-    expect(result.digest.conceptDebugTraces).toBeGreaterThanOrEqual(3);
+    expect(result.digest.conceptDebugTraces).toBe(0);
     const debugTraceMarkdown = await readText(result.artifacts.learnV2ConceptDebugTracePath);
-    expect(debugTraceMarkdown).toContain("Why learned:");
-    expect(debugTraceMarkdown).toContain("Why active:");
-    expect(debugTraceMarkdown).toContain("Outcome policy:");
-    expect(debugTraceMarkdown).toContain("Action: keep-monitoring");
-    expect(debugTraceMarkdown).toContain("Conditional reasoning:");
-    expect(debugTraceMarkdown).toContain("Source separation:");
-    expect(debugTraceMarkdown).toContain("UI/UX design");
-    expect(debugTraceMarkdown).toContain("Ontology operations:");
-    expect(debugTraceMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
-    expect(debugTraceMarkdown).toContain("component.container=card");
+    expect(debugTraceMarkdown).toContain("Traced concepts: 0");
     expect(debugTraceMarkdown).not.toContain(root);
     const debugTraceJson = JSON.parse(await readText(result.artifacts.learnV2ConceptDebugTracePath.replace(/\.md$/, ".json")));
-    expect(debugTraceJson.counts.tracedConcepts).toBeGreaterThanOrEqual(3);
-    expect(debugTraceJson.counts.conditionalLinks).toBeGreaterThanOrEqual(3);
-    expect(debugTraceJson.counts.openWorldLinks).toBeGreaterThanOrEqual(1);
-    expect(debugTraceJson.counts.outcomePolicyLinks).toBeGreaterThanOrEqual(3);
-    expect(debugTraceJson.traces.every((trace: { outcomePolicy: { action?: string; counts: { wrong: number; ignored: number } } }) =>
-      trace.outcomePolicy.action && trace.outcomePolicy.counts.wrong >= 0 && trace.outcomePolicy.counts.ignored >= 0
-    )).toBe(true);
-    expect(debugTraceJson.traces.some((trace: { conditional: { factorLabels: string[] } }) => trace.conditional.factorLabels.includes("component.container=card"))).toBe(true);
-    expect(debugTraceJson.traces.some((trace: { evidenceSeparation: { userPreferenceEvidence: number; externalGrounding: number; modelInterpretation: number } }) =>
-      trace.evidenceSeparation.userPreferenceEvidence > 0 &&
-      trace.evidenceSeparation.externalGrounding > 0 &&
-      trace.evidenceSeparation.modelInterpretation > 0
-    )).toBe(true);
+    expect(debugTraceJson.counts.tracedConcepts).toBe(0);
+    expect(debugTraceJson.counts.conditionalLinks).toBe(0);
+    expect(debugTraceJson.counts.openWorldLinks).toBe(0);
     const conceptText = JSON.stringify(result.learnV2.currentRunConcepts.map((concept) => ({
       behavior: concept.canonicalBehavior,
       conditions: concept.conditions
     }))).toLowerCase();
-    expect(conceptText).toContain("prefer green for button color");
-    expect(conceptText).toContain("prefer blue for button color");
-    expect(conceptText).toContain("prefer orange for button color");
-    expect(conceptText).toContain("component is inside a card");
+    expect(conceptText).not.toContain("prefer green for button color");
+    expect(conceptText).not.toContain("prefer blue for button color");
+    expect(conceptText).not.toContain("prefer orange for button color");
     const observability = JSON.parse(await readText(result.artifacts.learnV2ObservabilityReportPath));
     expect(observability.learningIntelligence).toMatchObject({
       observations: 3,
       hypotheses: 3,
-      promotedHypotheses: 3
+      promotedHypotheses: 0,
+      episodeNotes: 1,
+      weakObservations: 5
     });
-    expect(observability.skillOntology.labels).toContain("UI/UX design");
-    expect(observability.skillOntology.operations).toBeGreaterThanOrEqual(1);
-    expect(observability.skillOntology.createOperations).toBeGreaterThanOrEqual(1);
-    expect(observability.skillOntology.splitOperations).toBeGreaterThanOrEqual(1);
-    expect(observability.openWorldGrounding.anchors).toBeGreaterThanOrEqual(1);
-    expect(observability.openWorldGrounding.titles).toContain("W3C WCAG 2.2 Quick Reference");
-    expect(observability.conceptDebugTrace.tracedConcepts).toBeGreaterThanOrEqual(3);
-    expect(observability.outcomePolicy.decisions).toBeGreaterThanOrEqual(3);
+    expect(observability.skillOntology.operations).toBe(0);
+    expect(observability.openWorldGrounding.anchors).toBe(0);
+    expect(observability.conceptDebugTrace.tracedConcepts).toBe(0);
+    expect(observability.outcomePolicy.decisions).toBe(0);
     const observabilityMarkdown = await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`));
-    expect(observabilityMarkdown).toContain("Conditional hypotheses: 3 (3 promoted)");
-    expect(observabilityMarkdown).toContain("Ontology operations:");
-    expect(observabilityMarkdown).toContain("Namespace labels: UI/UX design");
-    expect(observabilityMarkdown).toContain("Open-world titles:");
-    expect(observabilityMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
-    expect(observabilityMarkdown).toContain("Concept debug traces:");
-    expect(observabilityMarkdown).toContain("Outcome policy:");
+    expect(observabilityMarkdown).toContain("Conditional hypotheses: 3 (0 promoted)");
+    expect(observabilityMarkdown).toContain("Memory admission:");
   });
 
   it("builds reviewable ontology operations for multi-namespace concepts", () => {
@@ -6125,16 +6056,64 @@ describe("learn-v2 substrate", () => {
 
     expect(observations).toHaveLength(3);
     expect(hypotheses.map((item) => item.desiredOutcome).sort()).toEqual(["blue", "green", "orange"]);
-    expect(hypotheses.every((item) => item.status === "candidate")).toBe(true);
+    expect(hypotheses.every((item) => item.status === "weak")).toBe(true);
     expect(hypotheses.every((item) => item.statement.includes("When "))).toBe(true);
     expect(hypotheses.some((item) => item.statement.includes("buttons are green"))).toBe(false);
     expect(hypotheses.find((item) => item.desiredOutcome === "orange")!.factorSet.map((factor) => `${factor.key}:${factor.value}`))
       .toContain("component.container:card");
     expect(hypotheses.find((item) => item.desiredOutcome === "blue")!.factorSet.map((factor) => `${factor.key}:${factor.value}`))
       .toEqual(expect.arrayContaining(["ui.theme:dark", "component.container:independent"]));
-    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.decision === "candidate-concept" && item.requiredReview)).toBe(true);
-    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.reviewPriority === "normal")).toBe(true);
-    expect(atoms).toHaveLength(3);
+    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) =>
+      item.decision === "weak-observation" &&
+      !item.requiredReview &&
+      item.reasons.includes("single-support-hypothesis-kept-weak")
+    )).toBe(true);
+    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.reviewPriority === "none")).toBe(true);
+    expect(atoms).toHaveLength(0);
+  });
+
+  it("promotes repeated conditional hypotheses while keeping counterexamples scoped", () => {
+    const evidence = [
+      {
+        ...normalizedMessage("ui_light_green_first", "Make independent button green on white landing page.", "user"),
+        paths: ["packages/site/src/LandingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ui_light_green_second", "Make independent button green on light marketing page.", "user"),
+        paths: ["packages/site/src/MarketingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ui_dark_blue_counter", "No, this time I want blue for independent button on dark page.", "user"),
+        paths: ["packages/site/src/DarkButton.tsx"],
+        metadata: { theme: "dark", container: "independent", componentRole: "button" }
+      }
+    ];
+
+    const observations = buildLearnV2LearningObservationsFromEvidence(evidence);
+    const hypotheses = inferLearnV2ConditionalHypotheses(observations);
+    const admission = decideLearnV2MemoryAdmission({ observations, hypotheses });
+    const atoms = learnV2ConditionalHypothesesToBehaviorAtoms(hypotheses, observations);
+    const green = hypotheses.find((item) => item.desiredOutcome === "green")!;
+    const blue = hypotheses.find((item) => item.desiredOutcome === "blue")!;
+
+    expect(green.status).toBe("candidate");
+    expect(green.supportObservationIds).toHaveLength(2);
+    expect(green.counterObservationIds).toHaveLength(1);
+    expect(green.factorSet.map((factor) => `${factor.key}:${factor.value}`)).toEqual(expect.arrayContaining(["ui.theme:light", "surface.kind:landing-page"]));
+    expect(blue.status).toBe("weak");
+    expect(admission.find((item) => item.subjectKind === "hypothesis" && item.subjectId === green.id)).toMatchObject({
+      decision: "candidate-concept",
+      requiredReview: true,
+      reviewPriority: "normal"
+    });
+    expect(admission.find((item) => item.subjectKind === "hypothesis" && item.subjectId === blue.id)).toMatchObject({
+      decision: "weak-observation",
+      requiredReview: false,
+      reviewPriority: "none"
+    });
+    expect(atoms).toHaveLength(1);
     expect(atoms.every((atom) => atom.scope.taskTypes.includes("ui-design-change"))).toBe(true);
   });
 
