@@ -70,6 +70,7 @@ import {
   applyLearnV2EvalPlannerOutputs,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
+  getLearnV2ArtifactPathManifest,
   explainInteractionImport,
   installSkill,
   listInteractionAdapters,
@@ -429,6 +430,20 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
   );
 
   registerTool(
+    "osk_get_learn_v2_artifact_paths",
+    {
+      title: "OpenSkillKit Learn v2 Artifact Paths",
+      description: "Return stable Learn v2 artifact paths, share policy, CLI/MCP entry points, team-sharing guidance, and production install notes. Paths are project-root relative and do not expose raw evidence.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(getLearnV2ArtifactPathManifest(), root);
+    }
+  );
+
+  registerTool(
     "osk_run_learning_plan",
     {
       title: "OpenSkillKit Run Learning Plan",
@@ -499,6 +514,20 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     async ({ projectRoot }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(stripLearnV2RawRefs(await readLearnV2ReviewQueue(root)), root);
+    }
+  );
+
+  registerTool(
+    "osk_get_concept_store",
+    {
+      title: "OpenSkillKit Learn v2 Concept Store",
+      description: "Return the persisted Learn v2 concept store with reviewed/candidate concept cards. Raw refs remain local identifiers; use review/debug artifacts for declassified evidence.",
+      inputSchema: z.object({ projectRoot: projectRootSchema }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(stripLearnV2RawRefs(await readLearnV2ConceptStore(root)), root);
     }
   );
 

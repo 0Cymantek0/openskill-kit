@@ -62,6 +62,192 @@ export const LEARN_V2_GENERATED_FILES = [
   ".openskill-kit/learn-v2/relevance-calibration.json"
 ];
 
+export interface LearnV2StableArtifactPath {
+  key: string;
+  label: string;
+  relativePath: string;
+  kind: "file" | "directory" | "glob";
+  lifecycle: "canonical" | "review" | "debug" | "telemetry" | "model-request" | "compiled-preview";
+  sharePolicy: "shareable-reviewed" | "local-only" | "local-declassified" | "prompt-safe-request";
+  cli: string;
+  mcpTool?: string;
+  notes: string[];
+}
+
+export interface LearnV2ArtifactPathManifest {
+  schemaVersion: "openskill-kit.learn-v2.artifact-path-manifest.v1";
+  stablePaths: LearnV2StableArtifactPath[];
+  teamSharing: {
+    reviewedConcepts: string;
+    localOnly: string[];
+    compileCommand: string;
+    exportCommand: string;
+  };
+  productionInstall: {
+    hiddenAssumptions: string[];
+    requiredStartup: string[];
+  };
+  nextActions: string[];
+}
+
+export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
+  {
+    key: "concept-store",
+    label: "Canonical Learn v2 concept store",
+    relativePath: ".openskill-kit/learn-v2/concepts/store.json",
+    kind: "file",
+    lifecycle: "canonical",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --extract-concepts",
+    mcpTool: "osk_get_concept_store",
+    notes: ["Holds candidate/reviewed concept cards; raw refs remain local identifiers, not shareable evidence."]
+  },
+  {
+    key: "review-queue",
+    label: "Concept review queue",
+    relativePath: ".openskill-kit/learn-v2/review/concept-review-queue.md",
+    kind: "file",
+    lifecycle: "review",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk review --write",
+    mcpTool: "osk_get_concept_review_queue",
+    notes: ["Primary developer UX for accepting, rejecting, narrowing, and locking reviewed concepts."]
+  },
+  {
+    key: "compile-preview",
+    label: "Compiled concept preview",
+    relativePath: ".openskill-kit/learn-v2/compiled-preview/concept-compile-preview.md",
+    kind: "file",
+    lifecycle: "compiled-preview",
+    sharePolicy: "shareable-reviewed",
+    cli: "openskill-kit osk learn --extract-concepts && openskill-kit osk review --concept-accept <id>",
+    notes: ["Preview of reviewed behavior that can feed skills, command policy, review checklist, and MCP resources."]
+  },
+  {
+    key: "source-gate",
+    label: "Source gate review",
+    relativePath: ".openskill-kit/learn-v2/source-gate/source-gate-review.md",
+    kind: "file",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --raw --surface-file <path>",
+    notes: ["Shows accepted, rejected, and ask-for-review sources without exporting raw source contents."]
+  },
+  {
+    key: "conditional-learning",
+    label: "Conditional learning traces",
+    relativePath: ".openskill-kit/learn-v2/conditional-learning/conditional-learning-*.md",
+    kind: "glob",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --raw --surface-file <path>",
+    notes: ["Observation, factor, hypothesis, and memory-admission audit trail."]
+  },
+  {
+    key: "skill-ontology",
+    label: "Emergent skill ontology",
+    relativePath: ".openskill-kit/learn-v2/skill-ontology/skill-ontology-*.md",
+    kind: "glob",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --raw --surface-file <path>",
+    notes: ["Dynamic namespace candidates plus create/merge/split/attach operations."]
+  },
+  {
+    key: "open-world-grounding",
+    label: "Open-world grounding",
+    relativePath: ".openskill-kit/learn-v2/open-world-grounding/open-world-grounding-*.md",
+    kind: "glob",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --raw --surface-file <path>",
+    notes: ["Local project anchors first, then authority-tiered external resources."]
+  },
+  {
+    key: "concept-debug-trace",
+    label: "Concept debug trace",
+    relativePath: ".openskill-kit/learn-v2/concept-debug-trace/concept-debug-trace-*.md",
+    kind: "glob",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --raw --surface-file <path>",
+    notes: ["Joined why-learned, why-active, ontology, grounding, review, and outcome policy trace."]
+  },
+  {
+    key: "outcome-policy",
+    label: "Outcome policy",
+    relativePath: ".openskill-kit/learn-v2/outcome-policy/outcome-policy-*.md",
+    kind: "glob",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --record-concept-outcome <id> --concept-outcome wrong",
+    notes: ["Suppression and demotion decisions from local outcome telemetry."]
+  },
+  {
+    key: "observability",
+    label: "Pipeline observability dashboard",
+    relativePath: ".openskill-kit/learn-v2/observability/pipeline-observability-*.json",
+    kind: "glob",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --observability",
+    notes: ["Single dashboard entry point for Learn v2 run counts, gates, health, and artifact pointers."]
+  },
+  {
+    key: "model-requests",
+    label: "Prompt-safe model request manifests",
+    relativePath: ".openskill-kit/learn-v2/model-requests/*/request-manifest.json",
+    kind: "glob",
+    lifecycle: "model-request",
+    sharePolicy: "prompt-safe-request",
+    cli: "openskill-kit osk learn --prepare-model-requests",
+    notes: ["Sanitized model request boundary; raw evidence is not sent directly."]
+  },
+  {
+    key: "raw-vault",
+    label: "Raw evidence vault",
+    relativePath: ".openskill-kit/learn-v2/raw-vault/",
+    kind: "directory",
+    lifecycle: "telemetry",
+    sharePolicy: "local-only",
+    cli: "openskill-kit osk learn --raw-vault-status",
+    notes: ["Project-local raw evidence retention; never pack, compile, or share."]
+  }
+];
+
+export function getLearnV2ArtifactPathManifest(): LearnV2ArtifactPathManifest {
+  return {
+    schemaVersion: "openskill-kit.learn-v2.artifact-path-manifest.v1",
+    stablePaths: LEARN_V2_STABLE_ARTIFACT_PATHS,
+    teamSharing: {
+      reviewedConcepts: "Share reviewed behavior through compiled packs, skills, MCP resources, and project behavior exports; do not share raw vault, activation telemetry, model responses, or local debug blobs.",
+      localOnly: LEARN_V2_STABLE_ARTIFACT_PATHS
+        .filter((item) => item.sharePolicy === "local-only")
+        .map((item) => item.relativePath),
+      compileCommand: "openskill-kit osk compile --target context-pack --target agent-skills --target mcp-resources --target project-rules",
+      exportCommand: "openskill-kit osk pack export"
+    },
+    productionInstall: {
+      hiddenAssumptions: [
+        "Run commands from project root or set OPENSKILLKIT_PROJECT_ROOT for MCP.",
+        "Use reviewed/compiled artifacts for team sharing; local generated Learn v2 directories stay gitignored.",
+        "Use --raw-vault-status/--gc-raw-vault for retention before long-running production use."
+      ],
+      requiredStartup: [
+        "openskill-kit init",
+        "openskill-kit osk learn --artifact-paths",
+        "openskill-kit agent attach-plugin --host <host> --dry-run",
+        "openskill-kit osk compile --target context-pack --target agent-skills --target mcp-resources --target project-rules"
+      ]
+    },
+    nextActions: [
+      "Use CLI or MCP artifact-path manifest as the stable integration contract.",
+      "Inspect review/debug artifacts locally; compile reviewed concepts before sharing with a team.",
+      "Keep raw vault and activation telemetry local-only."
+    ]
+  };
+}
+
 export function getCleanedLearnV2Paths(): { dirs: string[]; files: string[] } {
   return {
     dirs: LEARN_V2_GENERATED_DIRS.map((p) => p.replace(/^\/+/, "").replace(/\/+$/, "")),

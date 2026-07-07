@@ -55,6 +55,7 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("--apply-model-responses");
     expect(stdout).toContain("--model-request <path>");
     expect(stdout).toContain("--surface-adapter <adapter>");
+    expect(stdout).toContain("--artifact-paths");
     expect(stdout).toContain("--prepare-contradiction-requests");
     expect(stdout).toContain("--contradiction-output <path>");
     expect(stdout).toContain("--prepare-eval-requests");
@@ -63,6 +64,29 @@ describe("osk CLI facade", () => {
     expect(stdout).toContain("raw-to-model");
     expect(stdout).toContain("deterministic-only|opencode-host-sanitized-only");
     expect(stdout).toContain("--experimental-raw-model-dispatch");
+  });
+
+  it("prints stable Learn v2 artifact path contract for CLI and MCP integrations", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-artifact-paths-"));
+    const parsed = await execCliJson(["osk", "learn", "--artifact-paths", "--json"], root);
+    expect(parsed.schemaVersion).toBe("openskill-kit.learn-v2.artifact-path-manifest.v1");
+    expect(parsed.stablePaths.some((item: { key: string; relativePath: string; mcpTool?: string }) =>
+      item.key === "concept-debug-trace" && item.relativePath === ".openskill-kit/learn-v2/concept-debug-trace/concept-debug-trace-*.md"
+    )).toBe(true);
+    expect(parsed.stablePaths.some((item: { key: string; sharePolicy: string }) =>
+      item.key === "raw-vault" && item.sharePolicy === "local-only"
+    )).toBe(true);
+    expect(parsed.stablePaths.some((item: { key: string; mcpTool?: string }) =>
+      item.key === "review-queue" && item.mcpTool === "osk_get_concept_review_queue"
+    )).toBe(true);
+    expect(parsed.teamSharing.reviewedConcepts).toContain("compiled packs");
+    expect(parsed.productionInstall.requiredStartup).toContain("openskill-kit osk learn --artifact-paths");
+
+    const text = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--artifact-paths"], { cwd: root, windowsHide: true });
+    expect(text.stdout).toContain("Learn v2 stable artifact paths");
+    expect(text.stdout).toContain("concept-debug-trace");
+    expect(text.stdout).toContain("Team sharing:");
+    expect(text.stdout).not.toContain(root);
   });
 
   it("rejects malformed Learn v2 concept review JSON at the CLI boundary", async () => {

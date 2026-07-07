@@ -98,6 +98,7 @@ import {
   writeLearnV2EvalPlannerRequests,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
+  getLearnV2ArtifactPathManifest,
   RawLearningModelModes,
   readEvidenceCards,
   runBehaviorEval,
@@ -352,6 +353,7 @@ osk.command("learn")
   .option("--raw", "Run raw local learning over explicitly supplied surface files")
   .option("--raw-vault-status", "Show learn-v2 raw vault retention and budget status")
   .option("--gc-raw-vault", "Compact or expire learn-v2 raw vault blobs whose retention window has elapsed")
+  .option("--artifact-paths", "Show stable Learn-v2 artifact paths, share policy, CLI/MCP entry points, and production install notes")
   .option("--observability", "Show latest Learn-v2 pipeline observability dashboard")
   .option("--observability-file <path>", "Specific Learn-v2 pipeline observability JSON report")
   .option("--max-raw-vault-bytes <number>", "Learn-v2 hot raw vault byte budget", parseIntegerOption, 50_000_000)
@@ -411,6 +413,11 @@ osk.command("learn")
         keepPreviewRuns: options.keepPreviewRuns
       });
       output(options.json, result, renderRawVaultMaintenance(result));
+      return;
+    }
+    if (options.artifactPaths === true) {
+      const result = getLearnV2ArtifactPathManifest();
+      output(options.json, result, renderLearnV2ArtifactPaths(result));
       return;
     }
     if (options.observability === true || options.observabilityFile) {
@@ -2233,6 +2240,35 @@ function renderRawLearnResult(result: RawLocalLearningResult): string {
     lines.push(`WARNING: ${source.projectRelevance.decision} ${source.sourcePath} (${source.projectRelevance.reasons.join(", ") || "low project relevance"})`);
   }
   lines.push(...result.nextActions);
+  return lines.join("\n");
+}
+
+function renderLearnV2ArtifactPaths(manifest: ReturnType<typeof getLearnV2ArtifactPathManifest>): string {
+  const lines = [
+    "Learn v2 stable artifact paths",
+    "",
+    "Paths are relative to the project root. Share policy says whether a path is team-shareable after review, local declassified debug, prompt-safe request, or local-only.",
+    ""
+  ];
+  for (const item of manifest.stablePaths) {
+    lines.push(`- ${item.key}: ${item.relativePath}`);
+    lines.push(`  ${item.label}; kind=${item.kind}; lifecycle=${item.lifecycle}; share=${item.sharePolicy}`);
+    lines.push(`  CLI: ${item.cli}`);
+    if (item.mcpTool) lines.push(`  MCP: ${item.mcpTool}`);
+    lines.push(`  Notes: ${item.notes.join(" ")}`);
+  }
+  lines.push("");
+  lines.push("Team sharing:");
+  lines.push(`- ${manifest.teamSharing.reviewedConcepts}`);
+  lines.push(`- Compile: ${manifest.teamSharing.compileCommand}`);
+  lines.push(`- Export: ${manifest.teamSharing.exportCommand}`);
+  lines.push(`- Local-only: ${manifest.teamSharing.localOnly.join(", ") || "none"}`);
+  lines.push("");
+  lines.push("Production install:");
+  for (const item of manifest.productionInstall.requiredStartup) lines.push(`- ${item}`);
+  lines.push("");
+  lines.push("Next actions:");
+  lines.push(...manifest.nextActions.map((item) => `- ${item}`));
   return lines.join("\n");
 }
 

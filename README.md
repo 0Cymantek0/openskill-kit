@@ -112,6 +112,9 @@ benchmark evaluation yet.
 | `/osk pack` | Export, sign, verify, import, or apply reviewed behavior packs. | `osk_pack_behavior` |
 
 See [`docs/commands.md`](docs/commands.md) for the full generated command map.
+For Learn v2 packaging and integration, `openskill-kit osk learn --artifact-paths`
+prints the stable project-root-relative artifact contract, including CLI/MCP entry
+points, share policy, team-sharing boundary, and production install startup notes.
 The lower-level CLI remains stable for scripts and advanced users:
 
 Compatibility commands remain available for manual skill scaffolding:
@@ -176,7 +179,9 @@ Public-profile facade tools:
 
 Advanced-profile tools remain available for scripts and lower-level automation,
 including interaction imports, manifest install/uninstall, hook install,
-OpenWorld source/verifier primitives, encrypted packs, signing, and maintenance.
+OpenWorld source/verifier primitives, encrypted packs, signing, maintenance, and
+`osk_get_learn_v2_artifact_paths` for the same stable Learn v2 artifact-path
+contract exposed by the CLI.
 Use `OPENSKILLKIT_MCP_PROFILE=advanced` to expose them; default runtime exposure is
 the 12 public facade tools.
 
