@@ -2756,6 +2756,27 @@ describe("learn-v2 substrate", () => {
       licenseRisk: "low"
     });
     expect(wcagAnchor.usedFor).toEqual(expect.arrayContaining(["verification", "eval"]));
+    expect(result.artifacts.learnV2ConceptDebugTracePath).toContain("concept-debug-trace");
+    expect(result.digest.conceptDebugTraces).toBeGreaterThanOrEqual(3);
+    const debugTraceMarkdown = await readText(result.artifacts.learnV2ConceptDebugTracePath);
+    expect(debugTraceMarkdown).toContain("Why learned:");
+    expect(debugTraceMarkdown).toContain("Why active:");
+    expect(debugTraceMarkdown).toContain("Conditional reasoning:");
+    expect(debugTraceMarkdown).toContain("Source separation:");
+    expect(debugTraceMarkdown).toContain("UI/UX design");
+    expect(debugTraceMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
+    expect(debugTraceMarkdown).toContain("component.container=card");
+    expect(debugTraceMarkdown).not.toContain(root);
+    const debugTraceJson = JSON.parse(await readText(result.artifacts.learnV2ConceptDebugTracePath.replace(/\.md$/, ".json")));
+    expect(debugTraceJson.counts.tracedConcepts).toBeGreaterThanOrEqual(3);
+    expect(debugTraceJson.counts.conditionalLinks).toBeGreaterThanOrEqual(3);
+    expect(debugTraceJson.counts.openWorldLinks).toBeGreaterThanOrEqual(1);
+    expect(debugTraceJson.traces.some((trace: { conditional: { factorLabels: string[] } }) => trace.conditional.factorLabels.includes("component.container=card"))).toBe(true);
+    expect(debugTraceJson.traces.some((trace: { evidenceSeparation: { userPreferenceEvidence: number; externalGrounding: number; modelInterpretation: number } }) =>
+      trace.evidenceSeparation.userPreferenceEvidence > 0 &&
+      trace.evidenceSeparation.externalGrounding > 0 &&
+      trace.evidenceSeparation.modelInterpretation > 0
+    )).toBe(true);
     const conceptText = JSON.stringify(result.learnV2.currentRunConcepts.map((concept) => ({
       behavior: concept.canonicalBehavior,
       conditions: concept.conditions
@@ -2773,11 +2794,13 @@ describe("learn-v2 substrate", () => {
     expect(observability.skillOntology.labels).toContain("UI/UX design");
     expect(observability.openWorldGrounding.anchors).toBeGreaterThanOrEqual(1);
     expect(observability.openWorldGrounding.titles).toContain("W3C WCAG 2.2 Quick Reference");
+    expect(observability.conceptDebugTrace.tracedConcepts).toBeGreaterThanOrEqual(3);
     const observabilityMarkdown = await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`));
     expect(observabilityMarkdown).toContain("Conditional hypotheses: 3 (3 promoted)");
     expect(observabilityMarkdown).toContain("Namespace labels: UI/UX design");
     expect(observabilityMarkdown).toContain("Open-world titles:");
     expect(observabilityMarkdown).toContain("W3C WCAG 2.2 Quick Reference");
+    expect(observabilityMarkdown).toContain("Concept debug traces:");
   });
 
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
@@ -3079,8 +3102,10 @@ describe("learn-v2 substrate", () => {
     expect(extracted.conceptCount).toBeGreaterThanOrEqual(1);
     expect(extracted.skillNamespaceCount).toBeGreaterThanOrEqual(1);
     expect(extracted.openWorldAnchorCount).toBeGreaterThanOrEqual(1);
+    expect(extracted.conceptDebugTraceCount).toBeGreaterThanOrEqual(1);
     expect(await readText(extracted.skillOntologyPath)).toContain("Skill Ontology");
     expect(await readText(extracted.openWorldGroundingPath)).toContain("Open-World Grounding");
+    expect(await readText(extracted.conceptDebugTracePath)).toContain("Concept Debug Trace");
     const evaluated = await runPersistedLearnV2Eval(root, {}, new Date("2026-06-30T00:03:00Z"));
     expect(evaluated.evalStatus).toBe("pass");
     expect(await readText(evaluated.evalReportPath)).toContain("Counterfactual trace cases");

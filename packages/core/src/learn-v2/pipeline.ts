@@ -15,6 +15,7 @@ import {
   LearnV2ConceptDriftReportSchema,
   LearnV2ConflictLedgerSchema,
   LearnV2CounterevidenceLedgerSchema,
+  LearnV2ConceptDebugTraceArtifactSchema,
   LearnV2DeclassifiedEvidenceSnippetArtifactSchema,
   LearnV2EvalReportSchema,
   LearnV2RawEvidenceRecordSchema,
@@ -27,6 +28,7 @@ import {
   type LearnV2ConceptDriftReport,
   type LearnV2ConflictLedger,
   type LearnV2CounterevidenceLedger,
+  type LearnV2ConceptDebugTraceArtifact,
   type LearnV2DeclassifiedEvidenceSnippetArtifact,
   type LearnV2EvalReport,
   type LearnV2NormalizedEvidence,
@@ -42,6 +44,7 @@ import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
 import { writeLearnV2SkillOntologyArtifact } from "./skill-ontology.js";
 import { writeLearnV2OpenWorldGroundingArtifact } from "./resource-grounding.js";
+import { writeLearnV2ConceptDebugTraceArtifact } from "./concept-debug-trace.js";
 import { mergeLearnV2ConceptCards } from "./concepts.js";
 import { writeLearnV2ConflictLedger } from "./conflicts.js";
 import { writeLearnV2CounterevidenceLedger } from "./counterevidence-ledger.js";
@@ -186,6 +189,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2ConditionalLearningPath: string;
     learnV2SkillOntologyPath: string;
     learnV2OpenWorldGroundingPath: string;
+    learnV2ConceptDebugTracePath: string;
   };
   lifecycle?: LifecycleRunnerResult;
   digest: {
@@ -204,6 +208,7 @@ interface LearnV2RawLocalLearningRunCompat {
     promotedConditionalHypotheses: number;
     skillNamespaces: number;
     openWorldAnchors: number;
+    conceptDebugTraces: number;
     conceptCards: number;
     currentRunConceptCards: number;
     mergedConceptCards: number;
@@ -229,6 +234,7 @@ interface LearnV2RawLocalLearningRunCompat {
     conditionalLearning: LearnV2ConditionalLearningArtifact;
     skillOntology: LearnV2SkillOntologyArtifact;
     openWorldGrounding: LearnV2OpenWorldGroundingArtifact;
+    conceptDebugTrace: LearnV2ConceptDebugTraceArtifact;
     conceptStorePath: string;
     reviewQueuePath: string;
     compilePreviewPath: string;
@@ -535,6 +541,14 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
         conceptDrift
       })
     : emptyReviewQueue(root, now);
+  const conceptDebugTrace = shouldWriteDerivedArtifacts
+    ? await writeLearnV2ConceptDebugTraceArtifact(root, conceptCardsForArtifacts, now, {
+        conditionalLearning,
+        skillOntology,
+        openWorldGrounding,
+        reviewQueue
+      })
+    : emptyConceptDebugTraceArtifact(root, now);
   const compilePreview = shouldWriteDerivedArtifacts
     ? await compileLearnV2ConceptPreview(root, config, conceptCardsForArtifacts, now)
     : emptyCompilePreview(root, now);
@@ -595,7 +609,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2SourceGateReviewPath: sourceGateReview.paths.markdown,
       learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown,
       learnV2SkillOntologyPath: skillOntology.artifacts.markdown,
-      learnV2OpenWorldGroundingPath: openWorldGrounding.artifacts.markdown
+      learnV2OpenWorldGroundingPath: openWorldGrounding.artifacts.markdown,
+      learnV2ConceptDebugTracePath: conceptDebugTrace.artifacts.markdown
     },
     conflictLedger: conflictLedger.ledger,
     conceptDrift: conceptDrift.report,
@@ -604,6 +619,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     conditionalLearning,
     skillOntology,
     openWorldGrounding,
+    conceptDebugTrace,
     nextActions
   });
   const result: LearnV2RawLocalLearningRunCompat = {
@@ -639,7 +655,8 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2SourceGateReviewPath: sourceGateReview.paths.markdown,
       learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown,
       learnV2SkillOntologyPath: skillOntology.artifacts.markdown,
-      learnV2OpenWorldGroundingPath: openWorldGrounding.artifacts.markdown
+      learnV2OpenWorldGroundingPath: openWorldGrounding.artifacts.markdown,
+      learnV2ConceptDebugTracePath: conceptDebugTrace.artifacts.markdown
     },
     lifecycle,
     digest: {
@@ -658,6 +675,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       promotedConditionalHypotheses: conditionalLearning.counts.promotedHypotheses,
       skillNamespaces: skillOntology.counts.namespaces,
       openWorldAnchors: openWorldGrounding.counts.anchors,
+      conceptDebugTraces: conceptDebugTrace.counts.tracedConcepts,
       conceptCards: concepts.length,
       currentRunConceptCards: concepts.length,
       mergedConceptCards: conceptCardsForArtifacts.length,
@@ -700,6 +718,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       conditionalLearning,
       skillOntology,
       openWorldGrounding,
+      conceptDebugTrace,
       reviewQueuePath: reviewQueue.artifacts.markdown,
       compilePreviewPath: compilePreview.artifacts.markdown,
       evalReportPath: evalReport.artifacts.markdown,
@@ -807,6 +826,24 @@ function emptyOpenWorldGroundingArtifact(root: string, now: Date): LearnV2OpenWo
       officialAnchors: 0,
       projectAnchors: 0,
       reviewOnlyAnchors: 0
+    },
+    artifacts: { json, markdown }
+  });
+}
+
+function emptyConceptDebugTraceArtifact(root: string, now: Date): LearnV2ConceptDebugTraceArtifact {
+  const json = path.join(root, ".openskill-kit", "learn-v2", "concept-debug-trace", "concept-debug-trace.json");
+  const markdown = path.join(root, ".openskill-kit", "learn-v2", "concept-debug-trace", "concept-debug-trace.md");
+  return LearnV2ConceptDebugTraceArtifactSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.concept-debug-trace-artifact.v1",
+    generatedAt: now.toISOString(),
+    traces: [],
+    counts: {
+      concepts: 0,
+      tracedConcepts: 0,
+      conditionalLinks: 0,
+      openWorldLinks: 0,
+      reviewBlockedConcepts: 0
     },
     artifacts: { json, markdown }
   });
@@ -1304,6 +1341,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Promoted conditional hypotheses: ${result.digest.promotedConditionalHypotheses}`,
     `- Skill namespaces: ${result.digest.skillNamespaces}`,
     `- Open-world grounding anchors: ${result.digest.openWorldAnchors}`,
+    `- Concept debug traces: ${result.digest.conceptDebugTraces}`,
     `- Concept cards: ${result.digest.conceptCards}`,
     `- Events appended: ${result.digest.eventsAppended}`,
     `- Overall quality: ${result.quality.overallScore.toFixed(2)}`,
@@ -1326,6 +1364,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Conditional learning: ${result.artifacts.learnV2ConditionalLearningPath}`,
     `- Skill ontology: ${result.artifacts.learnV2SkillOntologyPath}`,
     `- Open-world grounding: ${result.artifacts.learnV2OpenWorldGroundingPath}`,
+    `- Concept debug trace: ${result.artifacts.learnV2ConceptDebugTracePath}`,
     `- Model requests: ${result.artifacts.learnV2ModelRequestDir}`,
     "",
     "## Quality",

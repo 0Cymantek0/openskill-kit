@@ -523,6 +523,93 @@ export const LearnV2OpenWorldGroundingArtifactSchema = z.object({
 });
 export type LearnV2OpenWorldGroundingArtifact = z.infer<typeof LearnV2OpenWorldGroundingArtifactSchema>;
 
+export const LearnV2ConceptDebugTraceEntrySchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.concept-debug-trace-entry.v1"),
+  conceptId: z.string().min(1),
+  title: z.string().min(1),
+  status: z.enum(["candidate", "staged", "active", "locked", "rejected", "conflict", "superseded", "one-off"]),
+  risk: z.enum(["low", "medium", "high"]),
+  canonicalBehavior: z.string().min(1),
+  behaviorDelta: z.string().min(1),
+  whyLearned: z.object({
+    summary: z.string().min(1),
+    evidenceIds: z.array(z.string().min(1)).default([]),
+    supportAtomIds: z.array(z.string().min(1)).default([]),
+    supportAtomStatements: z.array(z.string().min(1)).default([]),
+    scoringReasons: z.array(z.string().min(1)).default([]),
+    scoringPenalties: z.array(z.string().min(1)).default([]),
+    rawRefCount: z.number().int().min(0),
+    confidence: z.number().min(0).max(1),
+    durability: z.number().min(0).max(1),
+    sourceReliability: z.number().min(0).max(1)
+  }),
+  whyActive: z.object({
+    activationState: z.enum(["inactive-review-required", "active", "locked", "staged", "rejected", "superseded", "one-off"]),
+    reviewGate: z.string().min(1),
+    phrases: z.array(z.string()).default([]),
+    pathGlobs: z.array(z.string()).default([]),
+    commands: z.array(z.string()).default([]),
+    appliesWhen: z.array(z.string()).default([]),
+    doesNotApplyWhen: z.array(z.string()).default([]),
+    negativeTriggers: z.array(z.string()).default([])
+  }),
+  conditional: z.object({
+    observationIds: z.array(z.string().min(1)).default([]),
+    hypothesisIds: z.array(z.string().min(1)).default([]),
+    factorLabels: z.array(z.string().min(1)).default([]),
+    admissionDecisions: z.array(z.object({
+      id: z.string().min(1),
+      subjectKind: LearnV2MemoryAdmissionDecisionSchema.shape.subjectKind,
+      subjectId: z.string().min(1),
+      decision: LearnV2MemoryAdmissionDecisionSchema.shape.decision,
+      requiredReview: z.boolean(),
+      reasons: z.array(z.string().min(1)).default([])
+    })).default([])
+  }),
+  ontology: z.object({
+    namespaceIds: z.array(z.string().min(1)).default([]),
+    labels: z.array(z.string().min(1)).default([])
+  }),
+  openWorldGrounding: z.object({
+    anchorIds: z.array(z.string().min(1)).default([]),
+    titles: z.array(z.string().min(1)).default([]),
+    trustTiers: z.array(LearnV2OpenWorldResourceAnchorSchema.shape.trustTier).default([]),
+    precedence: z.array(LearnV2OpenWorldResourceAnchorSchema.shape.precedence).default([])
+  }),
+  review: z.object({
+    conflictIds: z.array(z.string().min(1)).default([]),
+    counterevidenceCount: z.number().int().min(0),
+    driftReasons: z.array(z.string().min(1)).default([]),
+    evidenceSnippetIds: z.array(z.string().min(1)).default([]),
+    reviewActionLabels: z.array(z.string().min(1)).default([])
+  }),
+  evidenceSeparation: z.object({
+    userPreferenceEvidence: z.number().int().min(0),
+    projectEvidence: z.number().int().min(0),
+    externalGrounding: z.number().int().min(0),
+    modelInterpretation: z.number().int().min(0)
+  })
+});
+export type LearnV2ConceptDebugTraceEntry = z.infer<typeof LearnV2ConceptDebugTraceEntrySchema>;
+
+export const LearnV2ConceptDebugTraceArtifactSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.concept-debug-trace-artifact.v1"),
+  generatedAt: z.string().datetime(),
+  traces: z.array(LearnV2ConceptDebugTraceEntrySchema).default([]),
+  counts: z.object({
+    concepts: z.number().int().min(0),
+    tracedConcepts: z.number().int().min(0),
+    conditionalLinks: z.number().int().min(0),
+    openWorldLinks: z.number().int().min(0),
+    reviewBlockedConcepts: z.number().int().min(0)
+  }),
+  artifacts: z.object({
+    json: z.string(),
+    markdown: z.string()
+  })
+});
+export type LearnV2ConceptDebugTraceArtifact = z.infer<typeof LearnV2ConceptDebugTraceArtifactSchema>;
+
 export const LearnV2LlmConceptExtractionOutputSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.llm-concept-extraction-output.v1"),
   atoms: z.array(z.object({

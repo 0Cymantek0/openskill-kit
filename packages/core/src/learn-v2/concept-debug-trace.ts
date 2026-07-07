@@ -1,0 +1,264 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { writeJsonAtomic } from "../storage/atomic.js";
+import {
+  LearnV2ConceptDebugTraceArtifactSchema,
+  LearnV2ConceptDebugTraceEntrySchema,
+  type LearnV2ConceptCard,
+  type LearnV2ConceptDebugTraceArtifact,
+  type LearnV2ConceptDebugTraceEntry,
+  type LearnV2ConditionalLearningArtifact,
+  type LearnV2LearningObservation,
+  type LearnV2OpenWorldGroundingArtifact,
+  type LearnV2ReviewQueue,
+  type LearnV2SkillOntologyArtifact
+} from "./schemas.js";
+import { learnV2SafeLocalPath } from "./utils.js";
+
+export interface LearnV2ConceptDebugTraceContext {
+  conditionalLearning?: LearnV2ConditionalLearningArtifact;
+  skillOntology?: LearnV2SkillOntologyArtifact;
+  openWorldGrounding?: LearnV2OpenWorldGroundingArtifact;
+  reviewQueue?: LearnV2ReviewQueue;
+}
+
+export async function writeLearnV2ConceptDebugTraceArtifact(
+  rootInput: string,
+  concepts: LearnV2ConceptCard[],
+  now = new Date(),
+  context: LearnV2ConceptDebugTraceContext = {}
+): Promise<LearnV2ConceptDebugTraceArtifact> {
+  const root = path.resolve(rootInput);
+  const stamp = now.toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+  const dir = path.join(root, ".openskill-kit", "learn-v2", "concept-debug-trace");
+  const json = path.join(dir, `concept-debug-trace-${stamp}.json`);
+  const markdown = path.join(dir, `concept-debug-trace-${stamp}.md`);
+  const traces = concepts.map((concept) => buildTrace(concept, context));
+  const artifact = LearnV2ConceptDebugTraceArtifactSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.concept-debug-trace-artifact.v1",
+    generatedAt: now.toISOString(),
+    traces,
+    counts: {
+      concepts: concepts.length,
+      tracedConcepts: traces.length,
+      conditionalLinks: traces.reduce((sum, trace) => sum + trace.conditional.hypothesisIds.length + trace.conditional.observationIds.length, 0),
+      openWorldLinks: traces.reduce((sum, trace) => sum + trace.openWorldGrounding.anchorIds.length, 0),
+      reviewBlockedConcepts: traces.filter((trace) => trace.whyActive.activationState === "inactive-review-required" || trace.review.conflictIds.length || trace.review.driftReasons.length).length
+    },
+    artifacts: { json, markdown }
+  });
+  await fs.mkdir(dir, { recursive: true });
+  await writeJsonAtomic(json, artifact);
+  await fs.writeFile(markdown, renderConceptDebugTrace(root, artifact), "utf8");
+  return artifact;
+}
+
+function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTraceContext): LearnV2ConceptDebugTraceEntry {
+  const evidenceIds = new Set(concept.evidenceIds);
+  const atomStatements = concept.atoms.map((atom) => atom.statement);
+  const hypotheses = (context.conditionalLearning?.hypotheses ?? []).filter((hypothesis) =>
+    hypothesis.supportObservationIds.some((id) => observationEvidenceIds(id, context).some((evidenceId) => evidenceIds.has(evidenceId))) ||
+    atomStatements.some((statement) => normalize(statement) === normalize(hypothesis.statement))
+  );
+  const hypothesisObservationIds = new Set(hypotheses.flatMap((hypothesis) => hypothesis.supportObservationIds));
+  const observations = (context.conditionalLearning?.observations ?? []).filter((observation) =>
+    observation.evidenceIds.some((evidenceId) => evidenceIds.has(evidenceId)) || hypothesisObservationIds.has(observation.id)
+  );
+  const linkedIds = new Set([...observations.map((item) => item.id), ...hypotheses.map((item) => item.id)]);
+  const admissionDecisions = (context.conditionalLearning?.admissionDecisions ?? [])
+    .filter((decision) => linkedIds.has(decision.subjectId))
+    .map((decision) => ({
+      id: decision.id,
+      subjectKind: decision.subjectKind,
+      subjectId: decision.subjectId,
+      decision: decision.decision,
+      requiredReview: decision.requiredReview,
+      reasons: decision.reasons
+    }));
+  const namespaces = (context.skillOntology?.namespaces ?? []).filter((namespace) => namespace.conceptIds.includes(concept.id));
+  const anchors = (context.openWorldGrounding?.anchors ?? []).filter((anchor) => anchor.conceptId === concept.id);
+  const conflicts = (context.reviewQueue?.conflictDetails ?? []).filter((conflict) => conflict.conceptIds.includes(concept.id));
+  const drift = (context.reviewQueue?.driftSummary.staleCandidates ?? []).filter((candidate) => candidate.conceptId === concept.id);
+  const snippets = (context.reviewQueue?.evidenceSnippets ?? []).filter((snippet) => evidenceIds.has(snippet.evidenceId));
+  const reviewActions = context.reviewQueue?.reviewActions[concept.id] ?? [];
+  const factorLabels = unique([
+    ...observations.flatMap((observation) => observation.factors.map((factor) => `${factor.key}=${factor.value}`)),
+    ...hypotheses.flatMap((hypothesis) => hypothesis.factorSet.map((factor) => `${factor.key}=${factor.value}`))
+  ]);
+  const userPreferenceEvidence = observations.filter((observation) => ["user", "reviewer"].includes(observation.actor)).length;
+  const modelInterpretation = hypotheses.length + namespaces.length;
+  return LearnV2ConceptDebugTraceEntrySchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.concept-debug-trace-entry.v1",
+    conceptId: concept.id,
+    title: concept.title,
+    status: concept.status,
+    risk: concept.risk,
+    canonicalBehavior: concept.canonicalBehavior,
+    behaviorDelta: concept.behaviorDelta,
+    whyLearned: {
+      summary: summarizeWhyLearned(concept, observations, hypotheses, namespaces.length, anchors.length),
+      evidenceIds: concept.evidenceIds,
+      supportAtomIds: concept.atoms.map((atom) => atom.id),
+      supportAtomStatements: atomStatements,
+      scoringReasons: concept.scoring?.reasons ?? [],
+      scoringPenalties: concept.scoring?.penalties ?? [],
+      rawRefCount: concept.rawRefs.length,
+      confidence: concept.confidence,
+      durability: concept.durability,
+      sourceReliability: concept.sourceReliability
+    },
+    whyActive: {
+      activationState: activationState(concept),
+      reviewGate: concept.status === "active" || concept.status === "locked"
+        ? "Concept can activate when task context matches scope, phrases, paths, and conditions."
+        : "Concept remains review-gated; it explains learning but should not activate until accepted.",
+      phrases: concept.activation.phrases,
+      pathGlobs: concept.activation.pathGlobs,
+      commands: concept.activation.commands,
+      appliesWhen: concept.conditions?.appliesWhen ?? [],
+      doesNotApplyWhen: concept.conditions?.doesNotApplyWhen ?? [],
+      negativeTriggers: concept.scope.negativeTriggers
+    },
+    conditional: {
+      observationIds: observations.map((observation) => observation.id),
+      hypothesisIds: hypotheses.map((hypothesis) => hypothesis.id),
+      factorLabels,
+      admissionDecisions
+    },
+    ontology: {
+      namespaceIds: namespaces.map((namespace) => namespace.id),
+      labels: namespaces.map((namespace) => namespace.label)
+    },
+    openWorldGrounding: {
+      anchorIds: anchors.map((anchor) => anchor.id),
+      titles: anchors.map((anchor) => anchor.title),
+      trustTiers: unique(anchors.map((anchor) => anchor.trustTier)),
+      precedence: unique(anchors.map((anchor) => anchor.precedence))
+    },
+    review: {
+      conflictIds: conflicts.map((conflict) => conflict.conflictId),
+      counterevidenceCount: concept.counterevidence.length,
+      driftReasons: drift.map((candidate) => candidate.reason),
+      evidenceSnippetIds: snippets.map((snippet) => snippet.snippetId),
+      reviewActionLabels: reviewActions.map((action) => action.label)
+    },
+    evidenceSeparation: {
+      userPreferenceEvidence,
+      projectEvidence: Math.max(0, concept.evidenceIds.length - userPreferenceEvidence),
+      externalGrounding: anchors.length,
+      modelInterpretation
+    }
+  });
+}
+
+function observationEvidenceIds(observationId: string, context: LearnV2ConceptDebugTraceContext): string[] {
+  return context.conditionalLearning?.observations.find((observation) => observation.id === observationId)?.evidenceIds ?? [];
+}
+
+function summarizeWhyLearned(
+  concept: LearnV2ConceptCard,
+  observations: LearnV2LearningObservation[],
+  hypotheses: { id: string }[],
+  namespaceCount: number,
+  anchorCount: number
+): string {
+  const parts = [
+    `${concept.evidenceIds.length} declassified evidence item(s) produced ${concept.atoms.length} support atom(s).`,
+    observations.length ? `${observations.length} learning observation(s) link this concept to user/reviewer behavior.` : "No conditional observation link found.",
+    hypotheses.length ? `${hypotheses.length} conditional hypothesis link(s) explain hidden factors.` : "No conditional hypothesis link found.",
+    namespaceCount ? `${namespaceCount} emergent namespace(s) group this behavior.` : "No emergent namespace linked.",
+    anchorCount ? `${anchorCount} open-world anchor(s) provide review/verification grounding.` : "No open-world anchor linked."
+  ];
+  return parts.join(" ");
+}
+
+function activationState(concept: LearnV2ConceptCard): LearnV2ConceptDebugTraceEntry["whyActive"]["activationState"] {
+  if (concept.status === "active") return "active";
+  if (concept.status === "locked") return "locked";
+  if (concept.status === "staged") return "staged";
+  if (concept.status === "rejected") return "rejected";
+  if (concept.status === "superseded") return "superseded";
+  if (concept.status === "one-off") return "one-off";
+  return "inactive-review-required";
+}
+
+function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTraceArtifact): string {
+  const lines = [
+    "# Learn v2 Concept Debug Trace",
+    "",
+    `Generated: ${artifact.generatedAt}`,
+    "",
+    "## Summary",
+    "",
+    `- Concepts: ${artifact.counts.concepts}`,
+    `- Traced concepts: ${artifact.counts.tracedConcepts}`,
+    `- Conditional links: ${artifact.counts.conditionalLinks}`,
+    `- Open-world links: ${artifact.counts.openWorldLinks}`,
+    `- Review-blocked concepts: ${artifact.counts.reviewBlockedConcepts}`,
+    "",
+    "## Traces",
+    ""
+  ];
+  if (!artifact.traces.length) lines.push("No concept debug traces written.");
+  for (const trace of artifact.traces) {
+    lines.push(`### ${trace.title}`);
+    lines.push("");
+    lines.push(`Concept: ${trace.conceptId}`);
+    lines.push(`Status: ${trace.status}; Risk: ${trace.risk}`);
+    lines.push(`Behavior: ${trace.canonicalBehavior}`);
+    lines.push(`Delta: ${trace.behaviorDelta}`);
+    lines.push("");
+    lines.push("Why learned:");
+    lines.push(`- ${trace.whyLearned.summary}`);
+    lines.push(`- Evidence IDs: ${trace.whyLearned.evidenceIds.join(", ") || "none"}`);
+    lines.push(`- Support atoms: ${trace.whyLearned.supportAtomStatements.join(" | ") || "none"}`);
+    lines.push(`- Scoring reasons: ${trace.whyLearned.scoringReasons.join(", ") || "none"}`);
+    lines.push(`- Scoring penalties: ${trace.whyLearned.scoringPenalties.join(", ") || "none"}`);
+    lines.push("");
+    lines.push("Why active:");
+    lines.push(`- Activation state: ${trace.whyActive.activationState}`);
+    lines.push(`- Review gate: ${trace.whyActive.reviewGate}`);
+    lines.push(`- Apply when: ${trace.whyActive.appliesWhen.join("; ") || "none"}`);
+    lines.push(`- Do not apply when: ${trace.whyActive.doesNotApplyWhen.join("; ") || "none"}`);
+    lines.push(`- Activation phrases: ${trace.whyActive.phrases.join(", ") || "none"}`);
+    lines.push(`- Commands: ${trace.whyActive.commands.join(", ") || "none"}`);
+    lines.push("");
+    lines.push("Conditional reasoning:");
+    lines.push(`- Observations: ${trace.conditional.observationIds.join(", ") || "none"}`);
+    lines.push(`- Hypotheses: ${trace.conditional.hypothesisIds.join(", ") || "none"}`);
+    lines.push(`- Factors: ${trace.conditional.factorLabels.join(", ") || "none"}`);
+    lines.push(`- Admission: ${trace.conditional.admissionDecisions.map((decision) => `${decision.subjectKind}:${decision.decision}`).join(", ") || "none"}`);
+    lines.push("");
+    lines.push("Source separation:");
+    lines.push(`- User preference evidence: ${trace.evidenceSeparation.userPreferenceEvidence}`);
+    lines.push(`- Project evidence: ${trace.evidenceSeparation.projectEvidence}`);
+    lines.push(`- External grounding: ${trace.evidenceSeparation.externalGrounding}`);
+    lines.push(`- Model interpretation: ${trace.evidenceSeparation.modelInterpretation}`);
+    lines.push("");
+    lines.push("Ontology and grounding:");
+    lines.push(`- Namespaces: ${trace.ontology.labels.join(", ") || "none"}`);
+    lines.push(`- Open-world anchors: ${trace.openWorldGrounding.titles.join(", ") || "none"}`);
+    lines.push(`- Anchor precedence: ${trace.openWorldGrounding.precedence.join(", ") || "none"}`);
+    lines.push("");
+    lines.push("Review signals:");
+    lines.push(`- Conflicts: ${trace.review.conflictIds.join(", ") || "none"}`);
+    lines.push(`- Counterevidence count: ${trace.review.counterevidenceCount}`);
+    lines.push(`- Drift reasons: ${trace.review.driftReasons.join(", ") || "none"}`);
+    lines.push(`- Evidence snippets: ${trace.review.evidenceSnippetIds.join(", ") || "none"}`);
+    lines.push(`- Review actions: ${trace.review.reviewActionLabels.join(", ") || "none"}`);
+    lines.push("");
+  }
+  lines.push("## Artifacts");
+  lines.push("");
+  lines.push(`- JSON: ${learnV2SafeLocalPath(artifact.artifacts.json, root)}`);
+  lines.push(`- Markdown: ${learnV2SafeLocalPath(artifact.artifacts.markdown, root)}`);
+  return `${lines.join("\n")}\n`;
+}
+
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function unique<T>(items: T[]): T[] {
+  return [...new Set(items)];
+}

@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
-import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2OpenWorldGroundingArtifact, LearnV2ReviewQueue, LearnV2SkillOntologyArtifact, LearnV2TaskEpisode } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConceptDebugTraceArtifact, LearnV2ConceptDriftReport, LearnV2ConditionalLearningArtifact, LearnV2ConflictLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2EvalReport, LearnV2EvidenceQualityScore, LearnV2OpenWorldGroundingArtifact, LearnV2ReviewQueue, LearnV2SkillOntologyArtifact, LearnV2TaskEpisode } from "./schemas.js";
 import type { LearnV2ModelExecutionPolicyReport } from "./pipeline.js";
 import { readLearnV2ConceptOutcomeTelemetrySummary, type LearnV2ConceptOutcomeTelemetrySummary } from "./activation.js";
 import { learnV2SafeLocalPath } from "./utils.js";
@@ -195,6 +195,20 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     reviewOnlyAnchors: 0,
     titles: []
   }),
+  conceptDebugTrace: z.object({
+    concepts: z.number().int().min(0),
+    tracedConcepts: z.number().int().min(0),
+    conditionalLinks: z.number().int().min(0),
+    openWorldLinks: z.number().int().min(0),
+    reviewBlockedConcepts: z.number().int().min(0),
+    artifactPath: z.string().optional()
+  }).default({
+    concepts: 0,
+    tracedConcepts: 0,
+    conditionalLinks: 0,
+    openWorldLinks: 0,
+    reviewBlockedConcepts: 0
+  }),
   qualityGates: z.object({
     evalStatus: z.enum(["pass", "fail"]),
     leakStatus: z.enum(["pass", "fail"]),
@@ -266,6 +280,7 @@ export interface LearnV2PipelineObservabilityInput {
   conditionalLearning?: LearnV2ConditionalLearningArtifact;
   skillOntology?: LearnV2SkillOntologyArtifact;
   openWorldGrounding?: LearnV2OpenWorldGroundingArtifact;
+  conceptDebugTrace?: LearnV2ConceptDebugTraceArtifact;
   reviewQueue: LearnV2ReviewQueue;
   evalReport: LearnV2EvalReport;
   evidenceQualityScores?: LearnV2EvidenceQualityScore[];
@@ -431,6 +446,16 @@ export async function writeLearnV2PipelineObservabilityReport(
         ? learnV2SafeLocalPath(input.openWorldGrounding.artifacts.markdown, root)
         : undefined
     },
+    conceptDebugTrace: {
+      concepts: input.conceptDebugTrace?.counts.concepts ?? 0,
+      tracedConcepts: input.conceptDebugTrace?.counts.tracedConcepts ?? 0,
+      conditionalLinks: input.conceptDebugTrace?.counts.conditionalLinks ?? 0,
+      openWorldLinks: input.conceptDebugTrace?.counts.openWorldLinks ?? 0,
+      reviewBlockedConcepts: input.conceptDebugTrace?.counts.reviewBlockedConcepts ?? 0,
+      artifactPath: input.conceptDebugTrace?.artifacts.markdown
+        ? learnV2SafeLocalPath(input.conceptDebugTrace.artifacts.markdown, root)
+        : undefined
+    },
     qualityGates: {
       evalStatus: input.evalReport.status,
       leakStatus: input.evalReport.leakCheck.status,
@@ -550,6 +575,9 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Open-world trust: official=${report.openWorldGrounding.officialAnchors}, project=${report.openWorldGrounding.projectAnchors}, review-only=${report.openWorldGrounding.reviewOnlyAnchors}`,
     `- Open-world titles: ${report.openWorldGrounding.titles.join(", ") || "none"}`,
     `- Open-world artifact: ${report.openWorldGrounding.artifactPath ?? "none"}`,
+    `- Concept debug traces: ${report.conceptDebugTrace.tracedConcepts} / ${report.conceptDebugTrace.concepts} concept(s)`,
+    `- Concept debug links: conditional=${report.conceptDebugTrace.conditionalLinks}, open-world=${report.conceptDebugTrace.openWorldLinks}, review-blocked=${report.conceptDebugTrace.reviewBlockedConcepts}`,
+    `- Concept debug artifact: ${report.conceptDebugTrace.artifactPath ?? "none"}`,
     `- Review-ready cards: ${report.concepts.reviewReadyCards}`,
     `- Review focus: ${report.concepts.reviewFocusCards} focus, ${report.concepts.reviewAppendixCards} appendix`,
     `- Unresolved conflicts: ${report.concepts.unresolvedConflicts}`,
