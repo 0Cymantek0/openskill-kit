@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { readProjectConfig } from "../events/store.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import {
   LearnV2OpenWorldGroundingArtifactSchema,
@@ -8,7 +9,7 @@ import {
   type LearnV2OpenWorldGroundingArtifact,
   type LearnV2OpenWorldResourceAnchor
 } from "./schemas.js";
-import { learnV2SafeLocalPath, learnV2ShortHash } from "./utils.js";
+import { learnV2DeclassifyText, learnV2SafeLocalPath, learnV2ShortHash, learnV2Snippet } from "./utils.js";
 
 type AnchorTemplate = Omit<LearnV2OpenWorldResourceAnchor, "schemaVersion" | "id" | "conceptId" | "evidenceConceptIds" | "retrievedAt">;
 
@@ -151,15 +152,18 @@ function makeAnchor(conceptId: string, key: string, template: AnchorTemplate, no
 
 async function buildProjectGroundingAnchors(root: string, concepts: LearnV2ConceptCard[]): Promise<Array<{ conceptId: string; key: string; template: AnchorTemplate }>> {
   const anchors: Array<{ conceptId: string; key: string; template: AnchorTemplate }> = [];
+  const config = await readProjectConfig(root);
   const packageJson = await readSmallProjectFile(root, "package.json");
   const projectBehavior = await firstReadableSmallFile(root, [
     ".openskill-kit/compiled/context-pack.md",
     "AGENTS.md",
     "README.md"
   ]);
+  const projectDocs = await readProjectGroundingDocs(root);
   for (const concept of concepts.filter((item) => !["rejected", "one-off", "superseded"].includes(item.status))) {
     const text = conceptSearchText(concept);
     if (packageJson && /\b(test|fixture|regression|vitest|jest|pytest|verification|command)\b/i.test(text)) {
+      const scriptClaim = declassifiedProjectClaim(root, config, "package.json#scripts", packageJson, text);
       anchors.push({
         conceptId: concept.id,
         key: "project-package-scripts",
@@ -171,9 +175,12 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
           alignment: "supports-review",
           precedence: "project-doc-over-external",
           licenseRisk: "low",
-          alignedClaims: ["Project package scripts are highest-authority local evidence for verification command choices."],
+          alignedClaims: [
+            "Project package scripts are highest-authority local evidence for verification command choices.",
+            ...(scriptClaim ? [scriptClaim.claim] : [])
+          ],
           conflictingClaims: [],
-          declassifiedSnippetIds: [],
+          declassifiedSnippetIds: scriptClaim ? [scriptClaim.id] : [],
           usedFor: ["verification", "eval"],
           rationale: "Search local project resources before external docs; package scripts constrain which verification commands should be proposed."
         }
@@ -199,8 +206,94 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
         }
       });
     }
+    for (const doc of projectDocs) {
+      const claim = declassifiedProjectClaim(root, config, doc.relativePath, doc.text, text);
+      if (!claim) continue;
+      anchors.push({
+        conceptId: concept.id,
+        key: `project-doc:${doc.relativePath}`,
+        template: {
+          title: `Project doc: ${doc.relativePath}`,
+          uri: `project://${doc.relativePath}#${claim.id}`,
+          resourceKind: "project-doc",
+          trustTier: "project",
+          alignment: "supports-review",
+          precedence: "project-doc-over-external",
+          licenseRisk: "low",
+          alignedClaims: [claim.claim],
+          conflictingClaims: [],
+          declassifiedSnippetIds: [claim.id],
+          usedFor: usedForFromConceptText(text),
+          rationale: "Project-local documentation matched this concept before external resources; use it as grounding evidence for review without overriding direct user corrections."
+        }
+      });
+    }
   }
   return anchors;
+}
+
+async function readProjectGroundingDocs(root: string): Promise<Array<{ relativePath: string; text: string }>> {
+  const direct = [".openskill-kit/compiled/context-pack.md", "AGENTS.md", "README.md", "docs/README.md"];
+  const docsDir = path.join(root, "docs");
+  const docs = (await fs.readdir(docsDir, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isFile() && /\.mdx?$/i.test(entry.name))
+    .map((entry) => `docs/${entry.name}`);
+  const unique = [...new Set([...direct, ...docs])];
+  const out: Array<{ relativePath: string; text: string }> = [];
+  for (const relativePath of unique) {
+    const text = await readSmallProjectFile(root, relativePath);
+    if (text) out.push({ relativePath: relativePath.replace(/\\/g, "/"), text });
+  }
+  return out;
+}
+
+function declassifiedProjectClaim(
+  root: string,
+  config: Awaited<ReturnType<typeof readProjectConfig>>,
+  relativePath: string,
+  text: string,
+  conceptText: string
+): { id: string; claim: string } | undefined {
+  const snippet = bestProjectDocSnippet(text, conceptText);
+  if (!snippet) return undefined;
+  const declassified = learnV2DeclassifyText(snippet, root, config);
+  const safeSnippet = learnV2Snippet(declassified.text, 220);
+  const id = `snippet_${learnV2ShortHash(`${relativePath}:${safeSnippet}`)}`;
+  return {
+    id,
+    claim: `Project doc snippet ${id}: ${safeSnippet}`
+  };
+}
+
+function bestProjectDocSnippet(text: string, conceptText: string): string | undefined {
+  const conceptTokens = significantTokens(conceptText);
+  if (!conceptTokens.size) return undefined;
+  const candidates = text
+    .split(/\r?\n{1,2}/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line.length >= 20 && line.length <= 800);
+  let best: { line: string; score: number } | undefined;
+  for (const line of candidates) {
+    const tokens = significantTokens(line);
+    const score = [...conceptTokens].filter((token) => tokens.has(token)).length;
+    if (score < 2) continue;
+    if (!best || score > best.score || (score === best.score && line.length < best.line.length)) best = { line, score };
+  }
+  return best?.line;
+}
+
+function significantTokens(text: string): Set<string> {
+  const stop = new Set(["prefer", "before", "after", "with", "without", "project", "behavior", "change", "changes", "should", "would", "could"]);
+  return new Set((text.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []).filter((token) => !stop.has(token)));
+}
+
+function usedForFromConceptText(text: string): LearnV2OpenWorldResourceAnchor["usedFor"] {
+  const normalized = text.toLowerCase();
+  const used = new Set<LearnV2OpenWorldResourceAnchor["usedFor"][number]>(["skill-text"]);
+  if (/\b(condition|when|unless|scope|theme|card|button|path)\b/.test(normalized)) used.add("conditions");
+  if (/\b(test|verify|verification|fixture|regression|command)\b/.test(normalized)) used.add("verification");
+  used.add("eval");
+  return [...used].sort();
 }
 
 async function firstReadableSmallFile(root: string, relativePaths: string[]): Promise<{ relativePath: string; text: string } | undefined> {

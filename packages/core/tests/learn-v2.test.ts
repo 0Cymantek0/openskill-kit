@@ -2881,6 +2881,11 @@ describe("learn-v2 substrate", () => {
         test: "vitest --run"
       }
     }), "utf8");
+    await writeFile(path.join(root, "README.md"), [
+      "# Learn v2 Project",
+      "",
+      `For parser changes under ${path.join(root, "packages/core/src/parser.ts")}, prefer focused Vitest regression tests before broad rewrites. Contact reviewer@example.com only outside generated artifacts.`
+    ].join("\n"), "utf8");
     const [card] = mergeLearnV2ConceptCards([
       {
         ...behaviorAtom("project_grounded_verification", "Prefer focused Vitest regression tests before parser changes.", "positive"),
@@ -2898,10 +2903,26 @@ describe("learn-v2 substrate", () => {
     });
     expect(artifact.counts.projectAnchors).toBeGreaterThanOrEqual(1);
     expect(artifact.anchors.some((anchor) => anchor.title === "Vitest Guide" && anchor.trustTier === "official")).toBe(true);
+    const readmeAnchor = artifact.anchors.find((anchor) => anchor.title === "Project doc: README.md");
+    expect(readmeAnchor).toMatchObject({
+      trustTier: "project",
+      resourceKind: "project-doc",
+      precedence: "project-doc-over-external",
+      declassifiedSnippetIds: expect.arrayContaining([expect.stringMatching(/^snippet_[0-9a-f]+$/)])
+    });
+    expect(readmeAnchor?.alignedClaims.join("\n")).toContain("[PROJECT_ROOT]");
+    expect(readmeAnchor?.alignedClaims.join("\n")).toContain("[REDACTED:email]");
+    expect(readmeAnchor?.alignedClaims.join("\n")).not.toContain(root);
+    expect(readmeAnchor?.alignedClaims.join("\n")).not.toContain("reviewer@example.com");
     const markdown = await readText(artifact.artifacts.markdown);
     expect(markdown).toContain("Project package scripts");
     expect(markdown).toContain("Project package scripts are highest-authority local evidence");
+    expect(markdown).toContain("Project doc: README.md");
+    expect(markdown).toContain("Project doc snippet snippet_");
+    expect(markdown).toContain("[PROJECT_ROOT]");
+    expect(markdown).toContain("[REDACTED:email]");
     expect(markdown).not.toContain(root);
+    expect(markdown).not.toContain("reviewer@example.com");
   });
 
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
