@@ -801,7 +801,11 @@ function emptyConditionalLearningArtifact(root: string, now: Date): LearnV2Condi
         hypotheses: 0,
         promotedHypotheses: 0,
         observeOnly: 0,
-        rejectedNoise: 0
+        rejectedNoise: 0,
+        episodeNotes: 0,
+        weakObservations: 0,
+        candidateConcepts: 0,
+        requiresHumanReview: 0
       },
       artifacts: {
         json,

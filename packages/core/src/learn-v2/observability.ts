@@ -157,13 +157,21 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     promotedHypotheses: z.number().int().min(0),
     observeOnly: z.number().int().min(0),
     rejectedNoise: z.number().int().min(0),
+    episodeNotes: z.number().int().min(0),
+    weakObservations: z.number().int().min(0),
+    candidateConcepts: z.number().int().min(0),
+    requiresHumanReview: z.number().int().min(0),
     artifactPath: z.string().optional()
   }).default({
     observations: 0,
     hypotheses: 0,
     promotedHypotheses: 0,
     observeOnly: 0,
-    rejectedNoise: 0
+    rejectedNoise: 0,
+    episodeNotes: 0,
+    weakObservations: 0,
+    candidateConcepts: 0,
+    requiresHumanReview: 0
   }),
   skillOntology: z.object({
     namespaces: z.number().int().min(0),
@@ -444,6 +452,10 @@ export async function writeLearnV2PipelineObservabilityReport(
       promotedHypotheses: input.conditionalLearning?.counts.promotedHypotheses ?? 0,
       observeOnly: input.conditionalLearning?.counts.observeOnly ?? 0,
       rejectedNoise: input.conditionalLearning?.counts.rejectedNoise ?? 0,
+      episodeNotes: input.conditionalLearning?.counts.episodeNotes ?? 0,
+      weakObservations: input.conditionalLearning?.counts.weakObservations ?? 0,
+      candidateConcepts: input.conditionalLearning?.counts.candidateConcepts ?? 0,
+      requiresHumanReview: input.conditionalLearning?.counts.requiresHumanReview ?? 0,
       artifactPath: input.conditionalLearning?.artifacts.markdown
         ? learnV2SafeLocalPath(input.conditionalLearning.artifacts.markdown, root)
         : undefined
@@ -603,7 +615,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Risk: ${renderCounts(report.concepts.riskCounts)}`,
     `- Conditional observations: ${report.learningIntelligence.observations}`,
     `- Conditional hypotheses: ${report.learningIntelligence.hypotheses} (${report.learningIntelligence.promotedHypotheses} promoted)`,
-    `- Memory admission: observe-only=${report.learningIntelligence.observeOnly}, rejected-noise=${report.learningIntelligence.rejectedNoise}`,
+    `- Memory admission: episode-note=${report.learningIntelligence.episodeNotes}, weak-observation=${report.learningIntelligence.weakObservations}, candidate-concept=${report.learningIntelligence.candidateConcepts}, requires-human-review=${report.learningIntelligence.requiresHumanReview}, rejected-noise=${report.learningIntelligence.rejectedNoise}`,
     `- Conditional artifact: ${report.learningIntelligence.artifactPath ?? "none"}`,
     `- Skill namespaces: ${report.skillOntology.namespaces} (${report.skillOntology.candidateNamespaces} candidate, ${report.skillOntology.reviewNamespaces} needs review)`,
     `- Ontology operations: ${report.skillOntology.operations} (create=${report.skillOntology.createOperations}, merge=${report.skillOntology.mergeOperations}, split=${report.skillOntology.splitOperations}, attach=${report.skillOntology.attachOperations})`,

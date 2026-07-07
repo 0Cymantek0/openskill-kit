@@ -428,8 +428,12 @@ export const LearnV2MemoryAdmissionDecisionSchema = z.object({
   id: z.string().min(1),
   subjectKind: z.enum(["observation", "hypothesis"]),
   subjectId: z.string().min(1),
-  decision: z.enum(["observe-only", "promote-candidate", "reject-noise"]),
+  decision: z.enum(["episode-note", "weak-observation", "candidate-concept", "requires-human-review", "reject-noise"]),
   requiredReview: z.boolean(),
+  reviewPriority: z.enum(["none", "normal", "high", "critical"]).default("none"),
+  riskLevel: z.enum(["low", "medium", "high"]).default("medium"),
+  privacyBoundary: z.enum(["low", "medium", "high"]).default("low"),
+  scopeLevel: z.enum(["project", "path", "directory", "task", "unknown"]).default("unknown"),
   confidence: z.number().min(0).max(1),
   reasons: z.array(z.string().min(1)).default([])
 });
@@ -446,7 +450,11 @@ export const LearnV2ConditionalLearningArtifactSchema = z.object({
     hypotheses: z.number().int().min(0),
     promotedHypotheses: z.number().int().min(0),
     observeOnly: z.number().int().min(0),
-    rejectedNoise: z.number().int().min(0)
+    rejectedNoise: z.number().int().min(0),
+    episodeNotes: z.number().int().min(0).default(0),
+    weakObservations: z.number().int().min(0).default(0),
+    candidateConcepts: z.number().int().min(0).default(0),
+    requiresHumanReview: z.number().int().min(0).default(0)
   }),
   artifacts: z.object({
     json: z.string(),

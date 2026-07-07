@@ -20,6 +20,7 @@ import {
 import { learnV2NormalizeStatement, learnV2SafeLocalPath, learnV2ShortHash } from "./utils.js";
 
 const colorTerms = ["green", "blue", "orange", "red", "purple", "yellow", "black", "white", "gray", "grey"];
+const candidateAdmissionDecisions = new Set<LearnV2MemoryAdmissionDecision["decision"]>(["candidate-concept", "requires-human-review"]);
 
 export interface LearnV2ConditionalLearningResult {
   observations: LearnV2LearningObservation[];
@@ -33,7 +34,7 @@ export function runLearnV2ConditionalLearning(episodes: LearnV2TaskEpisode[]): L
   const hypotheses = inferLearnV2ConditionalHypotheses(observations);
   const admissionDecisions = decideLearnV2MemoryAdmission({ observations, hypotheses });
   const promotedHypothesisIds = new Set(admissionDecisions
-    .filter((item) => item.subjectKind === "hypothesis" && item.decision === "promote-candidate")
+    .filter((item) => item.subjectKind === "hypothesis" && isCandidateAdmission(item))
     .map((item) => item.subjectId));
   const atoms = learnV2ConditionalHypothesesToBehaviorAtoms(
     hypotheses.filter((hypothesis) => promotedHypothesisIds.has(hypothesis.id)),
@@ -54,7 +55,7 @@ export async function writeLearnV2ConditionalLearningArtifact(
   const markdown = path.join(dir, `conditional-learning-${stamp}.md`);
   const result = runLearnV2ConditionalLearning(episodes);
   const promotedHypothesisIds = new Set(result.admissionDecisions
-    .filter((item) => item.subjectKind === "hypothesis" && item.decision === "promote-candidate")
+    .filter((item) => item.subjectKind === "hypothesis" && isCandidateAdmission(item))
     .map((item) => item.subjectId));
   const artifact = LearnV2ConditionalLearningArtifactSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.conditional-learning-artifact.v1",
@@ -66,8 +67,12 @@ export async function writeLearnV2ConditionalLearningArtifact(
       observations: result.observations.length,
       hypotheses: result.hypotheses.length,
       promotedHypotheses: result.hypotheses.filter((item) => promotedHypothesisIds.has(item.id)).length,
-      observeOnly: result.admissionDecisions.filter((item) => item.decision === "observe-only").length,
-      rejectedNoise: result.admissionDecisions.filter((item) => item.decision === "reject-noise").length
+      observeOnly: result.admissionDecisions.filter((item) => item.decision === "episode-note" || item.decision === "weak-observation").length,
+      rejectedNoise: result.admissionDecisions.filter((item) => item.decision === "reject-noise").length,
+      episodeNotes: result.admissionDecisions.filter((item) => item.decision === "episode-note").length,
+      weakObservations: result.admissionDecisions.filter((item) => item.decision === "weak-observation").length,
+      candidateConcepts: result.admissionDecisions.filter((item) => item.decision === "candidate-concept").length,
+      requiresHumanReview: result.admissionDecisions.filter((item) => item.decision === "requires-human-review").length
     },
     artifacts: {
       json,
@@ -202,34 +207,30 @@ export function decideLearnV2MemoryAdmission(input: {
 }): LearnV2MemoryAdmissionDecision[] {
   const decisions: LearnV2MemoryAdmissionDecision[] = [];
   const supportedObservationIds = new Set(input.hypotheses.flatMap((item) => item.supportObservationIds));
+  const observationsById = new Map(input.observations.map((item) => [item.id, item]));
 
   for (const observation of input.observations) {
     const reasons: string[] = [];
-    let decision: LearnV2MemoryAdmissionDecision["decision"] = "observe-only";
-    let requiredReview = false;
+    const policy = admissionPolicyForObservation(observation, supportedObservationIds.has(observation.id));
+    reasons.push(...policy.reasons);
     if (observation.durabilitySignals.oneOff && !observation.durabilitySignals.explicitDurable) {
       reasons.push("one-off-language");
     }
     if (!supportedObservationIds.has(observation.id)) reasons.push("insufficient-recurrence-or-contrast");
-    if (observation.durabilitySignals.explicitDurable && observation.confidence >= 0.72) {
-      decision = "promote-candidate";
-      requiredReview = true;
-      reasons.push("explicit-durable-user-language");
-    }
-    decisions.push(makeAdmission("observation", observation.id, decision, requiredReview, observation.confidence, reasons));
+    decisions.push(makeAdmission("observation", observation.id, policy, observation.confidence, reasons));
   }
 
   for (const hypothesis of input.hypotheses) {
-    const promote = hypothesis.status === "candidate" && hypothesis.confidence >= 0.5;
+    const support = hypothesis.supportObservationIds
+      .map((id) => observationsById.get(id))
+      .filter((item): item is LearnV2LearningObservation => Boolean(item));
+    const policy = admissionPolicyForHypothesis(hypothesis, support);
     decisions.push(makeAdmission(
       "hypothesis",
       hypothesis.id,
-      promote ? "promote-candidate" : "observe-only",
-      promote,
+      policy,
       hypothesis.confidence,
-      promote
-        ? ["conditional-hypothesis-supported", "review-required-before-activation"]
-        : ["weak-conditional-hypothesis"]
+      policy.reasons
     ));
   }
 
@@ -390,21 +391,152 @@ function hypothesisConfidence(input: { supportCount: number; totalCount: number;
   return Number(Math.min(0.86, value).toFixed(3));
 }
 
+interface AdmissionPolicy {
+  decision: LearnV2MemoryAdmissionDecision["decision"];
+  requiredReview: boolean;
+  reviewPriority: LearnV2MemoryAdmissionDecision["reviewPriority"];
+  riskLevel: LearnV2MemoryAdmissionDecision["riskLevel"];
+  privacyBoundary: LearnV2MemoryAdmissionDecision["privacyBoundary"];
+  scopeLevel: LearnV2MemoryAdmissionDecision["scopeLevel"];
+  reasons: string[];
+}
+
+function admissionPolicyForObservation(observation: LearnV2LearningObservation, supportedByHypothesis: boolean): AdmissionPolicy {
+  const risk = admissionRiskFromText(observation.text);
+  const scopeLevel = observationScopeLevel(observation);
+  const reasons: string[] = [];
+  if (risk.privacyBoundary !== "low") reasons.push(`privacy-boundary:${risk.privacyBoundary}`);
+  if (risk.riskLevel === "high") reasons.push("high-risk-learning-signal");
+  if (scopeLevel === "project" || scopeLevel === "unknown") reasons.push(`scope:${scopeLevel}`);
+  if (observation.durabilitySignals.explicitDurable) reasons.push("explicit-durable-user-language");
+  if (observation.durabilitySignals.recurrenceCandidate) reasons.push("recurrence-candidate");
+  if (supportedByHypothesis) reasons.push("supports-conditional-hypothesis");
+
+  if (risk.riskLevel === "high" || risk.privacyBoundary === "high") {
+    return {
+      decision: "requires-human-review",
+      requiredReview: true,
+      reviewPriority: "critical",
+      ...risk,
+      scopeLevel,
+      reasons: [...reasons, "strict-review-gate-for-sensitive-behavior"]
+    };
+  }
+  if (observation.durabilitySignals.explicitDurable && observation.confidence >= 0.72) {
+    return {
+      decision: risk.privacyBoundary === "medium" ? "requires-human-review" : "candidate-concept",
+      requiredReview: true,
+      reviewPriority: risk.privacyBoundary === "medium" ? "high" : "normal",
+      ...risk,
+      scopeLevel,
+      reasons: risk.privacyBoundary === "medium" ? [...reasons, "sensitive-durable-instruction"] : reasons
+    };
+  }
+  if (observation.durabilitySignals.oneOff && !observation.durabilitySignals.explicitDurable) {
+    return {
+      decision: "episode-note",
+      requiredReview: false,
+      reviewPriority: "none",
+      ...risk,
+      scopeLevel,
+      reasons: [...reasons, "trace-only-one-off"]
+    };
+  }
+  if (supportedByHypothesis || observation.durabilitySignals.recurrenceCandidate) {
+    return {
+      decision: "weak-observation",
+      requiredReview: false,
+      reviewPriority: "none",
+      ...risk,
+      scopeLevel,
+      reasons: [...reasons, "stored-for-future-pattern-matching"]
+    };
+  }
+  return {
+    decision: observation.confidence < 0.4 ? "reject-noise" : "weak-observation",
+    requiredReview: false,
+    reviewPriority: "none",
+    ...risk,
+    scopeLevel,
+    reasons: [...reasons, observation.confidence < 0.4 ? "low-confidence-noise" : "insufficient-durable-signal"]
+  };
+}
+
+function admissionPolicyForHypothesis(hypothesis: LearnV2ConditionalHypothesis, support: LearnV2LearningObservation[]): AdmissionPolicy {
+  const joinedText = [hypothesis.statement, ...support.map((item) => item.text)].join(" ");
+  const risk = admissionRiskFromText(joinedText);
+  const scopeLevel = hypothesis.factorSet.length || support.some((item) => item.paths.length) ? "path" : "project";
+  const reasons = hypothesis.status === "candidate" && hypothesis.confidence >= 0.5
+    ? ["conditional-hypothesis-supported", "review-required-before-activation"]
+    : ["weak-conditional-hypothesis"];
+  if (hypothesis.counterObservationIds.length) reasons.push("counterexamples-preserved");
+  if (hypothesis.factorSet.length) reasons.push("stable-context-factors");
+  if (risk.privacyBoundary !== "low") reasons.push(`privacy-boundary:${risk.privacyBoundary}`);
+
+  if (risk.riskLevel === "high" || risk.privacyBoundary !== "low" || scopeLevel === "project") {
+    return {
+      decision: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5 ? "requires-human-review" : "weak-observation",
+      requiredReview: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5,
+      reviewPriority: risk.riskLevel === "high" || risk.privacyBoundary === "high" ? "critical" : "high",
+      ...risk,
+      scopeLevel,
+      reasons: [...reasons, "strict-review-gate-before-durable-memory"]
+    };
+  }
+
+  return {
+    decision: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5 ? "candidate-concept" : "weak-observation",
+    requiredReview: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5,
+    reviewPriority: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5 ? "normal" : "none",
+    ...risk,
+    scopeLevel,
+    reasons
+  };
+}
+
+function admissionRiskFromText(text: string): Pick<AdmissionPolicy, "riskLevel" | "privacyBoundary"> {
+  const normalized = normalize(text);
+  if (/\b(secret|credential|token|api key|password|auth|permission|private|pii|personal data)\b/.test(normalized)) {
+    return { riskLevel: "high", privacyBoundary: "high" };
+  }
+  if (/\b(security|privacy|access|login|session|cookie)\b/.test(normalized)) {
+    return { riskLevel: "high", privacyBoundary: "medium" };
+  }
+  if (/\b(always|never|global|project-wide|all files|everywhere)\b/.test(normalized)) {
+    return { riskLevel: "medium", privacyBoundary: "low" };
+  }
+  return { riskLevel: "low", privacyBoundary: "low" };
+}
+
+function observationScopeLevel(observation: LearnV2LearningObservation): AdmissionPolicy["scopeLevel"] {
+  if (observation.paths.length === 1) return "path";
+  if (observation.paths.length > 1) return "directory";
+  if (observation.factors.length || observation.target !== "project behavior") return "task";
+  return "project";
+}
+
+function isCandidateAdmission(decision: LearnV2MemoryAdmissionDecision): boolean {
+  return candidateAdmissionDecisions.has(decision.decision);
+}
+
 function makeAdmission(
   subjectKind: LearnV2MemoryAdmissionDecision["subjectKind"],
   subjectId: string,
-  decision: LearnV2MemoryAdmissionDecision["decision"],
-  requiredReview: boolean,
+  policy: AdmissionPolicy,
   confidence: number,
   reasons: string[]
 ): LearnV2MemoryAdmissionDecision {
   return LearnV2MemoryAdmissionDecisionSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.memory-admission-decision.v1",
-    id: `admission_${learnV2ShortHash(`${subjectKind}:${subjectId}:${decision}`)}`,
+    id: `admission_${learnV2ShortHash(`${subjectKind}:${subjectId}:${policy.decision}`)}`,
     subjectKind,
     subjectId,
-    decision,
-    requiredReview,
+    decision: policy.decision,
+    requiredReview: policy.requiredReview,
+    reviewPriority: policy.reviewPriority,
+    riskLevel: policy.riskLevel,
+    privacyBoundary: policy.privacyBoundary,
+    scopeLevel: policy.scopeLevel,
     confidence: Number(confidence.toFixed(3)),
     reasons: unique(reasons.length ? reasons : ["no-durable-admission-signal"])
   });
@@ -510,6 +642,10 @@ function renderLearnV2ConditionalLearningArtifact(root: string, artifact: LearnV
     `- Hypotheses: ${artifact.counts.hypotheses}`,
     `- Promoted hypotheses: ${artifact.counts.promotedHypotheses}`,
     `- Observe-only decisions: ${artifact.counts.observeOnly}`,
+    `- Episode notes: ${artifact.counts.episodeNotes}`,
+    `- Weak observations: ${artifact.counts.weakObservations}`,
+    `- Candidate concepts: ${artifact.counts.candidateConcepts}`,
+    `- Requires human review: ${artifact.counts.requiresHumanReview}`,
     `- Rejected noise: ${artifact.counts.rejectedNoise}`,
     "",
     "## Hypotheses",
@@ -532,7 +668,7 @@ function renderLearnV2ConditionalLearningArtifact(root: string, artifact: LearnV
   lines.push("");
   if (!artifact.admissionDecisions.length) lines.push("No admission decisions.");
   for (const decision of artifact.admissionDecisions) {
-    lines.push(`- ${decision.subjectKind} ${decision.subjectId}: ${decision.decision}; review=${decision.requiredReview}; confidence=${decision.confidence.toFixed(2)}; reasons=${decision.reasons.join(", ")}`);
+    lines.push(`- ${decision.subjectKind} ${decision.subjectId}: ${decision.decision}; review=${decision.requiredReview}; priority=${decision.reviewPriority}; risk=${decision.riskLevel}; privacy=${decision.privacyBoundary}; scope=${decision.scopeLevel}; confidence=${decision.confidence.toFixed(2)}; reasons=${decision.reasons.join(", ")}`);
   }
   lines.push("");
   lines.push("## Observations");

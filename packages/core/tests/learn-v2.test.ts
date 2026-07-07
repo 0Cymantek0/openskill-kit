@@ -5614,10 +5614,36 @@ describe("learn-v2 substrate", () => {
     expect(hypotheses).toHaveLength(0);
     expect(admission.find((item) => item.subjectId === observations[0]!.id)).toMatchObject({
       subjectKind: "observation",
-      decision: "observe-only",
-      requiredReview: false
+      decision: "episode-note",
+      requiredReview: false,
+      reviewPriority: "none"
     });
     expect(learnV2ConditionalHypothesesToBehaviorAtoms(hypotheses, observations)).toHaveLength(0);
+  });
+
+  it("routes security and privacy learning through strict human review admission", () => {
+    const evidence = [{
+      ...normalizedMessage("security_privacy_durable", "Never store auth tokens or private credentials in durable project memory.", "user"),
+      paths: ["packages/core/src/security.ts"]
+    }];
+
+    const observations = buildLearnV2LearningObservationsFromEvidence(evidence);
+    const admission = decideLearnV2MemoryAdmission({ observations, hypotheses: [] });
+    const decision = admission.find((item) => item.subjectId === observations[0]!.id)!;
+
+    expect(decision).toMatchObject({
+      subjectKind: "observation",
+      decision: "requires-human-review",
+      requiredReview: true,
+      reviewPriority: "critical",
+      riskLevel: "high",
+      privacyBoundary: "high",
+      scopeLevel: "path"
+    });
+    expect(decision.reasons).toEqual(expect.arrayContaining([
+      "strict-review-gate-for-sensitive-behavior",
+      "explicit-durable-user-language"
+    ]));
   });
 
   it("infers contrastive UI color hypotheses from theme and card factors instead of global preferences", async () => {
@@ -5653,7 +5679,8 @@ describe("learn-v2 substrate", () => {
       .toContain("component.container:card");
     expect(hypotheses.find((item) => item.desiredOutcome === "blue")!.factorSet.map((factor) => `${factor.key}:${factor.value}`))
       .toEqual(expect.arrayContaining(["ui.theme:dark", "component.container:independent"]));
-    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.decision === "promote-candidate" && item.requiredReview)).toBe(true);
+    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.decision === "candidate-concept" && item.requiredReview)).toBe(true);
+    expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.reviewPriority === "normal")).toBe(true);
     expect(atoms).toHaveLength(3);
     expect(atoms.every((atom) => atom.scope.taskTypes.includes("ui-design-change"))).toBe(true);
   });
