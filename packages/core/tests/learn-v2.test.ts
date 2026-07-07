@@ -2298,6 +2298,7 @@ describe("learn-v2 substrate", () => {
     expect(report.proofBoundary.proves).toEqual(expect.arrayContaining([
       "configured behavior-delta golden checks",
       "deterministic counterfactual trace activation checks",
+      "open-world grounding authority and evidence-separation checks",
       "local sandbox verifier command execution"
     ]));
     expect(report.proofBoundary.doesNotProve).not.toContain("configured behavior-delta golden checks");
@@ -2305,6 +2306,15 @@ describe("learn-v2 substrate", () => {
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "behavior-delta:parser-plan-delta" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
+    const groundingBoundary = report.results.find((result) => result.id === "open-world-grounding-boundary");
+    expect(groundingBoundary?.status).toBe("pass");
+    expect(groundingBoundary?.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
+      "grounding-anchors-carry-authority",
+      "resource-precedence-is-review-only",
+      "user-evidence-remains-separate-from-grounding",
+      "evidence-classes-counted-separately"
+    ]));
+    expect(JSON.stringify(groundingBoundary)).toContain("external");
     const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
     expect(counterfactualCases).toContain("openskill-kit.counterfactual-trace-eval-case.v1");
     expect(counterfactualCases).not.toContain("raw_");

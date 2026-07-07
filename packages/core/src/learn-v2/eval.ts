@@ -18,6 +18,7 @@ import { createLocalSandboxPolicy } from "../sandbox/policy.js";
 import { runSandboxCommand, type SandboxCommandResult } from "../sandbox/runner.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { scanLearnV2OutputArtifactBoundary, validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
+import { buildLearnV2OpenWorldGroundingAnchors } from "./resource-grounding.js";
 import { readLearnV2ConceptStore } from "./store.js";
 import { learnV2Hash, learnV2IsInside } from "./utils.js";
 
@@ -192,6 +193,7 @@ export async function runLearnV2Eval(
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
   const memoryAdmissionBoundary = evaluateMemoryAdmissionBoundary(concepts);
+  const openWorldGroundingBoundary = evaluateOpenWorldGroundingBoundary(concepts, now);
   const activationReplay = evaluateActivationReplay(episodes, concepts);
   const counterfactualTrace = evaluateCounterfactualTraceCases(concepts, counterfactualCases);
   const behaviorDeltaResults = behaviorDeltaCases.map((item) => evaluateBehaviorDeltaCase(item));
@@ -231,6 +233,7 @@ export async function runLearnV2Eval(
     },
     evaluateLearnV2ConceptQualityGates(concepts),
     memoryAdmissionBoundary,
+    openWorldGroundingBoundary,
     activationReplay.result,
     counterfactualTrace.result,
     ...(sandboxProbe ? [sandboxProbe.result] : []),
@@ -809,6 +812,78 @@ function evaluateMemoryAdmissionBoundary(concepts: LearnV2ConceptCard[]): LearnV
   ];
   return {
     id: "memory-admission-boundary",
+    status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
+    checks
+  };
+}
+
+function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now: Date): LearnV2EvalResultRow {
+  const eligibleConcepts = filterLearnV2ActivationEligibleConcepts(concepts);
+  const eligibleIds = new Set(eligibleConcepts.map((concept) => concept.id));
+  const anchors = buildLearnV2OpenWorldGroundingAnchors(eligibleConcepts, now);
+  const missingAuthority = anchors.filter((anchor) =>
+    !anchor.resourceKind
+    || !anchor.trustTier
+    || !anchor.alignment
+    || !anchor.precedence
+    || !anchor.licenseRisk
+  );
+  const orphanAnchors = anchors.filter((anchor) =>
+    !eligibleIds.has(anchor.conceptId)
+    || anchor.evidenceConceptIds.some((conceptId) => !eligibleIds.has(conceptId))
+  );
+  const reviewOnlyFailures = anchors.filter((anchor) =>
+    !anchor.usedFor.includes("eval")
+    && anchor.precedence !== "resource-informs-review-only"
+    && anchor.precedence !== "project-doc-over-external"
+    && anchor.precedence !== "user-correction-over-resource"
+  );
+  const groundedConcepts = new Set(anchors.map((anchor) => anchor.conceptId));
+  const groundedWithoutUserEvidence = eligibleConcepts.filter((concept) =>
+    groundedConcepts.has(concept.id) && concept.evidenceIds.length === 0
+  );
+  const localEvidenceRefs = eligibleConcepts.reduce((sum, concept) => sum + concept.evidenceIds.length, 0);
+  const modelInterpretationUnits = eligibleConcepts.reduce((sum, concept) => sum + concept.atoms.length + (concept.conditions ? 1 : 0), 0);
+  const externalAnchors = anchors.filter((anchor) => anchor.trustTier !== "project").length;
+  const projectAnchors = anchors.filter((anchor) => anchor.trustTier === "project").length;
+  const precedenceModes = [...new Set(anchors.map((anchor) => anchor.precedence))].sort();
+  const checks = [
+    check(
+      "grounding-anchors-carry-authority",
+      missingAuthority.length === 0,
+      anchors.length
+        ? `${anchors.length} anchor(s) carry resource kind, trust tier, alignment, precedence, and license risk`
+        : "no open-world anchors generated for current concepts"
+    ),
+    check(
+      "grounding-stays-attached-to-eligible-concepts",
+      orphanAnchors.length === 0,
+      orphanAnchors.length
+        ? `orphan anchors: ${orphanAnchors.map((anchor) => anchor.id).slice(0, 6).join(", ")}`
+        : `${anchors.length} anchor(s) reference only activation-eligible concepts`
+    ),
+    check(
+      "resource-precedence-is-review-only",
+      reviewOnlyFailures.length === 0,
+      reviewOnlyFailures.length
+        ? `anchors with unsafe precedence: ${reviewOnlyFailures.map((anchor) => anchor.id).slice(0, 6).join(", ")}`
+        : `precedence modes: ${precedenceModes.length ? precedenceModes.join(", ") : "none"}`
+    ),
+    check(
+      "user-evidence-remains-separate-from-grounding",
+      groundedWithoutUserEvidence.length === 0,
+      groundedWithoutUserEvidence.length
+        ? `grounded concepts without local evidence: ${groundedWithoutUserEvidence.map((concept) => concept.id).slice(0, 6).join(", ")}`
+        : `${groundedConcepts.size} grounded concept(s) retain local evidence separately from ${externalAnchors} external and ${projectAnchors} project anchor(s)`
+    ),
+    check(
+      "evidence-classes-counted-separately",
+      true,
+      `local evidence refs=${localEvidenceRefs}, external grounding=${externalAnchors}, project grounding=${projectAnchors}, model interpretation units=${modelInterpretationUnits}`
+    )
+  ];
+  return {
+    id: "open-world-grounding-boundary",
     status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
     checks
   };
@@ -1565,7 +1640,8 @@ function learnV2EvalProofBoundary(input: {
   const proves = [
     "concept retrieval from stored episodes",
     "deterministic activation scoring",
-    "memory-admission activation exclusion for one-off/rejected/superseded concepts"
+    "memory-admission activation exclusion for one-off/rejected/superseded concepts",
+    "open-world grounding authority and evidence-separation checks"
   ];
   const doesNotProve = [
     "real agent task success",
