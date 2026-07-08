@@ -155,6 +155,8 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     observations: z.number().int().min(0),
     hypotheses: z.number().int().min(0),
     promotedHypotheses: z.number().int().min(0),
+    rejectedAtoms: z.number().int().min(0).default(0),
+    rejectedAtomReasonCounts: z.record(z.string(), z.number().int().min(0)).default({}),
     observeOnly: z.number().int().min(0),
     rejectedNoise: z.number().int().min(0),
     episodeNotes: z.number().int().min(0),
@@ -166,6 +168,8 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     observations: 0,
     hypotheses: 0,
     promotedHypotheses: 0,
+    rejectedAtoms: 0,
+    rejectedAtomReasonCounts: {},
     observeOnly: 0,
     rejectedNoise: 0,
     episodeNotes: 0,
@@ -304,6 +308,7 @@ export interface LearnV2PipelineObservabilityInput {
   }>;
   episodes: LearnV2TaskEpisode[];
   concepts: LearnV2ConceptCard[];
+  rejectedAtoms?: Array<{ id: string; reason: string }>;
   conflictLedger?: LearnV2ConflictLedger;
   conceptDrift?: LearnV2ConceptDriftReport;
   declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
@@ -450,6 +455,8 @@ export async function writeLearnV2PipelineObservabilityReport(
       observations: input.conditionalLearning?.counts.observations ?? 0,
       hypotheses: input.conditionalLearning?.counts.hypotheses ?? 0,
       promotedHypotheses: input.conditionalLearning?.counts.promotedHypotheses ?? 0,
+      rejectedAtoms: input.rejectedAtoms?.length ?? 0,
+      rejectedAtomReasonCounts: countBy((input.rejectedAtoms ?? []).map((item) => item.reason)),
       observeOnly: input.conditionalLearning?.counts.observeOnly ?? 0,
       rejectedNoise: input.conditionalLearning?.counts.rejectedNoise ?? 0,
       episodeNotes: input.conditionalLearning?.counts.episodeNotes ?? 0,
@@ -615,6 +622,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Risk: ${renderCounts(report.concepts.riskCounts)}`,
     `- Conditional observations: ${report.learningIntelligence.observations}`,
     `- Conditional hypotheses: ${report.learningIntelligence.hypotheses} (${report.learningIntelligence.promotedHypotheses} promoted)`,
+    `- Rejected atom proposals: ${report.learningIntelligence.rejectedAtoms} (${renderCounts(report.learningIntelligence.rejectedAtomReasonCounts)})`,
     `- Memory admission: episode-note=${report.learningIntelligence.episodeNotes}, weak-observation=${report.learningIntelligence.weakObservations}, candidate-concept=${report.learningIntelligence.candidateConcepts}, requires-human-review=${report.learningIntelligence.requiresHumanReview}, rejected-noise=${report.learningIntelligence.rejectedNoise}`,
     `- Conditional artifact: ${report.learningIntelligence.artifactPath ?? "none"}`,
     `- Skill namespaces: ${report.skillOntology.namespaces} (${report.skillOntology.candidateNamespaces} candidate, ${report.skillOntology.reviewNamespaces} needs review)`,

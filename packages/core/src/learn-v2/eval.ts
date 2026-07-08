@@ -834,8 +834,8 @@ function evaluateConditionalAdmissionBoundary(episodes: LearnV2TaskEpisode[]): L
     const support = hypothesis.supportObservationIds
       .map((id) => observationsById.get(id))
       .filter((observation): observation is NonNullable<typeof observation> => Boolean(observation));
-    const durableSupportCount = support.filter((observation) => !observation.durabilitySignals.oneOff || observation.durabilitySignals.explicitDurable).length;
-    const explicitlyDurable = support.some((observation) => observation.durabilitySignals.explicitDurable);
+    const durableSupportCount = support.filter((observation) => !observation.durabilitySignals.oneOff).length;
+    const explicitlyDurable = support.some((observation) => observation.durabilitySignals.explicitDurable && !observation.durabilitySignals.oneOff);
     return (hypothesis.status === "candidate" || decision?.decision === "candidate-concept" || decision?.decision === "requires-human-review")
       && !explicitlyDurable
       && durableSupportCount < 2;
@@ -845,8 +845,8 @@ function evaluateConditionalAdmissionBoundary(episodes: LearnV2TaskEpisode[]): L
     const support = hypothesis.supportObservationIds
       .map((id) => observationsById.get(id))
       .filter((observation): observation is NonNullable<typeof observation> => Boolean(observation));
-    const durableSupportCount = support.filter((observation) => !observation.durabilitySignals.oneOff || observation.durabilitySignals.explicitDurable).length;
-    const explicitlyDurable = support.some((observation) => observation.durabilitySignals.explicitDurable);
+    const durableSupportCount = support.filter((observation) => !observation.durabilitySignals.oneOff).length;
+    const explicitlyDurable = support.some((observation) => observation.durabilitySignals.explicitDurable && !observation.durabilitySignals.oneOff);
     return !explicitlyDurable
       && durableSupportCount < 2
       && decision?.decision === "weak-observation"

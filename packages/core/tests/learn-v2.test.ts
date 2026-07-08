@@ -1233,6 +1233,10 @@ describe("learn-v2 substrate", () => {
       }],
       episodes,
       concepts: [],
+      rejectedAtoms: [{
+        id: "atom_rejected_one_off",
+        reason: "one-off-preference-observation-only"
+      }],
       reviewQueue,
       evalReport,
       eventsAppended: 0,
@@ -1280,6 +1284,8 @@ describe("learn-v2 substrate", () => {
     expect(report.qualityGates.behaviorDeltaStatus).toBe("not-configured");
     expect(report.qualityGates.activationReplayRate).toBe(1);
     expect(report.qualityGates.counterfactualTraceRate).toBe(1);
+    expect(report.learningIntelligence.rejectedAtoms).toBe(1);
+    expect(report.learningIntelligence.rejectedAtomReasonCounts["one-off-preference-observation-only"]).toBe(1);
     expect(report.concepts.outcomeTelemetry).toMatchObject({
       totalRecords: 2,
       conceptCount: 1,
@@ -1304,6 +1310,7 @@ describe("learn-v2 substrate", () => {
     expect(reportText).toContain("\"parserCapabilityCounts\"");
     expect(reportText).toContain("\"parserLimitationCounts\"");
     expect(reportText).toContain("\"outcomeTelemetry\"");
+    expect(reportText).toContain("\"rejectedAtomReasonCounts\"");
     expect(reportText).not.toContain("raw harmful reason");
     expect(reportText).not.toContain(root);
     expect(reportText).not.toContain("raw_ev_observable");
@@ -1313,6 +1320,8 @@ describe("learn-v2 substrate", () => {
     expect(reportMarkdown).toContain("Structural parser backends:");
     expect(reportMarkdown).toContain("Structural parser capabilities:");
     expect(reportMarkdown).toContain("Structural parser limitations:");
+    expect(reportMarkdown).toContain("Rejected atom proposals: 1");
+    expect(reportMarkdown).toContain("one-off-preference-observation-only=1");
     expect(reportMarkdown).toContain("Outcome telemetry: 2 records across 1 concept(s)");
 
     const latest = await readLearnV2PipelineObservabilityReport(root);
@@ -6597,6 +6606,33 @@ describe("learn-v2 substrate", () => {
     expect(hypotheses.every((hypothesis) => hypothesis.status === "weak")).toBe(true);
     expect(admission.filter((item) => item.subjectKind === "observation").every((item) => item.decision === "episode-note")).toBe(true);
     expect(admission.filter((item) => item.subjectKind === "hypothesis").every((item) => item.decision === "weak-observation")).toBe(true);
+    expect(atoms).toHaveLength(0);
+  });
+
+  it("lets one-off scope override explicit preference language in admission", () => {
+    const evidence = [
+      {
+        ...normalizedMessage("ui_oneoff_prefer_green", "Prefer green button color for this landing page only here.", "user"),
+        paths: ["packages/site/src/LandingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      }
+    ];
+
+    const observations = buildLearnV2LearningObservationsFromEvidence(evidence);
+    const hypotheses = inferLearnV2ConditionalHypotheses(observations);
+    const admission = decideLearnV2MemoryAdmission({ observations, hypotheses });
+    const atoms = learnV2ConditionalHypothesesToBehaviorAtoms(hypotheses, observations);
+
+    expect(observations[0]!.durabilitySignals).toMatchObject({
+      explicitDurable: true,
+      oneOff: true
+    });
+    expect(hypotheses).toHaveLength(0);
+    expect(admission.find((decision) => decision.subjectKind === "observation")).toMatchObject({
+      decision: "episode-note",
+      requiredReview: false,
+      reasons: expect.arrayContaining(["trace-only-one-off-overrides-durable-language"])
+    });
     expect(atoms).toHaveLength(0);
   });
 

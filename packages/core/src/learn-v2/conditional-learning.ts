@@ -329,7 +329,7 @@ export function inferLearnV2ConditionalHypotheses(observations: LearnV2LearningO
     const hasContrast = byOutcome.size > 1;
     for (const [desiredOutcome, support] of byOutcome) {
       const counters = targetObservations.filter((item) => item.desiredOutcome !== desiredOutcome);
-      const explicitDurable = support.some((item) => item.durabilitySignals.explicitDurable);
+      const explicitDurable = support.some((item) => item.durabilitySignals.explicitDurable && !item.durabilitySignals.oneOff);
       if (!explicitDurable && !hasContrast && support.length < 2) continue;
 
       const factorSet = chooseDistinctiveFactors(support, counters);
@@ -339,7 +339,7 @@ export function inferLearnV2ConditionalHypotheses(observations: LearnV2LearningO
       const precision = support.length / Math.max(1, support.length + counterCovered);
       const recall = support.filter((item) => factorSet.every((factor) => hasFactor(item, factor))).length / Math.max(1, support.length);
       const confidence = hypothesisConfidence({ supportCount: support.length, totalCount: targetObservations.length, precision, recall, explicitDurable, factorCount: factorSet.length });
-      const durableSupportCount = support.filter((item) => !item.durabilitySignals.oneOff || item.durabilitySignals.explicitDurable).length;
+      const durableSupportCount = support.filter((item) => !item.durabilitySignals.oneOff).length;
       const candidateEligible = explicitDurable || durableSupportCount >= 2;
       const status: LearnV2ConditionalHypothesis["status"] = candidateEligible && confidence >= 0.5 ? "candidate" : "weak";
       const condition = factorSet.length ? factorSet.map((factor) => factor.label).join(" and ") : "explicit durable user instruction";
@@ -587,16 +587,6 @@ function admissionPolicyForObservation(observation: LearnV2LearningObservation, 
       reasons: [...reasons, "strict-review-gate-for-sensitive-behavior"]
     };
   }
-  if (observation.durabilitySignals.explicitDurable && observation.confidence >= 0.72) {
-    return {
-      decision: risk.privacyBoundary === "medium" ? "requires-human-review" : "candidate-concept",
-      requiredReview: true,
-      reviewPriority: risk.privacyBoundary === "medium" ? "high" : "normal",
-      ...risk,
-      scopeLevel,
-      reasons: risk.privacyBoundary === "medium" ? [...reasons, "sensitive-durable-instruction"] : reasons
-    };
-  }
   if (observation.durabilitySignals.oneOff && !observation.durabilitySignals.explicitDurable) {
     return {
       decision: "episode-note",
@@ -605,6 +595,26 @@ function admissionPolicyForObservation(observation: LearnV2LearningObservation, 
       ...risk,
       scopeLevel,
       reasons: [...reasons, "trace-only-one-off"]
+    };
+  }
+  if (observation.durabilitySignals.oneOff) {
+    return {
+      decision: "episode-note",
+      requiredReview: false,
+      reviewPriority: "none",
+      ...risk,
+      scopeLevel,
+      reasons: [...reasons, "trace-only-one-off-overrides-durable-language"]
+    };
+  }
+  if (observation.durabilitySignals.explicitDurable && observation.confidence >= 0.72) {
+    return {
+      decision: risk.privacyBoundary === "medium" ? "requires-human-review" : "candidate-concept",
+      requiredReview: true,
+      reviewPriority: risk.privacyBoundary === "medium" ? "high" : "normal",
+      ...risk,
+      scopeLevel,
+      reasons: risk.privacyBoundary === "medium" ? [...reasons, "sensitive-durable-instruction"] : reasons
     };
   }
   if (supportedByHypothesis || observation.durabilitySignals.recurrenceCandidate) {

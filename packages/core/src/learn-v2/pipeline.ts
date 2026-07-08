@@ -595,6 +595,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     sources: sourceDigests,
     episodes,
     concepts: conceptCardsForArtifacts,
+    rejectedAtoms: extracted.rejected,
     reviewQueue,
     evalReport,
     eventsAppended,
