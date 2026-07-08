@@ -1253,6 +1253,7 @@ export const LearnV2EvalReportSchema = z.object({
     markdown: z.string(),
     counterfactualCases: z.string().optional(),
     behaviorDeltaCases: z.string().optional(),
+    conditionalFactorCases: z.string().optional(),
     openWorldGroundingCases: z.string().optional(),
     behaviorAgentEval: z.string().optional(),
     sandboxProbe: z.string().optional()

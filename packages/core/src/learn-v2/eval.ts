@@ -6,8 +6,12 @@ import {
   LearnV2EvalReportSchema,
   LearnV2LlmBehaviorEvalOutputSchema,
   type LearnV2ConceptCard,
+  type LearnV2ConditionalHypothesis,
+  type LearnV2ContextFactor,
   type LearnV2EvalReport,
+  type LearnV2LearningObservation,
   type LearnV2LlmBehaviorEvalOutput,
+  type LearnV2MemoryAdmissionDecision,
   type LearnV2OpenWorldGroundingRecommendation,
   type LearnV2OpenWorldResourceAnchor,
   type LearnV2TaskEpisode
@@ -145,6 +149,30 @@ export interface LearnV2BehaviorDeltaEvalCase {
   minActivatedConcepts: number;
 }
 
+export interface LearnV2ConditionalFactorEvalCase {
+  schemaVersion: "openskill-kit.learn-v2.conditional-factor-eval-case.v1";
+  id: string;
+  hypothesisId: string;
+  target: string;
+  desiredOutcome: string;
+  hypothesisStatus: LearnV2ConditionalHypothesis["status"];
+  admissionDecision?: LearnV2MemoryAdmissionDecision["decision"];
+  requiredReview: boolean;
+  factorLabels: string[];
+  factorKeys: string[];
+  supportObservationIds: string[];
+  counterObservationIds: string[];
+  counterFactorLabels: string[];
+  appliesWhen: string[];
+  doesNotApplyWhen: string[];
+  supportCount: number;
+  counterCount: number;
+  expectedPromotion: boolean;
+  expectedReviewGate: boolean;
+  expectedCounterexamplesPreserved: boolean;
+  expectedNotGlobal: boolean;
+}
+
 export interface LearnV2OpenWorldGroundingEvalCase {
   schemaVersion: "openskill-kit.learn-v2.openworld-grounding-eval-case.v1";
   id: string;
@@ -211,6 +239,7 @@ export async function runLearnV2Eval(
   const markdown = path.join(runDir, "learn-v2-eval.md");
   const counterfactualCasesPath = path.join(runDir, "counterfactual-trace-cases.json");
   const behaviorDeltaCasesPath = path.join(runDir, "behavior-delta-cases.json");
+  const conditionalFactorCasesPath = path.join(runDir, "conditional-factor-cases.json");
   const openWorldGroundingCasesPath = path.join(runDir, "open-world-grounding-cases.json");
   const leakIssues = leakIssuesForConcepts(root, concepts);
   const goldenFile = options.goldensPath
@@ -220,6 +249,7 @@ export async function runLearnV2Eval(
   const behaviorDeltaGoldens = goldenFile.behaviorDelta;
   const counterfactualCases = buildCounterfactualTraceCases(episodes, concepts);
   const behaviorDeltaCases = buildLearnV2BehaviorDeltaEvalCases(concepts, behaviorDeltaGoldens);
+  const conditionalFactorCases = buildLearnV2ConditionalFactorEvalCases(episodes);
   const openWorldGroundingCases = buildLearnV2OpenWorldGroundingEvalCases(concepts, now);
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
@@ -267,6 +297,7 @@ export async function runLearnV2Eval(
     evaluateLearnV2ConceptQualityGates(concepts),
     memoryAdmissionBoundary,
     conditionalAdmissionBoundary,
+    evaluateConditionalFactorEvalCases(conditionalFactorCases),
     openWorldGroundingBoundary,
     evaluateOpenWorldGroundingEvalCases(openWorldGroundingCases),
     productReadinessAuditBoundary,
@@ -288,6 +319,7 @@ export async function runLearnV2Eval(
     proofBoundary: learnV2EvalProofBoundary({
       behaviorDeltaScenarioCount: behaviorDeltaCases.length,
       counterfactualTraceCaseCount: counterfactualCases.length,
+      conditionalFactorCaseCount: conditionalFactorCases.length,
       openWorldGroundingCaseCount: openWorldGroundingCases.length,
       sandboxProbeStatus: sandboxProbe?.result.status,
       behaviorAgentEvalStatus: behaviorAgentEval.summary.status,
@@ -309,6 +341,7 @@ export async function runLearnV2Eval(
       markdown,
       counterfactualCases: counterfactualCasesPath,
       behaviorDeltaCases: behaviorDeltaCasesPath,
+      conditionalFactorCases: conditionalFactorCasesPath,
       openWorldGroundingCases: openWorldGroundingCasesPath,
       behaviorAgentEval: behaviorAgentEval.summary.artifactPath,
       sandboxProbe: sandboxProbe?.artifactPath
@@ -323,6 +356,11 @@ export async function runLearnV2Eval(
     schemaVersion: "openskill-kit.behavior-delta-eval-cases.v1",
     generatedAt: now.toISOString(),
     cases: behaviorDeltaCases.map((item) => declassifyBehaviorDeltaCase(root, item))
+  });
+  await writeJsonAtomic(conditionalFactorCasesPath, {
+    schemaVersion: "openskill-kit.learn-v2.conditional-factor-eval-cases.v1",
+    generatedAt: now.toISOString(),
+    cases: conditionalFactorCases.map((item) => declassifyConditionalFactorCase(root, item))
   });
   await writeJsonAtomic(openWorldGroundingCasesPath, {
     schemaVersion: "openskill-kit.learn-v2.openworld-grounding-eval-cases.v1",
@@ -929,6 +967,126 @@ function evaluateConditionalAdmissionBoundary(episodes: LearnV2TaskEpisode[]): L
     status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
     checks
   };
+}
+
+function buildLearnV2ConditionalFactorEvalCases(episodes: LearnV2TaskEpisode[]): LearnV2ConditionalFactorEvalCase[] {
+  const conditional = runLearnV2ConditionalLearning(episodes);
+  const observationsById = new Map(conditional.observations.map((observation) => [observation.id, observation]));
+  const admissionBySubjectId = new Map(conditional.admissionDecisions.map((decision) => [decision.subjectId, decision]));
+  return conditional.hypotheses
+    .filter((hypothesis) => hypothesis.factorSet.length > 0 || hypothesis.counterObservationIds.length > 0)
+    .map((hypothesis) => {
+      const support = hypothesis.supportObservationIds
+        .map((id) => observationsById.get(id))
+        .filter((item): item is LearnV2LearningObservation => Boolean(item));
+      const counters = hypothesis.counterObservationIds
+        .map((id) => observationsById.get(id))
+        .filter((item): item is LearnV2LearningObservation => Boolean(item));
+      const admission = admissionBySubjectId.get(hypothesis.id);
+      const counterFactors = contrastingFactorsForEval(hypothesis.factorSet, counters);
+      const expectedPromotion = hypothesis.status === "candidate";
+      return {
+        schemaVersion: "openskill-kit.learn-v2.conditional-factor-eval-case.v1" as const,
+        id: `conditional_${hypothesis.id}`,
+        hypothesisId: hypothesis.id,
+        target: hypothesis.target,
+        desiredOutcome: hypothesis.desiredOutcome,
+        hypothesisStatus: hypothesis.status,
+        admissionDecision: admission?.decision,
+        requiredReview: admission?.requiredReview ?? false,
+        factorLabels: hypothesis.factorSet.map((factor) => factor.label),
+        factorKeys: hypothesis.factorSet.map((factor) => `${factor.key}:${factor.value}`),
+        supportObservationIds: hypothesis.supportObservationIds,
+        counterObservationIds: hypothesis.counterObservationIds,
+        counterFactorLabels: counterFactors.map((factor) => factor.label),
+        appliesWhen: hypothesis.factorSet.map((factor) => factor.label),
+        doesNotApplyWhen: counterFactors.map((factor) => factor.label),
+        supportCount: support.length,
+        counterCount: counters.length,
+        expectedPromotion,
+        expectedReviewGate: expectedPromotion,
+        expectedCounterexamplesPreserved: hypothesis.counterObservationIds.length > 0,
+        expectedNotGlobal: hypothesis.factorSet.length > 0
+      };
+    })
+    .sort((a, b) => a.target.localeCompare(b.target) || a.desiredOutcome.localeCompare(b.desiredOutcome) || a.hypothesisId.localeCompare(b.hypothesisId));
+}
+
+function evaluateConditionalFactorEvalCases(cases: LearnV2ConditionalFactorEvalCase[]): LearnV2EvalResultRow {
+  const candidateCases = cases.filter((item) => item.hypothesisStatus === "candidate");
+  const weakCases = cases.filter((item) => item.hypothesisStatus === "weak");
+  const globalCases = cases.filter((item) => !item.expectedNotGlobal || item.factorLabels.length === 0);
+  const candidateWithoutCounter = candidateCases.filter((item) => !item.expectedCounterexamplesPreserved || item.counterCount === 0);
+  const candidateWithoutReviewGate = candidateCases.filter((item) =>
+    (item.admissionDecision !== "candidate-concept" && item.admissionDecision !== "requires-human-review")
+    || !item.requiredReview
+  );
+  const candidateWithoutConditions = candidateCases.filter((item) =>
+    item.appliesWhen.length === 0 || item.doesNotApplyWhen.length === 0
+  );
+  const weakPromoted = weakCases.filter((item) =>
+    item.admissionDecision === "candidate-concept" || item.admissionDecision === "requires-human-review" || item.requiredReview
+  );
+  const checks = [
+    check(
+      "conditional-factor-cases-generated",
+      true,
+      `${cases.length} conditional factor eval case(s) generated from hidden-factor hypotheses`
+    ),
+    check(
+      "conditional-cases-are-factor-scoped",
+      globalCases.length === 0,
+      globalCases.length
+        ? `global-looking conditional cases: ${globalCases.map((item) => item.id).slice(0, 6).join(", ")}`
+        : "conditional hypotheses keep explicit factor scopes instead of global preferences"
+    ),
+    check(
+      "candidate-cases-preserve-counterexamples",
+      candidateWithoutCounter.length === 0,
+      candidateWithoutCounter.length
+        ? `candidate cases missing counterexamples: ${candidateWithoutCounter.map((item) => item.id).slice(0, 6).join(", ")}`
+        : `${candidateCases.length} candidate conditional case(s) preserve counterexamples`
+    ),
+    check(
+      "candidate-cases-require-review-gate",
+      candidateWithoutReviewGate.length === 0,
+      candidateWithoutReviewGate.length
+        ? `candidate cases missing review gate: ${candidateWithoutReviewGate.map((item) => item.id).slice(0, 6).join(", ")}`
+        : "candidate conditional cases remain review-gated before activation"
+    ),
+    check(
+      "candidate-cases-render-apply-and-counter-conditions",
+      candidateWithoutConditions.length === 0,
+      candidateWithoutConditions.length
+        ? `candidate cases missing apply/counter conditions: ${candidateWithoutConditions.map((item) => item.id).slice(0, 6).join(", ")}`
+        : "candidate conditional cases include appliesWhen and doesNotApplyWhen checks"
+    ),
+    check(
+      "weak-hypotheses-not-promoted",
+      weakPromoted.length === 0,
+      weakPromoted.length
+        ? `weak cases promoted unexpectedly: ${weakPromoted.map((item) => item.id).slice(0, 6).join(", ")}`
+        : `${weakCases.length} weak conditional case(s) stayed below durable memory`
+    )
+  ];
+  return {
+    id: "conditional-factor-eval-cases",
+    status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
+    checks
+  };
+}
+
+function contrastingFactorsForEval(factorSet: LearnV2ContextFactor[], counters: LearnV2LearningObservation[]): LearnV2ContextFactor[] {
+  const supportValuesByKey = new Map(factorSet.map((factor) => [factor.key, factor.value]));
+  const contrasts: LearnV2ContextFactor[] = [];
+  for (const counter of counters) {
+    for (const factor of counter.factors) {
+      const supportValue = supportValuesByKey.get(factor.key);
+      if (supportValue && supportValue !== factor.value) contrasts.push(factor);
+    }
+  }
+  return uniqueFactorsForEval(contrasts)
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now: Date): LearnV2EvalResultRow {
@@ -1877,6 +2035,20 @@ function declassifyBehaviorDeltaCase(root: string, item: LearnV2BehaviorDeltaEva
   };
 }
 
+function declassifyConditionalFactorCase(root: string, item: LearnV2ConditionalFactorEvalCase): LearnV2ConditionalFactorEvalCase {
+  const scrub = (value: string) => scrubEvalText(root, value);
+  return {
+    ...item,
+    target: scrub(item.target),
+    desiredOutcome: scrub(item.desiredOutcome),
+    factorLabels: item.factorLabels.map(scrub),
+    factorKeys: item.factorKeys.map(scrub),
+    counterFactorLabels: item.counterFactorLabels.map(scrub),
+    appliesWhen: item.appliesWhen.map(scrub),
+    doesNotApplyWhen: item.doesNotApplyWhen.map(scrub)
+  };
+}
+
 function declassifyCounterfactualTraceCase(root: string, item: LearnV2CounterfactualTraceEvalCase): LearnV2CounterfactualTraceEvalCase {
   const scrub = (value: string) => scrubEvalText(root, value);
   return {
@@ -1916,6 +2088,15 @@ function scrubEvalText(root: string, value: string): string {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((item) => item.trim()).filter(Boolean))];
+}
+
+function uniqueFactorsForEval(values: LearnV2ContextFactor[]): LearnV2ContextFactor[] {
+  const byKey = new Map<string, LearnV2ContextFactor>();
+  for (const value of values) {
+    const key = `${value.key}:${value.value}`;
+    if (!byKey.has(key)) byKey.set(key, value);
+  }
+  return [...byKey.values()];
 }
 
 function escapeRegExp(value: string): string {
@@ -1970,6 +2151,7 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     `Extraction goldens: ${report.extractionGoldenCount}`,
     `Behavior delta goldens: ${report.behaviorDeltaGoldenCount}`,
     `Counterfactual trace cases: ${report.counterfactualTraceCaseCount}`,
+    `Conditional factor cases: ${report.artifacts.conditionalFactorCases ? "written" : "not written"}`,
     `Open-world grounding cases: ${report.artifacts.openWorldGroundingCases ? "written" : "not written"}`,
     `Proof boundary: ${report.proofBoundary.method} (sandbox=${report.proofBoundary.sandboxExecuted}, agent=${report.proofBoundary.agentExecuted})`,
     `Leak check: ${report.leakCheck.status}`,
@@ -2011,6 +2193,10 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     report.summary.counterfactualTrace.misses.length ? `Misses: ${report.summary.counterfactualTrace.misses.slice(0, 10).join(", ")}` : "Misses: none",
     report.summary.counterfactualTrace.suppressionMisses.length ? `Suppression misses: ${report.summary.counterfactualTrace.suppressionMisses.slice(0, 10).join(", ")}` : "Suppression misses: none",
     "",
+    "## Conditional Factors",
+    "",
+    report.artifacts.conditionalFactorCases ? `Conditional factor eval cases: ${report.artifacts.conditionalFactorCases}` : "Conditional factor eval cases: none",
+    "",
     "## Open-World Grounding",
     "",
     report.artifacts.openWorldGroundingCases ? `Grounding eval cases: ${report.artifacts.openWorldGroundingCases}` : "Grounding eval cases: none",
@@ -2030,6 +2216,7 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
 function learnV2EvalProofBoundary(input: {
   behaviorDeltaScenarioCount: number;
   counterfactualTraceCaseCount: number;
+  conditionalFactorCaseCount: number;
   openWorldGroundingCaseCount: number;
   sandboxProbeStatus?: "pass" | "fail";
   behaviorAgentEvalStatus?: "pass" | "fail" | "needs-review" | "not-run";
@@ -2056,6 +2243,11 @@ function learnV2EvalProofBoundary(input: {
     proves.push("deterministic counterfactual trace activation checks");
   } else {
     doesNotProve.push("counterfactual trace activation checks");
+  }
+  if (input.conditionalFactorCaseCount > 0) {
+    proves.push("hidden-factor conditional inference eval cases");
+  } else {
+    doesNotProve.push("hidden-factor conditional inference eval cases");
   }
   if (input.openWorldGroundingCaseCount > 0) {
     proves.push("resource-grounded eval case generation");

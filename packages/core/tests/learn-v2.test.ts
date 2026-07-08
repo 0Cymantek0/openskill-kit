@@ -2821,6 +2821,56 @@ describe("learn-v2 substrate", () => {
     expect(markdown).toContain("one-off-excluded-from-activation");
   });
 
+  it("writes conditional hidden-factor eval cases from repeated contrastive observations", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:01:42Z");
+    const episodes = reconstructLearnV2Episodes([
+      {
+        ...normalizedMessage("ev_cond_eval_light_green_first", "Make independent button green on white landing page.", "user"),
+        paths: ["packages/site/src/LandingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ev_cond_eval_light_green_second", "Make independent button green on light marketing page.", "user"),
+        paths: ["packages/site/src/MarketingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ev_cond_eval_dark_blue_counter", "No, this time I want blue for independent button on dark page.", "user"),
+        paths: ["packages/site/src/DarkButton.tsx"],
+        metadata: { theme: "dark", container: "independent", componentRole: "button" }
+      }
+    ]);
+
+    const report = await runLearnV2Eval(root, episodes, [], now);
+    const boundary = report.results.find((result) => result.id === "conditional-factor-eval-cases")!;
+    expect(boundary.status).toBe("pass");
+    expect(boundary.checks.find((item) => item.name === "candidate-cases-preserve-counterexamples")?.details)
+      .toContain("candidate conditional case");
+    expect(report.artifacts.conditionalFactorCases).toContain("conditional-factor-cases.json");
+    expect(report.proofBoundary.proves).toContain("hidden-factor conditional inference eval cases");
+
+    const caseArtifact = JSON.parse(await readText(report.artifacts.conditionalFactorCases!));
+    const greenCase = caseArtifact.cases.find((item: { desiredOutcome: string }) => item.desiredOutcome === "green");
+    expect(greenCase).toMatchObject({
+      hypothesisStatus: "candidate",
+      admissionDecision: "candidate-concept",
+      requiredReview: true,
+      supportCount: 2,
+      counterCount: 1,
+      expectedPromotion: true,
+      expectedCounterexamplesPreserved: true,
+      expectedNotGlobal: true
+    });
+    expect(greenCase.factorKeys).toEqual(expect.arrayContaining(["ui.theme:light"]));
+    expect(greenCase.appliesWhen).toEqual(expect.arrayContaining(["UI theme is light"]));
+    expect(greenCase.doesNotApplyWhen).toEqual(expect.arrayContaining(["UI theme is dark"]));
+
+    const markdown = await readText(report.artifacts.markdown);
+    expect(markdown).toContain("## Conditional Factors");
+    expect(markdown).toContain("Conditional factor eval cases:");
+  });
+
   it("fails product-readiness eval when active concepts lack joined audit evidence", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:01:45Z");
