@@ -6,7 +6,7 @@ import { writeFileAtomic } from "../storage/atomic.js";
 import type { PreferenceNode } from "../preferences/schema.js";
 import { readWorkflowGraph } from "../workflows/store.js";
 import type { WorkflowNode } from "../workflows/schema.js";
-import { compileDynamicSkillShards } from "./dynamic-skill-compiler.js";
+import { compileDynamicSkillShards, compileLearnV2OntologySkillShards } from "./dynamic-skill-compiler.js";
 
 export interface CompileSkillsResult {
   schemaVersion: "openskill-kit.skill-compile.v1";
@@ -29,8 +29,9 @@ export async function compileBehaviorSkills(projectRoot: string): Promise<Compil
   await writeFileAtomic(path.join(projectBehaviorDir, "references", "active-preferences.md"), renderReference(active));
   await writeFileAtomic(path.join(projectBehaviorDir, "references", "active-workflows.md"), renderWorkflowReference(activeWorkflows));
   const shards = await compileDynamicSkillShards(skillsDir, active);
+  const ontologyShards = await compileLearnV2OntologySkillShards(root, skillsDir, active);
   const workflowSkillPath = activeWorkflows.length ? await compileWorkflowSkill(skillsDir, activeWorkflows) : undefined;
-  return { schemaVersion: "openskill-kit.skill-compile.v1", skillsDir, skillPaths: [projectBehaviorDir, ...shards.skillPaths, workflowSkillPath].filter((skillPath): skillPath is string => Boolean(skillPath)) };
+  return { schemaVersion: "openskill-kit.skill-compile.v1", skillsDir, skillPaths: [projectBehaviorDir, ...shards.skillPaths, ...ontologyShards.skillPaths, workflowSkillPath].filter((skillPath): skillPath is string => Boolean(skillPath)) };
 }
 
 function renderProjectBehaviorSkill(projectName: string, nodes: PreferenceNode[], workflows: WorkflowNode[]): string {

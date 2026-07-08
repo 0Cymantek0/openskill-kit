@@ -1,6 +1,8 @@
 import path from "node:path";
 import type { PreferenceNode } from "../preferences/schema.js";
 import { writeFileAtomic } from "../storage/atomic.js";
+import { readLearnV2SkillOntologyMemoryStore, type LearnV2SkillOntologyMemoryStore } from "../learn-v2/skill-ontology-memory.js";
+import type { LearnV2SkillNamespaceCandidate } from "../learn-v2/schemas.js";
 
 export interface CompileDynamicSkillShardsResult {
   schemaVersion: "openskill-kit.dynamic-skills.v1";
@@ -20,12 +22,130 @@ export async function compileDynamicSkillShards(skillsDir: string, nodes: Prefer
   return { schemaVersion: "openskill-kit.dynamic-skills.v1", skillPaths };
 }
 
+export async function compileLearnV2OntologySkillShards(
+  projectRoot: string,
+  skillsDir: string,
+  nodes: PreferenceNode[],
+  now = new Date()
+): Promise<CompileDynamicSkillShardsResult> {
+  const ontology = await readLearnV2SkillOntologyMemoryStore(projectRoot, now);
+  const activeByCardId = activeNodesByEvidenceCardId(nodes);
+  const skillPaths: string[] = [];
+  for (const namespace of ontology.namespaces.sort(sortNamespaces)) {
+    const namespaceNodes = uniqueNodes(namespace.conceptIds.flatMap((conceptId) => activeByCardId.get(conceptId) ?? []));
+    if (!namespaceNodes.length) continue;
+    const skillName = `project-${slugify(namespace.label)}`;
+    const skillDir = path.join(skillsDir, skillName);
+    const operations = ontology.operations.filter((operation) =>
+      operation.namespaceIds.includes(namespace.id) &&
+      operation.status === "needs-review"
+    );
+    await writeFileAtomic(path.join(skillDir, "SKILL.md"), renderOntologySkill(skillName, namespace, namespaceNodes, operations.length));
+    await writeFileAtomic(path.join(skillDir, "references", "namespace.md"), renderOntologyReference(namespace, namespaceNodes, ontology));
+    skillPaths.push(skillDir);
+  }
+  return { schemaVersion: "openskill-kit.dynamic-skills.v1", skillPaths };
+}
+
 function groupShardNodes(nodes: PreferenceNode[]): Map<string, PreferenceNode[]> {
   const groups = new Map<string, PreferenceNode[]>();
   for (const node of nodes.filter((item) => item.category !== "general")) {
     groups.set(node.category, [...(groups.get(node.category) ?? []), node]);
   }
   return new Map([...groups.entries()].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function activeNodesByEvidenceCardId(nodes: PreferenceNode[]): Map<string, PreferenceNode[]> {
+  const byCardId = new Map<string, PreferenceNode[]>();
+  for (const node of nodes) {
+    for (const cardId of node.evidence.flatMap((item) => item.cardIds ?? [])) {
+      byCardId.set(cardId, [...(byCardId.get(cardId) ?? []), node]);
+    }
+  }
+  return byCardId;
+}
+
+function renderOntologySkill(
+  skillName: string,
+  namespace: LearnV2SkillNamespaceCandidate,
+  nodes: PreferenceNode[],
+  reviewOperationCount: number
+): string {
+  const description = `Apply learned ${namespace.label} behavior from OpenSkillKit when task context matches this namespace.`;
+  return [
+    "---",
+    `name: ${skillName}`,
+    `description: ${JSON.stringify(description)}`,
+    "metadata:",
+    "  source: openskill-kit",
+    "  learnV2OntologyShard: true",
+    `  namespaceId: ${JSON.stringify(namespace.id)}`,
+    `  namespaceLabel: ${JSON.stringify(namespace.label)}`,
+    "---",
+    "",
+    `# ${namespace.label}`,
+    "",
+    "## When to use",
+    "",
+    `Use this skill when task intent, files, components, commands, or review scope match learned ${namespace.label} behavior in this repository.`,
+    "",
+    "## When not to use",
+    "",
+    "- Do not use for unrelated work or when direct user instruction overrides learned behavior.",
+    "- Do not apply candidate concepts; this shard contains reviewed active behavior only.",
+    "",
+    "## Operating Rules",
+    "",
+    "- Load `references/namespace.md` before applying namespace-specific behavior.",
+    "- Prefer the narrowest matching active behavior and respect path scope, exceptions, and negative triggers.",
+    "- Treat needs-review ontology operations as organization hints only; do not merge, split, or broaden behavior without review.",
+    "- Keep raw prompts, raw diffs, local evidence refs, private paths, and secrets out of output.",
+    "",
+    "## Namespace Signals",
+    "",
+    ...(namespace.representativeSignals.length ? namespace.representativeSignals.map((signal) => `- ${signal}`) : ["- No representative signals recorded."]),
+    "",
+    "## Active Behavior",
+    "",
+    ...nodes.sort(sortNodes).map((node) => `- ${scopeLabel(node)}: ${node.statement} (confidence ${node.confidence})`),
+    "",
+    "## Review State",
+    "",
+    `- Namespace status: ${namespace.status}`,
+    `- Ontology operations needing review: ${reviewOperationCount}`,
+    ""
+  ].join("\n");
+}
+
+function renderOntologyReference(
+  namespace: LearnV2SkillNamespaceCandidate,
+  nodes: PreferenceNode[],
+  ontology: LearnV2SkillOntologyMemoryStore
+): string {
+  const operations = ontology.operations.filter((operation) => operation.namespaceIds.includes(namespace.id));
+  const lines = [
+    `# ${namespace.label} Namespace`,
+    "",
+    `- Namespace ID: ${namespace.id}`,
+    `- Status: ${namespace.status}`,
+    `- Confidence: ${namespace.confidence}`,
+    `- Hierarchy: ${namespace.hierarchyPath.join(" > ") || namespace.label}`,
+    `- Concept count: ${namespace.conceptIds.length}`,
+    `- Signals: ${namespace.representativeSignals.join(", ") || "none"}`,
+    "",
+    "## Active Behavior",
+    ""
+  ];
+  for (const node of nodes.sort(sortNodes)) {
+    lines.push(`### ${node.title}`, "", `- ID: ${node.id}`, `- Scope: ${scopeLabel(node)}`, `- Confidence: ${node.confidence}`, `- Strength: ${node.strength ?? "should"}`, `- Statement: ${node.statement}`, `- Exceptions: ${node.exceptions?.join(", ") || "none"}`, `- Evidence cards: ${node.evidence.flatMap((item) => item.cardIds ?? []).join(", ") || "none"}`, "");
+  }
+  lines.push("## Ontology Operations", "");
+  if (!operations.length) lines.push("No ontology operations recorded for this namespace.", "");
+  for (const operation of operations.sort(sortOperations)) {
+    lines.push(`- ${operation.operation}: status=${operation.status}; confidence=${operation.confidence}; concepts=${operation.conceptIds.length}; hint=${operation.reviewHint}`);
+  }
+  lines.push("", "## Privacy", "", "- This compiled shard includes reviewed/declassified active behavior only.", "- Raw vault refs, raw local paths, raw prompts, raw diffs, and model request/response contents are not included.", "");
+  return lines.join("\n");
 }
 
 function renderShardSkill(skillName: string, category: string, nodes: PreferenceNode[]): string {
@@ -78,6 +198,25 @@ function scopeLabel(node: PreferenceNode): string {
 
 function sortNodes(a: PreferenceNode, b: PreferenceNode): number {
   return b.confidence - a.confidence || a.title.localeCompare(b.title);
+}
+
+function sortNamespaces(a: LearnV2SkillNamespaceCandidate, b: LearnV2SkillNamespaceCandidate): number {
+  return b.confidence - a.confidence || a.label.localeCompare(b.label);
+}
+
+function sortOperations(a: LearnV2SkillOntologyMemoryStore["operations"][number], b: LearnV2SkillOntologyMemoryStore["operations"][number]): number {
+  return a.operation.localeCompare(b.operation) || b.confidence - a.confidence || a.id.localeCompare(b.id);
+}
+
+function uniqueNodes(nodes: PreferenceNode[]): PreferenceNode[] {
+  const byId = new Map<string, PreferenceNode>();
+  for (const node of nodes) byId.set(node.id, node);
+  return [...byId.values()];
+}
+
+function slugify(value: string): string {
+  const slug = value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return slug || "learned-behavior";
 }
 
 function titleCase(value: string): string {

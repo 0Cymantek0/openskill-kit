@@ -71,7 +71,7 @@ export interface LearnV2StableArtifactPath {
   label: string;
   relativePath: string;
   kind: "file" | "directory" | "glob";
-  lifecycle: "canonical" | "review" | "debug" | "telemetry" | "model-request" | "compiled-preview";
+  lifecycle: "canonical" | "review" | "debug" | "telemetry" | "model-request" | "compiled-preview" | "compiled";
   sharePolicy: "shareable-reviewed" | "local-only" | "local-declassified" | "prompt-safe-request";
   cli: string;
   mcpTool?: string;
@@ -136,6 +136,16 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     sharePolicy: "shareable-reviewed",
     cli: "openskill-kit osk learn --extract-concepts && openskill-kit osk review --concept-accept <id>",
     notes: ["Preview of reviewed behavior that can feed skills, command policy, review checklist, and MCP resources."]
+  },
+  {
+    key: "compiled-skills",
+    label: "Compiled behavior skill shards",
+    relativePath: ".openskill-kit/compiled/skills/",
+    kind: "directory",
+    lifecycle: "compiled",
+    sharePolicy: "shareable-reviewed",
+    cli: "openskill-kit osk compile --target agent-skills",
+    notes: ["Reviewed active behavior compiled into project-behavior, compatibility shards, workflow shards, and learned ontology namespace shards."]
   },
   {
     key: "source-gate",

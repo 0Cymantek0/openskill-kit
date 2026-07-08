@@ -89,6 +89,7 @@ const sectionSpecs: SectionSpec[] = [
   { key: "open-world-grounding", artifactKey: "learnV2OpenWorldGroundingPath", category: "learning", purpose: "Project/external authority-tier anchors kept separate from user preference evidence." },
   { key: "concept-store", artifactKey: "learnV2ConceptStorePath", category: "review", purpose: "Canonical candidate/reviewed concept cards." },
   { key: "review-queue", artifactKey: "learnV2ReviewQueuePath", category: "review", purpose: "Developer review surface for accepting, rejecting, narrowing, and locking concepts." },
+  { key: "compiled-skills", fallbackPath: ".openskill-kit/compiled/skills", category: "activation", purpose: "Reviewed active behavior compiled into agent skill shards, including learned ontology namespace shards." },
   { key: "concept-debug-trace", artifactKey: "learnV2ConceptDebugTracePath", category: "debug", purpose: "Joined why-learned and why-active trace for each concept." },
   { key: "outcome-policy", artifactKey: "learnV2OutcomePolicyPath", category: "activation", purpose: "Suppression, demotion, and monitoring decisions from concept outcomes." },
   { key: "activation-index", fallbackPath: ".openskill-kit/learn-v2/activation-index.json", category: "activation", purpose: "Runtime concept activation index used by task context and replay eval." },

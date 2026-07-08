@@ -3164,6 +3164,7 @@ describe("learn-v2 substrate", () => {
     expect(productIndexMarkdown).toContain("# Learn v2 Product Index");
     expect(productIndexMarkdown).toContain("Conditional learning traces");
     expect(productIndexMarkdown).toContain("Durable skill ontology memory");
+    expect(productIndexMarkdown).toContain("Compiled behavior skill shards");
     expect(productIndexMarkdown).toContain("Concept debug trace");
     expect(productIndexMarkdown).toContain("Raw evidence vault");
     expect(productIndexMarkdown).toContain("Local-only paths:");
@@ -3183,6 +3184,9 @@ describe("learn-v2 substrate", () => {
     )).toBe(true);
     expect(productIndexJson.sections.some((section: { key: string; sharePolicy: string; status: string }) =>
       section.key === "skill-ontology-memory" && section.sharePolicy === "local-only" && section.status === "written"
+    )).toBe(true);
+    expect(productIndexJson.sections.some((section: { key: string; sharePolicy: string; status: string }) =>
+      section.key === "compiled-skills" && section.sharePolicy === "shareable-reviewed" && section.status !== "missing"
     )).toBe(true);
     expect(JSON.stringify(productIndexJson)).not.toContain(root);
     const observability = JSON.parse(await readText(result.artifacts.learnV2ObservabilityReportPath));
@@ -3621,6 +3625,74 @@ describe("learn-v2 substrate", () => {
     expect(markdown).toContain("UI/UX design");
     expect(markdown).not.toContain(root);
     expect(markdown).not.toContain("Prefer green CTA buttons");
+  });
+
+  it("compiles active learn-v2 ontology namespaces into generated skill shards", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:03:00Z");
+    const [activeBase, candidateBase] = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("ui_active_namespace_skill", "Prefer green primary CTA buttons on light landing pages.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/LandingButton.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        conditions: {
+          appliesWhen: ["ui.theme=light", "component.role=button"],
+          doesNotApplyWhen: ["explicit color override"]
+        },
+        activationHints: {
+          phrases: ["light theme CTA", "landing page button"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: ["explicit color override"]
+        },
+        risk: "low"
+      },
+      {
+        ...behaviorAtom("ui_candidate_namespace_skill", "Prefer purple secondary badges on analytics cards.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/AnalyticsCard.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        conditions: {
+          appliesWhen: ["component.container=card"],
+          doesNotApplyWhen: ["explicit color override"]
+        },
+        activationHints: {
+          phrases: ["analytics card badge"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: ["explicit color override"]
+        },
+        risk: "low"
+      }
+    ], now);
+    const active = { ...activeBase!, status: "active" as const };
+    const candidate = { ...candidateBase!, status: "candidate" as const };
+    const ontology = await writeLearnV2SkillOntologyArtifact(root, [active, candidate], now);
+    await writeLearnV2SkillOntologyMemoryStore(root, ontology, now);
+    await syncLearnV2ActiveConcepts(root, [active], now);
+
+    const compiled = await compileBehaviorLayer(root, { targets: ["agent-skills"] });
+    const ontologySkillDir = path.join(root, ".openskill-kit", "compiled", "skills", "project-ui-ux-design");
+    expect(compiled.skillPaths).toContain(ontologySkillDir);
+    await expect(stat(path.join(ontologySkillDir, "SKILL.md"))).resolves.toBeTruthy();
+    const skillMarkdown = await readText(path.join(ontologySkillDir, "SKILL.md"));
+    const namespaceReference = await readText(path.join(ontologySkillDir, "references", "namespace.md"));
+
+    expect(skillMarkdown).toContain("learnV2OntologyShard: true");
+    expect(skillMarkdown).toContain("UI/UX design");
+    expect(skillMarkdown).toContain("Prefer green primary CTA buttons on light landing pages.");
+    expect(skillMarkdown).not.toContain("Prefer purple secondary badges");
+    expect(namespaceReference).toContain(active.id);
+    expect(namespaceReference).not.toContain("Prefer purple secondary badges");
+    expect(skillMarkdown).not.toContain(root);
+    expect(namespaceReference).not.toContain(root);
   });
 
   it("grounds verification concepts in project resources before external references", async () => {
