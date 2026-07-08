@@ -68,6 +68,8 @@ import {
   applyLearnV2ContradictionReviewOutputs,
   writeLearnV2EvalPlannerRequests,
   applyLearnV2EvalPlannerOutputs,
+  writeLearnV2BehaviorEvalRequests,
+  applyLearnV2BehaviorEvalOutputs,
   runLearnV2RawVaultMaintenance,
   readLearnV2PipelineObservabilityReport,
   getLearnV2ArtifactPathManifest,
@@ -675,6 +677,23 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
   );
 
   registerTool(
+    "osk_prepare_learn_v2_behavior_eval_requests",
+    {
+      title: "OpenSkillKit Learn v2 Behavior Eval Request Preparation",
+      description: "Write prompt-safe behavior-evaluator bundles from reviewed behavior-delta goldens for OpenCode-configured agents. Does not call a provider.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        goldensPath: z.string().min(1)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ projectRoot, goldensPath }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await writeLearnV2BehaviorEvalRequests(root, resolvePath(goldensPath, root)), root);
+    }
+  );
+
+  registerTool(
     "osk_execute_learn_v2_model_requests",
     {
       title: "OpenSkillKit Learn v2 OpenCode Model Execution",
@@ -764,6 +783,23 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     async ({ projectRoot, outputPaths }) => {
       const root = resolveProjectRoot(projectRoot);
       return toolResult(await withMcpCommandTelemetry(root, "learn", () => applyLearnV2EvalPlannerOutputs(root, outputPaths.map((file) => resolvePath(file, root)))), root);
+    }
+  );
+
+  registerTool(
+    "osk_apply_learn_v2_behavior_eval_outputs",
+    {
+      title: "OpenSkillKit Learn v2 Behavior Eval Output Apply",
+      description: "Validate OpenCode-routed behavior-evaluator JSON outputs and write agent-backed behavior proof artifacts for Learn v2 eval.",
+      inputSchema: z.object({
+        projectRoot: projectRootSchema,
+        outputPaths: z.array(z.string().min(1)).min(1)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
+    },
+    async ({ projectRoot, outputPaths }) => {
+      const root = resolveProjectRoot(projectRoot);
+      return toolResult(await withMcpCommandTelemetry(root, "eval", () => applyLearnV2BehaviorEvalOutputs(root, outputPaths.map((file) => resolvePath(file, root)))), root);
     }
   );
 

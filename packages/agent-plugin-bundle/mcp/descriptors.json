@@ -136,6 +136,12 @@
       "approvalRequired": false
     },
     {
+      "name": "osk_prepare_learn_v2_behavior_eval_requests",
+      "category": "eval",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
       "name": "osk_execute_learn_v2_model_requests",
       "category": "learning",
       "writeRisk": "approval-required",
@@ -166,9 +172,15 @@
       "approvalRequired": false
     },
     {
+      "name": "osk_apply_learn_v2_behavior_eval_outputs",
+      "category": "eval",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
       "name": "osk_activate_learn_v2_concepts",
       "category": "retrieval",
-      "writeRisk": "read-only",
+      "writeRisk": "local-write",
       "approvalRequired": false
     },
     {
