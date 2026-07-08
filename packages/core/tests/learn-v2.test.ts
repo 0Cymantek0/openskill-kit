@@ -5452,6 +5452,11 @@ describe("learn-v2 substrate", () => {
     expect(JSON.stringify(manifest)).not.toContain(root);
     expect(await readText(path.resolve(root, request.promptPath))).toContain("Learn v2 behavior evaluator");
     expect(await readText(path.resolve(root, request.bundlePath))).not.toContain(root);
+    const bundle = JSON.parse(await readText(path.resolve(root, request.bundlePath)));
+    expect(bundle.openWorldGroundingCases.length).toBeGreaterThan(0);
+    expect(request.groundingCaseCount).toBe(bundle.openWorldGroundingCases.length);
+    expect(bundle.openWorldGroundingCases[0].conceptId).toBe(card.id);
+    expect(bundle.openWorldGroundingCases[0].expectedUserEvidencePrecedence).toBe(true);
 
     const behaviorOutput = {
       schemaVersion: "openskill-kit.learn-v2.llm-behavior-eval-output.v1",
@@ -5464,6 +5469,7 @@ describe("learn-v2 substrate", () => {
         withConceptOutcome: "Learned plan adds focused parser regression test before broad suite.",
         regressions: [],
         tokenOverheadAssessment: "acceptable",
+        groundingCaseIds: [bundle.openWorldGroundingCases[0].id],
         rationale: "With learned concept, plan includes focused parser regression without forbidden broad rewrite only behavior."
       }],
       rejected: []
@@ -5503,9 +5509,18 @@ describe("learn-v2 substrate", () => {
 
     await writeFile(path.resolve(root, request.expectedOutputPath), JSON.stringify({
       ...behaviorOutput,
+      results: [{ ...behaviorOutput.results[0], groundingCaseIds: [] }]
+    }), "utf8");
+    const rejectedMissingGrounding = await applyLearnV2BehaviorEvalOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:34Z"));
+    expect(rejectedMissingGrounding.resultCount).toBe(0);
+    expect(rejectedMissingGrounding.rejected[0]?.reason).toBe("invalid-behavior-eval-output");
+    expect(rejectedMissingGrounding.rejected[0]?.detail).toContain("groundingCaseIds");
+
+    await writeFile(path.resolve(root, request.expectedOutputPath), JSON.stringify({
+      ...behaviorOutput,
       results: [{ ...behaviorOutput.results[0], scenarioId: "unknown_delta" }]
     }), "utf8");
-    const rejected = await applyLearnV2BehaviorEvalOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:34Z"));
+    const rejected = await applyLearnV2BehaviorEvalOutputs(root, [request.manifestPath], new Date("2026-06-30T00:03:35Z"));
     expect(rejected.resultCount).toBe(0);
     expect(rejected.rejected[0]?.reason).toBe("invalid-behavior-eval-output");
   });

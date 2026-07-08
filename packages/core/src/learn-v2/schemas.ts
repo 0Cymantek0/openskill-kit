@@ -898,6 +898,7 @@ export const LearnV2LlmBehaviorEvalOutputSchema = z.object({
     withConceptOutcome: z.string().min(1).max(800),
     regressions: z.array(z.string().min(1).max(300)).default([]),
     tokenOverheadAssessment: z.enum(["acceptable", "too-high", "unknown"]).default("unknown"),
+    groundingCaseIds: z.array(z.string().min(1).max(200)).default([]),
     rationale: z.string().min(1).max(1000)
   })).default([]),
   rejected: z.array(z.object({

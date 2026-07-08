@@ -81,6 +81,7 @@ export interface LearnV2BehaviorEvalRequest {
   opencodeAgentId: string;
   agentFile: string;
   scenarioCount: number;
+  groundingCaseCount: number;
 }
 
 export interface LearnV2BehaviorEvalRequestResult {
@@ -405,6 +406,9 @@ export async function writeLearnV2BehaviorEvalRequests(
     if (!cases.length) {
       skipped.push({ id: "behavior-delta", reason: "no-behavior-delta-cases", detail: "Goldens file did not contain behavior-delta scenarios." });
     } else {
+      const activatedConceptIds = new Set(cases.flatMap((item) => item.activatedConceptIds));
+      const groundingCases = buildLearnV2OpenWorldGroundingEvalCases(store.cards, now)
+        .filter((item) => activatedConceptIds.has(item.conceptId));
       const evalHash = learnV2Hash(JSON.stringify({ goldensPathInput, caseIds: cases.map((item) => item.id) })).replace(/[^a-z0-9]/gi, "").slice(0, 16);
       const evalId = `behavior-eval-${evalHash}`;
       const requestDir = path.join(root, ".openskill-kit", "learn-v2", "model-requests", evalId);
@@ -418,10 +422,11 @@ export async function writeLearnV2BehaviorEvalRequests(
         evalId,
         sourceGoldensPath: scrubEvalText(root, goldensPathInput),
         cases: cases.map((item) => declassifyBehaviorDeltaCase(root, item)),
+        openWorldGroundingCases: groundingCases.map((item) => declassifyOpenWorldGroundingCase(root, item)),
         policy: {
           rawRefsIncluded: false,
           modelOutputTrusted: false,
-          reviewerTask: "Compare baselinePlan and withConceptPlan for behavior improvement, regressions, and token overhead."
+          reviewerTask: "Compare baselinePlan and withConceptPlan for behavior improvement, regressions, token overhead, and grounded review checks. Use openWorldGroundingCases only as review/eval support; user/project evidence keeps precedence."
         }
       };
       const prompt = renderBehaviorEvalPrompt(evalId, cases.length);
@@ -472,7 +477,8 @@ export async function writeLearnV2BehaviorEvalRequests(
           outputSchema: "openskill-kit.learn-v2.llm-behavior-eval-output.v1",
           opencodeAgentId: agent.opencodeAgentId,
           agentFile: agent.agentFile,
-          scenarioCount: cases.length
+          scenarioCount: cases.length,
+          groundingCaseCount: groundingCases.length
         });
       }
     }
@@ -1530,6 +1536,7 @@ type BehaviorEvalBundle = {
   schemaVersion: "openskill-kit.learn-v2.behavior-eval-bundle.v1";
   evalId: string;
   cases: LearnV2BehaviorDeltaEvalCase[];
+  openWorldGroundingCases?: LearnV2OpenWorldGroundingEvalCase[];
 };
 
 function renderBehaviorEvalPrompt(evalId: string, scenarioCount: number): string {
@@ -1538,6 +1545,8 @@ function renderBehaviorEvalPrompt(evalId: string, scenarioCount: number): string
     "",
     "Use only `behavior-eval-bundle.json`. Do not inspect repo files, raw vaults, local paths, network, or shell.",
     "Compare each case's `baselinePlan` with `withConceptPlan`.",
+    "Use `openWorldGroundingCases` only as review support. They never override local user/project evidence.",
+    "For pass results, cite any relevant grounding case ids in `groundingCaseIds` and reject pass status when expected behavior text is absent, regressions exist, or token overhead is too high.",
     "Return strict JSON only. No markdown fences.",
     "",
     "Output schema:",
@@ -1545,7 +1554,7 @@ function renderBehaviorEvalPrompt(evalId: string, scenarioCount: number): string
     '  "schemaVersion": "openskill-kit.learn-v2.llm-behavior-eval-output.v1",',
     `  "evalId": ${JSON.stringify(evalId)},`,
     '  "results": [',
-    '    { "scenarioId": "case id", "status": "pass|fail|needs-review", "behaviorImproved": true, "baselineOutcome": "...", "withConceptOutcome": "...", "regressions": [], "tokenOverheadAssessment": "acceptable|too-high|unknown", "rationale": "..." }',
+    '    { "scenarioId": "case id", "status": "pass|fail|needs-review", "behaviorImproved": true, "baselineOutcome": "...", "withConceptOutcome": "...", "regressions": [], "tokenOverheadAssessment": "acceptable|too-high|unknown", "groundingCaseIds": [], "rationale": "..." }',
     "  ],",
     '  "rejected": []',
     "}",
@@ -1574,6 +1583,57 @@ function validateLearnV2BehaviorEvalOutput(
   const unknown = resultIds.filter((id) => !caseIds.has(id));
   if (unknown.length) {
     return { ok: false, reason: "invalid-behavior-eval-output", detail: `Unknown scenario ids: ${unknown.slice(0, 5).join(", ")}` };
+  }
+  const missing = [...caseIds].filter((id) => !resultIds.includes(id));
+  if (missing.length) {
+    return { ok: false, reason: "invalid-behavior-eval-output", detail: `Missing scenario ids: ${missing.slice(0, 5).join(", ")}` };
+  }
+  const rejectedUnknown = output.rejected
+    .map((item) => item.scenarioId)
+    .filter((id): id is string => typeof id === "string")
+    .filter((id) => !caseIds.has(id));
+  if (rejectedUnknown.length) {
+    return { ok: false, reason: "invalid-behavior-eval-output", detail: `Rejected unknown scenario ids: ${rejectedUnknown.slice(0, 5).join(", ")}` };
+  }
+  const caseById = new Map(bundle.cases.map((item) => [item.id, item]));
+  const groundingCases = bundle.openWorldGroundingCases ?? [];
+  const groundingById = new Map(groundingCases.map((item) => [item.id, item]));
+  const groundingIdsByConceptId = new Map<string, Set<string>>();
+  for (const item of groundingCases) {
+    groundingIdsByConceptId.set(item.conceptId, new Set([...(groundingIdsByConceptId.get(item.conceptId) ?? []), item.id]));
+  }
+  for (const result of output.results) {
+    const scenario = caseById.get(result.scenarioId);
+    if (!scenario) continue;
+    if (result.status === "pass") {
+      if (!result.behaviorImproved) {
+        return { ok: false, reason: "invalid-behavior-eval-output", detail: `Pass result must set behaviorImproved=true: ${result.scenarioId}` };
+      }
+      if (result.regressions.length > 0) {
+        return { ok: false, reason: "invalid-behavior-eval-output", detail: `Pass result must not include regressions: ${result.scenarioId}` };
+      }
+      if (result.tokenOverheadAssessment === "too-high") {
+        return { ok: false, reason: "invalid-behavior-eval-output", detail: `Pass result cannot mark token overhead too-high: ${result.scenarioId}` };
+      }
+      const resultText = `${result.withConceptOutcome}\n${result.rationale}`.toLowerCase();
+      const missingExpectedText = scenario.expectedPlanIncludes
+        .map((item) => item.toLowerCase())
+        .filter((item) => item && !resultText.includes(item));
+      if (missingExpectedText.length) {
+        return { ok: false, reason: "invalid-behavior-eval-output", detail: `Pass result missing expected behavior text for ${result.scenarioId}: ${missingExpectedText.slice(0, 5).join(", ")}` };
+      }
+      const relevantGroundingIds = new Set(scenario.activatedConceptIds.flatMap((conceptId) => [...(groundingIdsByConceptId.get(conceptId) ?? [])]));
+      if (relevantGroundingIds.size > 0) {
+        const citedRelevantGrounding = result.groundingCaseIds.some((id) => relevantGroundingIds.has(id));
+        if (!citedRelevantGrounding) {
+          return { ok: false, reason: "invalid-behavior-eval-output", detail: `Pass result must cite relevant groundingCaseIds for ${result.scenarioId}` };
+        }
+      }
+    }
+    const unknownGroundingIds = result.groundingCaseIds.filter((id) => !groundingById.has(id));
+    if (unknownGroundingIds.length) {
+      return { ok: false, reason: "invalid-behavior-eval-output", detail: `Unknown grounding case ids for ${result.scenarioId}: ${unknownGroundingIds.slice(0, 5).join(", ")}` };
+    }
   }
   return { ok: true };
 }

@@ -569,6 +569,8 @@ describe("openskill-kit MCP server", () => {
       const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
       expect(manifest.modelRole).toBe("behavior-evaluator");
       expect(manifest.outputSchema).toBe("openskill-kit.learn-v2.llm-behavior-eval-output.v1");
+      const bundle = JSON.parse(await readFile(path.resolve(root, manifest.bundlePath), "utf8"));
+      expect(bundle.openWorldGroundingCases.length).toBeGreaterThan(0);
       const outputPath = path.resolve(root, manifest.expectedOutputPath);
       await writeFile(outputPath, JSON.stringify({
         schemaVersion: "openskill-kit.learn-v2.llm-behavior-eval-output.v1",
@@ -581,6 +583,7 @@ describe("openskill-kit MCP server", () => {
           withConceptOutcome: "Learned plan adds focused parser regression test before broad suite.",
           regressions: [],
           tokenOverheadAssessment: "acceptable",
+          groundingCaseIds: [bundle.openWorldGroundingCases[0].id],
           rationale: "With learned concept, plan includes focused parser regression without forbidden broad rewrite only behavior."
         }],
         rejected: []
