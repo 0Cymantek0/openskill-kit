@@ -17,6 +17,21 @@ const RawEvidenceConfigSchema = z.object({
   pinAcceptableRelevance: z.boolean().default(true)
 });
 
+const OpenWorldApprovedResourceSchema = z.object({
+  title: z.string().min(1),
+  uri: z.string().min(1),
+  matchTerms: z.array(z.string().min(1)).default([]),
+  summary: z.string().min(1).max(1200).optional(),
+  resourceKind: z.enum(["official-docs", "repository", "paper", "standard", "reference"]).default("reference"),
+  trustTier: z.enum(["official", "community", "unknown"]).default("community"),
+  licenseRisk: z.enum(["low", "unknown", "restricted"]).default("unknown"),
+  usedFor: z.array(z.enum(["title", "conditions", "verification", "eval", "skill-text"])).default(["skill-text", "eval"])
+});
+
+const OpenWorldResourcesConfigSchema = z.object({
+  approvedResources: z.array(OpenWorldApprovedResourceSchema).default([])
+}).default(() => ({ approvedResources: [] }));
+
 export const ProjectConfigSchema = z.object({
   schemaVersion: z.literal("openskill-kit.config.v1"),
   projectId: z.string().min(1),
@@ -33,6 +48,7 @@ export const ProjectConfigSchema = z.object({
       demoteAfterNegativeOutcomes: z.number().int().min(2).max(20).default(2),
       recentNegativeOutcomeDays: z.number().int().min(1).max(365).default(30)
     }).default(() => ({ demoteAfterNegativeOutcomes: 2, recentNegativeOutcomeDays: 30 })),
+    openWorldResources: OpenWorldResourcesConfigSchema,
     rawEvidence: RawEvidenceConfigSchema.default(() => RawEvidenceConfigSchema.parse({}))
   }),
   privacy: z.object({

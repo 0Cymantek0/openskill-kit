@@ -3019,6 +3019,49 @@ describe("learn-v2 substrate", () => {
     expect(markdown).not.toContain("reviewer@example.com");
   });
 
+  it("grounds concepts against user-approved external resources without overriding user evidence", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = await readProjectConfig(root);
+    config.learning.openWorldResources.approvedResources = [{
+      title: "Approved dashboard density guide",
+      uri: "https://example.com/design/dashboard-density",
+      matchTerms: ["dashboard clutter", "information density", "card layout"],
+      summary: "Prefer calm dashboard cards with one primary action and clear hierarchy. Ask designer@example.com only in private planning notes.",
+      resourceKind: "reference",
+      trustTier: "community",
+      licenseRisk: "unknown",
+      usedFor: ["conditions", "skill-text"]
+    }];
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const [card] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("approved_external_dashboard_density", "Prefer low-clutter dashboard card layout with one primary action.", "positive"),
+      kind: "preference"
+    }], new Date("2026-06-30T00:14:30Z"));
+
+    const artifact = await writeLearnV2OpenWorldGroundingArtifact(root, [card!], new Date("2026-06-30T00:15:00Z"));
+    const approvedAnchor = artifact.anchors.find((anchor) => anchor.title === "Approved dashboard density guide");
+
+    expect(approvedAnchor).toMatchObject({
+      uri: "https://example.com/design/dashboard-density",
+      trustTier: "community",
+      resourceKind: "reference",
+      precedence: "resource-informs-review-only",
+      licenseRisk: "unknown",
+      declassifiedSnippetIds: expect.arrayContaining([expect.stringMatching(/^resource_[0-9a-f]+$/)])
+    });
+    expect(approvedAnchor?.usedFor).toEqual(expect.arrayContaining(["conditions", "skill-text", "eval"]));
+    expect(approvedAnchor?.alignedClaims.join("\n")).toContain("Approved resource snippet resource_");
+    expect(approvedAnchor?.alignedClaims.join("\n")).toContain("[REDACTED:email]");
+    expect(approvedAnchor?.alignedClaims.join("\n")).not.toContain("designer@example.com");
+    expect(approvedAnchor?.rationale).toContain("cannot override direct corrections");
+    expect(artifact.counts.reviewOnlyAnchors).toBeGreaterThanOrEqual(1);
+    const markdown = await readText(artifact.artifacts.markdown);
+    expect(markdown).toContain("Approved dashboard density guide");
+    expect(markdown).toContain("resource-informs-review-only");
+    expect(markdown).not.toContain("designer@example.com");
+  });
+
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
     const root = await tempProject();
     const terminal = path.join(os.tmpdir(), `osk-review-needed-${Date.now()}.log`);

@@ -263,6 +263,7 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
     "README.md"
   ]);
   const projectDocs = await readProjectGroundingDocs(root);
+  const approvedResources = config.learning.openWorldResources.approvedResources;
   for (const concept of concepts.filter((item) => !["rejected", "one-off", "superseded"].includes(item.status))) {
     const text = conceptSearchText(concept);
     if (packageJson && /\b(test|fixture|regression|vitest|jest|pytest|verification|command)\b/i.test(text)) {
@@ -309,6 +310,34 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
         }
       });
     }
+    for (const resource of approvedResources) {
+      if (!approvedResourceMatches(resource, text)) continue;
+      const summary = resource.summary ? learnV2DeclassifyText(resource.summary, root, config).text : undefined;
+      const safeSummary = summary ? learnV2Snippet(summary, 220) : undefined;
+      const snippetId = safeSummary ? `resource_${learnV2ShortHash(`${resource.uri}:${safeSummary}`)}` : undefined;
+      anchors.push({
+        conceptId: concept.id,
+        key: `approved-resource:${resource.uri}`,
+        template: {
+          title: resource.title,
+          uri: resource.uri,
+          resourceKind: resource.resourceKind,
+          trustTier: resource.trustTier,
+          alignment: "supports-review",
+          precedence: "resource-informs-review-only",
+          licenseRisk: resource.licenseRisk,
+          alignedClaims: [
+            safeSummary
+              ? `Approved resource snippet ${snippetId}: ${safeSummary}`
+              : `Approved external resource matched concept terms: ${(resource.matchTerms.length ? resource.matchTerms : [...significantTokens(resource.title)]).slice(0, 8).join(", ")}`
+          ],
+          conflictingClaims: [],
+          declassifiedSnippetIds: snippetId ? [snippetId] : [],
+          usedFor: unique([...resource.usedFor, "eval"]),
+          rationale: "User-approved external resources can ground review language and verification anchors, but they remain separate from user preference evidence and cannot override direct corrections."
+        }
+      });
+    }
     for (const doc of projectDocs) {
       const claim = declassifiedProjectClaim(root, config, doc.relativePath, doc.text, text);
       if (!claim) continue;
@@ -333,6 +362,20 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
     }
   }
   return anchors;
+}
+
+function approvedResourceMatches(
+  resource: Awaited<ReturnType<typeof readProjectConfig>>["learning"]["openWorldResources"]["approvedResources"][number],
+  conceptText: string
+): boolean {
+  const conceptTokens = significantTokens(conceptText);
+  const terms = resource.matchTerms.length ? resource.matchTerms : [...significantTokens(resource.title)];
+  return terms.some((term) => {
+    const termTokens = significantTokens(term);
+    if (termTokens.size) return [...termTokens].some((token) => conceptTokens.has(token));
+    const normalized = term.toLowerCase().trim();
+    return normalized.length >= 3 && conceptText.toLowerCase().includes(normalized);
+  });
 }
 
 async function readProjectGroundingDocs(root: string): Promise<Array<{ relativePath: string; text: string }>> {
@@ -388,6 +431,10 @@ function bestProjectDocSnippet(text: string, conceptText: string): string | unde
 function significantTokens(text: string): Set<string> {
   const stop = new Set(["prefer", "before", "after", "with", "without", "project", "behavior", "change", "changes", "should", "would", "could"]);
   return new Set((text.toLowerCase().match(/[a-z0-9]{4,}/g) ?? []).filter((token) => !stop.has(token)));
+}
+
+function unique<T>(items: T[]): T[] {
+  return [...new Set(items)];
 }
 
 function usedForFromConceptText(text: string): LearnV2OpenWorldResourceAnchor["usedFor"] {
