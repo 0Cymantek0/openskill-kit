@@ -22,6 +22,16 @@ export const PreferenceNodeSchema = z.object({
   })).default([]),
   strength: z.enum(["must", "should", "may", "must-not"]).optional(),
   exceptions: z.array(z.string()).optional(),
+  conditions: z.object({
+    appliesWhen: z.array(z.string()).default([]),
+    doesNotApplyWhen: z.array(z.string()).default([])
+  }).optional(),
+  activation: z.object({
+    phrases: z.array(z.string()).default([]),
+    pathGlobs: z.array(z.string()).default([]),
+    commands: z.array(z.string()).default([]),
+    negativeTriggers: z.array(z.string()).default([])
+  }).optional(),
   privacy: z.object({
     class: z.enum(["project-private", "user-private", "global-private", "shareable"]),
     rationale: z.string().min(1)

@@ -107,7 +107,7 @@ function renderOntologySkill(
     "",
     "## Active Behavior",
     "",
-    ...nodes.sort(sortNodes).map((node) => `- ${scopeLabel(node)}: ${node.statement} (confidence ${node.confidence})`),
+    ...nodes.sort(sortNodes).map((node) => `- ${scopeLabel(node)}: ${node.statement}${inlineActivationDetails(node)} (confidence ${node.confidence})`),
     "",
     "## Review State",
     "",
@@ -137,7 +137,24 @@ function renderOntologyReference(
     ""
   ];
   for (const node of nodes.sort(sortNodes)) {
-    lines.push(`### ${node.title}`, "", `- ID: ${node.id}`, `- Scope: ${scopeLabel(node)}`, `- Confidence: ${node.confidence}`, `- Strength: ${node.strength ?? "should"}`, `- Statement: ${node.statement}`, `- Exceptions: ${node.exceptions?.join(", ") || "none"}`, `- Evidence cards: ${node.evidence.flatMap((item) => item.cardIds ?? []).join(", ") || "none"}`, "");
+    lines.push(
+      `### ${node.title}`,
+      "",
+      `- ID: ${node.id}`,
+      `- Scope: ${scopeLabel(node)}`,
+      `- Confidence: ${node.confidence}`,
+      `- Strength: ${node.strength ?? "should"}`,
+      `- Statement: ${node.statement}`,
+      `- Apply when: ${node.conditions?.appliesWhen?.join("; ") || "none"}`,
+      `- Do not apply when: ${node.conditions?.doesNotApplyWhen?.join("; ") || "none"}`,
+      `- Activation phrases: ${node.activation?.phrases?.join(", ") || "none"}`,
+      `- Activation paths: ${node.activation?.pathGlobs?.join(", ") || "none"}`,
+      `- Preferred commands: ${node.activation?.commands?.join(", ") || "none"}`,
+      `- Negative triggers: ${node.activation?.negativeTriggers?.join(", ") || node.exceptions?.join(", ") || "none"}`,
+      `- Exceptions: ${node.exceptions?.join(", ") || "none"}`,
+      `- Evidence cards: ${node.evidence.flatMap((item) => item.cardIds ?? []).join(", ") || "none"}`,
+      ""
+    );
   }
   lines.push("## Ontology Operations", "");
   if (!operations.length) lines.push("No ontology operations recorded for this namespace.", "");
@@ -179,7 +196,7 @@ function renderShardSkill(skillName: string, category: string, nodes: Preference
     "",
     "## Active Preferences",
     "",
-    ...nodes.sort(sortNodes).map((node) => `- ${scopeLabel(node)}: ${node.statement} (confidence ${node.confidence})`),
+    ...nodes.sort(sortNodes).map((node) => `- ${scopeLabel(node)}: ${node.statement}${inlineActivationDetails(node)} (confidence ${node.confidence})`),
     ""
   ].join("\n");
 }
@@ -194,6 +211,15 @@ function renderShardReference(category: string, nodes: PreferenceNode[]): string
 
 function scopeLabel(node: PreferenceNode): string {
   return node.scope.paths.length ? `${node.scope.level}:${node.scope.paths.join(",")}` : node.scope.level;
+}
+
+function inlineActivationDetails(node: PreferenceNode): string {
+  const parts = [
+    node.conditions?.appliesWhen?.length ? `apply when ${node.conditions.appliesWhen.join("; ")}` : undefined,
+    node.conditions?.doesNotApplyWhen?.length ? `do not apply when ${node.conditions.doesNotApplyWhen.join("; ")}` : undefined,
+    node.activation?.negativeTriggers?.length ? `negative triggers ${node.activation.negativeTriggers.join("; ")}` : undefined
+  ].filter((item): item is string => Boolean(item));
+  return parts.length ? ` [${parts.join(" | ")}]` : "";
 }
 
 function sortNodes(a: PreferenceNode, b: PreferenceNode): number {

@@ -91,6 +91,16 @@ function conceptToPreference(projectId: string, card: LearnV2ConceptCard, now: D
     })),
     strength: atom.polarity === "negative" ? "must-not" : card.risk === "high" ? "must" : "should",
     exceptions: card.scope.negativeTriggers,
+    conditions: {
+      appliesWhen: card.conditions?.appliesWhen ?? [],
+      doesNotApplyWhen: card.conditions?.doesNotApplyWhen ?? []
+    },
+    activation: {
+      phrases: card.activation.phrases,
+      pathGlobs: card.activation.pathGlobs,
+      commands: card.activation.commands,
+      negativeTriggers: card.scope.negativeTriggers
+    },
     privacy: {
       class: "project-private",
       rationale: "Compiled from reviewed learn-v2 concept card; raw refs are local-only."

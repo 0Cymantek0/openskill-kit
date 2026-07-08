@@ -7550,6 +7550,138 @@ describe("learn-v2 substrate", () => {
     expect(suppressedContext.learnV2Activation.suppressed.find((match) => match.conceptId === active.id)?.reasons)
       .toContain("does-not-apply:explicit color override");
   });
+
+  it("proves repeated conditional corrections activate future context and compiled skills without promoting one-offs", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:15:00Z");
+    const repeatedEvidence = [
+      {
+        ...normalizedMessage("e2e_light_green", "Make independent button green on white landing page.", "user"),
+        paths: ["packages/site/src/LandingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("e2e_dark_blue", "No, this time I want blue for independent button on dark page.", "user"),
+        paths: ["packages/site/src/DarkButton.tsx"],
+        metadata: { theme: "dark", container: "independent", componentRole: "button" }
+      },
+      {
+        ...normalizedMessage("e2e_dark_card_orange_first", "For dark card button, make it orange.", "user"),
+        paths: ["packages/site/src/DarkCardButton.tsx"],
+        metadata: { theme: "dark", container: "card", componentRole: "button" }
+      },
+      {
+        ...normalizedMessage("e2e_dark_card_orange_second", "Make dark dashboard card button orange.", "user"),
+        paths: ["packages/site/src/DashboardCardButton.tsx"],
+        metadata: { theme: "dark", container: "card", componentRole: "button", surfaceKind: "dashboard" }
+      }
+    ];
+    const oneOffEvidence = [{
+      ...normalizedMessage("e2e_one_off_purple", "Only here make this dark card button purple for this single case.", "user"),
+      paths: ["packages/site/src/PromoCardButton.tsx"],
+      metadata: { theme: "dark", container: "card", componentRole: "button", surfaceKind: "promo" }
+    }];
+
+    const repeatedObservations = buildLearnV2LearningObservationsFromEvidence(repeatedEvidence);
+    const repeatedHypotheses = inferLearnV2ConditionalHypotheses(repeatedObservations);
+    const repeatedAdmission = decideLearnV2MemoryAdmission({
+      observations: repeatedObservations,
+      hypotheses: repeatedHypotheses
+    });
+    const oneOffObservations = buildLearnV2LearningObservationsFromEvidence(oneOffEvidence);
+    const oneOffHypotheses = inferLearnV2ConditionalHypotheses(oneOffObservations);
+    const oneOffAdmission = decideLearnV2MemoryAdmission({
+      observations: oneOffObservations,
+      hypotheses: oneOffHypotheses
+    });
+    const atoms = learnV2ConditionalHypothesesToBehaviorAtoms(repeatedHypotheses, repeatedObservations);
+    const orangeAtom = atoms.find((atom) => atom.statement.includes("orange"))!;
+
+    expect(orangeAtom).toBeDefined();
+    expect(orangeAtom.confidence).toBeLessThanOrEqual(orangeAtom.confidenceCap);
+    expect(orangeAtom.conditions?.appliesWhen).toEqual(expect.arrayContaining([
+      "UI theme is dark",
+      "Component container is card"
+    ]));
+    expect(orangeAtom.conditions?.doesNotApplyWhen).toEqual(expect.arrayContaining([
+      "Component container is independent"
+    ]));
+    expect(repeatedAdmission.find((decision) =>
+      decision.subjectKind === "hypothesis" &&
+      decision.subjectId === repeatedHypotheses.find((hypothesis) => hypothesis.desiredOutcome === "orange")?.id
+    )).toMatchObject({
+      decision: "candidate-concept",
+      requiredReview: true
+    });
+    expect(oneOffObservations[0]!.durabilitySignals.oneOff).toBe(true);
+    expect(oneOffHypotheses).toHaveLength(0);
+    expect(oneOffAdmission.find((decision) => decision.subjectKind === "observation")).toMatchObject({
+      decision: "episode-note",
+      requiredReview: false
+    });
+    expect(learnV2ConditionalHypothesesToBehaviorAtoms(oneOffHypotheses, oneOffObservations)).toHaveLength(0);
+
+    const [base] = mergeLearnV2ConceptCards([orangeAtom], now);
+    await writeLearnV2ConceptStore(root, [base!], now);
+    const reviewed = await applyLearnV2ConceptReview(root, {
+      accept: [base!.id],
+      now: new Date("2026-06-30T00:16:00Z")
+    });
+    const active = reviewed.store.cards.find((card) => card.id === base!.id)!;
+
+    expect(active.status).toBe("active");
+    expect(active.canonicalBehavior).toContain("orange");
+    expect(active.conditions?.appliesWhen).toEqual(expect.arrayContaining([
+      "UI theme is dark",
+      "Component container is card"
+    ]));
+    expect(reviewed.activeConceptCount).toBe(1);
+    expect(reviewed.candidateConceptCount).toBe(0);
+    expect(reviewed.store.cards.some((card) => card.canonicalBehavior.includes("purple"))).toBe(false);
+
+    const ontology = await writeLearnV2SkillOntologyArtifact(root, reviewed.store.cards, new Date("2026-06-30T00:17:00Z"));
+    const ontologyMemory = await writeLearnV2SkillOntologyMemoryStore(root, ontology, new Date("2026-06-30T00:18:00Z"));
+    const compiled = await compileBehaviorLayer(root, { targets: ["agent-skills"] });
+    const ontologySkillDir = path.join(root, ".openskill-kit", "compiled", "skills", "project-ui-ux-design");
+    const skillMarkdown = await readText(path.join(ontologySkillDir, "SKILL.md"));
+    const namespaceReference = await readText(path.join(ontologySkillDir, "references", "namespace.md"));
+
+    expect(ontologyMemory.namespaces.some((namespace) => namespace.label === "UI/UX design")).toBe(true);
+    expect(compiled.skillPaths).toContain(ontologySkillDir);
+    expect(skillMarkdown).toContain("orange");
+    expect(skillMarkdown).toContain("apply when Component container is card");
+    expect(skillMarkdown).toContain("Surface is dashboard");
+    expect(skillMarkdown).toContain("UI theme is dark");
+    expect(skillMarkdown).toContain("do not apply when Component container is independent");
+    expect(skillMarkdown).toContain("negative triggers user-specified-different-style; explicit-one-off-style");
+    expect(namespaceReference).toContain("Apply when: Component container is card");
+    expect(namespaceReference).toContain("UI theme is dark");
+    expect(namespaceReference).toContain("Do not apply when: Component container is independent");
+    expect(namespaceReference).not.toContain("purple");
+    expect(skillMarkdown).not.toContain(root);
+    expect(namespaceReference).not.toContain(root);
+
+    const context = await getAgentTaskContext({
+      projectRoot: root,
+      query: "dark dashboard card CTA button styling",
+      paths: ["packages/site/src/NewDashboardCard.tsx"],
+      limit: 8
+    });
+
+    expect(context.learnV2Activation.matches.some((match) => match.conceptId === active.id)).toBe(true);
+    expect(context.compactMarkdown).toContain(active.canonicalBehavior);
+    expect(context.compactMarkdown).toContain("Apply when: Component container is card");
+    expect(context.compactMarkdown).toContain("UI theme is dark");
+    expect(context.compactMarkdown).toContain("Do not apply when: Component container is independent");
+
+    const suppressedContext = await getAgentTaskContext({
+      projectRoot: root,
+      query: "dark dashboard card CTA button styling with explicit one-off style",
+      paths: ["packages/site/src/NewDashboardCard.tsx"],
+      limit: 8
+    });
+    expect(suppressedContext.learnV2Activation.matches.some((match) => match.conceptId === active.id)).toBe(false);
+  });
 });
 
 async function tempProject(): Promise<string> {

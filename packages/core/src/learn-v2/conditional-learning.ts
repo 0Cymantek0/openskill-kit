@@ -419,6 +419,7 @@ export function learnV2ConditionalHypothesesToBehaviorAtoms(
       const evidenceIds = unique(support.flatMap((item) => item.evidenceIds));
       const rawRefs = unique(support.flatMap((item) => item.rawRefs));
       const paths = unique(support.flatMap((item) => item.paths));
+      const confidenceCap = Math.min(0.88, Math.max(0.62, hypothesis.confidence));
       return LearnV2BehaviorAtomSchema.parse({
         schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1",
         id: `atom_${learnV2ShortHash(`conditional:${hypothesis.id}`)}`,
@@ -433,7 +434,7 @@ export function learnV2ConditionalHypothesesToBehaviorAtoms(
             : []
         },
         confidence: hypothesis.confidence,
-        confidenceCap: Math.min(0.78, Math.max(0.45, hypothesis.confidence)),
+        confidenceCap,
         sourceReliability: average(support.map((item) => item.confidence)),
         evidenceIds,
         rawRefs,
