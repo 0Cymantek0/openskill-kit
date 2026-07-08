@@ -28,6 +28,7 @@ export * from "./scope-proposals.js";
 export * from "./contradiction-proposals.js";
 export * from "./eval-planner.js";
 export * from "./observability.js";
+export * from "./artifact-index.js";
 export * from "./output-boundary.js";
 export * from "./operations.js";
 export * from "./pipeline.js";

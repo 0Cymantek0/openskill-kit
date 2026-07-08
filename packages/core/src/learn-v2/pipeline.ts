@@ -55,6 +55,7 @@ import { writeLearnV2ReviewQueue } from "./review.js";
 import { compileLearnV2ConceptPreview, type LearnV2CompilePreview } from "./compile.js";
 import { runLearnV2Eval } from "./eval.js";
 import { writeLearnV2PipelineObservabilityReport } from "./observability.js";
+import { writeLearnV2ProductIndex } from "./artifact-index.js";
 import { learnV2EvidenceQualityArtifactPath, writeLearnV2EvidenceQualityArtifact } from "./quality.js";
 import { mergeLearnV2ConceptStoreCards, readLearnV2ConceptStore, writeLearnV2ConceptStore, type LearnV2ConceptStore } from "./store.js";
 import { writeLearnV2DeclassifiedSnippetArtifact } from "./declassify.js";
@@ -173,6 +174,7 @@ interface LearnV2RawLocalLearningRunCompat {
     rawVaultDir: string;
     analysisFramesDir: string;
     learnV2RawVaultDir: string;
+    learnV2ProductIndexPath: string;
     learnV2ReviewQueuePath: string;
     learnV2CompilePreviewPath: string;
     learnV2EvalReportPath: string;
@@ -574,6 +576,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const legacyConcepts = concepts.map(toLegacyConceptCard);
   const digestPath = path.join(digestsDir, `raw-learning-${timestampSlug(generatedAt)}.json`);
   const reviewMarkdownPath = path.join(digestsDir, `raw-learning-${timestampSlug(generatedAt)}.md`);
+  const productIndexPath = path.join(root, ".openskill-kit", "learn-v2", "index.md");
   const nextActions = !hasAcceptedEvidence
     ? [
         "Inspect the Learn v2 source-gate review artifact; no source was accepted for extraction.",
@@ -605,6 +608,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     artifacts: {
       digestPath,
       reviewMarkdownPath,
+      learnV2ProductIndexPath: productIndexPath,
       learnV2ReviewQueuePath: reviewQueue.artifacts.markdown,
       learnV2CompilePreviewPath: compilePreview.artifacts.markdown,
       learnV2EvalReportPath: evalReport.artifacts.markdown,
@@ -652,6 +656,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       rawVaultDir: legacyRawVaultDir,
       analysisFramesDir: legacyAnalysisFramesDir,
       learnV2RawVaultDir: learnV2VaultRoot(root),
+      learnV2ProductIndexPath: productIndexPath,
       learnV2ReviewQueuePath: reviewQueue.artifacts.markdown,
       learnV2CompilePreviewPath: compilePreview.artifacts.markdown,
       learnV2EvalReportPath: evalReport.artifacts.markdown,
@@ -748,6 +753,27 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   };
   await writeJsonAtomic(digestPath, result);
   await fs.writeFile(reviewMarkdownPath, renderRawLearningDigest(result), "utf8");
+  await writeLearnV2ProductIndex(root, {
+    generatedAt,
+    previewOnly,
+    modelMode,
+    summary: {
+      sourcesConsidered: result.digest.sourcesConsidered,
+      sourcesIncluded: result.digest.sourcesIncluded,
+      concepts: result.digest.mergedConceptCards,
+      observations: result.digest.conditionalObservations,
+      hypotheses: result.digest.conditionalHypotheses,
+      promotedHypotheses: result.digest.promotedConditionalHypotheses,
+      namespaces: result.digest.skillNamespaces,
+      openWorldAnchors: result.digest.openWorldAnchors,
+      tracedConcepts: result.digest.conceptDebugTraces,
+      evalStatus: evalReport.status,
+      healthStatus: observability.health.status
+    },
+    artifacts: result.artifacts,
+    nextActions,
+    privacyNotes: result.privacy
+  });
   return result;
 }
 
@@ -1459,6 +1485,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     "",
     "## Learn v2 Artifacts",
     "",
+    `- Product index: ${result.artifacts.learnV2ProductIndexPath}`,
     `- Review queue: ${result.artifacts.learnV2ReviewQueuePath}`,
     `- Compile preview: ${result.artifacts.learnV2CompilePreviewPath}`,
     `- Eval report: ${result.artifacts.learnV2EvalReportPath}`,

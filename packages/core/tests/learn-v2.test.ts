@@ -3136,6 +3136,7 @@ describe("learn-v2 substrate", () => {
       now: new Date("2026-06-30T00:00:00Z")
     });
     expect(result.artifacts.learnV2RawVaultDir).toContain(".openskill-kit");
+    expect(result.artifacts.learnV2ProductIndexPath).toContain("index.md");
     expect(result.artifacts.learnV2ReviewQueuePath).toBeTruthy();
     expect(result.artifacts.learnV2ModelRoutingPath).toContain("osk-model-routing.json");
     expect(result.artifacts.learnV2RelevanceCalibrationPath).toContain("relevance-calibration.json");
@@ -3152,6 +3153,24 @@ describe("learn-v2 substrate", () => {
       status: "rejected",
       saferPolicy: "opencode-host-sanitized-only"
     });
+    const productIndexMarkdown = await readText(result.artifacts.learnV2ProductIndexPath);
+    expect(productIndexMarkdown).toContain("# Learn v2 Product Index");
+    expect(productIndexMarkdown).toContain("Conditional learning traces");
+    expect(productIndexMarkdown).toContain("Concept debug trace");
+    expect(productIndexMarkdown).toContain("Raw evidence vault");
+    expect(productIndexMarkdown).toContain("Local-only paths:");
+    expect(productIndexMarkdown).not.toContain(root);
+    expect(productIndexMarkdown).not.toContain("avoid broad rewrite");
+    const productIndexJson = JSON.parse(await readText(result.artifacts.learnV2ProductIndexPath.replace(/\.md$/, ".json")));
+    expect(productIndexJson.schemaVersion).toBe("openskill-kit.learn-v2.product-index.v1");
+    expect(productIndexJson.run.sourcesIncluded).toBe(1);
+    expect(productIndexJson.sections.some((section: { key: string; status: string }) =>
+      section.key === "conditional-learning" && section.status === "written"
+    )).toBe(true);
+    expect(productIndexJson.sections.some((section: { key: string; sharePolicy: string }) =>
+      section.key === "raw-vault" && section.sharePolicy === "local-only"
+    )).toBe(true);
+    expect(JSON.stringify(productIndexJson)).not.toContain(root);
     const observability = JSON.parse(await readText(result.artifacts.learnV2ObservabilityReportPath));
     expect(observability.modelExecution.requestArtifacts.status).toBe("written");
     expect(observability.modelExecution.rawToModelExecution.status).toBe("rejected");

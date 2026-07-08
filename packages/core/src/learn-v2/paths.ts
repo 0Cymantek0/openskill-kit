@@ -58,6 +58,8 @@ export const LEARN_V2_GENERATED_DIRS = [
 ];
 
 export const LEARN_V2_GENERATED_FILES = [
+  ".openskill-kit/learn-v2/index.json",
+  ".openskill-kit/learn-v2/index.md",
   ".openskill-kit/learn-v2/activation-index.json",
   ".openskill-kit/learn-v2/relevance-calibration.json"
 ];
@@ -91,6 +93,16 @@ export interface LearnV2ArtifactPathManifest {
 }
 
 export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
+  {
+    key: "product-index",
+    label: "Learn v2 product index",
+    relativePath: ".openskill-kit/learn-v2/index.md",
+    kind: "file",
+    lifecycle: "debug",
+    sharePolicy: "local-declassified",
+    cli: "openskill-kit osk learn --raw --surface-file <path>",
+    notes: ["Single local product map linking source, evidence, learning, review, activation, eval, debug, model, and privacy artifacts."]
+  },
   {
     key: "concept-store",
     label: "Canonical Learn v2 concept store",
