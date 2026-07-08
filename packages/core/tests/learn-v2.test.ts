@@ -4790,6 +4790,11 @@ describe("learn-v2 substrate", () => {
       now: new Date("2026-07-01T00:00:00Z")
     });
     expect(status.status).toBe("over-budget");
+    expect(status.budgetSummary.hotUsageRatio).toBeGreaterThan(1);
+    expect(status.budgetSummary.overBudgetReasons).toContain("hot-bytes");
+    expect(status.budgetSummary.tierCounts["hot-spool"]).toBe(1);
+    expect(status.budgetSummary.nextHotExpiryAt).toBe("2026-07-14T00:00:00.000Z");
+    expect(status.nextActions.join(" ")).toContain("hot-bytes");
     const gc = await runLearnV2RawVaultMaintenance(root, {
       gc: true,
       maxHotBytes: 1,
@@ -4799,6 +4804,8 @@ describe("learn-v2 substrate", () => {
     expect(gc.removedBlobRefs.length).toBeGreaterThanOrEqual(1);
     expect(gc.manifest.budget.hotBytes).toBe(0);
     expect(gc.manifest.budget.compactedBytes).toBeGreaterThan(0);
+    expect(gc.budgetSummary.tierCounts.compacted).toBe(1);
+    expect(gc.budgetSummary.nextHotExpiryAt).toBeUndefined();
     const compacted = gc.manifest.records.find((record) => record.retentionTier === "compacted")!;
     const record = JSON.parse(await readText(path.join(root, ".openskill-kit", "learn-v2", "raw-vault", "records", `${compacted.id}.json`)));
     expect(record.retention.compactedRef).toBeTruthy();

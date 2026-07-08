@@ -41,6 +41,7 @@ export interface LearnV2RawVaultMaintenanceResult {
   projectRoot: string;
   status: "ok" | "over-budget";
   gc: boolean;
+  budgetSummary: LearnV2RawVaultBudgetSummary;
   expiredRecords: number;
   compactedRecords: number;
   removedBlobRefs: string[];
@@ -49,6 +50,17 @@ export interface LearnV2RawVaultMaintenanceResult {
   manifest: LearnV2RawEvidenceManifest;
   previewArtifacts: LearnV2PreviewArtifactSummary;
   nextActions: string[];
+}
+
+export interface LearnV2RawVaultBudgetSummary {
+  hotUsageRatio: number;
+  pinnedUsageRatio: number;
+  totalUsageRatio: number;
+  tierCounts: Record<LearnV2RawEvidenceRecord["retention"]["tier"], number>;
+  nextHotExpiryAt?: string;
+  oldestHotRecordAt?: string;
+  newestHotRecordAt?: string;
+  overBudgetReasons: string[];
 }
 
 export interface LearnV2RawEvidencePinSyncResult {
@@ -421,11 +433,13 @@ export async function runLearnV2RawVaultMaintenance(
     previewRetentionDays: options.previewRetentionDays,
     keepPreviewRuns: options.keepPreviewRuns
   });
+  const budgetSummary = summarizeRawVaultBudget(gc.manifest);
   return {
     schemaVersion: "openskill-kit.learn-v2.raw-vault-maintenance.v1",
     projectRoot: root,
     status: gc.manifest.budget.status,
     gc: options.gc === true,
+    budgetSummary,
     expiredRecords: gc.expiredRecords,
     compactedRecords: gc.compactedRecords,
     removedBlobRefs: gc.removedBlobRefs,
@@ -435,7 +449,7 @@ export async function runLearnV2RawVaultMaintenance(
     previewArtifacts,
     nextActions: [
       ...(gc.manifest.budget.status === "over-budget"
-        ? ["Review hot, pinned, and total raw-vault budgets; compact low-value raw records, reject stale candidates, or rerun maintenance with garbage collection after retention expiry."]
+        ? [`Review raw-vault budget pressure (${budgetSummary.overBudgetReasons.join(", ") || "over-budget"}); compact low-value raw records, reject stale candidates, or rerun maintenance with garbage collection after retention expiry.`]
         : ["Raw vault budget is within configured limits."]),
       ...(previewArtifacts.previewStoreCount > previewArtifacts.retention.keepLatest
         ? ["Prune old Learn v2 preview stores with --gc-raw-vault or increase preview retention settings."]
@@ -446,6 +460,38 @@ export async function runLearnV2RawVaultMaintenance(
 
 export function learnV2VaultRoot(root: string): string {
   return path.join(root, ".openskill-kit", "learn-v2", "raw-vault");
+}
+
+function summarizeRawVaultBudget(manifest: LearnV2RawEvidenceManifest): LearnV2RawVaultBudgetSummary {
+  const maxPinnedBytes = manifest.budget.maxPinnedBytes ?? Math.max(manifest.budget.maxHotBytes * 2, manifest.budget.maxHotBytes);
+  const maxTotalBytes = manifest.budget.maxTotalBytes ?? Math.max(manifest.budget.maxHotBytes * 4, manifest.budget.maxHotBytes);
+  const hotRecords = manifest.records.filter((record) => record.retentionTier === "hot-spool");
+  const overBudgetReasons: string[] = [];
+  if (manifest.budget.hotBytes > manifest.budget.maxHotBytes) overBudgetReasons.push("hot-bytes");
+  if (manifest.budget.pinnedBytes > maxPinnedBytes) overBudgetReasons.push("pinned-bytes");
+  if (manifest.budget.totalBytes > maxTotalBytes) overBudgetReasons.push("total-bytes");
+  return {
+    hotUsageRatio: usageRatio(manifest.budget.hotBytes, manifest.budget.maxHotBytes),
+    pinnedUsageRatio: usageRatio(manifest.budget.pinnedBytes, maxPinnedBytes),
+    totalUsageRatio: usageRatio(manifest.budget.totalBytes, maxTotalBytes),
+    tierCounts: {
+      "hot-spool": manifest.records.filter((record) => record.retentionTier === "hot-spool").length,
+      pinned: manifest.records.filter((record) => record.retentionTier === "pinned").length,
+      compacted: manifest.records.filter((record) => record.retentionTier === "compacted").length,
+      expired: manifest.records.filter((record) => record.retentionTier === "expired").length
+    },
+    nextHotExpiryAt: hotRecords
+      .map((record) => record.expiresAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()[0],
+    oldestHotRecordAt: hotRecords.map((record) => record.capturedAt).sort()[0],
+    newestHotRecordAt: hotRecords.map((record) => record.capturedAt).sort().at(-1),
+    overBudgetReasons
+  };
+}
+
+function usageRatio(value: number, max: number): number {
+  return max > 0 ? Number((value / max).toFixed(3)) : value > 0 ? 1 : 0;
 }
 
 export function learnV2ManifestPath(root: string): string {
