@@ -46,6 +46,7 @@ import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
 import { learnV2LearningMemoryStorePath, writeLearnV2LearningMemoryStore } from "./learning-memory.js";
 import { writeLearnV2SkillOntologyArtifact } from "./skill-ontology.js";
+import { learnV2SkillOntologyMemoryStorePath, writeLearnV2SkillOntologyMemoryStore } from "./skill-ontology-memory.js";
 import { writeLearnV2OpenWorldGroundingArtifact } from "./resource-grounding.js";
 import { writeLearnV2ConceptDebugTraceArtifact } from "./concept-debug-trace.js";
 import { writeLearnV2OutcomePolicyArtifact } from "./outcome-policy.js";
@@ -195,6 +196,7 @@ interface LearnV2RawLocalLearningRunCompat {
     learnV2ConditionalLearningPath: string;
     learnV2LearningMemoryStorePath: string;
     learnV2SkillOntologyPath: string;
+    learnV2SkillOntologyMemoryStorePath: string;
     learnV2OpenWorldGroundingPath: string;
     learnV2ConceptDebugTracePath: string;
     learnV2OutcomePolicyPath: string;
@@ -508,6 +510,10 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
   const skillOntology = shouldWriteDerivedArtifacts
     ? await writeLearnV2SkillOntologyArtifact(root, conceptCardsForArtifacts, now)
     : emptySkillOntologyArtifact(root, now);
+  const skillOntologyMemoryPath = learnV2SkillOntologyMemoryStorePath(root);
+  if (shouldWriteDerivedArtifacts && !previewOnly) {
+    await writeLearnV2SkillOntologyMemoryStore(root, skillOntology, now);
+  }
   const openWorldGrounding = shouldWriteDerivedArtifacts
     ? await writeLearnV2OpenWorldGroundingArtifact(root, conceptCardsForArtifacts, now)
     : emptyOpenWorldGroundingArtifact(root, now);
@@ -633,6 +639,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown,
       learnV2LearningMemoryStorePath: learningMemoryPath,
       learnV2SkillOntologyPath: skillOntology.artifacts.markdown,
+      learnV2SkillOntologyMemoryStorePath: skillOntologyMemoryPath,
       learnV2OpenWorldGroundingPath: openWorldGrounding.artifacts.markdown,
       learnV2ConceptDebugTracePath: conceptDebugTrace.artifacts.markdown,
       learnV2OutcomePolicyPath: outcomePolicy.artifacts.markdown
@@ -683,6 +690,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
       learnV2ConditionalLearningPath: conditionalLearning.artifacts.markdown,
       learnV2LearningMemoryStorePath: learningMemoryPath,
       learnV2SkillOntologyPath: skillOntology.artifacts.markdown,
+      learnV2SkillOntologyMemoryStorePath: skillOntologyMemoryPath,
       learnV2OpenWorldGroundingPath: openWorldGrounding.artifacts.markdown,
       learnV2ConceptDebugTracePath: conceptDebugTrace.artifacts.markdown,
       learnV2OutcomePolicyPath: outcomePolicy.artifacts.markdown
@@ -1510,6 +1518,7 @@ function renderRawLearningDigest(result: LearnV2RawLocalLearningRunCompat): stri
     `- Conditional learning: ${result.artifacts.learnV2ConditionalLearningPath}`,
     `- Learning memory: ${result.artifacts.learnV2LearningMemoryStorePath}`,
     `- Skill ontology: ${result.artifacts.learnV2SkillOntologyPath}`,
+    `- Skill ontology memory: ${result.artifacts.learnV2SkillOntologyMemoryStorePath}`,
     `- Open-world grounding: ${result.artifacts.learnV2OpenWorldGroundingPath}`,
     `- Concept debug trace: ${result.artifacts.learnV2ConceptDebugTracePath}`,
     `- Outcome policy: ${result.artifacts.learnV2OutcomePolicyPath}`,

@@ -47,6 +47,7 @@ export const LEARN_V2_GENERATED_DIRS = [
   ".openskill-kit/learn-v2/conditional-learning/",
   ".openskill-kit/learn-v2/learning-memory/",
   ".openskill-kit/learn-v2/skill-ontology/",
+  ".openskill-kit/learn-v2/skill-ontology-memory/",
   ".openskill-kit/learn-v2/open-world-grounding/",
   ".openskill-kit/learn-v2/concept-debug-trace/",
   ".openskill-kit/learn-v2/outcome-policy/",
@@ -185,6 +186,16 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     sharePolicy: "local-declassified",
     cli: "openskill-kit osk learn --debug-ontology",
     notes: ["Dynamic namespace candidates plus create/merge/split/attach operations."]
+  },
+  {
+    key: "skill-ontology-memory",
+    label: "Durable skill ontology memory",
+    relativePath: ".openskill-kit/learn-v2/skill-ontology-memory/store.json",
+    kind: "file",
+    lifecycle: "debug",
+    sharePolicy: "local-only",
+    cli: "openskill-kit osk learn --raw --surface-file <path> --apply",
+    notes: ["Canonical local-only memory for namespace candidates and ontology operations across applied runs."]
   },
   {
     key: "open-world-grounding",

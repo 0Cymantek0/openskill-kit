@@ -5,6 +5,7 @@ import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
 import { writeLearnV2LearningMemoryStore } from "./learning-memory.js";
 import { writeLearnV2SkillOntologyArtifact } from "./skill-ontology.js";
+import { writeLearnV2SkillOntologyMemoryStore } from "./skill-ontology-memory.js";
 import { writeLearnV2OpenWorldGroundingArtifact } from "./resource-grounding.js";
 import { writeLearnV2ConceptDebugTraceArtifact } from "./concept-debug-trace.js";
 import { writeLearnV2OutcomePolicyArtifact } from "./outcome-policy.js";
@@ -43,6 +44,7 @@ export interface LearnV2ConceptExtractionResult {
   conditionalLearningPath: string;
   learningMemoryStorePath: string;
   skillOntologyPath: string;
+  skillOntologyMemoryStorePath: string;
   openWorldGroundingPath: string;
   conceptDebugTracePath: string;
   outcomePolicyPath: string;
@@ -90,6 +92,7 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
   const concepts = mergeLearnV2ConceptCards(atoms, now);
   const store = await writeLearnV2ConceptStore(root, concepts, now);
   const skillOntology = await writeLearnV2SkillOntologyArtifact(root, store.cards, now);
+  const skillOntologyMemory = await writeLearnV2SkillOntologyMemoryStore(root, skillOntology, now);
   const openWorldGrounding = await writeLearnV2OpenWorldGroundingArtifact(root, store.cards, now);
   const outcomePolicy = await writeLearnV2OutcomePolicyArtifact(root, store.cards, now);
   const conceptDebugTrace = await writeLearnV2ConceptDebugTraceArtifact(root, store.cards, now, {
@@ -116,6 +119,7 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
     conditionalLearningPath: conditionalLearning.artifacts.markdown,
     learningMemoryStorePath: learningMemory.artifacts.json,
     skillOntologyPath: skillOntology.artifacts.markdown,
+    skillOntologyMemoryStorePath: skillOntologyMemory.artifacts.json,
     openWorldGroundingPath: openWorldGrounding.artifacts.markdown,
     conceptDebugTracePath: conceptDebugTrace.artifacts.markdown,
     outcomePolicyPath: outcomePolicy.artifacts.markdown

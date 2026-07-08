@@ -85,6 +85,7 @@ const sectionSpecs: SectionSpec[] = [
   { key: "conditional-learning", artifactKey: "learnV2ConditionalLearningPath", category: "learning", purpose: "Observation, context-factor, hypothesis, and memory-admission trace." },
   { key: "learning-memory", artifactKey: "learnV2LearningMemoryStorePath", category: "learning", purpose: "Accumulated local-only observation, hypothesis, and admission memory across applied runs." },
   { key: "skill-ontology", artifactKey: "learnV2SkillOntologyPath", category: "learning", purpose: "Emergent namespace candidates and create/merge/split/attach operations." },
+  { key: "skill-ontology-memory", artifactKey: "learnV2SkillOntologyMemoryStorePath", category: "learning", purpose: "Accumulated local-only namespace and ontology operation memory across applied runs." },
   { key: "open-world-grounding", artifactKey: "learnV2OpenWorldGroundingPath", category: "learning", purpose: "Project/external authority-tier anchors kept separate from user preference evidence." },
   { key: "concept-store", artifactKey: "learnV2ConceptStorePath", category: "review", purpose: "Canonical candidate/reviewed concept cards." },
   { key: "review-queue", artifactKey: "learnV2ReviewQueuePath", category: "review", purpose: "Developer review surface for accepting, rejecting, narrowing, and locking concepts." },

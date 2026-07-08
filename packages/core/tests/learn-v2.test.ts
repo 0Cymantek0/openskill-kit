@@ -83,6 +83,9 @@ import {
   buildLearnV2SkillNamespaces,
   buildLearnV2SkillOntologyOperations,
   readLearnV2SkillOntologyDebugView,
+  writeLearnV2SkillOntologyArtifact,
+  readLearnV2SkillOntologyMemoryStore,
+  writeLearnV2SkillOntologyMemoryStore,
   writeLearnV2OpenWorldGroundingArtifact,
   readLearnV2OpenWorldGroundingDebugView,
   readProjectConfig,
@@ -3140,6 +3143,7 @@ describe("learn-v2 substrate", () => {
     expect(result.artifacts.learnV2RawVaultDir).toContain(".openskill-kit");
     expect(result.artifacts.learnV2ProductIndexPath).toContain("index.md");
     expect(result.artifacts.learnV2LearningMemoryStorePath).toContain("learning-memory");
+    expect(result.artifacts.learnV2SkillOntologyMemoryStorePath).toContain("skill-ontology-memory");
     expect(result.artifacts.learnV2ReviewQueuePath).toBeTruthy();
     expect(result.artifacts.learnV2ModelRoutingPath).toContain("osk-model-routing.json");
     expect(result.artifacts.learnV2RelevanceCalibrationPath).toContain("relevance-calibration.json");
@@ -3159,6 +3163,7 @@ describe("learn-v2 substrate", () => {
     const productIndexMarkdown = await readText(result.artifacts.learnV2ProductIndexPath);
     expect(productIndexMarkdown).toContain("# Learn v2 Product Index");
     expect(productIndexMarkdown).toContain("Conditional learning traces");
+    expect(productIndexMarkdown).toContain("Durable skill ontology memory");
     expect(productIndexMarkdown).toContain("Concept debug trace");
     expect(productIndexMarkdown).toContain("Raw evidence vault");
     expect(productIndexMarkdown).toContain("Local-only paths:");
@@ -3175,6 +3180,9 @@ describe("learn-v2 substrate", () => {
     )).toBe(true);
     expect(productIndexJson.sections.some((section: { key: string; sharePolicy: string; status: string }) =>
       section.key === "learning-memory" && section.sharePolicy === "local-only" && section.status === "written"
+    )).toBe(true);
+    expect(productIndexJson.sections.some((section: { key: string; sharePolicy: string; status: string }) =>
+      section.key === "skill-ontology-memory" && section.sharePolicy === "local-only" && section.status === "written"
     )).toBe(true);
     expect(JSON.stringify(productIndexJson)).not.toContain(root);
     const observability = JSON.parse(await readText(result.artifacts.learnV2ObservabilityReportPath));
@@ -3522,6 +3530,97 @@ describe("learn-v2 substrate", () => {
     });
     expect(split!.conceptIds).toEqual(expect.arrayContaining(cards.map((card) => card.id)));
     expect(split!.rationale).toContain("dark, light");
+  });
+
+  it("persists durable skill ontology memory across applied runs", async () => {
+    const root = await tempProject();
+    const firstCards = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("ui_light_memory_green_cta", "Prefer green CTA buttons on light landing pages.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/LightLandingButton.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        conditions: {
+          appliesWhen: ["ui.theme=light", "component.role=button"],
+          doesNotApplyWhen: ["explicit color override"]
+        },
+        activationHints: {
+          phrases: ["light theme CTA", "landing page button"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: ["explicit color override"]
+        },
+        risk: "low"
+      }
+    ], new Date("2026-06-30T00:01:00Z"));
+    const firstArtifact = await writeLearnV2SkillOntologyArtifact(root, firstCards, new Date("2026-06-30T00:01:00Z"));
+    const firstStore = await writeLearnV2SkillOntologyMemoryStore(root, firstArtifact, new Date("2026-06-30T00:01:00Z"));
+
+    const secondCards = mergeLearnV2ConceptCards([
+      ...firstCards.map((card) => ({
+        schemaVersion: "openskill-kit.learn-v2.behavior-atom.v1" as const,
+        id: `${card.id}_roundtrip_atom`,
+        kind: "preference" as const,
+        statement: card.canonicalBehavior,
+        polarity: "positive" as const,
+        confidence: card.confidence,
+        evidenceIds: card.evidenceIds,
+        rawRefs: card.rawRefs,
+        scope: card.scope
+      })),
+      {
+        ...behaviorAtom("ui_dark_memory_blue_cta", "Prefer blue CTA buttons on dark landing pages.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/DarkLandingButton.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        conditions: {
+          appliesWhen: ["ui.theme=dark", "component.role=button"],
+          doesNotApplyWhen: ["explicit color override"]
+        },
+        activationHints: {
+          phrases: ["dark theme CTA", "landing page button"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: ["explicit color override"]
+        },
+        risk: "low"
+      }
+    ], new Date("2026-06-30T00:02:00Z"));
+    const secondArtifact = await writeLearnV2SkillOntologyArtifact(root, secondCards, new Date("2026-06-30T00:02:00Z"));
+    const secondStore = await writeLearnV2SkillOntologyMemoryStore(root, secondArtifact, new Date("2026-06-30T00:02:00Z"));
+
+    const firstUi = firstStore.namespaces.find((namespace) => namespace.label === "UI/UX design")!;
+    const secondUi = secondStore.namespaces.find((namespace) => namespace.label === "UI/UX design")!;
+    const firstUiCreate = firstStore.operations.find((operation) =>
+      operation.operation === "create-namespace" && operation.namespaceIds.includes(firstUi.id)
+    )!;
+    const secondUiCreate = secondStore.operations.find((operation) =>
+      operation.operation === "create-namespace" && operation.namespaceIds.includes(secondUi.id)
+    )!;
+    expect(secondStore.schemaVersion).toBe("openskill-kit.learn-v2.skill-ontology-memory-store.v1");
+    expect(secondUi.id).toBe(firstUi.id);
+    expect(secondUiCreate.id).toBe(firstUiCreate.id);
+    expect(secondUi.conceptIds.length).toBeGreaterThan(firstUi.conceptIds.length);
+    expect(secondUiCreate.conceptIds.length).toBeGreaterThan(firstUiCreate.conceptIds.length);
+    expect(secondUi.representativeSignals).toEqual(expect.arrayContaining(["ui:surface-design", "ui:theme"]));
+    expect(secondStore.counts.latestRunNamespaces).toBe(secondArtifact.counts.namespaces);
+    expect(secondStore.counts.latestRunOperations).toBe(secondArtifact.counts.operations);
+    expect(secondStore.counts.representedConcepts).toBeGreaterThan(firstStore.counts.representedConcepts);
+    expect(secondStore.operations.some((operation) => operation.operation === "split-namespace")).toBe(true);
+
+    const readBack = await readLearnV2SkillOntologyMemoryStore(root);
+    expect(readBack.counts.namespaces).toBe(secondStore.counts.namespaces);
+    const markdown = await readText(secondStore.artifacts.markdown);
+    expect(markdown).toContain("# Learn v2 Skill Ontology Memory Store");
+    expect(markdown).toContain("UI/UX design");
+    expect(markdown).not.toContain(root);
+    expect(markdown).not.toContain("Prefer green CTA buttons");
   });
 
   it("grounds verification concepts in project resources before external references", async () => {

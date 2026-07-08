@@ -18,6 +18,7 @@ export * from "./activation.js";
 export * from "./conditional-learning.js";
 export * from "./learning-memory.js";
 export * from "./skill-ontology.js";
+export * from "./skill-ontology-memory.js";
 export * from "./resource-grounding.js";
 export * from "./concept-debug-trace.js";
 export * from "./episode-debug.js";
