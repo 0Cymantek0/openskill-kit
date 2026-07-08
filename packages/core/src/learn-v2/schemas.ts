@@ -471,6 +471,8 @@ export const LearnV2SkillNamespaceCandidateSchema = z.object({
   confidence: z.number().min(0).max(1),
   conceptIds: z.array(z.string().min(1)).min(1),
   representativeSignals: z.array(z.string().min(1)).default([]),
+  parentNamespaceId: z.string().min(1).optional(),
+  hierarchyPath: z.array(z.string().min(1)).default([]),
   rationale: z.string().min(1)
 });
 export type LearnV2SkillNamespaceCandidate = z.infer<typeof LearnV2SkillNamespaceCandidateSchema>;
@@ -478,7 +480,7 @@ export type LearnV2SkillNamespaceCandidate = z.infer<typeof LearnV2SkillNamespac
 export const LearnV2SkillOntologyOperationSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.skill-ontology-operation.v1"),
   id: z.string().min(1),
-  operation: z.enum(["create-namespace", "merge-namespaces", "split-namespace", "attach-concept"]),
+  operation: z.enum(["create-namespace", "nest-namespace", "merge-namespaces", "split-namespace", "attach-concept"]),
   status: z.enum(["candidate", "needs-review"]).default("needs-review"),
   namespaceIds: z.array(z.string().min(1)).default([]),
   conceptIds: z.array(z.string().min(1)).default([]),
@@ -500,6 +502,7 @@ export const LearnV2SkillOntologyArtifactSchema = z.object({
     representedConcepts: z.number().int().min(0),
     operations: z.number().int().min(0).default(0),
     createOperations: z.number().int().min(0).default(0),
+    nestOperations: z.number().int().min(0).default(0),
     mergeOperations: z.number().int().min(0).default(0),
     splitOperations: z.number().int().min(0).default(0),
     attachOperations: z.number().int().min(0).default(0)

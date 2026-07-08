@@ -2957,10 +2957,17 @@ describe("learn-v2 substrate", () => {
 
     const namespaces = buildLearnV2SkillNamespaces([card!]);
     const labels = namespaces.map((namespace) => namespace.label);
-    expect(labels).toEqual(expect.arrayContaining(["Parser behavior", "Verification workflow"]));
+    expect(labels).toEqual(expect.arrayContaining([
+      "Parser behavior",
+      "Parser language structure",
+      "Verification workflow",
+      "Verification test workflow"
+    ]));
+    expect(namespaces.some((namespace) => namespace.parentNamespaceId && namespace.hierarchyPath.length >= 2)).toBe(true);
 
     const operations = buildLearnV2SkillOntologyOperations([card!], namespaces);
     expect(operations.some((operation) => operation.operation === "create-namespace")).toBe(true);
+    expect(operations.some((operation) => operation.operation === "nest-namespace" && operation.status === "needs-review")).toBe(true);
     expect(operations.some((operation) => operation.operation === "attach-concept" && operation.namespaceIds.length >= 2)).toBe(true);
     expect(operations.some((operation) => operation.operation === "merge-namespaces" && operation.status === "needs-review")).toBe(true);
     expect(operations.some((operation) => operation.operation === "split-namespace" && operation.status === "needs-review")).toBe(true);

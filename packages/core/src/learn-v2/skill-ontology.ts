@@ -39,19 +39,40 @@ const namespaceProfiles = [
   { key: "verification-workflow", label: "Verification workflow", prefix: "verification:" }
 ] as const;
 
+type NamespaceAssignment = { key: string; label: string; signals: string[]; parentKey?: string; hierarchyPath?: string[] };
+type NamespaceCluster = { label: string; concepts: LearnV2ConceptCard[]; signals: Set<string>; parentKey?: string; hierarchyPath: string[] };
+
 export function buildLearnV2SkillNamespaces(concepts: LearnV2ConceptCard[]): LearnV2SkillNamespaceCandidate[] {
   const usable = concepts.filter((concept) => !["rejected", "one-off", "superseded"].includes(concept.status));
-  const clusters = new Map<string, { label: string; concepts: LearnV2ConceptCard[]; signals: Set<string> }>();
+  const clusters = new Map<string, NamespaceCluster>();
   for (const concept of usable) {
     for (const assignment of namespaceAssignments(concept)) {
-      const current = clusters.get(assignment.key) ?? { label: assignment.label, concepts: [], signals: new Set<string>() };
+      const current = clusters.get(assignment.key) ?? {
+        label: assignment.label,
+        concepts: [],
+        signals: new Set<string>(),
+        parentKey: assignment.parentKey,
+        hierarchyPath: assignment.hierarchyPath ?? [assignment.label]
+      };
       current.concepts.push(concept);
       for (const signal of assignment.signals) current.signals.add(signal);
       clusters.set(assignment.key, current);
     }
   }
-  return [...clusters.entries()]
-    .map(([key, cluster]) => makeNamespaceCandidate(key, cluster.label, cluster.concepts, [...cluster.signals]))
+  const candidateEntries = [...clusters.entries()].map(([key, cluster]) => ({
+    key,
+    cluster,
+    candidate: makeNamespaceCandidate(key, cluster)
+  }));
+  const idByKey = new Map(candidateEntries.map((entry) => [entry.key, entry.candidate.id]));
+  return candidateEntries
+    .map(({ cluster, candidate }) => {
+      const parentNamespaceId = cluster.parentKey ? idByKey.get(cluster.parentKey) : undefined;
+      return LearnV2SkillNamespaceCandidateSchema.parse({
+        ...candidate,
+        ...(parentNamespaceId ? { parentNamespaceId } : {})
+      });
+    })
     .sort((a, b) => b.confidence - a.confidence || a.label.localeCompare(b.label));
 }
 
@@ -69,6 +90,18 @@ export function buildLearnV2SkillOntologyOperations(
       confidence: namespace.confidence,
       rationale: `Create emergent skill namespace '${namespace.label}' from ${namespace.conceptIds.length} behavior concept(s).`,
       reviewHint: "Accept when label, scope, and representative signals match observed behavior cluster."
+    }));
+  }
+
+  for (const namespace of namespaces.filter((item) => item.parentNamespaceId)) {
+    operations.push(makeOntologyOperation({
+      operation: "nest-namespace",
+      status: "needs-review",
+      namespaceIds: [namespace.parentNamespaceId!, namespace.id],
+      conceptIds: namespace.conceptIds,
+      confidence: Math.min(0.84, namespace.confidence),
+      rationale: `Nest '${namespace.label}' under parent namespace to preserve emergent skill hierarchy: ${namespace.hierarchyPath.join(" > ")}.`,
+      reviewHint: "Accept when child namespace should inherit parent review context but keep narrower activation/debug ownership."
     }));
   }
 
@@ -138,6 +171,7 @@ export async function writeLearnV2SkillOntologyArtifact(
       representedConcepts: representedConcepts.size,
       operations: operations.length,
       createOperations: operations.filter((item) => item.operation === "create-namespace").length,
+      nestOperations: operations.filter((item) => item.operation === "nest-namespace").length,
       mergeOperations: operations.filter((item) => item.operation === "merge-namespaces").length,
       splitOperations: operations.filter((item) => item.operation === "split-namespace").length,
       attachOperations: operations.filter((item) => item.operation === "attach-concept").length
@@ -229,12 +263,39 @@ function namespaceSignature(concept: LearnV2ConceptCard): { key: string; label: 
   return { key, label, signals: signals.length ? signals : terms.map((term) => `term:${term}`) };
 }
 
-function namespaceAssignments(concept: LearnV2ConceptCard): { key: string; label: string; signals: string[] }[] {
+function namespaceAssignments(concept: LearnV2ConceptCard): NamespaceAssignment[] {
   const signature = namespaceSignature(concept);
   const profiled = namespaceProfiles
     .filter((profile) => signature.signals.some((signal) => signal.startsWith(profile.prefix)))
     .map((profile) => ({ key: profile.key, label: profile.label, signals: signature.signals }));
-  return profiled.length ? profiled : [signature];
+  const children = childNamespaceAssignments(signature.signals);
+  return profiled.length ? uniqueAssignments([...profiled, ...children]) : [signature];
+}
+
+function childNamespaceAssignments(signals: string[]): NamespaceAssignment[] {
+  const children: NamespaceAssignment[] = [];
+  if (signals.includes("ui:theme")) {
+    children.push({ key: "ui-theme-preference", label: "UI theme preference", parentKey: "ui-ux-design", hierarchyPath: ["UI/UX design", "UI theme preference"], signals: signals.filter((signal) => signal.startsWith("ui:")) });
+  }
+  if (signals.includes("ui:component-container")) {
+    children.push({ key: "ui-component-containment", label: "UI component containment", parentKey: "ui-ux-design", hierarchyPath: ["UI/UX design", "UI component containment"], signals: signals.filter((signal) => signal.startsWith("ui:")) });
+  }
+  if (signals.includes("parser:language-structure")) {
+    children.push({ key: "parser-language-structure", label: "Parser language structure", parentKey: "parser-behavior", hierarchyPath: ["Parser behavior", "Parser language structure"], signals: signals.filter((signal) => signal.startsWith("parser:")) });
+  }
+  if (signals.includes("verification:test-workflow")) {
+    children.push({ key: "verification-test-workflow", label: "Verification test workflow", parentKey: "verification-workflow", hierarchyPath: ["Verification workflow", "Verification test workflow"], signals: signals.filter((signal) => signal.startsWith("verification:")) });
+  }
+  if (signals.includes("security:sensitive-work")) {
+    children.push({ key: "security-sensitive-work", label: "Security sensitive work", parentKey: "security-behavior", hierarchyPath: ["Security behavior", "Security sensitive work"], signals: signals.filter((signal) => signal.startsWith("security:")) });
+  }
+  return children;
+}
+
+function uniqueAssignments(assignments: NamespaceAssignment[]): NamespaceAssignment[] {
+  const byKey = new Map<string, NamespaceAssignment>();
+  for (const assignment of assignments) if (!byKey.has(assignment.key)) byKey.set(assignment.key, assignment);
+  return [...byKey.values()];
 }
 
 function namespaceSignals(text: string): string[] {
@@ -250,21 +311,23 @@ function namespaceSignals(text: string): string[] {
   return [...signals].sort();
 }
 
-function makeNamespaceCandidate(
-  key: string,
-  label: string,
-  concepts: LearnV2ConceptCard[],
-  signals: string[]
-): LearnV2SkillNamespaceCandidate {
+function namespaceIdForCluster(key: string, cluster: NamespaceCluster): string {
+  return `namespace_${learnV2ShortHash(`${key}:${cluster.concepts.map((concept) => concept.id).sort().join(",")}`)}`;
+}
+
+function makeNamespaceCandidate(key: string, cluster: NamespaceCluster): LearnV2SkillNamespaceCandidate {
+  const concepts = cluster.concepts;
+  const signals = [...cluster.signals];
   const confidence = Math.min(0.92, 0.42 + Math.min(0.3, concepts.length * 0.1) + Math.min(0.16, signals.length * 0.04) + average(concepts.map((concept) => concept.confidence)) * 0.18);
   return LearnV2SkillNamespaceCandidateSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.skill-namespace-candidate.v1",
-    id: `namespace_${learnV2ShortHash(`${key}:${concepts.map((concept) => concept.id).sort().join(",")}`)}`,
-    label,
+    id: namespaceIdForCluster(key, cluster),
+    label: cluster.label,
     status: concepts.length >= 2 || confidence >= 0.72 ? "candidate" : "needs-review",
     confidence: Number(confidence.toFixed(3)),
     conceptIds: concepts.map((concept) => concept.id).sort(),
     representativeSignals: signals.slice(0, 12),
+    hierarchyPath: cluster.hierarchyPath,
     rationale: `Grouped ${concepts.length} concept(s) by observed signals: ${signals.slice(0, 6).join(", ") || key}.`
   });
 }
@@ -342,7 +405,7 @@ function renderSkillOntologyArtifact(root: string, artifact: LearnV2SkillOntolog
     `- Needs review: ${artifact.counts.reviewNamespaces}`,
     `- Represented concepts: ${artifact.counts.representedConcepts}`,
     `- Ontology operations: ${artifact.counts.operations}`,
-    `- Create / merge / split / attach: ${artifact.counts.createOperations} / ${artifact.counts.mergeOperations} / ${artifact.counts.splitOperations} / ${artifact.counts.attachOperations}`,
+    `- Create / nest / merge / split / attach: ${artifact.counts.createOperations} / ${artifact.counts.nestOperations} / ${artifact.counts.mergeOperations} / ${artifact.counts.splitOperations} / ${artifact.counts.attachOperations}`,
     "",
     "## Namespaces",
     ""
@@ -352,6 +415,8 @@ function renderSkillOntologyArtifact(root: string, artifact: LearnV2SkillOntolog
     lines.push(`### ${namespace.label}`);
     lines.push("");
     lines.push(`ID: ${namespace.id}`);
+    lines.push(`Parent: ${namespace.parentNamespaceId ?? "none"}`);
+    lines.push(`Hierarchy: ${namespace.hierarchyPath.join(" > ") || namespace.label}`);
     lines.push(`Status: ${namespace.status}`);
     lines.push(`Confidence: ${namespace.confidence.toFixed(2)}`);
     lines.push(`Concepts: ${namespace.conceptIds.join(", ")}`);
@@ -388,9 +453,10 @@ function average(values: number[]): number {
 
 function operationRank(operation: LearnV2SkillOntologyOperation["operation"]): number {
   if (operation === "create-namespace") return 0;
-  if (operation === "attach-concept") return 1;
-  if (operation === "merge-namespaces") return 2;
-  return 3;
+  if (operation === "nest-namespace") return 1;
+  if (operation === "attach-concept") return 2;
+  if (operation === "merge-namespaces") return 3;
+  return 4;
 }
 
 function unique(values: string[]): string[] {
