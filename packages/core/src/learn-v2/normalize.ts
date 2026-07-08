@@ -22,6 +22,7 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
   const traceContext = objectValue(value.traceContext);
   const metadataObject = objectValue(value.metadata);
   const toolInput = firstObject(value.input, value.args, value.arguments, value.parameters, value.toolInput, value.metadata);
+  const ambient = opencodeAmbientDerivedEvidence(value, metadataObject);
   const diagnosticText = surface.adapterId === "ide-diagnostics" ? diagnosticTextValue(value) : undefined;
   const text = diagnosticText
     ?? textValue(value.content)
@@ -32,9 +33,10 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
     ?? stringValue(value.output)
     ?? diagnosticTextValue(value)
     ?? stringValue(value.diff)
+    ?? ambient?.text
     ?? "";
-  const command = commandValue(value, toolInput);
-  const toolName = toolNameValue(value) ?? toolNameValue(toolInput);
+  const command = commandValue(value, toolInput) ?? ambient?.command;
+  const toolName = toolNameValue(value) ?? toolNameValue(toolInput) ?? ambient?.toolName;
   if (!text && !command && !toolName) return [];
   const fullText = text || command || toolName || `structured evidence ${index}`;
   const explicitPaths = pathsFromStructuredValue(value);
@@ -42,7 +44,7 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
   return [makeEvidence(rawRecord, index, {
     kind: inferKind(value, fullText, toolName, commands, surface),
     actor: normalizeActorForSurface(surface, stringValue(value.role) ?? stringValue(value.type) ?? stringValue(value.actor)),
-    timestamp: normalizeTimestamp(stringValue(value.timestamp) ?? stringValue(value.createdAt) ?? stringValue(value.created_at)),
+    timestamp: normalizeTimestamp(stringValue(value.timestamp) ?? stringValue(value.createdAt) ?? stringValue(value.created_at) ?? stringValue(value.capturedAt)),
     sessionId: stringValue(value.sessionId) ?? stringValue(value.session_id) ?? stringValue(value.sessionID) ?? stringValue(value.conversationId) ?? stringValue(value.conversation_id) ?? stringValue(value.chatId) ?? stringValue(value.threadId) ?? safeTraceId(traceContext?.oskSessionId, "osk_session") ?? safeTraceId(traceContext?.sessionId, "osk_session") ?? safeTraceId(metadataObject?.oskSessionId, "osk_session") ?? rawRecord.trace.sessionIds[0],
     traceId: stringValue(value.traceId) ?? stringValue(value.trace_id) ?? stringValue(value.runId) ?? safeTraceId(traceContext?.oskTraceId, "osk_trace") ?? safeTraceId(traceContext?.traceId, "osk_trace") ?? safeTraceId(metadataObject?.oskTraceId, "osk_trace") ?? rawRecord.trace.oskTraceId,
     episodeId: stringValue(value.episodeId) ?? stringValue(value.episode_id) ?? stringValue(value.turnId) ?? safeTraceId(traceContext?.oskEpisodeId, "osk_episode") ?? safeTraceId(traceContext?.episodeId, "osk_episode") ?? safeTraceId(metadataObject?.oskEpisodeId, "osk_episode") ?? rawRecord.trace.oskEpisodeId,
@@ -59,6 +61,7 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
       rawKeys: Object.keys(value).slice(0, 40),
       traceContext: safeTraceMetadata(traceContext),
       opencodeSessionId: safeTraceId(traceContext?.opencodeSessionId, "opencode_session"),
+      ...(ambient ? { opencodeAmbient: true, opencodeAmbientEventType: ambient.eventType } : {}),
       ...factorMetadataFromStructuredValue(value, metadataObject, toolInput)
     }
   })];
@@ -603,6 +606,47 @@ function toolNameValue(value: Record<string, unknown> | undefined): string | und
     ?? stringValue(objectValue(value.function)?.name)
     ?? toolNameFromContentParts(value.content)
     ?? toolNameFromContentParts(value.messages);
+}
+
+function opencodeAmbientDerivedEvidence(
+  value: Record<string, unknown>,
+  metadata: Record<string, unknown> | undefined
+): { text: string; command?: string; toolName?: string; eventType?: string } | undefined {
+  if (stringValue(value.schemaVersion) !== "openskill-kit.opencode-ambient-event.v1" || !metadata) return undefined;
+  const eventType = stringValue(value.eventType);
+  const toolName = stringValue(metadata["input.tool"]) ?? stringValue(metadata["output.tool"]);
+  const commandKind = stringValue(metadata["input.commandKind"]);
+  const commandHash = stringValue(metadata["input.commandHash"]);
+  const pathKind = stringValue(metadata["input.pathKind"]);
+  const pathExtension = stringValue(metadata["input.pathExtension"]);
+  const outputStatus = stringValue(metadata["output.status"]) ?? stringValue(value.status);
+  const commandRiskFlags = metadataList(metadata["input.commandRiskFlags"]);
+  const pathRiskFlags = metadataList(metadata["input.pathRiskFlags"]);
+  const parts = [
+    "OpenCode ambient event",
+    eventType ? `event=${eventType}` : undefined,
+    toolName ? `tool=${toolName}` : undefined,
+    commandKind ? `commandKind=${commandKind}` : undefined,
+    commandHash ? `commandHash=${commandHash}` : undefined,
+    pathKind ? `pathKind=${pathKind}` : undefined,
+    pathExtension ? `pathExtension=${pathExtension}` : undefined,
+    outputStatus ? `status=${outputStatus}` : undefined,
+    commandRiskFlags.length ? `commandRiskFlags=${commandRiskFlags.join(",")}` : undefined,
+    pathRiskFlags.length ? `pathRiskFlags=${pathRiskFlags.join(",")}` : undefined
+  ].filter((item): item is string => Boolean(item));
+  if (parts.length <= 1 && !toolName) return undefined;
+  return {
+    text: parts.join(" "),
+    command: commandKind && commandHash ? `opencode-derived:${commandKind}:${commandHash}` : undefined,
+    toolName,
+    eventType
+  };
+}
+
+function metadataList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0 && item.length <= 120).slice(0, 20)
+    : [];
 }
 
 function commandFromContentParts(value: unknown): string | undefined {

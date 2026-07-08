@@ -165,6 +165,9 @@ describe("openskill-kit MCP server", () => {
       expect(names).toContain("osk_apply_learn_v2_contradiction_outputs");
       expect(names).toContain("osk_prepare_learn_v2_eval_requests");
       expect(names).toContain("osk_apply_learn_v2_eval_outputs");
+      const activationTool = listed.tools.find((tool) => tool.name === "osk_activate_learn_v2_concepts");
+      expect(activationTool?.annotations?.readOnlyHint).toBe(false);
+      expect(activationTool?.annotations?.idempotentHint).toBe(false);
 
       await client.callTool({
         name: "osk_get_status",

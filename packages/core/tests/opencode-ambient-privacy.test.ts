@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { applyAmbientLabelReview, compileBehaviorLayer, initAdaptiveProject, readAmbientLabelLedger, runLearningPlan, type PreferenceGraph, type PreferenceNode } from "../src/index.js";
+import { applyAmbientLabelReview, compileBehaviorLayer, initAdaptiveProject, readAmbientLabelLedger, runLearningPlan, runRawLocalLearning, type PreferenceGraph, type PreferenceNode } from "../src/index.js";
 import { readEvents } from "../src/events/store.js";
 
 // These are the fake sensitive values ambient telemetry must never store verbatim.
@@ -241,6 +241,60 @@ describe("OpenCode ambient telemetry privacy", () => {
     compiled = await compileBehaviorLayer(root, { targets: ["project-rules"] });
     const reviewChecklist = await readFile(compiled.policyArtifactPaths.find((item) => item.endsWith("review-checklist.md"))!, "utf8");
     expect(reviewChecklist).not.toContain("Parser source");
+  });
+
+  it("raw Learn v2 explicitly accepts generated safe ambient telemetry and preserves trace ids", async () => {
+    const root = await tempProject();
+    await compileBehaviorLayer(root, { targets: ["plugin"] });
+    const pluginPath = path.join(root, ".openskill-kit", "compiled", "plugin", "opencode", "plugins", "openskillkit.ts");
+    const previousTrace = process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE;
+    const previousSession = process.env.OSK_SESSION_ID;
+    const previousEpisode = process.env.OSK_EPISODE_ID;
+    const previousTraceId = process.env.OSK_TRACE_ID;
+    process.env.OSK_SESSION_ID = "osk_session_raw_v2_ambient";
+    process.env.OSK_EPISODE_ID = "osk_episode_raw_v2_ambient";
+    process.env.OSK_TRACE_ID = "osk_trace_raw_v2_ambient";
+    delete process.env.OPENSKILLKIT_AMBIENT_TRACE_MODE;
+    try {
+      const imported = await import(`${pathToFileURL(pluginPath).href}?case=${Date.now()}-raw-v2`);
+      const hooks = await imported.OpenSkillKitPlugin({
+        worktree: root,
+        client: { app: { log: async () => ({}) } }
+      });
+      await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", path: "src/parser.ts" }, { status: "success" });
+      await hooks["tool.execute.after"]({ tool: "bash", command: "npm test", path: "src/parser.ts" }, { status: "success" });
+    } finally {
+      restoreEnv("OPENSKILLKIT_AMBIENT_TRACE_MODE", previousTrace);
+      restoreEnv("OSK_SESSION_ID", previousSession);
+      restoreEnv("OSK_EPISODE_ID", previousEpisode);
+      restoreEnv("OSK_TRACE_ID", previousTraceId);
+    }
+
+    const ambientPath = path.join(root, ".openskill-kit", "ambient", "opencode-events.jsonl");
+    const ambient = await readFile(ambientPath, "utf8");
+    expect(ambient).not.toContain("npm test");
+    expect(ambient).not.toContain("src/parser.ts");
+    expect(ambient).not.toContain(root);
+
+    const result = await runRawLocalLearning(root, {
+      sourceFiles: [ambientPath],
+      previewOnly: false,
+      now: new Date("2026-06-28T00:14:00.000Z")
+    });
+
+    expect(result.sources[0]!.projectRelevance.decision).toBe("include");
+    expect(result.sources[0]!.projectRelevance.reasons).toContain("safe-opencode-ambient-telemetry");
+    expect(result.sources[0]!.projectRelevance.reasons).toContain("hard-accept:trusted-privacy-safe-opencode-ambient");
+    expect(result.learnV2.episodes).toHaveLength(1);
+    expect(result.learnV2.episodes[0]!.stitching.method).toBe("explicit-id");
+    expect(result.learnV2.episodes[0]!.sessionIds).toEqual(["osk_session_raw_v2_ambient"]);
+    expect(result.learnV2.episodes[0]!.traceIds).toEqual(["osk_trace_raw_v2_ambient"]);
+    expect(result.learnV2.episodes[0]!.toolSummaries.some((tool) =>
+      tool.command?.startsWith("opencode-derived:package-manager:sha256:")
+    )).toBe(true);
+    expect(JSON.stringify(result.learnV2.episodes)).not.toContain("npm test");
+    expect(JSON.stringify(result.learnV2.episodes)).not.toContain("src/parser.ts");
+    expect(JSON.stringify(result.learnV2.episodes)).not.toContain(root);
   });
 
   it("skips stale ambient records with raw-prone keys even when flags claim safe", async () => {

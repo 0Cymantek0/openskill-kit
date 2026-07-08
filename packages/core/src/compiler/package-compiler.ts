@@ -158,7 +158,7 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_apply_learn_v2_scope_outputs", "learning", "approval-required", true),
   descriptor("osk_apply_learn_v2_contradiction_outputs", "learning", "approval-required", true),
   descriptor("osk_apply_learn_v2_eval_outputs", "eval", "local-write"),
-  descriptor("osk_activate_learn_v2_concepts", "retrieval", "read-only"),
+  descriptor("osk_activate_learn_v2_concepts", "retrieval", "local-write"),
   descriptor("osk_record_learn_v2_concept_outcome", "learning", "local-write"),
   descriptor("osk_get_learn_v2_vault_status", "maintenance", "local-write"),
   descriptor("osk_get_learn_v2_observability", "status", "read-only"),

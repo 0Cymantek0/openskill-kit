@@ -472,7 +472,7 @@
   "integrity": {
     "algorithm": "sha256",
     "descriptorHashes": "mcp/descriptor-hashes.json",
-    "descriptorsHash": "sha256:5770f690ccb5dbc5186b337c29705c19f2fb76def0a1a2c2a125dfe27890ecf5"
+    "descriptorsHash": "sha256:2a7b39fa3c834b7c43ca256ddc9e39527a3ab29e33798ed2e7a66c0fb3e5d683"
   },
   "files": [
     ".agent-plugin/plugin.json",

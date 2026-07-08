@@ -143,6 +143,10 @@ export async function scoreLearnV2ProjectRelevance(
     featureValues.foreignAbsolutePathMentioned = 1;
     reasons.add("foreign-absolute-path-mentioned");
   }
+  if (isSafeOpenCodeAmbientTelemetry(text)) {
+    featureValues.safeOpenCodeAmbientTelemetry = 1;
+    reasons.add("safe-opencode-ambient-telemetry");
+  }
 
   const hardGate = decideHardGate(featureValues, sourceFileInsideProject, options.explicitlySelected === true);
   const calibratedScore = scoreFromCalibration(featureValues, calibration);
@@ -192,6 +196,7 @@ export function buildDefaultLearnV2ProjectRelevanceCalibration(now = new Date())
       "gitRemoteMentioned",
       "currentHeadCommitMentioned",
       "repoRelativePathMentioned",
+      "safeOpenCodeAmbientTelemetry",
       "globalMemoryRisk",
       "foreignAbsolutePathMentioned",
       "unanchoredTestOrCommandLog"
@@ -204,6 +209,7 @@ export function buildDefaultLearnV2ProjectRelevanceCalibration(now = new Date())
       gitRemoteMentioned: 0.28,
       currentHeadCommitMentioned: 0.22,
       repoRelativePathMentioned: 0.25,
+      safeOpenCodeAmbientTelemetry: 0.2,
       globalMemoryRisk: -0.36,
       foreignAbsolutePathMentioned: -0.18,
       unanchoredTestOrCommandLog: 0
@@ -303,6 +309,14 @@ function mentionsForeignAbsolutePath(root: string, text: string): boolean {
     ...text.matchAll(/(?:^|\s)(\/(?:Users|home|workspace|tmp|var|opt)\/[^\s"'`<>|]+)/g)
   ].map((match) => (match[1] ?? match[0]).trim().replace(/\\/g, "/").toLowerCase());
   return absolutePaths.some((item) => !item.startsWith(normalizedRoot));
+}
+
+function isSafeOpenCodeAmbientTelemetry(text: string): boolean {
+  if (!text.includes('"schemaVersion":"openskill-kit.opencode-ambient-event.v1"') && !text.includes('"schemaVersion": "openskill-kit.opencode-ambient-event.v1"')) return false;
+  if (!text.includes('"traceContext"')) return false;
+  if (!text.includes('"containsRawFields":false') && !text.includes('"containsRawFields": false')) return false;
+  if (/"(?:command|cmd|args|argv|path|file|filePath|filename|rawInput|rawOutput|rawPrompt)"\s*:/.test(text)) return false;
+  return /"(?:input|output)\.(?:command|path)(?:Kind|Hash|LengthBucket|Extension|Depth|RiskFlags)"\s*:/.test(text);
 }
 
 function round(value: number): number {

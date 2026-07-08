@@ -771,7 +771,7 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
     "osk_activate_learn_v2_concepts",
     {
       title: "OpenSkillKit Learn v2 Concept Activation",
-      description: "Score reviewed Learn v2 concepts for the current task using deterministic lexical, path, command, task-type, and negative-trigger matching.",
+      description: "Score reviewed Learn v2 concepts for the current task and append local hashed activation-run telemetry.",
       inputSchema: z.object({
         projectRoot: projectRootSchema,
         query: z.string().optional(),
@@ -782,7 +782,7 @@ export function createOpenSkillMcpServer(options: { profile?: OpenSkillMcpProfil
         includeCandidates: z.boolean().default(false),
         limit: z.number().int().min(1).max(50).default(8)
       }),
-      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
     async ({ projectRoot, ...query }) => {
       const root = resolveProjectRoot(projectRoot);

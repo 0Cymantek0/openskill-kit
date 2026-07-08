@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -15,7 +15,7 @@ const opencodeBin = process.platform === "win32"
   ? path.join(repoRoot, "node_modules", "opencode-ai", "bin", "opencode.exe")
   : path.join(repoRoot, "node_modules", ".bin", "opencode");
 const mcpDistBin = path.join(repoRoot, "dist", "openskill-kit-mcp.cjs");
-const maybeIt = existsSync(opencodeBin) && existsSync(mcpDistBin) ? it : it.skip;
+const maybeIt = existsSync(opencodeBin) && existsSync(mcpDistBin) && canRunOpenCode(opencodeBin) ? it : it.skip;
 
 describe("OpenCode CLI smoke", () => {
   maybeIt("loads generated OSK config, agents, and MCP server in real OpenCode", async () => {
@@ -74,6 +74,15 @@ describe("OpenCode CLI smoke", () => {
 async function execJson(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<any> {
   const { stdout } = await execFileAsync(command, args, { cwd, env, windowsHide: true, timeout: 45_000, maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout);
+}
+
+function canRunOpenCode(command: string): boolean {
+  try {
+    execFileSync(command, ["--version"], { windowsHide: true, timeout: 30_000, stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function writeOpenSkillKitMcpShim(dir: string): Promise<void> {

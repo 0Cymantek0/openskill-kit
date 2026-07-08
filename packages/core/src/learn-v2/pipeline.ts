@@ -292,11 +292,12 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     const maxBytes = Math.min(options.maxRawBytes ?? config.learning.rawEvidence.maxRawBytesPerRun, config.learning.rawEvidence.maxRawBytesPerRun);
     if (stat.size > maxBytes) throw new Error(`Raw learning source exceeds maxRawBytes=${maxBytes}: ${sourcePath}`);
     const surface = await readLearnV2Surface(sourcePath, options.adapter);
-    const relevance = await scoreLearnV2ProjectRelevance(root, sourcePath, surface.rawText, undefined, {
+    const scoredRelevance = await scoreLearnV2ProjectRelevance(root, sourcePath, surface.rawText, undefined, {
       calibration: relevanceCalibration.calibration,
       explicitlySelected: true,
       now
     });
+    const relevance = trustPrivacySafeOpenCodeAmbientSource(root, sourcePath, surface.rawText, surface.adapterId, scoredRelevance);
     const declassified = learnV2DeclassifyText(surface.rawText, root, config);
     const sourceAcceptedForLearning = relevance.decision === "accept";
     const shouldPersistRawRecord = !previewOnly && sourceAcceptedForLearning;
@@ -1064,6 +1065,67 @@ function normalizeRawLearnerLocalPaths(text: string, root: string): string {
     }
   }
   return current;
+}
+
+function trustPrivacySafeOpenCodeAmbientSource(
+  root: string,
+  sourcePath: string,
+  rawText: string,
+  adapterId: string,
+  relevance: Awaited<ReturnType<typeof scoreLearnV2ProjectRelevance>>
+): Awaited<ReturnType<typeof scoreLearnV2ProjectRelevance>> {
+  const relativePath = learnV2ProjectRelativePath(root, sourcePath).toLowerCase();
+  if (
+    adapterId !== "opencode" ||
+    relativePath !== ".openskill-kit/ambient/opencode-events.jsonl" ||
+    relevance.decision === "reject" ||
+    !isPrivacySafeOpenCodeAmbientJsonl(rawText)
+  ) {
+    return relevance;
+  }
+  return {
+    ...relevance,
+    decision: "accept",
+    gate: "hard-accept",
+    score: Math.max(relevance.score, 0.86),
+    reasons: [...new Set([...relevance.reasons, "hard-accept:trusted-privacy-safe-opencode-ambient"])].sort(),
+    matchedPaths: [...new Set([...relevance.matchedPaths, ".openskill-kit/ambient/opencode-events.jsonl"])].sort()
+  };
+}
+
+function isPrivacySafeOpenCodeAmbientJsonl(rawText: string): boolean {
+  const lines = rawText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length || lines.length > 10_000) return false;
+  return lines.every((line) => {
+    try {
+      const record = JSON.parse(line) as unknown;
+      if (!isJsonObject(record)) return false;
+      if (record.schemaVersion !== "openskill-kit.opencode-ambient-event.v1") return false;
+      if (record.containsRawFields !== false) return false;
+      if (isJsonObject(record.rawInput) || isJsonObject(record.rawOutput)) return false;
+      if (hasRawProneOpenCodeAmbientKey(record)) return false;
+      return isJsonObject(record.traceContext) &&
+        record.traceContext.schemaVersion === "openskill-kit.learn-v2.trace-context.v1";
+    } catch {
+      return false;
+    }
+  });
+}
+
+function hasRawProneOpenCodeAmbientKey(value: unknown, pathPrefix = ""): boolean {
+  if (Array.isArray(value)) return value.some((item, index) => hasRawProneOpenCodeAmbientKey(item, `${pathPrefix}[${index}]`));
+  if (!isJsonObject(value)) return false;
+  for (const [key, item] of Object.entries(value)) {
+    const fullKey = pathPrefix ? `${pathPrefix}.${key}` : key;
+    if (/^(rawInput|rawOutput|command|cmd|args|argv|path|file|filePath|filename|rawPrompt|prompt|output|diff|patch|cwd|env|url)$/i.test(key)) return true;
+    if (/^(metadata\.)?(input|output)\.(command|cmd|args|argv|path|file|filePath|filename|rawPrompt|prompt|output|diff|patch|cwd|env|url)$/i.test(fullKey)) return true;
+    if (hasRawProneOpenCodeAmbientKey(item, fullKey)) return true;
+  }
+  return false;
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function declassifyLearnV2NormalizedEvidence(item: LearnV2NormalizedEvidence, root: string, config: ProjectConfig): LearnV2NormalizedEvidence {

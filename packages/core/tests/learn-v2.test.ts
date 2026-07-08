@@ -324,6 +324,97 @@ describe("learn-v2 substrate", () => {
     expect(episodes[0]!.sessionIds).toEqual(["osk_session_trace_test"]);
   });
 
+  it("imports privacy-safe OpenCode ambient events through raw-local Learn v2 with trace context preserved", async () => {
+    const root = await tempProject();
+    const ambientDir = path.join(root, ".openskill-kit", "ambient");
+    await mkdir(ambientDir, { recursive: true });
+    const ambientFile = path.join(ambientDir, "opencode-events.jsonl");
+    const traceContext = {
+      schemaVersion: "openskill-kit.learn-v2.trace-context.v1",
+      oskSessionId: "osk_session_ambient_raw_local",
+      oskEpisodeId: "osk_episode_ambient_raw_local",
+      oskTraceId: "osk_trace_ambient_raw_local",
+      opencodeSessionId: "opencode_session_ambient_raw_local",
+      source: "generated",
+      projectRootHash: "sha256:ambient-root",
+      createdAt: "2026-06-30T00:00:00.000Z"
+    };
+    await writeFile(ambientFile, [
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "session-start",
+        capturedAt: "2026-06-30T00:00:01.000Z",
+        traceMode: "safe",
+        traceContext,
+        metadata: {
+          "input.type": "session.created",
+          "input.sessionIDHash": "sha256:sessionhash"
+        },
+        containsRawFields: false
+      }),
+      JSON.stringify({
+        schemaVersion: "openskill-kit.opencode-ambient-event.v1",
+        source: "opencode-plugin",
+        eventType: "post-tool-use",
+        capturedAt: "2026-06-30T00:00:02.000Z",
+        traceMode: "safe",
+        traceContext,
+        metadata: {
+          "input.tool": "bash",
+          "input.commandKind": "package-manager",
+          "input.commandHash": "sha256:commandhash",
+          "input.commandLengthBucket": "short",
+          "input.pathKind": "relative",
+          "input.pathHash": "sha256:pathhash",
+          "input.pathExtension": ".ts",
+          "input.pathDepth": 3,
+          "output.status": "success"
+        },
+        containsRawFields: false
+      })
+    ].join("\n") + "\n", "utf8");
+
+    const result = await runRawLocalLearning(root, {
+      sourceFiles: [ambientFile],
+      previewOnly: false,
+      allowDuplicateImports: true,
+      now: new Date("2026-06-30T00:00:03Z")
+    });
+    const analysisFrame = JSON.parse(await readText(result.sources[0]!.analysisFramePath));
+    const evidence = analysisFrame.normalizedEvidence as LearnV2NormalizedEvidence[];
+    const episodes = result.learnV2.episodes;
+    const serialized = JSON.stringify({ evidence, episodes });
+
+    expect(result.digest.sourcesIncluded).toBe(1);
+    expect(result.sources[0]!.projectRelevance.decision).toBe("include");
+    expect(result.sources[0]!.projectRelevance.reasons).toContain("hard-accept:trusted-privacy-safe-opencode-ambient");
+    expect(evidence).toHaveLength(2);
+    expect(evidence.every((item) => item.sessionId === "osk_session_ambient_raw_local")).toBe(true);
+    expect(evidence.every((item) => item.traceId === "osk_trace_ambient_raw_local")).toBe(true);
+    expect(evidence.every((item) => item.episodeId === "osk_episode_ambient_raw_local")).toBe(true);
+    expect(evidence.every((item) =>
+      (item.metadata.traceContext as { oskSessionId?: string } | undefined)?.oskSessionId === "osk_session_ambient_raw_local"
+    )).toBe(true);
+    expect(evidence[1]).toMatchObject({
+      kind: "tool-call",
+      toolName: "bash",
+      commands: ["opencode-derived:package-manager:sha256:commandhash"],
+      status: "pass"
+    });
+    expect(evidence[1]!.text).toContain("commandKind=package-manager");
+    expect(evidence[1]!.text).toContain("pathExtension=.ts");
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0]).toMatchObject({
+      stitching: { method: "explicit-id" },
+      traceIds: ["osk_trace_ambient_raw_local"],
+      sessionIds: ["osk_session_ambient_raw_local"]
+    });
+    expect(episodes[0]!.evidenceIds).toEqual(evidence.map((item) => item.id));
+    expect(serialized).not.toContain("npm test");
+    expect(serialized).not.toContain(root);
+  });
+
   it("normalizes structured Codex Claude Cursor and OpenCode session export shapes", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_session_exports");
