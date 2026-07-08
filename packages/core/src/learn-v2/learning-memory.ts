@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import { writeJsonAtomic } from "../storage/atomic.js";
+import { decideLearnV2MemoryAdmission, inferLearnV2ConditionalHypotheses } from "./conditional-learning.js";
 import {
   LearnV2ConditionalHypothesisSchema,
   LearnV2LearningObservationSchema,
@@ -61,9 +62,10 @@ export async function writeLearnV2LearningMemoryStore(
   const json = learnV2LearningMemoryStorePath(root);
   const markdown = json.replace(/\.json$/, ".md");
   const existing = await readLearnV2LearningMemoryStore(root, now);
-  const observations = mergeById(existing.observations, run.observations);
-  const hypotheses = mergeById(existing.hypotheses, run.hypotheses);
-  const admissionDecisions = mergeById(existing.admissionDecisions, run.admissionDecisions);
+  const observations = markCrossRunRecurrence(mergeById(existing.observations, run.observations));
+  const inferredHypotheses = inferLearnV2ConditionalHypotheses(observations);
+  const hypotheses = mergeById(run.hypotheses, inferredHypotheses);
+  const admissionDecisions = decideLearnV2MemoryAdmission({ observations, hypotheses });
   const store = LearnV2LearningMemoryStoreSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.learning-memory-store.v1",
     updatedAt: now.toISOString(),
@@ -118,6 +120,18 @@ function mergeById<T extends { id: string }>(existing: T[], incoming: T[]): T[] 
   for (const item of existing) byId.set(item.id, item);
   for (const item of incoming) byId.set(item.id, item);
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function markCrossRunRecurrence(observations: LearnV2LearningObservation[]): LearnV2LearningObservation[] {
+  const counts = new Map<string, number>();
+  for (const observation of observations) counts.set(observation.target, (counts.get(observation.target) ?? 0) + 1);
+  return observations.map((observation) => LearnV2LearningObservationSchema.parse({
+    ...observation,
+    durabilitySignals: {
+      ...observation.durabilitySignals,
+      recurrenceCandidate: (counts.get(observation.target) ?? 0) > 1
+    }
+  }));
 }
 
 function renderLearnV2LearningMemoryStore(root: string, store: LearnV2LearningMemoryStore): string {

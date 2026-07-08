@@ -78,6 +78,7 @@ import {
   decideLearnV2MemoryAdmission,
   learnV2ConditionalHypothesesToBehaviorAtoms,
   readLearnV2LearningMemoryStore,
+  writeLearnV2LearningMemoryStore,
   readLearnV2ConditionalLearningDebugView,
   buildLearnV2SkillNamespaces,
   buildLearnV2SkillOntologyOperations,
@@ -3280,6 +3281,53 @@ describe("learn-v2 substrate", () => {
     const observabilityMarkdown = await readText(observability.artifactsWritten.markdown.replace("[PROJECT_ROOT]/", `${root}/`));
     expect(observabilityMarkdown).toContain("Conditional hypotheses: 2 (0 promoted)");
     expect(observabilityMarkdown).toContain("Memory admission:");
+  });
+
+  it("recomputes conditional hypotheses from learning memory across applied runs", async () => {
+    const root = await tempProject();
+    const firstObservations = buildLearnV2LearningObservationsFromEvidence([
+      normalizedMessage("ev_memory_light_button", "Make independent button green on white landing page.")
+    ]);
+    const firstHypotheses = inferLearnV2ConditionalHypotheses(firstObservations);
+    const firstAdmission = decideLearnV2MemoryAdmission({ observations: firstObservations, hypotheses: firstHypotheses });
+    const firstStore = await writeLearnV2LearningMemoryStore(root, {
+      observations: firstObservations,
+      hypotheses: firstHypotheses,
+      admissionDecisions: firstAdmission
+    }, new Date("2026-06-30T00:02:00Z"));
+    expect(firstStore.counts.observations).toBe(1);
+    expect(firstStore.counts.hypotheses).toBe(0);
+
+    const secondObservations = buildLearnV2LearningObservationsFromEvidence([
+      normalizedMessage("ev_memory_dark_button", "No, this time I want blue for independent button on dark page.")
+    ]);
+    const secondHypotheses = inferLearnV2ConditionalHypotheses(secondObservations);
+    const secondAdmission = decideLearnV2MemoryAdmission({ observations: secondObservations, hypotheses: secondHypotheses });
+    await writeLearnV2LearningMemoryStore(root, {
+      observations: secondObservations,
+      hypotheses: secondHypotheses,
+      admissionDecisions: secondAdmission
+    }, new Date("2026-06-30T00:03:00Z"));
+
+    const memory = await readLearnV2LearningMemoryStore(root);
+    expect(memory.counts.observations).toBe(2);
+    expect(memory.counts.latestRunObservations).toBe(1);
+    expect(memory.counts.latestRunHypotheses).toBe(0);
+    expect(memory.counts.hypotheses).toBeGreaterThanOrEqual(2);
+    expect(memory.hypotheses.some((hypothesis) =>
+      hypothesis.desiredOutcome === "green" && hypothesis.factorSet.some((factor) => factor.key === "ui.theme" && factor.value === "light")
+    )).toBe(true);
+    expect(memory.hypotheses.some((hypothesis) =>
+      hypothesis.desiredOutcome === "blue" && hypothesis.factorSet.some((factor) => factor.key === "ui.theme" && factor.value === "dark")
+    )).toBe(true);
+    expect(memory.admissionDecisions.some((decision) =>
+      decision.subjectKind === "hypothesis" && decision.reasons.includes("single-support-hypothesis-kept-weak")
+    )).toBe(true);
+    const memoryMarkdown = await readText(memory.artifacts.markdown);
+    expect(memoryMarkdown).toContain("ui.theme=light");
+    expect(memoryMarkdown).toContain("ui.theme=dark");
+    expect(memoryMarkdown).not.toContain(root);
+    expect(memoryMarkdown).not.toContain("Make independent button green");
   });
 
   it("extracts UI context factors from CSS component tree screenshot and design-token metadata", () => {
