@@ -3769,6 +3769,7 @@ describe("learn-v2 substrate", () => {
 
     const artifact = await writeLearnV2OpenWorldGroundingArtifact(root, [card!], new Date("2026-06-30T00:15:00Z"));
     const approvedAnchor = artifact.anchors.find((anchor) => anchor.title === "Approved dashboard density guide");
+    const recommendation = artifact.recommendations.find((item) => item.conceptId === card!.id);
 
     expect(approvedAnchor).toMatchObject({
       uri: "https://example.com/design/dashboard-density",
@@ -3786,12 +3787,74 @@ describe("learn-v2 substrate", () => {
     expect(approvedAnchor?.alignedClaims.join("\n")).not.toContain("designer@example.com");
     expect(approvedAnchor?.rationale).toContain("cannot override direct corrections");
     expect(artifact.counts.reviewOnlyAnchors).toBeGreaterThanOrEqual(1);
+    expect(recommendation).toMatchObject({
+      reviewRequired: true,
+      precedence: "user-correction-over-resource",
+      sourceAnchorIds: expect.arrayContaining([approvedAnchor!.id])
+    });
+    expect(recommendation?.recommendation).toContain("refine review wording");
+    expect(recommendation?.proposedSkillText).toContain("Prefer low-clutter dashboard card layout");
+    expect(recommendation?.proposedSkillText).toContain("verify contrast and non-color affordances");
+    expect(artifact.counts.recommendations).toBeGreaterThanOrEqual(1);
     const markdown = await readText(artifact.artifacts.markdown);
     expect(markdown).toContain("Approved dashboard density guide");
     expect(markdown).toContain("resource-informs-review-only");
+    expect(markdown).toContain("Grounding Recommendations");
+    expect(markdown).toContain("Review required: true");
     expect(markdown).toContain("Retrieval score:");
     expect(markdown).toContain("Match reasons:");
     expect(markdown).not.toContain("designer@example.com");
+  });
+
+  it("proposes review-only UI grounding refinements for vague visual preferences", async () => {
+    const root = await tempProject();
+    const [card] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("ui_grounded_contrast_refinement", "Prefer orange CTA buttons inside dark dashboard cards.", "positive"),
+      kind: "preference",
+      scope: {
+        level: "path",
+        paths: ["packages/site/src/DashboardCard.tsx"],
+        taskTypes: ["ui-design-change"]
+      },
+      conditions: {
+        appliesWhen: ["ui.theme=dark", "component.container=card"],
+        doesNotApplyWhen: ["explicit color override"]
+      },
+      activationHints: {
+        phrases: ["dark card CTA", "dashboard CTA color"],
+        pathGlobs: ["packages/site/src/**"],
+        commands: [],
+        negativeTriggers: ["explicit color override"]
+      },
+      risk: "low"
+    }], new Date("2026-06-30T00:15:10Z"));
+
+    const artifact = await writeLearnV2OpenWorldGroundingArtifact(root, [card!], new Date("2026-06-30T00:15:20Z"));
+    const wcagAnchor = artifact.anchors.find((anchor) => anchor.title === "W3C WCAG 2.2 Quick Reference")!;
+    const recommendation = artifact.recommendations.find((item) => item.conceptId === card!.id)!;
+
+    expect(wcagAnchor).toMatchObject({
+      trustTier: "official",
+      resourceKind: "standard",
+      precedence: "user-correction-over-resource"
+    });
+    expect(recommendation).toMatchObject({
+      reviewRequired: true,
+      precedence: "user-correction-over-resource",
+      sourceAnchorIds: expect.arrayContaining([wcagAnchor.id]),
+      verificationChecks: expect.arrayContaining([
+        "Verify CTA contrast against the actual surface before accepting the concept.",
+        "Check that meaning is not communicated by color alone."
+      ])
+    });
+    expect(recommendation.proposedSkillText).toContain("Prefer orange CTA buttons inside dark dashboard cards.");
+    expect(recommendation.proposedSkillText).toContain("verify contrast and non-color affordances");
+    expect(recommendation.proposedConditions).toEqual(expect.arrayContaining([
+      "ui.theme=dark",
+      "component.container=card"
+    ]));
+    expect(recommendation.rationale).toContain("prevent vague color preferences from becoming unsafe global style rules");
+    expect(JSON.stringify(artifact)).not.toContain(root);
   });
 
   it("ranks approved grounding resources and rejects weak accidental matches", async () => {
@@ -3967,11 +4030,19 @@ describe("learn-v2 substrate", () => {
         matchReasons: expect.arrayContaining([expect.stringMatching(/^term:/)])
       })
     ]));
+    expect(entry.openWorldGrounding.recommendations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        recommendation: expect.stringContaining("sharpen review and verification language"),
+        reviewRequired: true
+      })
+    ]));
     expect(entry.evidenceSeparation.externalGrounding).toBeGreaterThanOrEqual(1);
     const markdown = await readText(trace.artifacts.markdown);
     expect(markdown).toContain("Approved dashboard hierarchy guide");
     expect(markdown).toContain("score=");
     expect(markdown).toContain("reasons=term:");
+    expect(markdown).toContain("Grounding recommendations:");
+    expect(markdown).toContain("Proposed skill text:");
     expect(markdown).not.toContain(root);
   });
 

@@ -4,9 +4,11 @@ import { readProjectConfig } from "../events/store.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import {
   LearnV2OpenWorldGroundingArtifactSchema,
+  LearnV2OpenWorldGroundingRecommendationSchema,
   LearnV2OpenWorldResourceAnchorSchema,
   type LearnV2ConceptCard,
   type LearnV2OpenWorldGroundingArtifact,
+  type LearnV2OpenWorldGroundingRecommendation,
   type LearnV2OpenWorldResourceAnchor
 } from "./schemas.js";
 import { learnV2DeclassifyText, learnV2SafeLocalPath, learnV2ShortHash, learnV2Snippet } from "./utils.js";
@@ -161,18 +163,21 @@ export async function writeLearnV2OpenWorldGroundingArtifact(
   const json = path.join(dir, `open-world-grounding-${stamp}.json`);
   const markdown = path.join(dir, `open-world-grounding-${stamp}.md`);
   const anchors = buildLearnV2OpenWorldGroundingAnchors(concepts, now, await buildProjectGroundingAnchors(root, concepts));
+  const recommendations = buildLearnV2OpenWorldGroundingRecommendations(concepts, anchors);
   const conceptIds = new Set(anchors.map((anchor) => anchor.conceptId));
   const artifact = LearnV2OpenWorldGroundingArtifactSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.openworld-grounding-artifact.v1",
     generatedAt: now.toISOString(),
     anchors,
+    recommendations,
     counts: {
       anchors: anchors.length,
       conceptCount: conceptIds.size,
       officialAnchors: anchors.filter((anchor) => anchor.trustTier === "official").length,
       projectAnchors: anchors.filter((anchor) => anchor.trustTier === "project").length,
       reviewOnlyAnchors: anchors.filter((anchor) => anchor.precedence !== "user-correction-over-resource").length,
-      restrictedLicenseAnchors: anchors.filter((anchor) => anchor.licenseRisk === "restricted").length
+      restrictedLicenseAnchors: anchors.filter((anchor) => anchor.licenseRisk === "restricted").length,
+      recommendations: recommendations.length
     },
     artifacts: { json, markdown }
   });
@@ -265,6 +270,94 @@ function makeAnchor(conceptId: string, key: string, template: AnchorTemplate, no
     evidenceConceptIds: [conceptId],
     ...template
   });
+}
+
+export function buildLearnV2OpenWorldGroundingRecommendations(
+  concepts: LearnV2ConceptCard[],
+  anchors: LearnV2OpenWorldResourceAnchor[]
+): LearnV2OpenWorldGroundingRecommendation[] {
+  const byConcept = new Map<string, LearnV2OpenWorldResourceAnchor[]>();
+  for (const anchor of anchors.filter((item) => item.licenseRisk !== "restricted")) {
+    byConcept.set(anchor.conceptId, [...(byConcept.get(anchor.conceptId) ?? []), anchor]);
+  }
+  const recommendations: LearnV2OpenWorldGroundingRecommendation[] = [];
+  for (const concept of concepts.filter((item) => !["rejected", "one-off", "superseded"].includes(item.status))) {
+    const conceptAnchors = (byConcept.get(concept.id) ?? []).sort(compareAnchors);
+    if (!conceptAnchors.length) continue;
+    const text = conceptSearchText(concept);
+    const sourceAnchorIds = conceptAnchors.slice(0, 4).map((anchor) => anchor.id);
+    if (/\b(ui|ux|visual|design|theme|component|button|cta|card|color|contrast|dark|light)\b/i.test(text)) {
+      recommendations.push(makeGroundingRecommendation({
+        concept,
+        sourceAnchorIds,
+        recommendation: "Use open-world UI/accessibility anchors to refine review wording around contrast, non-color affordances, and exact surface conditions while keeping user corrections authoritative.",
+        proposedSkillText: `${concept.canonicalBehavior} During review, verify contrast and non-color affordances for the matching UI surface before compiling broader behavior.`,
+        proposedConditions: unique([
+          ...(concept.conditions?.appliesWhen ?? []),
+          "Only apply to the UI surface, theme, component role, and containment conditions supported by local evidence."
+        ]),
+        verificationChecks: [
+          "Verify CTA contrast against the actual surface before accepting the concept.",
+          "Check that meaning is not communicated by color alone.",
+          "Confirm the color preference remains scoped to observed theme/container conditions."
+        ],
+        confidence: groundedRecommendationConfidence(conceptAnchors),
+        rationale: "UI taste can stay user-specific while official accessibility anchors make the review checklist concrete and prevent vague color preferences from becoming unsafe global style rules."
+      }));
+      continue;
+    }
+    if (conceptAnchors.some((anchor) => anchor.usedFor.includes("verification") || anchor.usedFor.includes("eval"))) {
+      recommendations.push(makeGroundingRecommendation({
+        concept,
+        sourceAnchorIds,
+        recommendation: "Use grounding anchors to sharpen review and verification language without replacing local evidence.",
+        proposedSkillText: `${concept.canonicalBehavior} During review, prefer project-local verification evidence first and use external anchors only as supporting reference.`,
+        proposedConditions: concept.conditions?.appliesWhen ?? [],
+        verificationChecks: [
+          "Confirm project-local evidence supports the behavior.",
+          "Use external resources only as review or verification context.",
+          "Do not promote behavior from resource text alone."
+        ],
+        confidence: groundedRecommendationConfidence(conceptAnchors),
+        rationale: "Grounding anchors provide review language and verification support, but concept activation remains gated by local evidence and review."
+      }));
+    }
+  }
+  return recommendations.sort((a, b) => a.conceptId.localeCompare(b.conceptId) || b.confidence - a.confidence || a.id.localeCompare(b.id));
+}
+
+function makeGroundingRecommendation(input: {
+  concept: LearnV2ConceptCard;
+  sourceAnchorIds: string[];
+  recommendation: string;
+  proposedSkillText: string;
+  proposedConditions: string[];
+  verificationChecks: string[];
+  confidence: number;
+  rationale: string;
+}): LearnV2OpenWorldGroundingRecommendation {
+  return LearnV2OpenWorldGroundingRecommendationSchema.parse({
+    schemaVersion: "openskill-kit.learn-v2.openworld-grounding-recommendation.v1",
+    id: `ground_refine_${learnV2ShortHash(`${input.concept.id}:${input.sourceAnchorIds.join(",")}:${input.recommendation}`)}`,
+    conceptId: input.concept.id,
+    sourceAnchorIds: input.sourceAnchorIds,
+    recommendation: input.recommendation,
+    proposedSkillText: input.proposedSkillText,
+    proposedConditions: input.proposedConditions,
+    verificationChecks: input.verificationChecks,
+    precedence: "user-correction-over-resource",
+    confidence: input.confidence,
+    reviewRequired: true,
+    rationale: input.rationale
+  });
+}
+
+function groundedRecommendationConfidence(anchors: LearnV2OpenWorldResourceAnchor[]): number {
+  if (!anchors.length) return 0;
+  const score = anchors.reduce((sum, anchor) => sum + anchor.retrievalScore, 0) / anchors.length;
+  const officialBoost = anchors.some((anchor) => anchor.trustTier === "official") ? 0.08 : 0;
+  const projectBoost = anchors.some((anchor) => anchor.trustTier === "project") ? 0.06 : 0;
+  return Number(Math.min(0.94, score + officialBoost + projectBoost).toFixed(3));
 }
 
 async function buildProjectGroundingAnchors(root: string, concepts: LearnV2ConceptCard[]): Promise<Array<{ conceptId: string; key: string; template: AnchorTemplate }>> {
@@ -578,6 +671,7 @@ function renderGroundingArtifact(root: string, artifact: LearnV2OpenWorldGroundi
     `- Project anchors: ${artifact.counts.projectAnchors}`,
     `- Review-only anchors: ${artifact.counts.reviewOnlyAnchors}`,
     `- Restricted-license anchors: ${artifact.counts.restrictedLicenseAnchors}`,
+    `- Grounding recommendations: ${artifact.counts.recommendations}`,
     "",
     "## Precedence",
     "",
@@ -608,6 +702,24 @@ function renderGroundingArtifact(root: string, artifact: LearnV2OpenWorldGroundi
     lines.push(`Aligned claims: ${anchor.alignedClaims.join("; ") || "none"}`);
     lines.push(`Conflicting claims: ${anchor.conflictingClaims.join("; ") || "none"}`);
     lines.push(`Rationale: ${anchor.rationale}`);
+    lines.push("");
+  }
+  lines.push("## Grounding Recommendations");
+  lines.push("");
+  if (!artifact.recommendations.length) lines.push("No grounding refinement recommendations proposed.");
+  for (const recommendation of artifact.recommendations) {
+    lines.push(`### ${recommendation.id}`);
+    lines.push("");
+    lines.push(`Concept: ${recommendation.conceptId}`);
+    lines.push(`Source anchors: ${recommendation.sourceAnchorIds.join(", ")}`);
+    lines.push(`Confidence: ${recommendation.confidence.toFixed(2)}`);
+    lines.push(`Review required: ${recommendation.reviewRequired}`);
+    lines.push(`Recommendation: ${recommendation.recommendation}`);
+    lines.push(`Proposed skill text: ${recommendation.proposedSkillText}`);
+    lines.push(`Proposed conditions: ${recommendation.proposedConditions.join("; ") || "none"}`);
+    lines.push(`Verification checks: ${recommendation.verificationChecks.join("; ") || "none"}`);
+    lines.push(`Precedence: ${recommendation.precedence}`);
+    lines.push(`Rationale: ${recommendation.rationale}`);
     lines.push("");
   }
   lines.push("## Artifacts");

@@ -19,7 +19,7 @@ import { createLocalSandboxPolicy } from "../sandbox/policy.js";
 import { runSandboxCommand, type SandboxCommandResult } from "../sandbox/runner.js";
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { scanLearnV2OutputArtifactBoundary, validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
-import { buildLearnV2OpenWorldGroundingAnchors } from "./resource-grounding.js";
+import { buildLearnV2OpenWorldGroundingAnchors, buildLearnV2OpenWorldGroundingRecommendations } from "./resource-grounding.js";
 import { buildLearnV2SkillNamespaces, buildLearnV2SkillOntologyOperations } from "./skill-ontology.js";
 import { readLearnV2ConceptStore } from "./store.js";
 import { learnV2Hash, learnV2IsInside } from "./utils.js";
@@ -893,6 +893,7 @@ function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now:
   const eligibleConcepts = filterLearnV2ActivationEligibleConcepts(concepts);
   const eligibleIds = new Set(eligibleConcepts.map((concept) => concept.id));
   const anchors = buildLearnV2OpenWorldGroundingAnchors(eligibleConcepts, now);
+  const recommendations = buildLearnV2OpenWorldGroundingRecommendations(eligibleConcepts, anchors);
   const missingAuthority = anchors.filter((anchor) =>
     !anchor.resourceKind
     || !anchor.trustTier
@@ -913,6 +914,14 @@ function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now:
   const restrictedUnsafeUse = anchors.filter((anchor) =>
     anchor.licenseRisk === "restricted"
     && (anchor.usedFor.some((item) => item === "title" || item === "conditions" || item === "skill-text") || anchor.alignment !== "possible-conflict")
+  );
+  const unsafeRecommendations = recommendations.filter((recommendation) =>
+    !recommendation.reviewRequired ||
+    recommendation.precedence !== "user-correction-over-resource" ||
+    recommendation.sourceAnchorIds.some((anchorId) => {
+      const anchor = anchors.find((item) => item.id === anchorId);
+      return !anchor || anchor.licenseRisk === "restricted";
+    })
   );
   const groundedConcepts = new Set(anchors.map((anchor) => anchor.conceptId));
   const groundedWithoutUserEvidence = eligibleConcepts.filter((concept) =>
@@ -958,6 +967,13 @@ function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now:
       restrictedUnsafeUse.length
         ? `restricted-license anchors with unsafe use: ${restrictedUnsafeUse.map((anchor) => anchor.id).slice(0, 6).join(", ")}`
         : `${anchors.filter((anchor) => anchor.licenseRisk === "restricted").length} restricted-license anchor(s) kept out of title/condition/skill text generation`
+    ),
+    check(
+      "grounding-recommendations-remain-review-only",
+      unsafeRecommendations.length === 0,
+      unsafeRecommendations.length
+        ? `unsafe recommendations: ${unsafeRecommendations.map((recommendation) => recommendation.id).slice(0, 6).join(", ")}`
+        : `${recommendations.length} grounding recommendation(s) require review and keep user correction precedence`
     ),
     check(
       "evidence-classes-counted-separately",

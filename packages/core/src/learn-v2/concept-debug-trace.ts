@@ -131,6 +131,7 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
     }));
   const namespaces = (context.skillOntology?.namespaces ?? []).filter((namespace) => namespace.conceptIds.includes(concept.id));
   const anchors = (context.openWorldGrounding?.anchors ?? []).filter((anchor) => anchor.conceptId === concept.id);
+  const groundingRecommendations = (context.openWorldGrounding?.recommendations ?? []).filter((recommendation) => recommendation.conceptId === concept.id);
   const conflicts = (context.reviewQueue?.conflictDetails ?? []).filter((conflict) => conflict.conceptIds.includes(concept.id));
   const drift = (context.reviewQueue?.driftSummary.staleCandidates ?? []).filter((candidate) => candidate.conceptId === concept.id);
   const snippets = (context.reviewQueue?.evidenceSnippets ?? []).filter((snippet) => evidenceIds.has(snippet.evidenceId));
@@ -224,7 +225,17 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
           matchReasons: anchor.matchReasons,
           usedFor: anchor.usedFor
         }))
-        .sort((a, b) => b.retrievalScore - a.retrievalScore || a.title.localeCompare(b.title))
+        .sort((a, b) => b.retrievalScore - a.retrievalScore || a.title.localeCompare(b.title)),
+      recommendations: groundingRecommendations.map((recommendation) => ({
+        id: recommendation.id,
+        recommendation: recommendation.recommendation,
+        proposedSkillText: recommendation.proposedSkillText,
+        proposedConditions: recommendation.proposedConditions,
+        verificationChecks: recommendation.verificationChecks,
+        sourceAnchorIds: recommendation.sourceAnchorIds,
+        confidence: recommendation.confidence,
+        reviewRequired: recommendation.reviewRequired
+      }))
     },
     review: {
       conflictIds: conflicts.map((conflict) => conflict.conflictId),
@@ -490,6 +501,12 @@ function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTrac
     lines.push(`- Anchor precedence: ${trace.openWorldGrounding.precedence.join(", ") || "none"}`);
     for (const anchor of trace.openWorldGrounding.rankedAnchors.slice(0, 5)) {
       lines.push(`  - ${anchor.title}: score=${anchor.retrievalScore.toFixed(2)}; trust=${anchor.trustTier}; precedence=${anchor.precedence}; usedFor=${anchor.usedFor.join(", ") || "review"}; reasons=${anchor.matchReasons.join(", ") || "default"}`);
+    }
+    lines.push(`- Grounding recommendations: ${trace.openWorldGrounding.recommendations.length}`);
+    for (const recommendation of trace.openWorldGrounding.recommendations.slice(0, 3)) {
+      lines.push(`  - ${recommendation.id}: confidence=${recommendation.confidence.toFixed(2)}; reviewRequired=${recommendation.reviewRequired}; ${recommendation.recommendation}`);
+      lines.push(`    Proposed skill text: ${recommendation.proposedSkillText}`);
+      lines.push(`    Verification: ${recommendation.verificationChecks.join("; ") || "none"}`);
     }
     lines.push("");
     lines.push("Review signals:");

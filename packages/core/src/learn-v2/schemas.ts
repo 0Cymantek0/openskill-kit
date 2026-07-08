@@ -537,17 +537,35 @@ export const LearnV2OpenWorldResourceAnchorSchema = z.object({
 });
 export type LearnV2OpenWorldResourceAnchor = z.infer<typeof LearnV2OpenWorldResourceAnchorSchema>;
 
+export const LearnV2OpenWorldGroundingRecommendationSchema = z.object({
+  schemaVersion: z.literal("openskill-kit.learn-v2.openworld-grounding-recommendation.v1"),
+  id: z.string().min(1),
+  conceptId: z.string().min(1),
+  sourceAnchorIds: z.array(z.string().min(1)).min(1),
+  recommendation: z.string().min(1),
+  proposedSkillText: z.string().min(1),
+  proposedConditions: z.array(z.string().min(1)).default([]),
+  verificationChecks: z.array(z.string().min(1)).default([]),
+  precedence: LearnV2OpenWorldResourceAnchorSchema.shape.precedence,
+  confidence: z.number().min(0).max(1),
+  reviewRequired: z.boolean().default(true),
+  rationale: z.string().min(1)
+});
+export type LearnV2OpenWorldGroundingRecommendation = z.infer<typeof LearnV2OpenWorldGroundingRecommendationSchema>;
+
 export const LearnV2OpenWorldGroundingArtifactSchema = z.object({
   schemaVersion: z.literal("openskill-kit.learn-v2.openworld-grounding-artifact.v1"),
   generatedAt: z.string().datetime(),
   anchors: z.array(LearnV2OpenWorldResourceAnchorSchema).default([]),
+  recommendations: z.array(LearnV2OpenWorldGroundingRecommendationSchema).default([]),
   counts: z.object({
     anchors: z.number().int().min(0),
     conceptCount: z.number().int().min(0),
     officialAnchors: z.number().int().min(0),
     projectAnchors: z.number().int().min(0),
     reviewOnlyAnchors: z.number().int().min(0),
-    restrictedLicenseAnchors: z.number().int().min(0).default(0)
+    restrictedLicenseAnchors: z.number().int().min(0).default(0),
+    recommendations: z.number().int().min(0).default(0)
   }),
   artifacts: z.object({
     json: z.string(),
@@ -621,6 +639,16 @@ export const LearnV2ConceptDebugTraceEntrySchema = z.object({
       retrievalScore: z.number().min(0).max(1),
       matchReasons: z.array(z.string().min(1)).default([]),
       usedFor: LearnV2OpenWorldResourceAnchorSchema.shape.usedFor
+    })).default([]),
+    recommendations: z.array(z.object({
+      id: z.string().min(1),
+      recommendation: z.string().min(1),
+      proposedSkillText: z.string().min(1),
+      proposedConditions: z.array(z.string().min(1)).default([]),
+      verificationChecks: z.array(z.string().min(1)).default([]),
+      sourceAnchorIds: z.array(z.string().min(1)).default([]),
+      confidence: z.number().min(0).max(1),
+      reviewRequired: z.boolean()
     })).default([])
   }),
   review: z.object({

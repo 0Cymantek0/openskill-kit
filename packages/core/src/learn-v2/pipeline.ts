@@ -885,13 +885,15 @@ function emptyOpenWorldGroundingArtifact(root: string, now: Date): LearnV2OpenWo
     schemaVersion: "openskill-kit.learn-v2.openworld-grounding-artifact.v1",
     generatedAt: now.toISOString(),
     anchors: [],
+    recommendations: [],
     counts: {
       anchors: 0,
       conceptCount: 0,
       officialAnchors: 0,
       projectAnchors: 0,
       reviewOnlyAnchors: 0,
-      restrictedLicenseAnchors: 0
+      restrictedLicenseAnchors: 0,
+      recommendations: 0
     },
     artifacts: { json, markdown }
   });
