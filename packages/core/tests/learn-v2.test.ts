@@ -3212,6 +3212,46 @@ describe("learn-v2 substrate", () => {
     expect(approved[0]?.title).toBe("Official dashboard density guide");
   });
 
+  it("joins ranked grounding details into concept debug trace", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = await readProjectConfig(root);
+    config.learning.openWorldResources.approvedResources = [{
+      title: "Approved dashboard hierarchy guide",
+      uri: "https://example.com/dashboard-hierarchy",
+      matchTerms: ["dashboard hierarchy", "primary action"],
+      summary: "Use one primary action and clear dashboard hierarchy.",
+      resourceKind: "reference",
+      trustTier: "community",
+      licenseRisk: "unknown",
+      usedFor: ["conditions", "skill-text"]
+    }];
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const [card] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("debug_grounding_rank", "Prefer dashboard hierarchy with one primary action.", "positive"),
+      kind: "preference"
+    }], new Date("2026-06-30T00:16:30Z"));
+    const grounding = await writeLearnV2OpenWorldGroundingArtifact(root, [card!], new Date("2026-06-30T00:17:00Z"));
+    const trace = await writeLearnV2ConceptDebugTraceArtifact(root, [card!], new Date("2026-06-30T00:17:30Z"), {
+      openWorldGrounding: grounding
+    });
+    const entry = trace.traces.find((item) => item.conceptId === card!.id)!;
+
+    expect(entry.openWorldGrounding.rankedAnchors).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        title: "Approved dashboard hierarchy guide",
+        retrievalScore: expect.any(Number),
+        matchReasons: expect.arrayContaining([expect.stringMatching(/^term:/)])
+      })
+    ]));
+    expect(entry.evidenceSeparation.externalGrounding).toBeGreaterThanOrEqual(1);
+    const markdown = await readText(trace.artifacts.markdown);
+    expect(markdown).toContain("Approved dashboard hierarchy guide");
+    expect(markdown).toContain("score=");
+    expect(markdown).toContain("reasons=term:");
+    expect(markdown).not.toContain(root);
+  });
+
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
     const root = await tempProject();
     const terminal = path.join(os.tmpdir(), `osk-review-needed-${Date.now()}.log`);

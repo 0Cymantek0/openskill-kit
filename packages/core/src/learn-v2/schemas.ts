@@ -611,7 +611,16 @@ export const LearnV2ConceptDebugTraceEntrySchema = z.object({
     anchorIds: z.array(z.string().min(1)).default([]),
     titles: z.array(z.string().min(1)).default([]),
     trustTiers: z.array(LearnV2OpenWorldResourceAnchorSchema.shape.trustTier).default([]),
-    precedence: z.array(LearnV2OpenWorldResourceAnchorSchema.shape.precedence).default([])
+    precedence: z.array(LearnV2OpenWorldResourceAnchorSchema.shape.precedence).default([]),
+    rankedAnchors: z.array(z.object({
+      id: z.string().min(1),
+      title: z.string().min(1),
+      trustTier: LearnV2OpenWorldResourceAnchorSchema.shape.trustTier,
+      precedence: LearnV2OpenWorldResourceAnchorSchema.shape.precedence,
+      retrievalScore: z.number().min(0).max(1),
+      matchReasons: z.array(z.string().min(1)).default([]),
+      usedFor: LearnV2OpenWorldResourceAnchorSchema.shape.usedFor
+    })).default([])
   }),
   review: z.object({
     conflictIds: z.array(z.string().min(1)).default([]),

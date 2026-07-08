@@ -193,7 +193,18 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
       anchorIds: anchors.map((anchor) => anchor.id),
       titles: anchors.map((anchor) => anchor.title),
       trustTiers: unique(anchors.map((anchor) => anchor.trustTier)),
-      precedence: unique(anchors.map((anchor) => anchor.precedence))
+      precedence: unique(anchors.map((anchor) => anchor.precedence)),
+      rankedAnchors: anchors
+        .map((anchor) => ({
+          id: anchor.id,
+          title: anchor.title,
+          trustTier: anchor.trustTier,
+          precedence: anchor.precedence,
+          retrievalScore: anchor.retrievalScore,
+          matchReasons: anchor.matchReasons,
+          usedFor: anchor.usedFor
+        }))
+        .sort((a, b) => b.retrievalScore - a.retrievalScore || a.title.localeCompare(b.title))
     },
     review: {
       conflictIds: conflicts.map((conflict) => conflict.conflictId),
@@ -322,6 +333,9 @@ function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTrac
     lines.push(`- Ontology operations: ${trace.ontology.operationIds.join(", ") || "none"}`);
     lines.push(`- Open-world anchors: ${trace.openWorldGrounding.titles.join(", ") || "none"}`);
     lines.push(`- Anchor precedence: ${trace.openWorldGrounding.precedence.join(", ") || "none"}`);
+    for (const anchor of trace.openWorldGrounding.rankedAnchors.slice(0, 5)) {
+      lines.push(`  - ${anchor.title}: score=${anchor.retrievalScore.toFixed(2)}; trust=${anchor.trustTier}; precedence=${anchor.precedence}; usedFor=${anchor.usedFor.join(", ") || "review"}; reasons=${anchor.matchReasons.join(", ") || "default"}`);
+    }
     lines.push("");
     lines.push("Review signals:");
     lines.push(`- Conflicts: ${trace.review.conflictIds.join(", ") || "none"}`);
