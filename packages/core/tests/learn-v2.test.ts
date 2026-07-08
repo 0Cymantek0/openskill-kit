@@ -2540,6 +2540,7 @@ describe("learn-v2 substrate", () => {
       "deterministic counterfactual trace activation checks",
       "conditional memory admission non-overlearning checks",
       "open-world grounding authority and evidence-separation checks",
+      "resource-grounded eval case generation",
       "product-readiness auditability joins for active/candidate concepts",
       "local sandbox verifier command execution"
     ]));
@@ -2548,6 +2549,15 @@ describe("learn-v2 substrate", () => {
     expect(report.results.some((result) => result.id === "golden:parser-regression" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "behavior-delta:parser-plan-delta" && result.status === "pass")).toBe(true);
     expect(report.results.some((result) => result.id === "counterfactual-trace-eval" && result.status === "pass")).toBe(true);
+    const groundingCases = report.results.find((result) => result.id === "open-world-grounding-eval-cases");
+    expect(groundingCases?.status).toBe("pass");
+    expect(groundingCases?.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
+      "grounding-cases-generated-from-anchors",
+      "grounding-cases-keep-review-boundary",
+      "grounding-cases-preserve-user-precedence",
+      "restricted-grounding-not-used-for-skill-text",
+      "grounding-cases-have-review-checks"
+    ]));
     const conditionalBoundary = report.results.find((result) => result.id === "conditional-admission-boundary");
     expect(conditionalBoundary?.status).toBe("pass");
     expect(conditionalBoundary?.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
@@ -2592,6 +2602,20 @@ describe("learn-v2 substrate", () => {
       tokenOverheadTokens: expect.any(Number)
     });
     expect(behaviorDeltaCasesJson.cases[0].withConceptPlanChars).toBeGreaterThan(behaviorDeltaCasesJson.cases[0].baselinePlanChars);
+    const openWorldGroundingCases = await readText(report.artifacts.openWorldGroundingCases!);
+    expect(openWorldGroundingCases).toContain("openskill-kit.learn-v2.openworld-grounding-eval-case.v1");
+    expect(openWorldGroundingCases).toContain("expectedUserEvidencePrecedence");
+    expect(openWorldGroundingCases).toContain("expectedNoRestrictedSkillText");
+    expect(openWorldGroundingCases).not.toContain("raw_");
+    expect(openWorldGroundingCases).not.toContain(root);
+    const openWorldGroundingCasesJson = JSON.parse(openWorldGroundingCases);
+    expect(openWorldGroundingCasesJson.cases.length).toBeGreaterThanOrEqual(1);
+    expect(openWorldGroundingCasesJson.cases[0]).toMatchObject({
+      expectedReviewOnly: expect.any(Boolean),
+      expectedUserEvidencePrecedence: expect.any(Boolean),
+      expectedNoRestrictedSkillText: true,
+      proposedReviewChecks: expect.any(Array)
+    });
     const sandboxProbe = await readText(report.artifacts.sandboxProbe!);
     expect(sandboxProbe).toContain("openskill-kit.learn-v2.sandbox-probe-result.v1");
     expect(JSON.parse(sandboxProbe).status).toBe("pass");
@@ -2601,6 +2625,7 @@ describe("learn-v2 substrate", () => {
     expect(markdown).toContain("Sandbox executed: true");
     expect(markdown).toContain("Does not prove: real agent task success");
     expect(markdown).toContain("## Behavior Delta");
+    expect(markdown).toContain("## Open-World Grounding");
     expect(markdown).toContain("Token overhead:");
     expect(markdown).toContain("Regression findings: 0");
     expect(markdown).toContain("Result rows:");

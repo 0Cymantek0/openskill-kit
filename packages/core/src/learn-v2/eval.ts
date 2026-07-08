@@ -8,6 +8,8 @@ import {
   type LearnV2ConceptCard,
   type LearnV2EvalReport,
   type LearnV2LlmBehaviorEvalOutput,
+  type LearnV2OpenWorldGroundingRecommendation,
+  type LearnV2OpenWorldResourceAnchor,
   type LearnV2TaskEpisode
 } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
@@ -142,6 +144,30 @@ export interface LearnV2BehaviorDeltaEvalCase {
   minActivatedConcepts: number;
 }
 
+export interface LearnV2OpenWorldGroundingEvalCase {
+  schemaVersion: "openskill-kit.learn-v2.openworld-grounding-eval-case.v1";
+  id: string;
+  conceptId: string;
+  anchorId: string;
+  recommendationId?: string;
+  title: string;
+  resourceKind: LearnV2OpenWorldResourceAnchor["resourceKind"];
+  trustTier: LearnV2OpenWorldResourceAnchor["trustTier"];
+  alignment: LearnV2OpenWorldResourceAnchor["alignment"];
+  precedence: LearnV2OpenWorldResourceAnchor["precedence"];
+  licenseRisk: LearnV2OpenWorldResourceAnchor["licenseRisk"];
+  usedFor: LearnV2OpenWorldResourceAnchor["usedFor"];
+  behaviorUnderReview: string;
+  expectedReviewOnly: boolean;
+  expectedUserEvidencePrecedence: boolean;
+  expectedNoRestrictedSkillText: boolean;
+  sourceAnchorTitle: string;
+  matchReasons: string[];
+  alignedClaimChecks: string[];
+  conflictingClaimChecks: string[];
+  proposedReviewChecks: string[];
+}
+
 type LearnV2EvalResultRow = LearnV2EvalReport["results"][number];
 type LearnV2EvalSummary = LearnV2EvalReport["summary"];
 type LearnV2BehaviorAgentEvalSummary = {
@@ -184,6 +210,7 @@ export async function runLearnV2Eval(
   const markdown = path.join(runDir, "learn-v2-eval.md");
   const counterfactualCasesPath = path.join(runDir, "counterfactual-trace-cases.json");
   const behaviorDeltaCasesPath = path.join(runDir, "behavior-delta-cases.json");
+  const openWorldGroundingCasesPath = path.join(runDir, "open-world-grounding-cases.json");
   const leakIssues = leakIssuesForConcepts(root, concepts);
   const goldenFile = options.goldensPath
     ? await loadLearnV2EvalGoldens(root, options.goldensPath, { allowUnreviewedProposal: options.allowUnreviewedProposal })
@@ -192,6 +219,7 @@ export async function runLearnV2Eval(
   const behaviorDeltaGoldens = goldenFile.behaviorDelta;
   const counterfactualCases = buildCounterfactualTraceCases(episodes, concepts);
   const behaviorDeltaCases = buildLearnV2BehaviorDeltaEvalCases(concepts, behaviorDeltaGoldens);
+  const openWorldGroundingCases = buildLearnV2OpenWorldGroundingEvalCases(concepts, now);
   const rawChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.inputChars, 0);
   const compressedChars = episodes.reduce((sum, episode) => sum + episode.tokenBudget.compressedChars, 0);
   const memoryAdmissionBoundary = evaluateMemoryAdmissionBoundary(concepts);
@@ -239,6 +267,7 @@ export async function runLearnV2Eval(
     memoryAdmissionBoundary,
     conditionalAdmissionBoundary,
     openWorldGroundingBoundary,
+    evaluateOpenWorldGroundingEvalCases(openWorldGroundingCases),
     productReadinessAuditBoundary,
     activationReplay.result,
     counterfactualTrace.result,
@@ -258,6 +287,7 @@ export async function runLearnV2Eval(
     proofBoundary: learnV2EvalProofBoundary({
       behaviorDeltaScenarioCount: behaviorDeltaCases.length,
       counterfactualTraceCaseCount: counterfactualCases.length,
+      openWorldGroundingCaseCount: openWorldGroundingCases.length,
       sandboxProbeStatus: sandboxProbe?.result.status,
       behaviorAgentEvalStatus: behaviorAgentEval.summary.status,
       unreviewedGoldenProposal: goldenFile.unreviewedProposal
@@ -278,6 +308,7 @@ export async function runLearnV2Eval(
       markdown,
       counterfactualCases: counterfactualCasesPath,
       behaviorDeltaCases: behaviorDeltaCasesPath,
+      openWorldGroundingCases: openWorldGroundingCasesPath,
       behaviorAgentEval: behaviorAgentEval.summary.artifactPath,
       sandboxProbe: sandboxProbe?.artifactPath
     }
@@ -291,6 +322,11 @@ export async function runLearnV2Eval(
     schemaVersion: "openskill-kit.behavior-delta-eval-cases.v1",
     generatedAt: now.toISOString(),
     cases: behaviorDeltaCases.map((item) => declassifyBehaviorDeltaCase(root, item))
+  });
+  await writeJsonAtomic(openWorldGroundingCasesPath, {
+    schemaVersion: "openskill-kit.learn-v2.openworld-grounding-eval-cases.v1",
+    generatedAt: now.toISOString(),
+    cases: openWorldGroundingCases.map((item) => declassifyOpenWorldGroundingCase(root, item))
   });
   await writeJsonAtomic(json, report);
   await fs.writeFile(markdown, renderLearnV2Eval(report), "utf8");
@@ -983,6 +1019,105 @@ function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now:
   ];
   return {
     id: "open-world-grounding-boundary",
+    status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
+    checks
+  };
+}
+
+function buildLearnV2OpenWorldGroundingEvalCases(concepts: LearnV2ConceptCard[], now: Date): LearnV2OpenWorldGroundingEvalCase[] {
+  const eligibleConcepts = filterLearnV2ActivationEligibleConcepts(concepts);
+  const anchors = buildLearnV2OpenWorldGroundingAnchors(eligibleConcepts, now);
+  const recommendations = buildLearnV2OpenWorldGroundingRecommendations(eligibleConcepts, anchors);
+  const conceptById = new Map(eligibleConcepts.map((concept) => [concept.id, concept]));
+  const recommendationsByAnchorId = new Map<string, LearnV2OpenWorldGroundingRecommendation[]>();
+  for (const recommendation of recommendations) {
+    for (const anchorId of recommendation.sourceAnchorIds) {
+      recommendationsByAnchorId.set(anchorId, [...(recommendationsByAnchorId.get(anchorId) ?? []), recommendation]);
+    }
+  }
+  return anchors.map((anchor) => {
+    const concept = conceptById.get(anchor.conceptId);
+    const recommendation = recommendationsByAnchorId.get(anchor.id)?.[0];
+    const proposedReviewChecks = [
+      ...(recommendation?.verificationChecks ?? []),
+      ...(recommendation?.proposedConditions ?? []),
+      ...anchor.alignedClaims,
+      ...anchor.conflictingClaims
+    ];
+    return {
+      schemaVersion: "openskill-kit.learn-v2.openworld-grounding-eval-case.v1" as const,
+      id: `openworld_${anchor.id}`,
+      conceptId: anchor.conceptId,
+      anchorId: anchor.id,
+      recommendationId: recommendation?.id,
+      title: `${anchor.title} -> ${concept?.title ?? anchor.conceptId}`,
+      resourceKind: anchor.resourceKind,
+      trustTier: anchor.trustTier,
+      alignment: anchor.alignment,
+      precedence: anchor.precedence,
+      licenseRisk: anchor.licenseRisk,
+      usedFor: anchor.usedFor,
+      behaviorUnderReview: concept?.canonicalBehavior ?? "",
+      expectedReviewOnly: anchor.precedence !== "user-correction-over-resource" || recommendation?.reviewRequired === true,
+      expectedUserEvidencePrecedence: recommendation?.precedence === "user-correction-over-resource" || anchor.precedence === "user-correction-over-resource" || anchor.precedence === "project-doc-over-external",
+      expectedNoRestrictedSkillText: anchor.licenseRisk !== "restricted" || !anchor.usedFor.some((item) => item === "title" || item === "conditions" || item === "skill-text"),
+      sourceAnchorTitle: anchor.title,
+      matchReasons: anchor.matchReasons,
+      alignedClaimChecks: anchor.alignedClaims,
+      conflictingClaimChecks: anchor.conflictingClaims,
+      proposedReviewChecks: uniqueStrings(proposedReviewChecks)
+    };
+  }).sort((a, b) => a.conceptId.localeCompare(b.conceptId) || a.anchorId.localeCompare(b.anchorId));
+}
+
+function evaluateOpenWorldGroundingEvalCases(cases: LearnV2OpenWorldGroundingEvalCase[]): LearnV2EvalResultRow {
+  const unsafeRestricted = cases.filter((item) => !item.expectedNoRestrictedSkillText);
+  const missingReviewBoundary = cases.filter((item) =>
+    item.precedence === "resource-informs-review-only" && !item.expectedReviewOnly
+  );
+  const missingUserPrecedence = cases.filter((item) =>
+    item.recommendationId && !item.expectedUserEvidencePrecedence
+  );
+  const emptyReviewChecks = cases.filter((item) =>
+    item.usedFor.includes("eval") && !item.alignedClaimChecks.length && !item.conflictingClaimChecks.length && !item.proposedReviewChecks.length
+  );
+  const checks = [
+    check(
+      "grounding-cases-generated-from-anchors",
+      true,
+      `${cases.length} open-world grounding eval case(s) generated`
+    ),
+    check(
+      "grounding-cases-keep-review-boundary",
+      missingReviewBoundary.length === 0,
+      missingReviewBoundary.length
+        ? `review-only anchors missing review boundary: ${missingReviewBoundary.map((item) => item.id).slice(0, 6).join(", ")}`
+        : "resource-informs-review-only anchors remain review-only in generated cases"
+    ),
+    check(
+      "grounding-cases-preserve-user-precedence",
+      missingUserPrecedence.length === 0,
+      missingUserPrecedence.length
+        ? `cases missing user-evidence precedence: ${missingUserPrecedence.map((item) => item.id).slice(0, 6).join(", ")}`
+        : "recommendation-backed cases preserve user/project evidence precedence"
+    ),
+    check(
+      "restricted-grounding-not-used-for-skill-text",
+      unsafeRestricted.length === 0,
+      unsafeRestricted.length
+        ? `restricted cases unsafe for skill text: ${unsafeRestricted.map((item) => item.id).slice(0, 6).join(", ")}`
+        : "restricted-license grounding cases stay out of title/condition/skill text"
+    ),
+    check(
+      "grounding-cases-have-review-checks",
+      emptyReviewChecks.length === 0,
+      emptyReviewChecks.length
+        ? `eval grounding cases missing review checks: ${emptyReviewChecks.map((item) => item.id).slice(0, 6).join(", ")}`
+        : "eval grounding cases carry aligned/conflicting claims or recommendation checks"
+    )
+  ];
+  return {
+    id: "open-world-grounding-eval-cases",
     status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
     checks
   };
@@ -1695,6 +1830,20 @@ function declassifyCounterfactualTraceCase(root: string, item: LearnV2Counterfac
   };
 }
 
+function declassifyOpenWorldGroundingCase(root: string, item: LearnV2OpenWorldGroundingEvalCase): LearnV2OpenWorldGroundingEvalCase {
+  const scrub = (value: string) => scrubEvalText(root, value);
+  return {
+    ...item,
+    title: scrub(item.title),
+    behaviorUnderReview: scrub(item.behaviorUnderReview),
+    sourceAnchorTitle: scrub(item.sourceAnchorTitle),
+    matchReasons: item.matchReasons.map(scrub),
+    alignedClaimChecks: item.alignedClaimChecks.map(scrub),
+    conflictingClaimChecks: item.conflictingClaimChecks.map(scrub),
+    proposedReviewChecks: item.proposedReviewChecks.map(scrub)
+  };
+}
+
 function scrubEvalText(root: string, value: string): string {
   const escapedRoot = escapeRegExp(root.replace(/\\/g, "/"));
   const normalized = value.replace(/\\/g, "/");
@@ -1703,6 +1852,10 @@ function scrubEvalText(root: string, value: string): string {
     .replace(/\b[A-Z]:\/Users\/[^/\s"'`]+/gi, "[USER_HOME]")
     .replace(/\/(?:Users|home)\/[^/\s"'`]+/gi, "[USER_HOME]")
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,})\b/g, "[SECRET]");
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((item) => item.trim()).filter(Boolean))];
 }
 
 function escapeRegExp(value: string): string {
@@ -1757,6 +1910,7 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     `Extraction goldens: ${report.extractionGoldenCount}`,
     `Behavior delta goldens: ${report.behaviorDeltaGoldenCount}`,
     `Counterfactual trace cases: ${report.counterfactualTraceCaseCount}`,
+    `Open-world grounding cases: ${report.artifacts.openWorldGroundingCases ? "written" : "not written"}`,
     `Proof boundary: ${report.proofBoundary.method} (sandbox=${report.proofBoundary.sandboxExecuted}, agent=${report.proofBoundary.agentExecuted})`,
     `Leak check: ${report.leakCheck.status}`,
     `Compression ratio: ${report.tokenBudget.compressionRatio}`,
@@ -1797,6 +1951,10 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
     report.summary.counterfactualTrace.misses.length ? `Misses: ${report.summary.counterfactualTrace.misses.slice(0, 10).join(", ")}` : "Misses: none",
     report.summary.counterfactualTrace.suppressionMisses.length ? `Suppression misses: ${report.summary.counterfactualTrace.suppressionMisses.slice(0, 10).join(", ")}` : "Suppression misses: none",
     "",
+    "## Open-World Grounding",
+    "",
+    report.artifacts.openWorldGroundingCases ? `Grounding eval cases: ${report.artifacts.openWorldGroundingCases}` : "Grounding eval cases: none",
+    "",
     "## Results",
     "",
     ...report.results.flatMap((result) => [
@@ -1812,6 +1970,7 @@ function renderLearnV2Eval(report: LearnV2EvalReport): string {
 function learnV2EvalProofBoundary(input: {
   behaviorDeltaScenarioCount: number;
   counterfactualTraceCaseCount: number;
+  openWorldGroundingCaseCount: number;
   sandboxProbeStatus?: "pass" | "fail";
   behaviorAgentEvalStatus?: "pass" | "fail" | "needs-review" | "not-run";
   unreviewedGoldenProposal?: boolean;
@@ -1837,6 +1996,11 @@ function learnV2EvalProofBoundary(input: {
     proves.push("deterministic counterfactual trace activation checks");
   } else {
     doesNotProve.push("counterfactual trace activation checks");
+  }
+  if (input.openWorldGroundingCaseCount > 0) {
+    proves.push("resource-grounded eval case generation");
+  } else {
+    doesNotProve.push("resource-grounded eval case generation");
   }
   const sandboxExecuted = input.sandboxProbeStatus === "pass";
   if (sandboxExecuted) {
