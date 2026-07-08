@@ -970,6 +970,13 @@ export const LearnV2ReviewQueueSchema = z.object({
     reasons: {}
   }),
   safeBulkActions: z.array(z.enum(["accept-low-risk", "reject-one-off", "mark-superseded"])).default([]),
+  safeBulkActionDetails: z.array(z.object({
+    action: z.enum(["accept-low-risk", "reject-one-off", "mark-superseded"]),
+    eligibleCount: z.number().int().min(0),
+    command: z.string().min(1),
+    rationale: z.string().min(1),
+    safeguards: z.array(z.string().min(1)).default([])
+  })).default([]),
   reviewActions: z.record(z.string(), z.array(z.object({
     label: z.string().min(1),
     command: z.string().min(1),

@@ -1387,6 +1387,63 @@ describe("learn-v2 substrate", () => {
     expect(markdown).toContain(unrelatedActive.id);
   });
 
+  it("renders safe bulk review commands with eligibility counts and safeguards", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:23:00.000Z");
+    const [safeBase, oneOffBase, counterBase, broadBase] = mergeLearnV2ConceptCards([
+      behaviorAtom("bulk_safe_ui", "Prefer focused UI checks for button style changes.", "positive"),
+      behaviorAtom("bulk_one_off_ui", "Prefer green buttons for this one-off landing page.", "positive"),
+      behaviorAtom("bulk_counter_ui", "Prefer dense dashboard cards.", "positive"),
+      behaviorAtom("bulk_broad_ui", "Prefer all UI changes to use bright colors.", "positive")
+    ], now);
+    const safeCandidate = {
+      ...safeBase!,
+      status: "candidate" as const,
+      risk: "low" as const,
+      confidence: 0.95,
+      sourceReliability: 0.95,
+      scope: { ...safeBase!.scope, level: "path" as const, paths: ["packages/site/src/Button.tsx"], taskTypes: ["ui-design-change"] },
+      atoms: safeBase!.atoms.map((atom) => ({ ...atom, risk: "low" as const, scope: { ...atom.scope, level: "path" as const, paths: ["packages/site/src/Button.tsx"], taskTypes: ["ui-design-change"] } }))
+    };
+    const oneOffCandidate = {
+      ...oneOffBase!,
+      status: "candidate" as const,
+      durability: 0.32
+    };
+    const counterCandidate = {
+      ...counterBase!,
+      status: "candidate" as const,
+      counterevidence: [{ evidenceId: "ev_counter_bulk", reason: "User later rejected dense dashboard cards." }]
+    };
+    const broadCandidate = {
+      ...broadBase!,
+      status: "candidate" as const,
+      risk: "low" as const,
+      confidence: 0.95,
+      sourceReliability: 0.95,
+      scope: { ...broadBase!.scope, level: "project" as const, paths: [], taskTypes: ["ui-design-change"] }
+    };
+
+    const queue = await writeLearnV2ReviewQueue(root, [safeCandidate, oneOffCandidate, counterCandidate, broadCandidate], now);
+    expect(queue.safeBulkActionDetails).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: "accept-low-risk",
+        eligibleCount: 1,
+        command: "openskill-kit osk review --concept-bulk accept-low-risk",
+        safeguards: expect.arrayContaining(["risk=low", "path-scoped", "no-counterevidence"])
+      }),
+      expect.objectContaining({ action: "reject-one-off", eligibleCount: 1 }),
+      expect.objectContaining({ action: "mark-superseded", eligibleCount: 1 })
+    ]));
+    const markdown = await readText(queue.artifacts.markdown);
+    expect(markdown).toContain("accept-low-risk: 1 eligible");
+    expect(markdown).toContain("Command: openskill-kit osk review --concept-bulk accept-low-risk");
+    expect(markdown).toContain("Safeguards: confidence>=");
+    expect(markdown).toContain("reject-one-off: 1 eligible");
+    expect(markdown).toContain("mark-superseded: 1 eligible");
+    expect(markdown).not.toContain(root);
+  });
+
   it("does not promote one-off passing commands into command-policy atoms", async () => {
     const root = await tempProject();
     const record = previewRecord(root, "raw_single_command");

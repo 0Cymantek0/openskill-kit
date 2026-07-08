@@ -3,6 +3,8 @@ import path from "node:path";
 import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2CounterevidenceLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2ReviewQueue } from "./schemas.js";
 import { LearnV2ReviewQueueSchema } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
+import { readProjectConfig } from "../events/store.js";
+import type { ProjectConfig } from "../config/schema.js";
 import { learnV2SafeLocalPath } from "./utils.js";
 
 export async function writeLearnV2ReviewQueue(
@@ -25,6 +27,8 @@ export async function writeLearnV2ReviewQueue(
   const evidenceSnippets = selectReviewEvidenceSnippets(cards, context?.declassifiedSnippets);
   const reviewFocus = selectReviewFocus(cards, context);
   const reviewActions = selectReviewActions(cards, reviewFocus, context?.ledger);
+  const config = await readProjectConfig(root);
+  const safeBulkActionDetails = selectSafeBulkActionDetails(cards, config);
   const conflictDetails = selectReviewConflictDetails(cards, context?.ledger);
   const queue = LearnV2ReviewQueueSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.review-queue.v1",
@@ -33,6 +37,7 @@ export async function writeLearnV2ReviewQueue(
     behaviorDeltaFirst: true,
     reviewFocus,
     safeBulkActions: ["accept-low-risk", "reject-one-off", "mark-superseded"],
+    safeBulkActionDetails,
     reviewActions,
     conflictDetails,
     conflictSummary: {
@@ -100,7 +105,14 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     "",
     "## Safe Bulk Actions",
     "",
-    ...queue.safeBulkActions.map((action) => `- ${action}`),
+    ...queue.safeBulkActionDetails.length
+      ? queue.safeBulkActionDetails.map((action) => [
+          `- ${action.action}: ${action.eligibleCount} eligible`,
+          `  Command: ${action.command}`,
+          `  Rationale: ${action.rationale}`,
+          `  Safeguards: ${action.safeguards.join("; ") || "none"}`
+        ].join("\n"))
+      : queue.safeBulkActions.map((action) => `- ${action}`),
     "",
     "## Conflict Summary",
     "",
@@ -322,6 +334,54 @@ function selectReviewActions(
     if (out.length) actions[card.id] = out.slice(0, 5);
   }
   return actions;
+}
+
+function selectSafeBulkActionDetails(cards: LearnV2ConceptCard[], config: ProjectConfig): LearnV2ReviewQueue["safeBulkActionDetails"] {
+  const acceptLowRisk = cards.filter((card) => card.status === "candidate" && isSafeBulkAcceptCandidate(card, config)).length;
+  const rejectOneOff = cards.filter((card) => card.status === "candidate" && card.durability < 0.5).length;
+  const markSuperseded = cards.filter((card) => card.status === "candidate" && card.counterevidence.length > 0).length;
+  return [
+    {
+      action: "accept-low-risk",
+      eligibleCount: acceptLowRisk,
+      command: "openskill-kit osk review --concept-bulk accept-low-risk",
+      rationale: "Activate only narrow low-risk candidates that pass confidence, reliability, scope, privacy, and counterevidence safeguards.",
+      safeguards: [
+        `confidence>=${config.learning.minConfidenceToApply}`,
+        `sourceReliability>=${config.learning.minConfidenceToApply}`,
+        "risk=low",
+        "path-scoped",
+        "no-counterevidence",
+        "no-high-risk-atoms"
+      ]
+    },
+    {
+      action: "reject-one-off",
+      eligibleCount: rejectOneOff,
+      command: "openskill-kit osk review --concept-bulk reject-one-off",
+      rationale: "Move low-durability candidate noise to one-off so it stays inspectable without activating.",
+      safeguards: ["candidate-only", "durability<0.5"]
+    },
+    {
+      action: "mark-superseded",
+      eligibleCount: markSuperseded,
+      command: "openskill-kit osk review --concept-bulk mark-superseded",
+      rationale: "Mark counterevidenced candidates as superseded instead of letting stale behavior compete for activation.",
+      safeguards: ["candidate-only", "requires-counterevidence"]
+    }
+  ];
+}
+
+function isSafeBulkAcceptCandidate(card: LearnV2ConceptCard, config: ProjectConfig): boolean {
+  if (card.confidence < config.learning.minConfidenceToApply) return false;
+  if (card.risk !== "low") return false;
+  if (card.sourceReliability < config.learning.minConfidenceToApply) return false;
+  if (card.privacy.rawRefsExportable !== false) return false;
+  if (card.privacy.outputClass !== "project-private" && card.privacy.outputClass !== "shareable") return false;
+  if (card.atoms.some((atom) => atom.kind === "security" || atom.risk === "high")) return false;
+  if (card.scope.level === "project" || card.scope.paths.length === 0 || card.scope.paths.length > 5) return false;
+  if (card.counterevidence.length > 0 || card.status === "conflict") return false;
+  return true;
 }
 
 function selectLedgerNarrowActions(
