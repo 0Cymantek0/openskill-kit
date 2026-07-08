@@ -340,7 +340,8 @@ export function inferLearnV2ConditionalHypotheses(observations: LearnV2LearningO
       const recall = support.filter((item) => factorSet.every((factor) => hasFactor(item, factor))).length / Math.max(1, support.length);
       const confidence = hypothesisConfidence({ supportCount: support.length, totalCount: targetObservations.length, precision, recall, explicitDurable, factorCount: factorSet.length });
       const durableSupportCount = support.filter((item) => !item.durabilitySignals.oneOff).length;
-      const candidateEligible = explicitDurable || durableSupportCount >= 2;
+      const changingContextContrast = hasChangingContextContrast(factorSet, counters);
+      const candidateEligible = explicitDurable || (durableSupportCount >= 2 && changingContextContrast);
       const status: LearnV2ConditionalHypothesis["status"] = candidateEligible && confidence >= 0.5 ? "candidate" : "weak";
       const condition = factorSet.length ? factorSet.map((factor) => factor.label).join(" and ") : "explicit durable user instruction";
       hypotheses.push(LearnV2ConditionalHypothesisSchema.parse({
@@ -389,7 +390,10 @@ export function decideLearnV2MemoryAdmission(input: {
     const support = hypothesis.supportObservationIds
       .map((id) => observationsById.get(id))
       .filter((item): item is LearnV2LearningObservation => Boolean(item));
-    const policy = admissionPolicyForHypothesis(hypothesis, support);
+    const counters = hypothesis.counterObservationIds
+      .map((id) => observationsById.get(id))
+      .filter((item): item is LearnV2LearningObservation => Boolean(item));
+    const policy = admissionPolicyForHypothesis(hypothesis, support, counters);
     decisions.push(makeAdmission(
       "hypothesis",
       hypothesis.id,
@@ -411,6 +415,7 @@ export function learnV2ConditionalHypothesesToBehaviorAtoms(
     .filter((hypothesis) => hypothesis.status === "candidate")
     .map((hypothesis) => {
       const support = hypothesis.supportObservationIds.map((id) => observationsById.get(id)).filter((item): item is LearnV2LearningObservation => Boolean(item));
+      const counters = hypothesis.counterObservationIds.map((id) => observationsById.get(id)).filter((item): item is LearnV2LearningObservation => Boolean(item));
       const evidenceIds = unique(support.flatMap((item) => item.evidenceIds));
       const rawRefs = unique(support.flatMap((item) => item.rawRefs));
       const paths = unique(support.flatMap((item) => item.paths));
@@ -436,7 +441,7 @@ export function learnV2ConditionalHypothesesToBehaviorAtoms(
         risk: "medium",
         conditions: {
           appliesWhen: hypothesis.factorSet.map((factor) => factor.label),
-          doesNotApplyWhen: []
+          doesNotApplyWhen: contrastingCounterFactors(hypothesis.factorSet, counters).map((factor) => factor.label)
         },
         activationHints: {
           phrases: unique([hypothesis.target, hypothesis.desiredOutcome, ...hypothesis.factorSet.map((factor) => factor.value)]),
@@ -544,6 +549,25 @@ function chooseDistinctiveFactors(support: LearnV2LearningObservation[], counter
     .map((item) => item.factor);
 }
 
+function hasChangingContextContrast(factorSet: LearnV2ContextFactor[], counters: LearnV2LearningObservation[]): boolean {
+  return contrastingCounterFactors(factorSet, counters).length > 0;
+}
+
+function contrastingCounterFactors(factorSet: LearnV2ContextFactor[], counters: LearnV2LearningObservation[]): LearnV2ContextFactor[] {
+  const supportValuesByKey = new Map(factorSet.map((factor) => [factor.key, factor.value]));
+  const contrasts: LearnV2ContextFactor[] = [];
+  for (const counter of counters) {
+    for (const factor of uniqueFactors(counter.factors)) {
+      const supportValue = supportValuesByKey.get(factor.key);
+      if (supportValue && supportValue !== factor.value) contrasts.push(factor);
+    }
+  }
+  return uniqueFactors(contrasts).sort((a, b) =>
+    factorPriority(a) - factorPriority(b) ||
+    a.label.localeCompare(b.label)
+  );
+}
+
 function hypothesisConfidence(input: { supportCount: number; totalCount: number; precision: number; recall: number; explicitDurable: boolean; factorCount: number }): number {
   const value =
     0.22 +
@@ -637,22 +661,33 @@ function admissionPolicyForObservation(observation: LearnV2LearningObservation, 
   };
 }
 
-function admissionPolicyForHypothesis(hypothesis: LearnV2ConditionalHypothesis, support: LearnV2LearningObservation[]): AdmissionPolicy {
+function admissionPolicyForHypothesis(
+  hypothesis: LearnV2ConditionalHypothesis,
+  support: LearnV2LearningObservation[],
+  counters: LearnV2LearningObservation[]
+): AdmissionPolicy {
   const joinedText = [hypothesis.statement, ...support.map((item) => item.text)].join(" ");
   const risk = admissionRiskFromText(joinedText);
   const scopeLevel = hypothesis.factorSet.length || support.some((item) => item.paths.length) ? "path" : "project";
-  const reasons = hypothesis.status === "candidate" && hypothesis.confidence >= 0.5
+  const changingContextContrast = hasChangingContextContrast(hypothesis.factorSet, counters);
+  const explicitDurable = support.some((item) => item.durabilitySignals.explicitDurable && !item.durabilitySignals.oneOff);
+  const promotionEligible = hypothesis.status === "candidate" && hypothesis.confidence >= 0.5;
+  const gatedCandidate = promotionEligible && (explicitDurable || changingContextContrast);
+  const reasons = gatedCandidate
     ? ["conditional-hypothesis-supported", "review-required-before-activation"]
     : ["weak-conditional-hypothesis"];
   if (hypothesis.counterObservationIds.length) reasons.push("counterexamples-preserved");
   if (hypothesis.factorSet.length) reasons.push("stable-context-factors");
   if (support.length < 2 && !support.some((item) => item.durabilitySignals.explicitDurable)) reasons.push("single-support-hypothesis-kept-weak");
+  if (changingContextContrast) reasons.push("changing-context-contrast");
+  if (hypothesis.counterObservationIds.length && !changingContextContrast && !explicitDurable) reasons.push("missing-changing-context-contrast-kept-weak");
+  if (!hypothesis.counterObservationIds.length && support.length >= 2 && !explicitDurable) reasons.push("no-counterexamples-for-conditional-promotion");
   if (risk.privacyBoundary !== "low") reasons.push(`privacy-boundary:${risk.privacyBoundary}`);
 
   if (risk.riskLevel === "high" || risk.privacyBoundary !== "low" || scopeLevel === "project") {
     return {
-      decision: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5 ? "requires-human-review" : "weak-observation",
-      requiredReview: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5,
+      decision: gatedCandidate ? "requires-human-review" : "weak-observation",
+      requiredReview: gatedCandidate,
       reviewPriority: risk.riskLevel === "high" || risk.privacyBoundary === "high" ? "critical" : "high",
       ...risk,
       scopeLevel,
@@ -661,9 +696,9 @@ function admissionPolicyForHypothesis(hypothesis: LearnV2ConditionalHypothesis, 
   }
 
   return {
-    decision: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5 ? "candidate-concept" : "weak-observation",
-    requiredReview: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5,
-    reviewPriority: hypothesis.status === "candidate" && hypothesis.confidence >= 0.5 ? "normal" : "none",
+    decision: gatedCandidate ? "candidate-concept" : "weak-observation",
+    requiredReview: gatedCandidate,
+    reviewPriority: gatedCandidate ? "normal" : "none",
     ...risk,
     scopeLevel,
     reasons

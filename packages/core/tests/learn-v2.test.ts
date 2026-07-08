@@ -2408,6 +2408,7 @@ describe("learn-v2 substrate", () => {
       "deterministic counterfactual trace activation checks",
       "conditional memory admission non-overlearning checks",
       "open-world grounding authority and evidence-separation checks",
+      "product-readiness auditability joins for active/candidate concepts",
       "local sandbox verifier command execution"
     ]));
     expect(report.proofBoundary.doesNotProve).not.toContain("configured behavior-delta golden checks");
@@ -2431,6 +2432,13 @@ describe("learn-v2 substrate", () => {
       "evidence-classes-counted-separately"
     ]));
     expect(JSON.stringify(groundingBoundary)).toContain("external");
+    const productReadinessBoundary = report.results.find((result) => result.id === "product-readiness-audit-boundary");
+    expect(productReadinessBoundary?.status).toBe("pass");
+    expect(productReadinessBoundary?.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
+      "active-candidate-joined-learning-evidence",
+      "conditional-data-has-admission-reason",
+      "ontology-artifact-links-concepts"
+    ]));
     const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
     expect(counterfactualCases).toContain("openskill-kit.counterfactual-trace-eval-case.v1");
     expect(counterfactualCases).not.toContain("raw_");
@@ -2647,12 +2655,57 @@ describe("learn-v2 substrate", () => {
     expect(report.summary.activationReplay.replayableConcepts).toBe(1);
     expect(report.summary.counterfactualTrace.caseCount).toBe(1);
     expect(report.proofBoundary.proves).toContain("memory-admission activation exclusion for one-off/rejected/superseded concepts");
+    expect(report.proofBoundary.proves).toContain("product-readiness auditability joins for active/candidate concepts");
     const counterfactualCases = await readText(report.artifacts.counterfactualCases!);
     expect(counterfactualCases).toContain("concept_active_eval");
     expect(counterfactualCases).not.toContain("concept_one_off_eval");
     const markdown = await readText(report.artifacts.markdown);
     expect(markdown).toContain("### memory-admission-boundary");
     expect(markdown).toContain("one-off-excluded-from-activation");
+  });
+
+  it("fails product-readiness eval when active concepts lack joined audit evidence", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:01:45Z");
+    const [base] = mergeLearnV2ConceptCards([
+      behaviorAtom("audit_missing_join", "Prefer focused parser regression fixtures before parser edits.", "positive")
+    ], now);
+    const unauditable = {
+      ...base!,
+      id: "concept_audit_missing_join",
+      status: "active" as const,
+      evidenceIds: ["ev_missing_join"],
+      rawRefs: ["raw_missing_join"],
+      atoms: base!.atoms.map((atom) => ({
+        ...atom,
+        evidenceIds: [],
+        rawRefs: []
+      })),
+      activation: {
+        phrases: ["parser edits", "parser regression"],
+        pathGlobs: ["packages/core/src/parser.ts"],
+        commands: []
+      },
+      scope: {
+        ...base!.scope,
+        paths: ["packages/core/src/parser.ts"],
+        taskTypes: ["parser-change"]
+      }
+    };
+
+    const report = await runLearnV2Eval(root, [], [unauditable], now);
+    const boundary = report.results.find((result) => result.id === "product-readiness-audit-boundary")!;
+
+    expect(boundary.status).toBe("fail");
+    expect(boundary.checks.find((item) => item.name === "active-candidate-joined-learning-evidence")).toMatchObject({
+      status: "fail",
+      details: expect.stringContaining("concept_audit_missing_join")
+    });
+    expect(boundary.checks.find((item) => item.name === "conditional-data-has-admission-reason")?.status).toBe("pass");
+    expect(boundary.checks.find((item) => item.name === "ontology-artifact-links-concepts")?.status).toBe("pass");
+    const markdown = await readText(report.artifacts.markdown);
+    expect(markdown).toContain("### product-readiness-audit-boundary");
+    expect(markdown).toContain("active-candidate-joined-learning-evidence");
   });
 
   it("surfaces counterevidence in activation and suppresses active counterevidenced concepts", () => {
@@ -3213,6 +3266,87 @@ describe("learn-v2 substrate", () => {
     expect(operations.some((operation) => operation.operation === "merge-namespaces" && operation.status === "needs-review")).toBe(true);
     expect(operations.some((operation) => operation.operation === "split-namespace" && operation.status === "needs-review")).toBe(true);
     expect(operations.every((operation) => operation.reviewHint.length > 0 && operation.rationale.length > 0)).toBe(true);
+
+    const rationaleByOperation = new Map(operations.map((operation) => [operation.operation, operation.rationale]));
+    expect(rationaleByOperation.get("create-namespace")).toContain("Create namespace:");
+    expect(rationaleByOperation.get("nest-namespace")).toContain("Nest namespace:");
+    expect(rationaleByOperation.get("merge-namespaces")).toContain("Merge namespaces:");
+    expect(rationaleByOperation.get("split-namespace")).toContain("Split namespace:");
+    expect(rationaleByOperation.get("attach-concept")).toContain("Attach concept:");
+
+    const parserParent = namespaces.find((namespace) => namespace.label === "Parser behavior")!;
+    const parserChild = namespaces.find((namespace) => namespace.label === "Parser language structure")!;
+    const parserSplit = operations.find((operation) =>
+      operation.operation === "split-namespace" &&
+      operation.namespaceIds.includes(parserParent.id)
+    )!;
+    expect(parserSplit.namespaceIds).toEqual(expect.arrayContaining([parserParent.id, parserChild.id]));
+    expect(parserSplit.rationale).toContain("Preserve child namespace candidates for review");
+    expect(parserSplit.rationale).toContain("Parser language structure");
+    expect(parserSplit.rationale).toContain("parser:language-structure");
+    expect(parserSplit.conceptIds).toEqual(expect.arrayContaining(parserChild.conceptIds));
+  });
+
+  it("reports conditional split operations for theme-variant UI namespaces", () => {
+    const cards = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("ui_light_theme_green_cta", "Prefer green CTA buttons on light landing pages.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/LightLandingButton.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        conditions: {
+          appliesWhen: ["ui.theme=light", "component.role=button"],
+          doesNotApplyWhen: ["user requests another color"]
+        },
+        activationHints: {
+          phrases: ["light theme CTA", "landing page button"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: ["explicit color override"]
+        },
+        risk: "low"
+      },
+      {
+        ...behaviorAtom("ui_dark_theme_blue_cta", "Prefer blue CTA buttons on dark landing pages.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/DarkLandingButton.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        conditions: {
+          appliesWhen: ["ui.theme=dark", "component.role=button"],
+          doesNotApplyWhen: ["user requests another color"]
+        },
+        activationHints: {
+          phrases: ["dark theme CTA", "landing page button"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: ["explicit color override"]
+        },
+        risk: "low"
+      }
+    ], new Date("2026-06-30T00:01:00Z"));
+
+    const namespaces = buildLearnV2SkillNamespaces(cards);
+    const operations = buildLearnV2SkillOntologyOperations(cards, namespaces);
+    const uiNamespace = namespaces.find((namespace) => namespace.label === "UI/UX design")!;
+    const split = operations.find((operation) =>
+      operation.operation === "split-namespace" &&
+      operation.namespaceIds.includes(uiNamespace.id) &&
+      operation.rationale.includes("conditional variants differ for ui.theme")
+    );
+
+    expect(split).toMatchObject({
+      operation: "split-namespace",
+      status: "needs-review",
+      reviewHint: "Split when conditional variants need separate activation, counterexample tracking, or reviewer ownership."
+    });
+    expect(split!.conceptIds).toEqual(expect.arrayContaining(cards.map((card) => card.id)));
+    expect(split!.rationale).toContain("dark, light");
   });
 
   it("grounds verification concepts in project resources before external references", async () => {
@@ -3411,6 +3545,50 @@ describe("learn-v2 substrate", () => {
     expect(markdown).toContain("Used for: eval");
   });
 
+  it("renders concept debug trace summaries with compact missing-link diagnostics", async () => {
+    const root = await tempProject();
+    const [card] = mergeLearnV2ConceptCards([
+      behaviorAtom("debug_trace_sparse_audit", "Run focused parser checks before parser edits.", "positive")
+    ], new Date("2026-06-30T00:18:00Z"));
+    const sparseActive = {
+      ...card!,
+      title: "Sparse Audit Concept",
+      status: "active" as const,
+      activation: {
+        phrases: [],
+        pathGlobs: [],
+        commands: []
+      },
+      conditions: {
+        appliesWhen: [],
+        doesNotApplyWhen: []
+      },
+      scope: {
+        ...card!.scope,
+        negativeTriggers: []
+      }
+    };
+
+    const trace = await writeLearnV2ConceptDebugTraceArtifact(root, [sparseActive], new Date("2026-06-30T00:18:30Z"));
+    const entry = trace.traces[0]!;
+
+    expect(entry.whyLearned.summary).toContain("Why learned:");
+    expect(entry.whyLearned.summary).toContain("Missing links:");
+    expect(entry.whyLearned.summary).toContain("missing-observations");
+    expect(entry.whyLearned.summary).toContain("missing-hypotheses");
+    expect(entry.whyLearned.summary).toContain("missing-ontology-namespace");
+    expect(entry.whyLearned.summary).toContain("missing-grounding");
+    expect(entry.whyLearned.summary).toContain("missing-activation-evidence");
+    expect(entry.whyActive.reviewGate).toContain("Why active:");
+    expect(entry.whyActive.reviewGate).toContain("no compact activation evidence");
+
+    const markdown = await readText(trace.artifacts.markdown);
+    expect(markdown).toContain("Trace summary:");
+    expect(markdown).toContain("Why active/suppressed:");
+    expect(markdown).toContain("missing-activation-evidence");
+    expect(markdown).not.toContain(root);
+  });
+
   it("joins ranked grounding details into concept debug trace", async () => {
     const root = await tempProject();
     const configPath = path.join(root, ".openskill-kit", "config.json");
@@ -3448,6 +3626,116 @@ describe("learn-v2 substrate", () => {
     expect(markdown).toContain("Approved dashboard hierarchy guide");
     expect(markdown).toContain("score=");
     expect(markdown).toContain("reasons=term:");
+    expect(markdown).not.toContain(root);
+  });
+
+  it("renders review-blocked activation reasons in concept debug trace without raw evidence", async () => {
+    const root = await tempProject();
+    const [base] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("debug_review_blocked", "Prefer green primary buttons across marketing pages.", "positive"),
+      kind: "preference"
+    }], new Date("2026-06-30T00:18:00Z"));
+    const candidate = {
+      ...base!,
+      status: "candidate" as const,
+      conditions: {
+        appliesWhen: ["Task changes marketing primary buttons"],
+        doesNotApplyWhen: ["User asks for a one-off color change"]
+      },
+      scope: {
+        ...base!.scope,
+        negativeTriggers: ["user says only here"]
+      }
+    };
+    const conditionalLearning = {
+      schemaVersion: "openskill-kit.learn-v2.conditional-learning-artifact.v1" as const,
+      generatedAt: "2026-06-30T00:18:10.000Z",
+      observations: [{
+        schemaVersion: "openskill-kit.learn-v2.learning-observation.v1" as const,
+        id: "obs_debug_review_blocked",
+        evidenceIds: candidate.evidenceIds,
+        rawRefs: ["raw_private_debug_review_blocked"],
+        paths: ["packages/site/src/Button.tsx"],
+        actor: "user" as const,
+        intent: "preference" as const,
+        target: "button color",
+        desiredOutcome: "green",
+        text: "PRIVATE_RAW_PROMPT_SHOULD_NOT_RENDER",
+        factors: [{
+          schemaVersion: "openskill-kit.learn-v2.context-factor.v1" as const,
+          id: "factor_debug_review_blocked",
+          key: "surface.kind",
+          value: "marketing-page",
+          label: "marketing page",
+          confidence: 0.8,
+          evidenceIds: candidate.evidenceIds,
+          source: "metadata" as const
+        }],
+        durabilitySignals: {
+          explicitDurable: true,
+          oneOff: false,
+          recurrenceCandidate: true
+        },
+        confidence: 0.78
+      }],
+      hypotheses: [],
+      admissionDecisions: [{
+        schemaVersion: "openskill-kit.learn-v2.memory-admission-decision.v1" as const,
+        id: "admission_debug_review_blocked",
+        subjectKind: "observation" as const,
+        subjectId: "obs_debug_review_blocked",
+        decision: "requires-human-review" as const,
+        requiredReview: true,
+        reviewPriority: "high" as const,
+        riskLevel: "high" as const,
+        privacyBoundary: "medium" as const,
+        scopeLevel: "project" as const,
+        confidence: 0.7,
+        reasons: ["broad-ui-rule-needs-review", "explicit-durable-user-language"]
+      }],
+      counts: {
+        observations: 1,
+        hypotheses: 0,
+        promotedHypotheses: 0,
+        observeOnly: 0,
+        rejectedNoise: 0,
+        episodeNotes: 0,
+        weakObservations: 0,
+        candidateConcepts: 0,
+        requiresHumanReview: 1
+      },
+      artifacts: { json: "conditional-learning.json", markdown: "conditional-learning.md" }
+    };
+
+    const trace = await writeLearnV2ConceptDebugTraceArtifact(root, [candidate], new Date("2026-06-30T00:18:20Z"), {
+      conditionalLearning
+    });
+    const entry = trace.traces.find((item) => item.conceptId === candidate.id)!;
+    const traceJson = JSON.stringify(trace);
+    const markdown = await readText(trace.artifacts.markdown);
+
+    expect(entry.whyActive.activationState).toBe("inactive-review-required");
+    expect(entry.whyActive.reviewGate).toContain("Activation blocked or suppressed");
+    expect(entry.whyActive.reviewGate).toContain("Status candidate blocks runtime activation");
+    expect(entry.whyActive.reviewGate).toContain("Review required for observation:obs_debug_review_blocked");
+    expect(entry.whyActive.reviewGate).toContain("broad-ui-rule-needs-review");
+    expect(entry.whyActive.doesNotApplyWhen).toEqual(expect.arrayContaining([
+      "User asks for a one-off color change",
+      expect.stringContaining("Status candidate blocks runtime activation"),
+      expect.stringContaining("broad-ui-rule-needs-review")
+    ]));
+    expect(entry.conditional.admissionDecisions[0]!.reasons).toEqual(expect.arrayContaining([
+      "broad-ui-rule-needs-review",
+      "explicit-durable-user-language"
+    ]));
+    expect(markdown).toContain("Activation blockers:");
+    expect(markdown).toContain("Admission details:");
+    expect(markdown).toContain("requiredReview=true");
+    expect(markdown).toContain("broad-ui-rule-needs-review");
+    expect(traceJson).not.toContain("PRIVATE_RAW_PROMPT_SHOULD_NOT_RENDER");
+    expect(traceJson).not.toContain("raw_private_debug_review_blocked");
+    expect(markdown).not.toContain("PRIVATE_RAW_PROMPT_SHOULD_NOT_RENDER");
+    expect(markdown).not.toContain("raw_private_debug_review_blocked");
     expect(markdown).not.toContain(root);
   });
 
@@ -6015,10 +6303,18 @@ describe("learn-v2 substrate", () => {
       }
     });
     expect(wrongTrace.outcomePolicy.reasons).toContain("outcome:wrong-threshold:2");
+    expect(wrongTrace.whyActive.reviewGate).toContain("Activation blocked or suppressed");
+    expect(wrongTrace.whyActive.reviewGate).toContain("Outcome policy suppresses activation");
+    expect(wrongTrace.whyActive.reviewGate).toContain("outcome:wrong-threshold:2");
+    expect(wrongTrace.whyActive.doesNotApplyWhen).toContain("Outcome policy suppresses activation: outcome:wrong-threshold:2");
+    expect(wrongTrace.whyActive.negativeTriggers).toContain("outcome suppression: outcome:wrong-threshold:2");
     const traceMarkdown = await readText(trace.artifacts.markdown);
     expect(traceMarkdown).toContain("Outcome policy:");
+    expect(traceMarkdown).toContain("Why active/suppressed:");
     expect(traceMarkdown).toContain("Action: suppress-activation");
     expect(traceMarkdown).toContain("outcome:wrong-threshold:2");
+    expect(traceMarkdown).toContain("Activation blockers:");
+    expect(traceMarkdown).toContain("Outcome policy suppresses activation: outcome:wrong-threshold:2");
     expect(traceMarkdown).not.toContain(root);
   });
 
@@ -6603,11 +6899,16 @@ describe("learn-v2 substrate", () => {
     expect(green.counterObservationIds).toHaveLength(1);
     expect(green.factorSet.map((factor) => `${factor.key}:${factor.value}`)).toEqual(expect.arrayContaining(["ui.theme:light", "surface.kind:landing-page"]));
     expect(blue.status).toBe("weak");
-    expect(admission.find((item) => item.subjectKind === "hypothesis" && item.subjectId === green.id)).toMatchObject({
+    const greenAdmission = admission.find((item) => item.subjectKind === "hypothesis" && item.subjectId === green.id);
+    expect(greenAdmission).toMatchObject({
       decision: "candidate-concept",
       requiredReview: true,
       reviewPriority: "normal"
     });
+    expect(greenAdmission!.reasons).toEqual(expect.arrayContaining([
+      "changing-context-contrast",
+      "counterexamples-preserved"
+    ]));
     expect(admission.find((item) => item.subjectKind === "hypothesis" && item.subjectId === blue.id)).toMatchObject({
       decision: "weak-observation",
       requiredReview: false,
@@ -6615,6 +6916,50 @@ describe("learn-v2 substrate", () => {
     });
     expect(atoms).toHaveLength(1);
     expect(atoms.every((atom) => atom.scope.taskTypes.includes("ui-design-change"))).toBe(true);
+    expect(atoms[0]!.conditions).toMatchObject({
+      appliesWhen: expect.arrayContaining(["UI theme is light"]),
+      doesNotApplyWhen: expect.arrayContaining(["UI theme is dark"])
+    });
+    expect(atoms[0]!.conditions!.doesNotApplyWhen).not.toContain("Component container is independent");
+  });
+
+  it("keeps repeated support weak when counters lack changing context factors", () => {
+    const evidence = [
+      {
+        ...normalizedMessage("ui_underspecified_green_first", "Make independent button green on white landing page.", "user"),
+        paths: ["packages/site/src/LandingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ui_underspecified_green_second", "Make independent button green on light marketing page.", "user"),
+        paths: ["packages/site/src/MarketingButton.tsx"],
+        metadata: { theme: "light", container: "independent", componentRole: "button", surfaceKind: "landing-page" }
+      },
+      {
+        ...normalizedMessage("ui_underspecified_blue_counter", "No, I want button blue.", "user"),
+        paths: ["packages/site/src/Button.tsx"]
+      }
+    ];
+
+    const observations = buildLearnV2LearningObservationsFromEvidence(evidence);
+    const hypotheses = inferLearnV2ConditionalHypotheses(observations);
+    const admission = decideLearnV2MemoryAdmission({ observations, hypotheses });
+    const atoms = learnV2ConditionalHypothesesToBehaviorAtoms(hypotheses, observations);
+    const green = hypotheses.find((item) => item.desiredOutcome === "green")!;
+    const greenAdmission = admission.find((item) => item.subjectKind === "hypothesis" && item.subjectId === green.id);
+
+    expect(green.factorSet.map((factor) => `${factor.key}:${factor.value}`)).toEqual(expect.arrayContaining([
+      "ui.theme:light",
+      "component.container:independent"
+    ]));
+    expect(green.status).toBe("weak");
+    expect(greenAdmission).toMatchObject({
+      decision: "weak-observation",
+      requiredReview: false,
+      reviewPriority: "none",
+      reasons: expect.arrayContaining(["missing-changing-context-contrast-kept-weak"])
+    });
+    expect(atoms).toHaveLength(0);
   });
 
   it("keeps repeated explicit one-off conditional support out of durable candidates", () => {

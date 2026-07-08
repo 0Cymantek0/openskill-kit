@@ -20,6 +20,7 @@ import { runSandboxCommand, type SandboxCommandResult } from "../sandbox/runner.
 import { ensureLearnV2ModelRoutingArtifacts } from "./model-routing.js";
 import { scanLearnV2OutputArtifactBoundary, validateLearnV2ModelOutputBoundary } from "./output-boundary.js";
 import { buildLearnV2OpenWorldGroundingAnchors } from "./resource-grounding.js";
+import { buildLearnV2SkillNamespaces, buildLearnV2SkillOntologyOperations } from "./skill-ontology.js";
 import { readLearnV2ConceptStore } from "./store.js";
 import { learnV2Hash, learnV2IsInside } from "./utils.js";
 
@@ -196,6 +197,7 @@ export async function runLearnV2Eval(
   const memoryAdmissionBoundary = evaluateMemoryAdmissionBoundary(concepts);
   const conditionalAdmissionBoundary = evaluateConditionalAdmissionBoundary(episodes);
   const openWorldGroundingBoundary = evaluateOpenWorldGroundingBoundary(concepts, now);
+  const productReadinessAuditBoundary = evaluateProductReadinessAuditBoundary(episodes, concepts);
   const activationReplay = evaluateActivationReplay(episodes, concepts);
   const counterfactualTrace = evaluateCounterfactualTraceCases(concepts, counterfactualCases);
   const behaviorDeltaResults = behaviorDeltaCases.map((item) => evaluateBehaviorDeltaCase(item));
@@ -237,6 +239,7 @@ export async function runLearnV2Eval(
     memoryAdmissionBoundary,
     conditionalAdmissionBoundary,
     openWorldGroundingBoundary,
+    productReadinessAuditBoundary,
     activationReplay.result,
     counterfactualTrace.result,
     ...(sandboxProbe ? [sandboxProbe.result] : []),
@@ -967,6 +970,86 @@ function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now:
     status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
     checks
   };
+}
+
+function evaluateProductReadinessAuditBoundary(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2EvalResultRow {
+  const auditConcepts = concepts.filter((concept) => concept.status === "active" || concept.status === "candidate");
+  const conditional = runLearnV2ConditionalLearning(episodes);
+  const observationIdsByEvidenceId = new Map<string, Set<string>>();
+  for (const observation of conditional.observations) {
+    for (const evidenceId of observation.evidenceIds) {
+      const current = observationIdsByEvidenceId.get(evidenceId) ?? new Set<string>();
+      current.add(observation.id);
+      observationIdsByEvidenceId.set(evidenceId, current);
+    }
+  }
+  const admissionBySubjectId = new Map(conditional.admissionDecisions.map((decision) => [decision.subjectId, decision]));
+  const namespaces = buildLearnV2SkillNamespaces(auditConcepts);
+  const operations = buildLearnV2SkillOntologyOperations(auditConcepts, namespaces);
+  const namespaceConceptIds = new Set(namespaces.flatMap((namespace) => namespace.conceptIds));
+  const operationConceptIds = new Set(operations.flatMap((operation) => operation.conceptIds));
+  const conceptsMissingEvidenceJoin = auditConcepts.filter((concept) =>
+    !hasJoinedObservationEvidence(concept, observationIdsByEvidenceId)
+    && !hasAtomAuditEvidence(concept)
+  );
+  const conceptsMissingAdmissionReason = auditConcepts.filter((concept) => {
+    const relatedObservationIds = relatedObservationIdsForConcept(concept, observationIdsByEvidenceId);
+    const relatedHypothesisIds = conditional.hypotheses
+      .filter((hypothesis) => hypothesis.supportObservationIds.some((id) => relatedObservationIds.has(id)))
+      .map((hypothesis) => hypothesis.id);
+    if (!relatedObservationIds.size && !relatedHypothesisIds.length) return false;
+    const relatedSubjectIds = [...relatedObservationIds, ...relatedHypothesisIds];
+    return !relatedSubjectIds.some((id) => (admissionBySubjectId.get(id)?.reasons.length ?? 0) > 0);
+  });
+  const conceptsMissingNamespaceLinkage = namespaces.length || operations.length
+    ? auditConcepts.filter((concept) => !namespaceConceptIds.has(concept.id) || !operationConceptIds.has(concept.id))
+    : [];
+  const checks = [
+    check(
+      "active-candidate-joined-learning-evidence",
+      conceptsMissingEvidenceJoin.length === 0,
+      conceptsMissingEvidenceJoin.length
+        ? `concepts missing observation or atom evidence join: ${conceptsMissingEvidenceJoin.map((concept) => concept.id).slice(0, 8).join(", ")}`
+        : `${auditConcepts.length} active/candidate concept(s) have observation or atom evidence for audit`
+    ),
+    check(
+      "conditional-data-has-admission-reason",
+      conceptsMissingAdmissionReason.length === 0,
+      conceptsMissingAdmissionReason.length
+        ? `conditional concepts missing admission rationale: ${conceptsMissingAdmissionReason.map((concept) => concept.id).slice(0, 8).join(", ")}`
+        : `${conditional.observations.length} observation(s), ${conditional.hypotheses.length} hypothesis/hypotheses checked for admission rationale where linked`
+    ),
+    check(
+      "ontology-artifact-links-concepts",
+      conceptsMissingNamespaceLinkage.length === 0,
+      conceptsMissingNamespaceLinkage.length
+        ? `concepts missing namespace/operation linkage: ${conceptsMissingNamespaceLinkage.map((concept) => concept.id).slice(0, 8).join(", ")}`
+        : namespaces.length || operations.length
+          ? `${namespaces.length} namespace(s), ${operations.length} operation(s) link active/candidate concepts`
+          : "no ontology namespace artifact generated for current active/candidate concepts"
+    )
+  ];
+  return {
+    id: "product-readiness-audit-boundary",
+    status: checks.every((entry) => entry.status === "pass") ? "pass" : "fail",
+    checks
+  };
+}
+
+function hasJoinedObservationEvidence(concept: LearnV2ConceptCard, observationIdsByEvidenceId: Map<string, Set<string>>): boolean {
+  return concept.evidenceIds.some((evidenceId) => (observationIdsByEvidenceId.get(evidenceId)?.size ?? 0) > 0);
+}
+
+function hasAtomAuditEvidence(concept: LearnV2ConceptCard): boolean {
+  return concept.atoms.some((atom) => atom.evidenceIds.length > 0 && atom.rawRefs.length > 0);
+}
+
+function relatedObservationIdsForConcept(concept: LearnV2ConceptCard, observationIdsByEvidenceId: Map<string, Set<string>>): Set<string> {
+  const out = new Set<string>();
+  for (const evidenceId of concept.evidenceIds) {
+    for (const observationId of observationIdsByEvidenceId.get(evidenceId) ?? []) out.add(observationId);
+  }
+  return out;
 }
 
 function buildCounterfactualTraceCases(episodes: LearnV2TaskEpisode[], concepts: LearnV2ConceptCard[]): LearnV2CounterfactualTraceEvalCase[] {
@@ -1722,7 +1805,8 @@ function learnV2EvalProofBoundary(input: {
     "deterministic activation scoring",
     "memory-admission activation exclusion for one-off/rejected/superseded concepts",
     "conditional memory admission non-overlearning checks",
-    "open-world grounding authority and evidence-separation checks"
+    "open-world grounding authority and evidence-separation checks",
+    "product-readiness auditability joins for active/candidate concepts"
   ];
   const doesNotProve = [
     "real agent task success",

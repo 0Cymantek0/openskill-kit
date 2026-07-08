@@ -144,6 +144,26 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
     operation.conceptIds.includes(concept.id) || operation.namespaceIds.some((id) => namespaceIds.has(id))
   );
   const outcomePolicyDecision = context.outcomePolicy?.decisions.find((decision) => decision.conceptId === concept.id);
+  const outcomePolicy = outcomePolicyDecision
+    ? {
+        action: outcomePolicyDecision.action,
+        suppressed: outcomePolicyDecision.action === "suppress-activation",
+        reasons: outcomePolicyDecision.reasons,
+        counts: outcomePolicyDecision.counts,
+        lastRecordedAt: outcomePolicyDecision.lastRecordedAt
+      }
+    : {
+        suppressed: false,
+        reasons: [],
+        counts: { helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 }
+      };
+  const activationDetails = buildActivationTraceDetails(concept, admissionDecisions, conflicts, drift, outcomePolicyDecision);
+  const missingLinks = missingLinkDiagnostics(concept, {
+    observationCount: observations.length,
+    hypothesisCount: hypotheses.length,
+    namespaceCount: namespaces.length,
+    groundingCount: anchors.length
+  });
   const userPreferenceEvidence = observations.filter((observation) => ["user", "reviewer"].includes(observation.actor)).length;
   const modelInterpretation = hypotheses.length + namespaces.length;
   return LearnV2ConceptDebugTraceEntrySchema.parse({
@@ -155,7 +175,7 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
     canonicalBehavior: concept.canonicalBehavior,
     behaviorDelta: concept.behaviorDelta,
     whyLearned: {
-      summary: summarizeWhyLearned(concept, observations, hypotheses, namespaces.length, anchors.length),
+      summary: summarizeWhyLearned(concept, observations, hypotheses, namespaces.length, anchors.length, missingLinks),
       evidenceIds: concept.evidenceIds,
       supportAtomIds: concept.atoms.map((atom) => atom.id),
       supportAtomStatements: atomStatements,
@@ -168,15 +188,15 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
     },
     whyActive: {
       activationState: activationState(concept),
-      reviewGate: concept.status === "active" || concept.status === "locked"
-        ? "Concept can activate when task context matches scope, phrases, paths, and conditions."
-        : "Concept remains review-gated; it explains learning but should not activate until accepted.",
+      reviewGate: activationDetails.blockedConditions.length || activationDetails.negativeTriggers.length
+        ? activationDetails.reviewGate
+        : summarizeWhyActive(concept, outcomePolicy.suppressed, outcomePolicy.reasons, missingLinks),
       phrases: concept.activation.phrases,
       pathGlobs: concept.activation.pathGlobs,
       commands: concept.activation.commands,
       appliesWhen: concept.conditions?.appliesWhen ?? [],
-      doesNotApplyWhen: concept.conditions?.doesNotApplyWhen ?? [],
-      negativeTriggers: concept.scope.negativeTriggers
+      doesNotApplyWhen: unique([...(concept.conditions?.doesNotApplyWhen ?? []), ...activationDetails.blockedConditions]),
+      negativeTriggers: unique([...concept.scope.negativeTriggers, ...activationDetails.negativeTriggers])
     },
     conditional: {
       observationIds: observations.map((observation) => observation.id),
@@ -213,19 +233,7 @@ function buildTrace(concept: LearnV2ConceptCard, context: LearnV2ConceptDebugTra
       evidenceSnippetIds: snippets.map((snippet) => snippet.snippetId),
       reviewActionLabels: reviewActions.map((action) => action.label)
     },
-    outcomePolicy: outcomePolicyDecision
-      ? {
-          action: outcomePolicyDecision.action,
-          suppressed: outcomePolicyDecision.action === "suppress-activation",
-          reasons: outcomePolicyDecision.reasons,
-          counts: outcomePolicyDecision.counts,
-          lastRecordedAt: outcomePolicyDecision.lastRecordedAt
-        }
-      : {
-          suppressed: false,
-          reasons: [],
-          counts: { helpful: 0, ignored: 0, wrong: 0, harmful: 0, superseded: 0 }
-        },
+    outcomePolicy,
     evidenceSeparation: {
       userPreferenceEvidence,
       projectEvidence: Math.max(0, concept.evidenceIds.length - userPreferenceEvidence),
@@ -239,21 +247,160 @@ function observationEvidenceIds(observationId: string, context: LearnV2ConceptDe
   return context.conditionalLearning?.observations.find((observation) => observation.id === observationId)?.evidenceIds ?? [];
 }
 
+type TraceAdmissionDecision = LearnV2ConceptDebugTraceEntry["conditional"]["admissionDecisions"][number];
+type TraceConflict = NonNullable<LearnV2ConceptDebugTraceContext["reviewQueue"]>["conflictDetails"][number];
+type TraceDriftCandidate = NonNullable<LearnV2ConceptDebugTraceContext["reviewQueue"]>["driftSummary"]["staleCandidates"][number];
+type TraceOutcomePolicyDecision = NonNullable<LearnV2ConceptDebugTraceContext["outcomePolicy"]>["decisions"][number];
+
+interface ActivationTraceDetails {
+  reviewGate: string;
+  blockedConditions: string[];
+  negativeTriggers: string[];
+}
+
+function buildActivationTraceDetails(
+  concept: LearnV2ConceptCard,
+  admissionDecisions: TraceAdmissionDecision[],
+  conflicts: TraceConflict[],
+  drift: TraceDriftCandidate[],
+  outcomePolicyDecision?: TraceOutcomePolicyDecision
+): ActivationTraceDetails {
+  const blockers: string[] = [];
+  const blockedConditions: string[] = [];
+  const negativeTriggers: string[] = [];
+  let suppressedByOutcome = false;
+  if (outcomePolicyDecision?.action === "suppress-activation") {
+    suppressedByOutcome = true;
+    const reasonText = outcomePolicyDecision.reasons.join("; ") || "outcome policy threshold reached";
+    blockers.push(`Outcome policy suppresses activation: ${reasonText}`);
+    blockedConditions.push(`Outcome policy suppresses activation: ${reasonText}`);
+    negativeTriggers.push(...outcomePolicyDecision.reasons.map((reason) => `outcome suppression: ${reason}`));
+  }
+  if (concept.status !== "active" && concept.status !== "locked") {
+    const statusReason = activationStatusBlocker(concept.status);
+    blockers.push(statusReason);
+    blockedConditions.push(statusReason);
+  }
+  for (const decision of admissionDecisions.filter((item) => item.requiredReview || item.decision === "requires-human-review")) {
+    const reasons = decision.reasons.join("; ") || decision.decision;
+    const label = `Review required for ${decision.subjectKind}:${decision.subjectId} (${decision.decision}; priority=${decision.reviewPriority}; risk=${decision.riskLevel}; scope=${decision.scopeLevel}): ${reasons}`;
+    blockers.push(label);
+    blockedConditions.push(label);
+  }
+  for (const conflict of conflicts) {
+    const authority = conflict.diagnostics?.authorityReasons.length
+      ? `; authority=${conflict.diagnostics.authorityReasons.join(", ")}`
+      : "";
+    const protectedReasons = conflict.diagnostics?.protectedReasons.length
+      ? `; protected=${conflict.diagnostics.protectedReasons.join(", ")}`
+      : "";
+    const label = `Review conflict ${conflict.conflictId}: type=${conflict.conflictType}; suggested=${conflict.suggestedResolution}${authority}${protectedReasons}`;
+    blockers.push(label);
+    blockedConditions.push(label);
+  }
+  for (const candidate of drift) {
+    const label = `Review drift ${candidate.reason}: ${candidate.suggestion}`;
+    blockers.push(label);
+    blockedConditions.push(label);
+  }
+  if (blockers.length) {
+    return {
+      reviewGate: `${suppressedByOutcome ? "Why suppressed: " : ""}Activation blocked or suppressed: ${unique(blockers).join(" | ")}`,
+      blockedConditions: unique(blockedConditions),
+      negativeTriggers: unique(negativeTriggers)
+    };
+  }
+  return {
+    reviewGate: "Concept can activate when task context matches scope, phrases, paths, commands, and conditions.",
+    blockedConditions: [],
+    negativeTriggers: []
+  };
+}
+
+function activationStatusBlocker(status: LearnV2ConceptCard["status"]): string {
+  switch (status) {
+    case "candidate":
+      return "Status candidate blocks runtime activation until review accepts or stages it.";
+    case "staged":
+      return "Status staged blocks runtime activation until it is promoted active.";
+    case "rejected":
+      return "Status rejected blocks runtime activation.";
+    case "conflict":
+      return "Status conflict blocks runtime activation until conflict review resolves it.";
+    case "superseded":
+      return "Status superseded blocks runtime activation.";
+    case "one-off":
+      return "Status one-off keeps this as trace/debug evidence only.";
+    case "active":
+    case "locked":
+      return "Concept can activate.";
+  }
+}
+
 function summarizeWhyLearned(
   concept: LearnV2ConceptCard,
   observations: LearnV2LearningObservation[],
   hypotheses: { id: string }[],
   namespaceCount: number,
-  anchorCount: number
+  anchorCount: number,
+  missingLinks: string[]
 ): string {
   const parts = [
+    "Why learned:",
     `${concept.evidenceIds.length} declassified evidence item(s) produced ${concept.atoms.length} support atom(s).`,
     observations.length ? `${observations.length} learning observation(s) link this concept to user/reviewer behavior.` : "No conditional observation link found.",
     hypotheses.length ? `${hypotheses.length} conditional hypothesis link(s) explain hidden factors.` : "No conditional hypothesis link found.",
     namespaceCount ? `${namespaceCount} emergent namespace(s) group this behavior.` : "No emergent namespace linked.",
-    anchorCount ? `${anchorCount} open-world anchor(s) provide review/verification grounding.` : "No open-world anchor linked."
+    anchorCount ? `${anchorCount} open-world anchor(s) provide review/verification grounding.` : "No open-world anchor linked.",
+    `Missing links: ${missingLinks.join(", ") || "none"}.`
   ];
   return parts.join(" ");
+}
+
+function summarizeWhyActive(
+  concept: LearnV2ConceptCard,
+  suppressed: boolean,
+  suppressionReasons: string[],
+  missingLinks: string[]
+): string {
+  if (suppressed) {
+    return `Why suppressed: outcome policy suppresses activation (${suppressionReasons.join(", ") || "no declassified reason"}).`;
+  }
+  if (concept.status === "active" || concept.status === "locked") {
+    return missingLinks.includes("missing-activation-evidence")
+      ? "Why active: concept is accepted, but no compact activation evidence is linked; activation may rely on broad fallback matching."
+      : "Why active: concept can activate when task context matches scope, phrases, paths, commands, and conditions.";
+  }
+  return "Why active: concept remains review-gated; it explains learning but should not activate until accepted.";
+}
+
+function missingLinkDiagnostics(
+  concept: LearnV2ConceptCard,
+  links: {
+    observationCount: number;
+    hypothesisCount: number;
+    namespaceCount: number;
+    groundingCount: number;
+  }
+): string[] {
+  const missing: string[] = [];
+  if (!links.observationCount) missing.push("missing-observations");
+  if (!links.hypothesisCount) missing.push("missing-hypotheses");
+  if (!links.namespaceCount) missing.push("missing-ontology-namespace");
+  if (!links.groundingCount) missing.push("missing-grounding");
+  if (!hasActivationEvidence(concept)) missing.push("missing-activation-evidence");
+  return missing;
+}
+
+function hasActivationEvidence(concept: LearnV2ConceptCard): boolean {
+  return [
+    concept.activation.phrases,
+    concept.activation.pathGlobs,
+    concept.activation.commands,
+    concept.conditions?.appliesWhen ?? [],
+    concept.conditions?.doesNotApplyWhen ?? [],
+    concept.scope.negativeTriggers
+  ].some((items) => items.length > 0);
 }
 
 function activationState(concept: LearnV2ConceptCard): LearnV2ConceptDebugTraceEntry["whyActive"]["activationState"] {
@@ -294,6 +441,10 @@ function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTrac
     lines.push(`Behavior: ${trace.canonicalBehavior}`);
     lines.push(`Delta: ${trace.behaviorDelta}`);
     lines.push("");
+    lines.push("Trace summary:");
+    lines.push(`- Why learned: ${trace.whyLearned.summary}`);
+    lines.push(`- Why active/suppressed: ${trace.whyActive.reviewGate}`);
+    lines.push("");
     lines.push("Why learned:");
     lines.push(`- ${trace.whyLearned.summary}`);
     lines.push(`- Evidence IDs: ${trace.whyLearned.evidenceIds.join(", ") || "none"}`);
@@ -306,6 +457,7 @@ function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTrac
     lines.push(`- Review gate: ${trace.whyActive.reviewGate}`);
     lines.push(`- Apply when: ${trace.whyActive.appliesWhen.join("; ") || "none"}`);
     lines.push(`- Do not apply when: ${trace.whyActive.doesNotApplyWhen.join("; ") || "none"}`);
+    lines.push(`- Activation blockers: ${[...trace.whyActive.doesNotApplyWhen, ...trace.whyActive.negativeTriggers].join("; ") || "none"}`);
     lines.push(`- Activation phrases: ${trace.whyActive.phrases.join(", ") || "none"}`);
     lines.push(`- Commands: ${trace.whyActive.commands.join(", ") || "none"}`);
     lines.push("");
@@ -321,6 +473,9 @@ function renderConceptDebugTrace(root: string, artifact: LearnV2ConceptDebugTrac
     lines.push(`- Hypotheses: ${trace.conditional.hypothesisIds.join(", ") || "none"}`);
     lines.push(`- Factors: ${trace.conditional.factorLabels.join(", ") || "none"}`);
     lines.push(`- Admission: ${trace.conditional.admissionDecisions.map((decision) => `${decision.subjectKind}:${decision.decision}`).join(", ") || "none"}`);
+    lines.push(`- Admission details: ${trace.conditional.admissionDecisions.map((decision) =>
+      `${decision.subjectKind}:${decision.subjectId} requiredReview=${decision.requiredReview} priority=${decision.reviewPriority} risk=${decision.riskLevel} scope=${decision.scopeLevel} reasons=${decision.reasons.join(", ") || "none"}`
+    ).join(" | ") || "none"}`);
     lines.push("");
     lines.push("Source separation:");
     lines.push(`- User preference evidence: ${trace.evidenceSeparation.userPreferenceEvidence}`);
