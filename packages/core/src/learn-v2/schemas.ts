@@ -530,6 +530,8 @@ export const LearnV2OpenWorldResourceAnchorSchema = z.object({
   conflictingClaims: z.array(z.string().min(1)).default([]),
   declassifiedSnippetIds: z.array(z.string().min(1)).default([]),
   usedFor: z.array(z.enum(["title", "conditions", "verification", "eval", "skill-text"])).default([]),
+  retrievalScore: z.number().min(0).max(1).default(1),
+  matchReasons: z.array(z.string().min(1)).default([]),
   rationale: z.string().min(1),
   evidenceConceptIds: z.array(z.string().min(1)).min(1)
 });

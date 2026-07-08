@@ -11,7 +11,16 @@ import {
 } from "./schemas.js";
 import { learnV2DeclassifyText, learnV2SafeLocalPath, learnV2ShortHash, learnV2Snippet } from "./utils.js";
 
-type AnchorTemplate = Omit<LearnV2OpenWorldResourceAnchor, "schemaVersion" | "id" | "conceptId" | "evidenceConceptIds" | "retrievedAt">;
+type AnchorTemplate =
+  Omit<LearnV2OpenWorldResourceAnchor, "schemaVersion" | "id" | "conceptId" | "evidenceConceptIds" | "retrievedAt" | "retrievalScore" | "matchReasons">
+  & Partial<Pick<LearnV2OpenWorldResourceAnchor, "retrievalScore" | "matchReasons">>;
+type ApprovedResource = Awaited<ReturnType<typeof readProjectConfig>>["learning"]["openWorldResources"]["approvedResources"][number];
+
+interface ApprovedResourceMatch {
+  score: number;
+  matchedTerms: string[];
+  reasons: string[];
+}
 
 export interface LearnV2OpenWorldGroundingDebugAnchor {
   id: string;
@@ -26,6 +35,8 @@ export interface LearnV2OpenWorldGroundingDebugAnchor {
   retrievedAt: string;
   licenseRisk: LearnV2OpenWorldResourceAnchor["licenseRisk"];
   usedFor: LearnV2OpenWorldResourceAnchor["usedFor"];
+  retrievalScore: number;
+  matchReasons: string[];
   alignedClaimCount: number;
   conflictingClaimCount: number;
   declassifiedSnippetIds: string[];
@@ -136,7 +147,7 @@ export function buildLearnV2OpenWorldGroundingAnchors(
       for (const template of templateGroup.anchors) anchors.push(makeAnchor(concept.id, templateGroup.key, template, now));
     }
   }
-  return dedupeAnchors(anchors).sort((a, b) => a.conceptId.localeCompare(b.conceptId) || a.title.localeCompare(b.title));
+  return dedupeAnchors(anchors).sort(compareAnchors);
 }
 
 export async function writeLearnV2OpenWorldGroundingArtifact(
@@ -222,6 +233,8 @@ function toDebugAnchor(anchor: LearnV2OpenWorldResourceAnchor): LearnV2OpenWorld
     retrievedAt: anchor.retrievedAt,
     licenseRisk: anchor.licenseRisk,
     usedFor: anchor.usedFor,
+    retrievalScore: anchor.retrievalScore,
+    matchReasons: anchor.matchReasons,
     alignedClaimCount: anchor.alignedClaims.length,
     conflictingClaimCount: anchor.conflictingClaims.length,
     declassifiedSnippetIds: anchor.declassifiedSnippetIds,
@@ -311,10 +324,15 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
       });
     }
     for (const resource of approvedResources) {
-      if (!approvedResourceMatches(resource, text)) continue;
+      const match = approvedResourceMatch(resource, text);
+      if (!match) continue;
       const summary = resource.summary ? learnV2DeclassifyText(resource.summary, root, config).text : undefined;
       const safeSummary = summary ? learnV2Snippet(summary, 220) : undefined;
       const snippetId = safeSummary ? `resource_${learnV2ShortHash(`${resource.uri}:${safeSummary}`)}` : undefined;
+      const safeMatchedTerms = match.matchedTerms
+        .map((term) => learnV2DeclassifyText(term, root, config).text)
+        .map((term) => learnV2Snippet(term, 80))
+        .slice(0, 6);
       anchors.push({
         conceptId: concept.id,
         key: `approved-resource:${resource.uri}`,
@@ -334,7 +352,9 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
           conflictingClaims: [],
           declassifiedSnippetIds: snippetId ? [snippetId] : [],
           usedFor: unique([...resource.usedFor, "eval"]),
-          rationale: "User-approved external resources can ground review language and verification anchors, but they remain separate from user preference evidence and cannot override direct corrections."
+          retrievalScore: match.score,
+          matchReasons: match.reasons,
+          rationale: `User-approved external resources can ground review language and verification anchors, but they remain separate from user preference evidence and cannot override direct corrections. Ranked match ${match.score.toFixed(2)} from ${safeMatchedTerms.join(", ") || "resource metadata"}.`
         }
       });
     }
@@ -364,18 +384,51 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
   return anchors;
 }
 
-function approvedResourceMatches(
-  resource: Awaited<ReturnType<typeof readProjectConfig>>["learning"]["openWorldResources"]["approvedResources"][number],
-  conceptText: string
-): boolean {
+function approvedResourceMatch(resource: ApprovedResource, conceptText: string): ApprovedResourceMatch | undefined {
   const conceptTokens = significantTokens(conceptText);
   const terms = resource.matchTerms.length ? resource.matchTerms : [...significantTokens(resource.title)];
-  return terms.some((term) => {
+  const matchedTerms: string[] = [];
+  const reasons: string[] = [];
+  let termScore = 0;
+  for (const term of terms) {
     const termTokens = significantTokens(term);
-    if (termTokens.size) return [...termTokens].some((token) => conceptTokens.has(token));
     const normalized = term.toLowerCase().trim();
-    return normalized.length >= 3 && conceptText.toLowerCase().includes(normalized);
-  });
+    const phraseHit = normalized.length >= 3 && conceptText.toLowerCase().includes(normalized);
+    const hits = [...termTokens].filter((token) => conceptTokens.has(token));
+    const coverage = termTokens.size ? hits.length / termTokens.size : 0;
+    let current = 0;
+    if (phraseHit && termTokens.size >= 2) current = 0.72;
+    else if (termTokens.size >= 2 && coverage === 1) current = 0.58;
+    else if (termTokens.size >= 3 && coverage >= 0.66) current = 0.46;
+    else if (hits.length >= 2) current = 0.4;
+    else if (hits.length === 1 && conceptTokens.size <= 8) current = 0.22;
+    if (current > 0) {
+      termScore = Math.max(termScore, current);
+      matchedTerms.push(term);
+      reasons.push(`term:${hits.length}/${Math.max(1, termTokens.size)}`);
+      if (phraseHit) reasons.push("phrase-match");
+    }
+  }
+  const titleTokens = significantTokens(resource.title);
+  const titleHits = [...titleTokens].filter((token) => conceptTokens.has(token)).length;
+  const titleCoverage = titleTokens.size ? titleHits / titleTokens.size : 0;
+  const titleScore = titleHits >= 2 ? Math.min(0.18, titleCoverage * 0.18) : 0;
+  if (titleScore) reasons.push(`title:${titleHits}/${titleTokens.size}`);
+  const conceptUses = new Set(usedForFromConceptText(conceptText));
+  const usedForOverlap = resource.usedFor.filter((item) => conceptUses.has(item)).length;
+  const useScore = usedForOverlap ? Math.min(0.08, usedForOverlap * 0.04) : 0;
+  if (useScore) reasons.push(`use-overlap:${usedForOverlap}`);
+  const trustScore = resource.trustTier === "official" ? 0.08 : resource.trustTier === "community" ? 0.03 : 0;
+  if (trustScore) reasons.push(`trust:${resource.trustTier}`);
+  const licensePenalty = resource.licenseRisk === "restricted" ? 0.12 : 0;
+  if (licensePenalty) reasons.push("license:restricted");
+  const score = Number(Math.max(0, Math.min(1, termScore + titleScore + useScore + trustScore - licensePenalty)).toFixed(3));
+  if (score < 0.38) return undefined;
+  return {
+    score,
+    matchedTerms: unique(matchedTerms),
+    reasons: unique(reasons.length ? reasons : [`score:${score.toFixed(2)}`])
+  };
 }
 
 async function readProjectGroundingDocs(root: string): Promise<Array<{ relativePath: string; text: string }>> {
@@ -466,9 +519,31 @@ function dedupeAnchors(anchors: LearnV2OpenWorldResourceAnchor[]): LearnV2OpenWo
   const byKey = new Map<string, LearnV2OpenWorldResourceAnchor>();
   for (const anchor of anchors) {
     const key = `${anchor.conceptId}:${anchor.uri}`;
-    if (!byKey.has(key)) byKey.set(key, anchor);
+    const current = byKey.get(key);
+    if (!current || anchor.retrievalScore > current.retrievalScore) byKey.set(key, anchor);
   }
   return [...byKey.values()];
+}
+
+function compareAnchors(a: LearnV2OpenWorldResourceAnchor, b: LearnV2OpenWorldResourceAnchor): number {
+  return a.conceptId.localeCompare(b.conceptId)
+    || anchorPrecedenceRank(a) - anchorPrecedenceRank(b)
+    || anchorTrustRank(a) - anchorTrustRank(b)
+    || b.retrievalScore - a.retrievalScore
+    || a.title.localeCompare(b.title);
+}
+
+function anchorPrecedenceRank(anchor: LearnV2OpenWorldResourceAnchor): number {
+  if (anchor.precedence === "project-doc-over-external") return 0;
+  if (anchor.precedence === "user-correction-over-resource") return 1;
+  return 2;
+}
+
+function anchorTrustRank(anchor: LearnV2OpenWorldResourceAnchor): number {
+  if (anchor.trustTier === "project") return 0;
+  if (anchor.trustTier === "official") return 1;
+  if (anchor.trustTier === "community") return 2;
+  return 3;
 }
 
 function conceptSearchText(concept: LearnV2ConceptCard): string {
@@ -523,6 +598,8 @@ function renderGroundingArtifact(root: string, artifact: LearnV2OpenWorldGroundi
     lines.push(`Retrieved: ${anchor.retrievedAt}`);
     lines.push(`License risk: ${anchor.licenseRisk}`);
     lines.push(`Used for: ${anchor.usedFor.join(", ") || "review"}`);
+    lines.push(`Retrieval score: ${anchor.retrievalScore.toFixed(2)}`);
+    lines.push(`Match reasons: ${anchor.matchReasons.join(", ") || "default"}`);
     lines.push(`Aligned claims: ${anchor.alignedClaims.join("; ") || "none"}`);
     lines.push(`Conflicting claims: ${anchor.conflictingClaims.join("; ") || "none"}`);
     lines.push(`Rationale: ${anchor.rationale}`);

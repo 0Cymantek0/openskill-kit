@@ -3140,6 +3140,8 @@ describe("learn-v2 substrate", () => {
       declassifiedSnippetIds: expect.arrayContaining([expect.stringMatching(/^resource_[0-9a-f]+$/)])
     });
     expect(approvedAnchor?.usedFor).toEqual(expect.arrayContaining(["conditions", "skill-text", "eval"]));
+    expect(approvedAnchor?.retrievalScore).toBeGreaterThanOrEqual(0.38);
+    expect(approvedAnchor?.matchReasons.length).toBeGreaterThan(0);
     expect(approvedAnchor?.alignedClaims.join("\n")).toContain("Approved resource snippet resource_");
     expect(approvedAnchor?.alignedClaims.join("\n")).toContain("[REDACTED:email]");
     expect(approvedAnchor?.alignedClaims.join("\n")).not.toContain("designer@example.com");
@@ -3148,7 +3150,66 @@ describe("learn-v2 substrate", () => {
     const markdown = await readText(artifact.artifacts.markdown);
     expect(markdown).toContain("Approved dashboard density guide");
     expect(markdown).toContain("resource-informs-review-only");
+    expect(markdown).toContain("Retrieval score:");
+    expect(markdown).toContain("Match reasons:");
     expect(markdown).not.toContain("designer@example.com");
+  });
+
+  it("ranks approved grounding resources and rejects weak accidental matches", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = await readProjectConfig(root);
+    config.learning.openWorldResources.approvedResources = [
+      {
+        title: "Generic design card archive",
+        uri: "https://example.com/generic-card",
+        matchTerms: ["card"],
+        summary: "Generic card examples only.",
+        resourceKind: "reference",
+        trustTier: "community",
+        licenseRisk: "unknown",
+        usedFor: ["skill-text"]
+      },
+      {
+        title: "Official dashboard density guide",
+        uri: "https://example.com/dashboard-density-official",
+        matchTerms: ["dashboard density", "low clutter card layout", "primary action hierarchy"],
+        summary: "Use one primary action, restrained density, and clear card hierarchy.",
+        resourceKind: "official-docs",
+        trustTier: "official",
+        licenseRisk: "low",
+        usedFor: ["conditions", "skill-text", "eval"]
+      },
+      {
+        title: "Unrelated card security guide",
+        uri: "https://example.com/security-card",
+        matchTerms: ["security card authentication token"],
+        summary: "Security card authentication notes.",
+        resourceKind: "reference",
+        trustTier: "community",
+        licenseRisk: "unknown",
+        usedFor: ["verification"]
+      }
+    ];
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const [card] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("ranked_dashboard_grounding", "Prefer low clutter dashboard card layout with one primary action hierarchy.", "positive"),
+      kind: "preference"
+    }], new Date("2026-06-30T00:15:30Z"));
+
+    const artifact = await writeLearnV2OpenWorldGroundingArtifact(root, [card!], new Date("2026-06-30T00:16:00Z"));
+    const approved = artifact.anchors.filter((anchor) => anchor.conceptId === card!.id && anchor.uri.startsWith("https://example.com/"));
+    const official = approved.find((anchor) => anchor.title === "Official dashboard density guide");
+
+    expect(approved.map((anchor) => anchor.title)).toContain("Official dashboard density guide");
+    expect(approved.map((anchor) => anchor.title)).not.toContain("Generic design card archive");
+    expect(approved.map((anchor) => anchor.title)).not.toContain("Unrelated card security guide");
+    expect(official?.retrievalScore).toBeGreaterThanOrEqual(0.7);
+    expect(official?.matchReasons).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^term:/),
+      "trust:official"
+    ]));
+    expect(approved[0]?.title).toBe("Official dashboard density guide");
   });
 
   it("keeps non-accepted raw sources out of Learn v2 extraction and canonical state", async () => {
