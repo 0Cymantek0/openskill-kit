@@ -764,6 +764,22 @@ describe("learn-v2 substrate", () => {
     expect(concept?.sourceReliability).toBeLessThan(0.55);
   });
 
+  it("keeps explicit one-off preferences out of deterministic durable atoms", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_one_off_preference");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "one-off.md", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: Prefer green button color for this landing page only here."
+    ).map((item) => ({ ...item, paths: ["packages/site/src/LandingButton.tsx"] }));
+    const result = extractLearnV2BehaviorAtoms(reconstructLearnV2Episodes(evidence));
+
+    expect(result.atoms.some((atom) => /green button color/i.test(atom.statement))).toBe(false);
+    expect(result.rejected).toEqual(expect.arrayContaining([
+      expect.objectContaining({ reason: "one-off-preference-observation-only" })
+    ]));
+  });
+
   it("structurally classifies supported-language diffs and filters generated files", async () => {
     const diff = [
       "diff --git a/packages/core/src/parser.ts b/packages/core/src/parser.ts",
@@ -2190,6 +2206,31 @@ describe("learn-v2 substrate", () => {
     });
     expect(result.atoms).toHaveLength(0);
     expect(result.rejected.map((item) => item.reason).sort()).toEqual(["missing-or-invalid-evidence-id", "raw-secret-like-output"]);
+  });
+
+  it("rejects LLM one-off proposals before they become durable atoms", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_llm_one_off");
+    const evidence = normalizeLearnV2Evidence(
+      { adapterId: "codex", sourcePath: "a", contentKind: "transcript", rawText: "", detectedFormat: "plain" },
+      record,
+      "user: This time make the landing page button green."
+    ).map((item) => ({ ...item, paths: ["packages/site/src/LandingButton.tsx"] }));
+    const [episode] = reconstructLearnV2Episodes(evidence);
+    const result = validateLearnV2LlmExtractionProposal(episode!, {
+      atoms: [{
+        kind: "preference",
+        polarity: "positive",
+        statement: "Prefer green landing page buttons.",
+        evidenceIds: [episode!.evidenceIds[0]!],
+        oneOff: true
+      }]
+    });
+
+    expect(result.atoms).toHaveLength(0);
+    expect(result.rejected).toEqual([expect.objectContaining({
+      reason: "one-off-proposal-observation-only"
+    })]);
   });
 
   it("builds prompt-safe episode learning bundles and validates LLM JSON output", async () => {

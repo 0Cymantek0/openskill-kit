@@ -22,6 +22,11 @@ export function extractLearnV2BehaviorAtoms(episodes: LearnV2TaskEpisode[]): Lea
         rejected.push({ id: atom.id, reason: "raw-secret-like-output" });
         continue;
       }
+      const admissionRejectReason = atomAdmissionRejectReason(atom);
+      if (admissionRejectReason) {
+        rejected.push({ id: atom.id, reason: admissionRejectReason });
+        continue;
+      }
       atoms.push(atom);
     }
   }
@@ -512,6 +517,10 @@ export function validateLearnV2LlmExtractionProposal(episode: LearnV2TaskEpisode
   const rejected: LearnV2ExtractorResult["rejected"] = [];
   for (const [index, item] of proposal.atoms.entries()) {
     const id = item.id ?? `llm_atom_${index}`;
+    if (item.oneOff === true) {
+      rejected.push({ id, reason: "one-off-proposal-observation-only" });
+      continue;
+    }
     const evidenceIds = uniqueStrings(item.evidenceIds);
     if (!evidenceIds.length || evidenceIds.some((evidenceId) => !validEvidence.has(evidenceId))) {
       rejected.push({ id, reason: "missing-or-invalid-evidence-id" });
@@ -548,9 +557,9 @@ export function validateLearnV2LlmExtractionProposal(episode: LearnV2TaskEpisode
       continue;
     }
     const activationHints = normalizeLlmActivationHints(episode, item.activation);
-    const conditions = normalizeLlmConditions(item.appliesWhen ?? [], item.doesNotApplyWhen ?? [], item.oneOff === true);
+    const conditions = normalizeLlmConditions(item.appliesWhen ?? [], item.doesNotApplyWhen ?? [], false);
     const confidenceCap = Math.min(
-      item.oneOff === true ? 0.42 : 0.78,
+      0.78,
       item.confidenceCap ?? item.confidence ?? 0.7
     );
     atoms.push(makeAtom(episode, {
@@ -679,6 +688,22 @@ function dedupeAtoms(atoms: LearnV2BehaviorAtom[]): LearnV2BehaviorAtom[] {
 
 function containsRawSecret(text: string): boolean {
   return /\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)\b/.test(text);
+}
+
+function atomAdmissionRejectReason(atom: LearnV2BehaviorAtom): string | undefined {
+  if (!["preference", "workflow"].includes(atom.kind)) return undefined;
+  if (containsOneOffLanguage(atom.statement)) return "one-off-preference-observation-only";
+  const conditionText = [
+    ...(atom.conditions?.appliesWhen ?? []),
+    ...(atom.conditions?.doesNotApplyWhen ?? []),
+    ...(atom.activationHints?.negativeTriggers ?? [])
+  ].join(" ");
+  if (containsOneOffLanguage(conditionText)) return "one-off-conditioned-observation-only";
+  return undefined;
+}
+
+function containsOneOffLanguage(text: string): boolean {
+  return /\b(?:this time|for this|only here|one[- ]?off|single case|just this|this landing page only|for this landing page)\b/i.test(text);
 }
 
 function normalizeLlmProposalScope(
