@@ -2242,13 +2242,18 @@ function requireLabelOption(value: string | undefined, flag: string): string {
 
 function renderLearnResult(result: LearnSourcePlan | LearnRun): string {
   if (!("digest" in result)) {
+    const rawCommands = result.options
+      .map((option) => option.learnV2Surface?.suggestedCommand)
+      .filter((command): command is string => Boolean(command))
+      .slice(0, 3);
     return [
       `Sources: ${result.summary.total} (${result.summary.safeMetadata} safe, ${result.summary.explicitImport} explicit, ${result.summary.blocked} blocked)`,
       `Default selected: ${result.defaults.selectedSourceIds.join(", ") || "none"}`,
       `Raw local discovery: ${result.rawLocalDiscovery.candidatesReturned}/${result.rawLocalDiscovery.candidatesFound} candidates, scanned ${result.rawLocalDiscovery.scannedFiles} path(s), ${result.rawLocalDiscovery.truncatedByLimit ? "truncated" : "complete"}`,
       `Raw adapters: ${renderLearnV2CountLine(result.rawLocalDiscovery.adapterCounts)}, sensitivity ${renderLearnV2CountLine(result.rawLocalDiscovery.sensitivityCounts)}`,
+      rawCommands.length ? `Raw candidate commands:\n${rawCommands.map((command) => `- ${command}`).join("\n")}` : undefined,
       ...result.nextActions
-    ].join("\n");
+    ].filter((line): line is string => Boolean(line)).join("\n");
   }
   const lines = [
     `Sources considered: ${result.digest.sourcesConsidered}`,

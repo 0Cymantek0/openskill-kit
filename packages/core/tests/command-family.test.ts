@@ -118,7 +118,8 @@ describe("OSK command family registry", () => {
       contentKind: "log",
       sensitivity: "high",
       matchedBy: "filename",
-      confidence: "high"
+      confidence: "high",
+      suggestedCommand: "openskill-kit osk learn --raw --surface-file logs/terminal-build.log --surface-adapter terminal"
     });
     expect(diagnosticCandidate.adapter).toBe("learn-v2:ide-diagnostics");
     expect(diagnosticCandidate.learnV2Surface?.normalizationProfile).toBe("ide-diagnostics");
@@ -145,7 +146,7 @@ describe("OSK command family registry", () => {
     expect(terminalCandidate.privacy.notes.join(" ")).toContain("model=declassified-only");
     expect(plan.privacyPreview.join(" ")).toContain("path metadata only");
     expect(plan.privacyPreview.join(" ")).toContain("Raw local discovery scanned");
-    expect(plan.nextActions.join(" ")).toContain("--raw --surface-file");
+    expect(plan.nextActions.join(" ")).toContain("logs/terminal-build.log --surface-adapter terminal");
     expect(rawOptions[0]!.privacy.notes.join(" ")).toContain("did not read or copy");
 
     await expect(runLearningPlan(root, {

@@ -37,6 +37,8 @@ describe("osk CLI facade", () => {
   it("plans /osk learn without applying imports", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "osk-cli-learn-"));
     await mkdir(path.join(root, "src"), { recursive: true });
+    await mkdir(path.join(root, "logs"), { recursive: true });
+    await writeFile(path.join(root, "logs", "terminal-build.log"), "$ npm test\nPASS\n", "utf8");
     const { stdout } = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn", "--json"], { cwd: root, windowsHide: true });
     const parsed = JSON.parse(stdout);
     expect(parsed.schemaVersion).toBe("openskill-kit.learn-source-plan.v1");
@@ -45,6 +47,12 @@ describe("osk CLI facade", () => {
     expect(parsed.rawLocalDiscovery.schemaVersion).toBe("openskill-kit.learn-v2.raw-surface-discovery.v1");
     expect(parsed.rawLocalDiscovery.policy.plannerInput).toBe("path-metadata-only");
     expect(parsed.rawLocalDiscovery.policy.rawImport).toBe("explicit-command-only");
+    const rawOption = parsed.options.find((option: { id: string }) => option.id.startsWith("raw-local:"));
+    expect(rawOption.learnV2Surface.suggestedCommand).toContain("logs/terminal-build.log --surface-adapter terminal");
+
+    const textResult = await execFileAsync(process.execPath, [tsxBin, cli, "osk", "learn"], { cwd: root, windowsHide: true });
+    expect(textResult.stdout).toContain("Raw candidate commands:");
+    expect(textResult.stdout).toContain("logs/terminal-build.log --surface-adapter terminal");
   });
 
   it("documents Learn v2 model mode as execution policy, not raw dispatch", async () => {

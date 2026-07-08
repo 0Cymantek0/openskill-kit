@@ -233,6 +233,7 @@ export async function planLearningSources(
       ? parsed.filter((item) => item.policy === "safe-metadata").map((item) => item.id)
       : parsed.filter((item) => item.defaultSelected).map((item) => item.id);
 
+  const firstRawLocalCommand = parsed.find((item) => item.id.startsWith("raw-local:"))?.learnV2Surface?.suggestedCommand;
   return LearnSourcePlanSchema.parse({
     schemaVersion: "openskill-kit.learn-source-plan.v1",
     projectRoot,
@@ -272,7 +273,9 @@ export async function planLearningSources(
     ],
     nextActions: [
       parsed.some((item) => item.id.startsWith("raw-local:"))
-        ? "For raw local candidates, review the file first, then run `openskill-kit osk learn --raw --surface-file <path>`; they are blocked from normal source-plan execution."
+        ? firstRawLocalCommand
+          ? `For raw local candidates, review the file first, then run the candidate command, for example \`${firstRawLocalCommand}\`; they are blocked from normal source-plan execution.`
+          : "For raw local candidates, review the file first, then run `openskill-kit osk learn --raw --surface-file <path>`; they are blocked from normal source-plan execution."
         : undefined,
       parsed.some((item) => item.policy === "explicit-import")
         ? "Preview explicit imports before applying any learning source plan."
