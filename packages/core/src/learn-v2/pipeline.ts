@@ -847,7 +847,8 @@ function emptyOpenWorldGroundingArtifact(root: string, now: Date): LearnV2OpenWo
       conceptCount: 0,
       officialAnchors: 0,
       projectAnchors: 0,
-      reviewOnlyAnchors: 0
+      reviewOnlyAnchors: 0,
+      restrictedLicenseAnchors: 0
     },
     artifacts: { json, markdown }
   });

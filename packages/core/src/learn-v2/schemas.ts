@@ -546,7 +546,8 @@ export const LearnV2OpenWorldGroundingArtifactSchema = z.object({
     conceptCount: z.number().int().min(0),
     officialAnchors: z.number().int().min(0),
     projectAnchors: z.number().int().min(0),
-    reviewOnlyAnchors: z.number().int().min(0)
+    reviewOnlyAnchors: z.number().int().min(0),
+    restrictedLicenseAnchors: z.number().int().min(0).default(0)
   }),
   artifacts: z.object({
     json: z.string(),

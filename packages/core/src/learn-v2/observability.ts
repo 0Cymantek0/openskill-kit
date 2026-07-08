@@ -207,6 +207,7 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     officialAnchors: z.number().int().min(0),
     projectAnchors: z.number().int().min(0),
     reviewOnlyAnchors: z.number().int().min(0),
+    restrictedLicenseAnchors: z.number().int().min(0).default(0),
     titles: z.array(z.string()).default([]),
     artifactPath: z.string().optional()
   }).default({
@@ -215,6 +216,7 @@ export const LearnV2PipelineObservabilityReportSchema = z.object({
     officialAnchors: 0,
     projectAnchors: 0,
     reviewOnlyAnchors: 0,
+    restrictedLicenseAnchors: 0,
     titles: []
   }),
   conceptDebugTrace: z.object({
@@ -488,6 +490,7 @@ export async function writeLearnV2PipelineObservabilityReport(
       officialAnchors: input.openWorldGrounding?.counts.officialAnchors ?? 0,
       projectAnchors: input.openWorldGrounding?.counts.projectAnchors ?? 0,
       reviewOnlyAnchors: input.openWorldGrounding?.counts.reviewOnlyAnchors ?? 0,
+      restrictedLicenseAnchors: input.openWorldGrounding?.counts.restrictedLicenseAnchors ?? 0,
       titles: [...new Set(input.openWorldGrounding?.anchors.map((anchor) => anchor.title) ?? [])].sort(),
       artifactPath: input.openWorldGrounding?.artifacts.markdown
         ? learnV2SafeLocalPath(input.openWorldGrounding.artifacts.markdown, root)
@@ -630,7 +633,7 @@ function renderPipelineObservabilityReport(report: LearnV2PipelineObservabilityR
     `- Namespace labels: ${report.skillOntology.labels.join(", ") || "none"}`,
     `- Skill ontology artifact: ${report.skillOntology.artifactPath ?? "none"}`,
     `- Open-world anchors: ${report.openWorldGrounding.anchors} across ${report.openWorldGrounding.conceptCount} concept(s)`,
-    `- Open-world trust: official=${report.openWorldGrounding.officialAnchors}, project=${report.openWorldGrounding.projectAnchors}, review-only=${report.openWorldGrounding.reviewOnlyAnchors}`,
+    `- Open-world trust: official=${report.openWorldGrounding.officialAnchors}, project=${report.openWorldGrounding.projectAnchors}, review-only=${report.openWorldGrounding.reviewOnlyAnchors}, restricted-license=${report.openWorldGrounding.restrictedLicenseAnchors}`,
     `- Open-world titles: ${report.openWorldGrounding.titles.join(", ") || "none"}`,
     `- Open-world artifact: ${report.openWorldGrounding.artifactPath ?? "none"}`,
     `- Concept debug traces: ${report.conceptDebugTrace.tracedConcepts} / ${report.conceptDebugTrace.concepts} concept(s)`,

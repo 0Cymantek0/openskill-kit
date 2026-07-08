@@ -3371,6 +3371,46 @@ describe("learn-v2 substrate", () => {
     expect(approved[0]?.title).toBe("Official dashboard density guide");
   });
 
+  it("keeps restricted-license grounding eval-only and review-conflict scoped", async () => {
+    const root = await tempProject();
+    const configPath = path.join(root, ".openskill-kit", "config.json");
+    const config = await readProjectConfig(root);
+    config.learning.openWorldResources.approvedResources = [{
+      title: "Restricted dashboard hierarchy guide",
+      uri: "https://example.com/restricted-dashboard-hierarchy",
+      matchTerms: ["dashboard hierarchy", "primary action"],
+      summary: "Use one primary action and a clear dashboard hierarchy.",
+      resourceKind: "reference",
+      trustTier: "community",
+      licenseRisk: "restricted",
+      usedFor: ["conditions", "skill-text", "title"]
+    }];
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+    const [card] = mergeLearnV2ConceptCards([{
+      ...behaviorAtom("restricted_grounding", "Prefer dashboard hierarchy with one primary action.", "positive"),
+      kind: "preference"
+    }], new Date("2026-06-30T00:16:10Z"));
+
+    const artifact = await writeLearnV2OpenWorldGroundingArtifact(root, [card!], new Date("2026-06-30T00:16:20Z"));
+    const restricted = artifact.anchors.find((anchor) => anchor.title === "Restricted dashboard hierarchy guide");
+
+    expect(restricted).toMatchObject({
+      licenseRisk: "restricted",
+      alignment: "possible-conflict",
+      precedence: "resource-informs-review-only",
+      usedFor: ["eval"],
+      conflictingClaims: expect.arrayContaining([
+        "Restricted-license grounding resource is review-only and cannot supply skill text, titles, conditions, or activation behavior."
+      ])
+    });
+    expect(artifact.counts.restrictedLicenseAnchors).toBe(1);
+    expect(restricted?.rationale).toContain("Restricted-license resources are kept eval-only");
+    const markdown = await readText(artifact.artifacts.markdown);
+    expect(markdown).toContain("Restricted-license anchors: 1");
+    expect(markdown).toContain("possible-conflict");
+    expect(markdown).toContain("Used for: eval");
+  });
+
   it("joins ranked grounding details into concept debug trace", async () => {
     const root = await tempProject();
     const configPath = path.join(root, ".openskill-kit", "config.json");

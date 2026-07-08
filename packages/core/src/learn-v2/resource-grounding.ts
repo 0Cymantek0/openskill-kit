@@ -171,7 +171,8 @@ export async function writeLearnV2OpenWorldGroundingArtifact(
       conceptCount: conceptIds.size,
       officialAnchors: anchors.filter((anchor) => anchor.trustTier === "official").length,
       projectAnchors: anchors.filter((anchor) => anchor.trustTier === "project").length,
-      reviewOnlyAnchors: anchors.filter((anchor) => anchor.precedence !== "user-correction-over-resource").length
+      reviewOnlyAnchors: anchors.filter((anchor) => anchor.precedence !== "user-correction-over-resource").length,
+      restrictedLicenseAnchors: anchors.filter((anchor) => anchor.licenseRisk === "restricted").length
     },
     artifacts: { json, markdown }
   });
@@ -333,6 +334,7 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
         .map((term) => learnV2DeclassifyText(term, root, config).text)
         .map((term) => learnV2Snippet(term, 80))
         .slice(0, 6);
+      const restrictedLicense = resource.licenseRisk === "restricted";
       anchors.push({
         conceptId: concept.id,
         key: `approved-resource:${resource.uri}`,
@@ -341,7 +343,7 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
           uri: resource.uri,
           resourceKind: resource.resourceKind,
           trustTier: resource.trustTier,
-          alignment: "supports-review",
+          alignment: restrictedLicense ? "possible-conflict" : "supports-review",
           precedence: "resource-informs-review-only",
           licenseRisk: resource.licenseRisk,
           alignedClaims: [
@@ -349,12 +351,14 @@ async function buildProjectGroundingAnchors(root: string, concepts: LearnV2Conce
               ? `Approved resource snippet ${snippetId}: ${safeSummary}`
               : `Approved external resource matched concept terms: ${(resource.matchTerms.length ? resource.matchTerms : [...significantTokens(resource.title)]).slice(0, 8).join(", ")}`
           ],
-          conflictingClaims: [],
+          conflictingClaims: restrictedLicense
+            ? ["Restricted-license grounding resource is review-only and cannot supply skill text, titles, conditions, or activation behavior."]
+            : [],
           declassifiedSnippetIds: snippetId ? [snippetId] : [],
-          usedFor: unique([...resource.usedFor, "eval"]),
+          usedFor: restrictedLicense ? ["eval"] : unique([...resource.usedFor, "eval"]),
           retrievalScore: match.score,
           matchReasons: match.reasons,
-          rationale: `User-approved external resources can ground review language and verification anchors, but they remain separate from user preference evidence and cannot override direct corrections. Ranked match ${match.score.toFixed(2)} from ${safeMatchedTerms.join(", ") || "resource metadata"}.`
+          rationale: `User-approved external resources can ground review language and verification anchors, but they remain separate from user preference evidence and cannot override direct corrections. ${restrictedLicense ? "Restricted-license resources are kept eval-only until reviewer supplies safe local wording. " : ""}Ranked match ${match.score.toFixed(2)} from ${safeMatchedTerms.join(", ") || "resource metadata"}.`
         }
       });
     }
@@ -573,6 +577,7 @@ function renderGroundingArtifact(root: string, artifact: LearnV2OpenWorldGroundi
     `- Official anchors: ${artifact.counts.officialAnchors}`,
     `- Project anchors: ${artifact.counts.projectAnchors}`,
     `- Review-only anchors: ${artifact.counts.reviewOnlyAnchors}`,
+    `- Restricted-license anchors: ${artifact.counts.restrictedLicenseAnchors}`,
     "",
     "## Precedence",
     "",

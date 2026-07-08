@@ -907,6 +907,10 @@ function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now:
     && anchor.precedence !== "project-doc-over-external"
     && anchor.precedence !== "user-correction-over-resource"
   );
+  const restrictedUnsafeUse = anchors.filter((anchor) =>
+    anchor.licenseRisk === "restricted"
+    && (anchor.usedFor.some((item) => item === "title" || item === "conditions" || item === "skill-text") || anchor.alignment !== "possible-conflict")
+  );
   const groundedConcepts = new Set(anchors.map((anchor) => anchor.conceptId));
   const groundedWithoutUserEvidence = eligibleConcepts.filter((concept) =>
     groundedConcepts.has(concept.id) && concept.evidenceIds.length === 0
@@ -944,6 +948,13 @@ function evaluateOpenWorldGroundingBoundary(concepts: LearnV2ConceptCard[], now:
       groundedWithoutUserEvidence.length
         ? `grounded concepts without local evidence: ${groundedWithoutUserEvidence.map((concept) => concept.id).slice(0, 6).join(", ")}`
         : `${groundedConcepts.size} grounded concept(s) retain local evidence separately from ${externalAnchors} external and ${projectAnchors} project anchor(s)`
+    ),
+    check(
+      "restricted-license-grounding-is-eval-only",
+      restrictedUnsafeUse.length === 0,
+      restrictedUnsafeUse.length
+        ? `restricted-license anchors with unsafe use: ${restrictedUnsafeUse.map((anchor) => anchor.id).slice(0, 6).join(", ")}`
+        : `${anchors.filter((anchor) => anchor.licenseRisk === "restricted").length} restricted-license anchor(s) kept out of title/condition/skill text generation`
     ),
     check(
       "evidence-classes-counted-separately",
