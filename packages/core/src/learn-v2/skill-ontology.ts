@@ -45,7 +45,7 @@ type NamespaceAssignment = { key: string; label: string; signals: string[]; pare
 type NamespaceCluster = { label: string; concepts: LearnV2ConceptCard[]; signals: Set<string>; parentKey?: string; hierarchyPath: string[] };
 
 export function buildLearnV2SkillNamespaces(concepts: LearnV2ConceptCard[]): LearnV2SkillNamespaceCandidate[] {
-  const usable = concepts.filter((concept) => !["rejected", "one-off", "superseded"].includes(concept.status));
+  const usable = concepts;
   const clusters = new Map<string, NamespaceCluster>();
   for (const concept of usable) {
     for (const assignment of namespaceAssignments(concept)) {
@@ -85,7 +85,20 @@ export function buildLearnV2SkillOntologyOperations(
   const operations: LearnV2SkillOntologyOperation[] = [];
   const namespaceById = new Map(namespaces.map((namespace) => [namespace.id, namespace]));
   const conceptsById = new Map(concepts.map((concept) => [concept.id, concept]));
+  const reviewableNamespaces = namespaces.filter((namespace) => namespace.status !== "dormant");
   for (const namespace of namespaces) {
+    if (namespace.status === "dormant") {
+      operations.push(makeOntologyOperation({
+        operation: "create-namespace",
+        status: "dormant",
+        namespaceIds: [namespace.id],
+        conceptIds: namespace.conceptIds,
+        confidence: namespace.confidence,
+        rationale: `Retain dormant namespace: '${namespace.label}' has no currently active candidate concepts but keeps historical boundary context for debug and possible revival.`,
+        reviewHint: "No activation or compiled skill should be produced until fresh candidate, staged, active, locked, or conflict evidence revives this namespace."
+      }));
+      continue;
+    }
     operations.push(makeOntologyOperation({
       operation: "create-namespace",
       status: namespace.status,
@@ -97,8 +110,9 @@ export function buildLearnV2SkillOntologyOperations(
     }));
   }
 
-  for (const namespace of namespaces.filter((item) => item.parentNamespaceId)) {
+  for (const namespace of reviewableNamespaces.filter((item) => item.parentNamespaceId)) {
     const parent = namespaceById.get(namespace.parentNamespaceId!);
+    if (parent?.status === "dormant") continue;
     operations.push(makeOntologyOperation({
       operation: "nest-namespace",
       status: "needs-review",
@@ -110,7 +124,7 @@ export function buildLearnV2SkillOntologyOperations(
     }));
   }
 
-  for (const pair of similarNamespacePairs(namespaces)) {
+  for (const pair of similarNamespacePairs(reviewableNamespaces)) {
     operations.push(makeOntologyOperation({
       operation: "merge-namespaces",
       status: "needs-review",
@@ -122,7 +136,7 @@ export function buildLearnV2SkillOntologyOperations(
     }));
   }
 
-  for (const namespace of namespaces) {
+  for (const namespace of reviewableNamespaces) {
     const splitReview = namespaceSplitReview(namespace, conceptsById);
     if (!splitReview) continue;
     const childNamespaces = splitChildNamespaces(namespace, namespaces);
@@ -138,7 +152,7 @@ export function buildLearnV2SkillOntologyOperations(
   }
 
   for (const concept of concepts) {
-    const attached = namespaces.filter((namespace) => namespace.conceptIds.includes(concept.id));
+    const attached = reviewableNamespaces.filter((namespace) => namespace.conceptIds.includes(concept.id));
     if (attached.length < 2) continue;
     operations.push(makeOntologyOperation({
       operation: "attach-concept",
@@ -176,6 +190,7 @@ export async function writeLearnV2SkillOntologyArtifact(
       namespaces: namespaces.length,
       candidateNamespaces: namespaces.filter((item) => item.status === "candidate").length,
       reviewNamespaces: namespaces.filter((item) => item.status === "needs-review").length,
+      dormantNamespaces: namespaces.filter((item) => item.status === "dormant").length,
       representedConcepts: representedConcepts.size,
       operations: operations.length,
       createOperations: operations.filter((item) => item.operation === "create-namespace").length,
@@ -359,17 +374,29 @@ function makeNamespaceCandidate(key: string, cluster: NamespaceCluster): LearnV2
   const concepts = cluster.concepts;
   const signals = [...cluster.signals];
   const confidence = Math.min(0.92, 0.42 + Math.min(0.3, concepts.length * 0.1) + Math.min(0.16, signals.length * 0.04) + average(concepts.map((concept) => concept.confidence)) * 0.18);
+  const status = namespaceLifecycleStatus(concepts, confidence);
   return LearnV2SkillNamespaceCandidateSchema.parse({
     schemaVersion: "openskill-kit.learn-v2.skill-namespace-candidate.v1",
     id: namespaceIdForCluster(key, cluster),
     label: cluster.label,
-    status: concepts.length >= 2 || confidence >= 0.72 ? "candidate" : "needs-review",
+    status,
     confidence: Number(confidence.toFixed(3)),
     conceptIds: concepts.map((concept) => concept.id).sort(),
     representativeSignals: signals.slice(0, 12),
     hierarchyPath: cluster.hierarchyPath,
-    rationale: `Grouped ${concepts.length} concept(s) by observed signals: ${signals.slice(0, 6).join(", ") || key}.`
+    rationale: status === "dormant"
+      ? `Dormant namespace retained from ${concepts.length} inactive concept(s); observed signals: ${signals.slice(0, 6).join(", ") || key}.`
+      : `Grouped ${concepts.length} concept(s) by observed signals: ${signals.slice(0, 6).join(", ") || key}.`
   });
+}
+
+function namespaceLifecycleStatus(concepts: LearnV2ConceptCard[], confidence: number): LearnV2SkillNamespaceCandidate["status"] {
+  if (!concepts.some((concept) => namespaceConceptCanRevive(concept.status))) return "dormant";
+  return concepts.length >= 2 || confidence >= 0.72 ? "candidate" : "needs-review";
+}
+
+function namespaceConceptCanRevive(status: LearnV2ConceptCard["status"]): boolean {
+  return status === "candidate" || status === "staged" || status === "active" || status === "locked" || status === "conflict";
 }
 
 function makeOntologyOperation(input: Omit<LearnV2SkillOntologyOperation, "schemaVersion" | "id">): LearnV2SkillOntologyOperation {
@@ -595,6 +622,7 @@ function renderSkillOntologyArtifact(root: string, artifact: LearnV2SkillOntolog
     `- Namespaces: ${artifact.counts.namespaces}`,
     `- Candidate namespaces: ${artifact.counts.candidateNamespaces}`,
     `- Needs review: ${artifact.counts.reviewNamespaces}`,
+    `- Dormant namespaces: ${artifact.counts.dormantNamespaces}`,
     `- Represented concepts: ${artifact.counts.representedConcepts}`,
     `- Ontology operations: ${artifact.counts.operations}`,
     `- Create / nest / merge / split / attach: ${artifact.counts.createOperations} / ${artifact.counts.nestOperations} / ${artifact.counts.mergeOperations} / ${artifact.counts.splitOperations} / ${artifact.counts.attachOperations}`,

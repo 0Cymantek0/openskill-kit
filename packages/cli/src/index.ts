@@ -2562,7 +2562,7 @@ function renderLearnV2SkillOntologyDebugView(
     `Generated: ${view.generatedAt}`,
     `Source: ${view.sourcePath}`,
     `Namespaces: ${view.counts.selectedNamespaces}/${view.counts.namespaces} selected`,
-    `Candidates: ${view.counts.candidateNamespaces}; review=${view.counts.reviewNamespaces}; representedConcepts=${view.counts.representedConcepts}`,
+    `Candidates: ${view.counts.candidateNamespaces}; review=${view.counts.reviewNamespaces}; dormant=${view.counts.dormantNamespaces}; representedConcepts=${view.counts.representedConcepts}`,
     `Operations: ${view.counts.selectedOperations}/${view.counts.operations} selected; create=${view.counts.createOperations}, merge=${view.counts.mergeOperations}, split=${view.counts.splitOperations}, attach=${view.counts.attachOperations}`,
     ""
   ];

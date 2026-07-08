@@ -132,6 +132,7 @@ under `.openskill-kit/model-routing/opencode-agents/`:
 - `osk-learn-v2-scope-inferencer.md`
 - `osk-learn-v2-declassification-reviewer.md`
 - `osk-learn-v2-eval-planner.md`
+- `osk-learn-v2-behavior-evaluator.md`
 - `osk-learn-v2-publish-export-auditor.md`
 
 These files use the same OpenCode frontmatter contract as compiled plugin
@@ -141,6 +142,14 @@ manifests reference the exact agent id/file. The execution boundary remains
 sanitized: request bundles and prompts are declassified, `rawRefsIncluded` is
 false, and OSK treats model output as untrusted proposal JSON until schema,
 evidence-id, path, and leak checks pass.
+
+Request-backed roles currently used by CLI/MCP model request manifests are:
+`concept-extractor`, `scope-inferencer`, `contradiction-reviewer`,
+`eval-planner`, and `behavior-evaluator`. The generated
+`evidence-summarizer`, `declassification-reviewer`, and
+`publish-export-auditor` agents are support/audit roles for sanitized future
+or manual review workflows; they are generated intentionally but are not
+current automatic request entrypoints.
 
 `openskill-kit osk learn --prepare-model-requests` writes concept-extractor
 episode requests. `openskill-kit osk learn --prepare-scope-requests` writes

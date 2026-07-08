@@ -18,7 +18,7 @@
     {
       "name": "osk_explain_status",
       "category": "status",
-      "writeRisk": "local-write",
+      "writeRisk": "read-only",
       "approvalRequired": false
     },
     {
@@ -82,6 +82,12 @@
       "approvalRequired": false
     },
     {
+      "name": "osk_get_learn_v2_artifact_paths",
+      "category": "learning",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
       "name": "osk_run_learning_plan",
       "category": "learning",
       "writeRisk": "approval-required",
@@ -95,6 +101,12 @@
     },
     {
       "name": "osk_get_concept_review_queue",
+      "category": "learning",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_get_concept_store",
       "category": "learning",
       "writeRisk": "read-only",
       "approvalRequired": false
@@ -520,6 +532,12 @@
       "approvalRequired": false
     },
     {
+      "name": "osk_openworld_retrieval_adapters",
+      "category": "openworld",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
       "name": "osk_openworld_ingest_source",
       "category": "openworld",
       "writeRisk": "local-write",
@@ -538,7 +556,19 @@
       "approvalRequired": false
     },
     {
+      "name": "osk_openworld_build_verifier",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
       "name": "osk_openworld_candidate_skill",
+      "category": "openworld",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "osk_openworld_repair_candidate",
       "category": "openworld",
       "writeRisk": "local-write",
       "approvalRequired": false
@@ -619,6 +649,60 @@
       "name": "osk_compact_state",
       "category": "maintenance",
       "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "openskill_doctor",
+      "category": "legacy",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "openskill_draft",
+      "category": "legacy",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "openskill_evolve",
+      "category": "legacy",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "openskill_audit",
+      "category": "legacy",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "openskill_test",
+      "category": "legacy",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "openskill_evaluate",
+      "category": "legacy",
+      "writeRisk": "local-write",
+      "approvalRequired": false
+    },
+    {
+      "name": "openskill_install",
+      "category": "legacy",
+      "writeRisk": "approval-required",
+      "approvalRequired": true
+    },
+    {
+      "name": "openskill_list",
+      "category": "legacy",
+      "writeRisk": "read-only",
+      "approvalRequired": false
+    },
+    {
+      "name": "openskill_inspect",
+      "category": "legacy",
+      "writeRisk": "read-only",
       "approvalRequired": false
     }
   ]

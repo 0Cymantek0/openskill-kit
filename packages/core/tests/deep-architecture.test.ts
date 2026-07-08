@@ -34,6 +34,16 @@ import {
 const execFileAsync = promisify(execFile);
 
 describe("deep architecture hardening", () => {
+  it("keeps MCP registered tools and compiled descriptor catalog in parity", async () => {
+    const mcpServerSource = await readFile(path.resolve("packages/mcp-server/src/index.ts"), "utf8");
+    const compilerSource = await readFile(path.resolve("packages/core/src/compiler/package-compiler.ts"), "utf8");
+    const registered = extractStringLiterals(mcpServerSource, /registerTool\(\s*"([^"]+)"/g);
+    const descriptors = extractStringLiterals(compilerSource, /descriptor\(\s*"([^"]+)"/g);
+
+    expect(registered.length).toBeGreaterThan(100);
+    expect([...descriptors].sort()).toEqual([...registered].sort());
+  });
+
   it("filters compile targets without generating unrelated artifacts", async () => {
     const root = await tempProject();
     await writeGraph(root, [pref("tests", "Prefer run focused tests", "testing", [])]);
@@ -903,4 +913,8 @@ function pref(id: string, statement: string, category: PreferenceNode["category"
     createdAt: "2026-06-25T00:00:00.000Z",
     updatedAt: "2026-06-25T00:00:00.000Z"
   };
+}
+
+function extractStringLiterals(source: string, pattern: RegExp): string[] {
+  return [...source.matchAll(pattern)].map((match) => match[1]!);
 }

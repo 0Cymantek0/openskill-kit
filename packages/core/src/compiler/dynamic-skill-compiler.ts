@@ -32,6 +32,7 @@ export async function compileLearnV2OntologySkillShards(
   const activeByCardId = activeNodesByEvidenceCardId(nodes);
   const skillPaths: string[] = [];
   for (const namespace of ontology.namespaces.sort(sortNamespaces)) {
+    if (namespace.status === "dormant") continue;
     const namespaceNodes = uniqueNodes(namespace.conceptIds.flatMap((conceptId) => activeByCardId.get(conceptId) ?? []));
     if (!namespaceNodes.length) continue;
     const skillName = `project-${slugify(namespace.label)}`;

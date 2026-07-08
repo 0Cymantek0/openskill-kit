@@ -217,10 +217,13 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_run_openworld_workflow", "openworld", "local-write"),
   descriptor("osk_verify_behavior", "verification", "local-write"),
   descriptor("osk_openworld_source_plan", "openworld", "local-write"),
+  descriptor("osk_openworld_retrieval_adapters", "openworld", "read-only"),
   descriptor("osk_openworld_ingest_source", "openworld", "local-write"),
   descriptor("osk_openworld_execute_source_plan", "openworld", "local-write"),
   descriptor("osk_openworld_sources", "openworld", "read-only"),
+  descriptor("osk_openworld_build_verifier", "openworld", "local-write"),
   descriptor("osk_openworld_candidate_skill", "openworld", "local-write"),
+  descriptor("osk_openworld_repair_candidate", "openworld", "local-write"),
   descriptor("osk_openworld_run_verifier", "openworld", "local-write"),
   descriptor("osk_openworld_verifier_quality", "openworld", "local-write"),
   descriptor("osk_openworld_refine", "openworld", "local-write"),
@@ -233,7 +236,16 @@ const MCP_TOOL_DESCRIPTORS: McpToolDescriptor[] = [
   descriptor("osk_reset_state", "maintenance", "approval-required", true),
   descriptor("osk_prune_state", "maintenance", "approval-required", true),
   descriptor("osk_archive_state", "maintenance", "approval-required", true),
-  descriptor("osk_compact_state", "maintenance", "local-write")
+  descriptor("osk_compact_state", "maintenance", "local-write"),
+  descriptor("openskill_doctor", "legacy", "local-write"),
+  descriptor("openskill_draft", "legacy", "local-write"),
+  descriptor("openskill_evolve", "legacy", "local-write"),
+  descriptor("openskill_audit", "legacy", "read-only"),
+  descriptor("openskill_test", "legacy", "local-write"),
+  descriptor("openskill_evaluate", "legacy", "local-write"),
+  descriptor("openskill_install", "legacy", "approval-required", true),
+  descriptor("openskill_list", "legacy", "read-only"),
+  descriptor("openskill_inspect", "legacy", "read-only")
 ];
 
 async function compileMcpConfig(root: string, contextPackPath?: string): Promise<CompileMcpConfigResult> {

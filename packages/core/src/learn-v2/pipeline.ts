@@ -885,6 +885,7 @@ function emptySkillOntologyArtifact(root: string, now: Date): LearnV2SkillOntolo
       namespaces: 0,
       candidateNamespaces: 0,
       reviewNamespaces: 0,
+      dormantNamespaces: 0,
       representedConcepts: 0
     },
     artifacts: { json, markdown }

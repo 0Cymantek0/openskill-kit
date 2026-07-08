@@ -46,6 +46,8 @@ describe("planned launch documentation coverage", () => {
     expect(modelRouting).toContain("doctor --full");
     expect(modelRouting).toContain("Unknown route");
     expect(modelRouting).toContain("maxStep");
+    expect(modelRouting).toContain("osk-learn-v2-behavior-evaluator.md");
+    expect(modelRouting).toContain("current automatic request entrypoints");
 
     const proofLadder = await readDoc("docs/proof-ladder.md");
     expect(proofLadder).toContain("harness-smoke");

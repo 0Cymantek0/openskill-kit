@@ -20,6 +20,7 @@ export const LearnV2SkillOntologyMemoryStoreSchema = z.object({
     namespaces: z.number().int().min(0),
     candidateNamespaces: z.number().int().min(0),
     reviewNamespaces: z.number().int().min(0),
+    dormantNamespaces: z.number().int().min(0).default(0),
     representedConcepts: z.number().int().min(0),
     operations: z.number().int().min(0),
     createOperations: z.number().int().min(0),
@@ -65,10 +66,14 @@ export async function writeLearnV2SkillOntologyMemoryStore(
   const remap = namespaceIdRemap(run.namespaces);
   const incomingNamespaces = run.namespaces.map((namespace) => normalizeNamespaceForMemory(namespace, remap));
   const incomingOperations = run.operations.map((operation) => normalizeOperationForMemory(operation, remap));
-  const { values: namespaces, updated: updatedNamespaces } = mergeValuesById(
+  const { values: mergedNamespaces, updated: updatedNamespaces } = mergeValuesById(
     existing.namespaces,
     incomingNamespaces,
     mergeNamespace
+  );
+  const incomingNamespaceIds = new Set(incomingNamespaces.map((namespace) => namespace.id));
+  const namespaces = mergedNamespaces.map((namespace) =>
+    incomingNamespaceIds.has(namespace.id) ? namespace : markNamespaceDormant(namespace)
   );
   const { values: operations, updated: updatedOperations } = mergeValuesById(
     existing.operations,
@@ -85,6 +90,7 @@ export async function writeLearnV2SkillOntologyMemoryStore(
       namespaces: namespaces.length,
       candidateNamespaces: namespaces.filter((item) => item.status === "candidate").length,
       reviewNamespaces: namespaces.filter((item) => item.status === "needs-review").length,
+      dormantNamespaces: namespaces.filter((item) => item.status === "dormant").length,
       representedConcepts: representedConcepts.size,
       operations: operations.length,
       createOperations: operations.filter((item) => item.operation === "create-namespace").length,
@@ -115,6 +121,7 @@ function emptySkillOntologyMemoryStore(json: string, markdown: string, now: Date
       namespaces: 0,
       candidateNamespaces: 0,
       reviewNamespaces: 0,
+      dormantNamespaces: 0,
       representedConcepts: 0,
       operations: 0,
       createOperations: 0,
@@ -202,13 +209,30 @@ function mergeNamespace(left: LearnV2SkillNamespaceCandidate, right: LearnV2Skil
   return LearnV2SkillNamespaceCandidateSchema.parse({
     ...left,
     label: right.label,
-    status: left.status === "needs-review" || right.status === "needs-review" ? "needs-review" : "candidate",
+    status: mergeNamespaceStatus(left.status, right.status),
     confidence: Number(Math.max(left.confidence, right.confidence).toFixed(3)),
     conceptIds: unique([...left.conceptIds, ...right.conceptIds]),
     representativeSignals: unique([...left.representativeSignals, ...right.representativeSignals]).slice(0, 24),
     parentNamespaceId: right.parentNamespaceId ?? left.parentNamespaceId,
     hierarchyPath: right.hierarchyPath.length ? right.hierarchyPath : left.hierarchyPath,
     rationale: `Merged durable namespace memory from repeated '${right.label}' run candidates.`
+  });
+}
+
+function mergeNamespaceStatus(
+  left: LearnV2SkillNamespaceCandidate["status"],
+  right: LearnV2SkillNamespaceCandidate["status"]
+): LearnV2SkillNamespaceCandidate["status"] {
+  if (right !== "dormant") return right === "needs-review" || left === "needs-review" ? "needs-review" : "candidate";
+  return left === "candidate" || left === "needs-review" ? left : "dormant";
+}
+
+function markNamespaceDormant(namespace: LearnV2SkillNamespaceCandidate): LearnV2SkillNamespaceCandidate {
+  if (namespace.status === "dormant") return namespace;
+  return LearnV2SkillNamespaceCandidateSchema.parse({
+    ...namespace,
+    status: "dormant",
+    rationale: `Dormant namespace retained because latest Learn v2 ontology run did not refresh '${namespace.label}' with live concept evidence.`
   });
 }
 
@@ -239,7 +263,7 @@ function renderSkillOntologyMemoryStore(root: string, store: LearnV2SkillOntolog
     `- Namespaces: ${store.counts.namespaces} (${store.counts.latestRunNamespaces} latest run, ${store.counts.updatedNamespaces} updated)`,
     `- Operations: ${store.counts.operations} (${store.counts.latestRunOperations} latest run, ${store.counts.updatedOperations} updated)`,
     `- Represented concepts: ${store.counts.representedConcepts}`,
-    `- Namespace review: ${store.counts.candidateNamespaces} candidate, ${store.counts.reviewNamespaces} needs review`,
+    `- Namespace review: ${store.counts.candidateNamespaces} candidate, ${store.counts.reviewNamespaces} needs review, ${store.counts.dormantNamespaces} dormant`,
     `- Operation mix: create=${store.counts.createOperations}, nest=${store.counts.nestOperations}, merge=${store.counts.mergeOperations}, split=${store.counts.splitOperations}, attach=${store.counts.attachOperations}`,
     "",
     "## Namespace Summary",

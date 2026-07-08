@@ -73,15 +73,23 @@ describe("agent plugin manifest", () => {
     const descriptorHashes = JSON.parse(readFileSync(path.join(root, "mcp", "descriptor-hashes.json"), "utf8"));
     const serverConfig = JSON.parse(readFileSync(path.join(root, "mcp", "server-config.json"), "utf8"));
     const conceptResources = JSON.parse(readFileSync(path.join(root, "mcp", "resources", "learn-v2-concepts.json"), "utf8"));
+    const compilerDescriptors = extractStringLiterals(
+      readFileSync(path.resolve("packages/core/src/compiler/package-compiler.ts"), "utf8"),
+      /descriptor\(\s*"([^"]+)"/g
+    );
     expect(mcpProfiles.defaultProfile).toBe("public");
     expect(mcpProfiles.profiles.public).toHaveLength(12);
     expect(publicDescriptors.profile).toBe("public");
     expect(publicDescriptors.tools).toHaveLength(12);
     expect(advancedDescriptors.profile).toBe("advanced");
+    expect(advancedDescriptors.tools.map((tool: { name: string }) => tool.name)).toEqual(compilerDescriptors);
+    expect(serverConfig.tools).toEqual(compilerDescriptors);
     expect(advancedDescriptors.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining([
+      "osk_get_learn_v2_artifact_paths",
       "osk_plan_learning_sources_v2",
       "osk_ingest_raw_evidence",
       "osk_get_concept_review_queue",
+      "osk_get_concept_store",
       "osk_review_concepts",
       "osk_compile_concepts",
       "osk_prepare_learn_v2_model_requests",
@@ -93,6 +101,7 @@ describe("agent plugin manifest", () => {
       "osk_extract_concepts",
       "osk_run_learn_v2_eval"
     ]));
+    expect(advancedDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_explain_status" && tool.writeRisk === "read-only")).toBe(true);
     expect(advancedDescriptors.tools.some((tool: { name: string; approvalRequired: boolean }) => tool.name === "osk_ingest_raw_evidence" && tool.approvalRequired === true)).toBe(true);
     expect(advancedDescriptors.tools.some((tool: { name: string; writeRisk: string }) => tool.name === "osk_get_concept_review_queue" && tool.writeRisk === "read-only")).toBe(true);
     expect(publicDescriptors.tools.some((tool: { name: string }) => tool.name === "osk_ingest_raw_evidence")).toBe(false);
@@ -139,3 +148,7 @@ describe("agent plugin manifest", () => {
     expect(packageJson.bin["openskill-kit-mcp"]).toBe("dist/openskill-kit-mcp.cjs");
   });
 });
+
+function extractStringLiterals(source: string, pattern: RegExp): string[] {
+  return [...source.matchAll(pattern)].map((match) => match[1]!);
+}

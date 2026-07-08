@@ -3714,6 +3714,101 @@ describe("learn-v2 substrate", () => {
     )).toBe(true);
   });
 
+  it("marks inactive-only ontology namespaces dormant and keeps them out of compiled skills", async () => {
+    const root = await tempProject();
+    const [card] = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("ui_dormant_dark_card_cta", "Prefer orange CTA buttons inside dark cards.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/CardButton.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        conditions: {
+          appliesWhen: ["ui.theme=dark", "component.container=card"],
+          doesNotApplyWhen: ["explicit color override"]
+        },
+        activationHints: {
+          phrases: ["dark card CTA"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: ["explicit color override"]
+        },
+        risk: "low"
+      }
+    ], new Date("2026-06-30T00:01:00Z"));
+    const dormantCard = { ...card!, status: "superseded" as const };
+    const namespaces = buildLearnV2SkillNamespaces([dormantCard]);
+    const dormantNamespace = namespaces.find((namespace) => namespace.label === "UI/UX design")!;
+
+    expect(dormantNamespace).toMatchObject({
+      status: "dormant",
+      conceptIds: [dormantCard.id]
+    });
+    expect(dormantNamespace.rationale).toContain("Dormant namespace retained");
+
+    const operations = buildLearnV2SkillOntologyOperations([dormantCard], namespaces);
+    expect(operations.some((operation) =>
+      operation.operation === "create-namespace" &&
+      operation.namespaceIds.includes(dormantNamespace.id) &&
+      operation.status === "dormant" &&
+      operation.reviewHint.includes("No activation or compiled skill")
+    )).toBe(true);
+    expect(operations.every((operation) =>
+      operation.operation === "create-namespace" &&
+      operation.status === "dormant"
+    )).toBe(true);
+    expect(operations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        status: "dormant",
+        reviewHint: expect.stringContaining("No activation or compiled skill")
+      })
+    ]));
+
+    const artifact = await writeLearnV2SkillOntologyArtifact(root, [dormantCard], new Date("2026-06-30T00:02:00Z"));
+    const store = await writeLearnV2SkillOntologyMemoryStore(root, artifact, new Date("2026-06-30T00:03:00Z"));
+    expect(artifact.counts.dormantNamespaces).toBeGreaterThan(0);
+    expect(store.counts.dormantNamespaces).toBeGreaterThan(0);
+    expect(store.namespaces.find((namespace) => namespace.label === "UI/UX design")?.status).toBe("dormant");
+
+    const compiled = await compileBehaviorLayer(root, { targets: ["agent-skills"] });
+    expect(compiled.skillPaths.some((skillPath) => skillPath.endsWith("project-ui-ux-design"))).toBe(false);
+  });
+
+  it("moves stale ontology memory namespaces to dormant when latest run no longer refreshes them", async () => {
+    const root = await tempProject();
+    const firstCards = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("parser_memory_active_namespace", "Prefer parser regression fixtures before grammar edits.", "positive"),
+        kind: "verification"
+      }
+    ], new Date("2026-06-30T00:01:00Z"));
+    const firstArtifact = await writeLearnV2SkillOntologyArtifact(root, firstCards, new Date("2026-06-30T00:01:00Z"));
+    const firstStore = await writeLearnV2SkillOntologyMemoryStore(root, firstArtifact, new Date("2026-06-30T00:02:00Z"));
+    expect(firstStore.namespaces.some((namespace) => namespace.label === "Parser behavior" && namespace.status !== "dormant")).toBe(true);
+
+    const secondCards = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("docs_memory_active_namespace", "Prefer concise README notes for documented CLI behavior.", "positive"),
+        kind: "documentation",
+        scope: {
+          level: "path",
+          paths: ["README.md"],
+          taskTypes: ["docs-update"]
+        }
+      }
+    ], new Date("2026-06-30T00:03:00Z"));
+    const secondArtifact = await writeLearnV2SkillOntologyArtifact(root, secondCards, new Date("2026-06-30T00:03:00Z"));
+    const secondStore = await writeLearnV2SkillOntologyMemoryStore(root, secondArtifact, new Date("2026-06-30T00:04:00Z"));
+    const parserNamespace = secondStore.namespaces.find((namespace) => namespace.label === "Parser behavior")!;
+
+    expect(parserNamespace.status).toBe("dormant");
+    expect(parserNamespace.rationale).toContain("latest Learn v2 ontology run did not refresh");
+    expect(secondStore.counts.dormantNamespaces).toBeGreaterThanOrEqual(1);
+    expect(secondStore.namespaces.some((namespace) => namespace.label === "Documentation behavior" && namespace.status !== "dormant")).toBe(true);
+  });
+
   it("reports conditional split operations for theme-variant UI namespaces", () => {
     const cards = mergeLearnV2ConceptCards([
       {
