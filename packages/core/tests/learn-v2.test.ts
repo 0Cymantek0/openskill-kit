@@ -1426,6 +1426,42 @@ describe("learn-v2 substrate", () => {
     expect(latest.health.status).toBe("warn");
   });
 
+  it("links concept debug traces from the review queue without exposing local paths", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:12:00.000Z");
+    const [base] = mergeLearnV2ConceptCards([
+      behaviorAtom("review_debug_trace_link", "Prefer focused parser regression tests before parser changes.", "positive")
+    ], now);
+    const candidate = {
+      ...base!,
+      status: "candidate" as const,
+      conditions: {
+        appliesWhen: ["Task changes parser source"],
+        doesNotApplyWhen: ["User explicitly asks to skip tests"]
+      },
+      scope: {
+        ...base!.scope,
+        negativeTriggers: ["user says skip tests"]
+      }
+    };
+    const trace = await writeLearnV2ConceptDebugTraceArtifact(root, [candidate], now);
+    const queue = await writeLearnV2ReviewQueue(root, [candidate], now, { conceptDebugTrace: trace });
+    const markdown = await readText(queue.artifacts.markdown);
+
+    expect(queue.debugTraceSummary).toMatchObject({
+      tracedConcepts: 1,
+      conditionalLinks: 0,
+      openWorldLinks: 0,
+      reviewBlockedConcepts: 1
+    });
+    expect(queue.debugTraceSummary.artifactPath).toContain(".openskill-kit/learn-v2/concept-debug-trace/");
+    expect(queue.artifacts.conceptDebugTrace).toBe(trace.artifacts.markdown);
+    expect(markdown).toContain("## Debug Trace Summary");
+    expect(markdown).toContain("Concept debug trace: [PROJECT_ROOT]/.openskill-kit/learn-v2/concept-debug-trace/");
+    expect(markdown).toContain(`Debug trace: ${queue.debugTraceSummary.artifactPath}#${candidate.id}`);
+    expect(markdown).not.toContain(root);
+  });
+
   it("writes a review-linked conflict ledger for contradictory concepts", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:20:00.000Z");
@@ -3170,6 +3206,15 @@ describe("learn-v2 substrate", () => {
     expect(productIndexMarkdown).toContain("Local-only paths:");
     expect(productIndexMarkdown).not.toContain(root);
     expect(productIndexMarkdown).not.toContain("avoid broad rewrite");
+    const reviewQueueMarkdown = await readText(result.artifacts.learnV2ReviewQueuePath);
+    expect(reviewQueueMarkdown).toContain("## Debug Trace Summary");
+    expect(reviewQueueMarkdown).toContain("Concept debug trace: [PROJECT_ROOT]/.openskill-kit/learn-v2/concept-debug-trace/");
+    expect(reviewQueueMarkdown).toContain("Debug trace: [PROJECT_ROOT]/.openskill-kit/learn-v2/concept-debug-trace/");
+    expect(reviewQueueMarkdown).not.toContain(root);
+    const reviewQueueJson = JSON.parse(await readText(result.artifacts.learnV2ReviewQueuePath.replace(/\.md$/, ".json")));
+    expect(reviewQueueJson.debugTraceSummary.tracedConcepts).toBe(result.digest.conceptDebugTraces);
+    expect(reviewQueueJson.debugTraceSummary.artifactPath).toContain(".openskill-kit/learn-v2/concept-debug-trace/");
+    expect(reviewQueueJson.artifacts.conceptDebugTrace).toBe(result.artifacts.learnV2ConceptDebugTracePath);
     const productIndexJson = JSON.parse(await readText(result.artifacts.learnV2ProductIndexPath.replace(/\.md$/, ".json")));
     expect(productIndexJson.schemaVersion).toBe("openskill-kit.learn-v2.product-index.v1");
     expect(productIndexJson.run.sourcesIncluded).toBe(1);

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { LearnV2ConceptCard, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2CounterevidenceLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2ReviewQueue } from "./schemas.js";
+import type { LearnV2ConceptCard, LearnV2ConceptDebugTraceArtifact, LearnV2ConceptDriftReport, LearnV2ConflictLedger, LearnV2CounterevidenceLedger, LearnV2DeclassifiedEvidenceSnippetArtifact, LearnV2ReviewQueue } from "./schemas.js";
 import { LearnV2ReviewQueueSchema } from "./schemas.js";
 import { writeJsonAtomic } from "../storage/atomic.js";
 import { readProjectConfig } from "../events/store.js";
@@ -17,6 +17,7 @@ export async function writeLearnV2ReviewQueue(
     declassifiedSnippets?: LearnV2DeclassifiedEvidenceSnippetArtifact;
     counterevidenceLedger?: { ledger: LearnV2CounterevidenceLedger; markdownPath: string };
     conceptDrift?: { report: LearnV2ConceptDriftReport; artifactPath: string };
+    conceptDebugTrace?: LearnV2ConceptDebugTraceArtifact;
   }
 ): Promise<LearnV2ReviewQueue> {
   const root = path.resolve(rootInput);
@@ -68,12 +69,20 @@ export async function writeLearnV2ReviewQueue(
       staleCandidates: (context?.conceptDrift?.report.staleCandidates ?? []).slice(0, 50),
       reportPath: context?.conceptDrift ? learnV2SafeLocalPath(context.conceptDrift.artifactPath, root) : undefined
     },
+    debugTraceSummary: {
+      tracedConcepts: context?.conceptDebugTrace?.counts.tracedConcepts ?? 0,
+      conditionalLinks: context?.conceptDebugTrace?.counts.conditionalLinks ?? 0,
+      openWorldLinks: context?.conceptDebugTrace?.counts.openWorldLinks ?? 0,
+      reviewBlockedConcepts: context?.conceptDebugTrace?.counts.reviewBlockedConcepts ?? 0,
+      artifactPath: context?.conceptDebugTrace?.artifacts.markdown ? learnV2SafeLocalPath(context.conceptDebugTrace.artifacts.markdown, root) : undefined
+    },
     artifacts: {
       markdown,
       conflictLedger: context?.markdownPath,
       declassifiedSnippets: context?.declassifiedSnippets?.artifacts.markdown,
       counterevidenceLedger: context?.counterevidenceLedger?.markdownPath,
-      conceptDrift: context?.conceptDrift?.artifactPath
+      conceptDrift: context?.conceptDrift?.artifactPath,
+      conceptDebugTrace: context?.conceptDebugTrace?.artifacts.markdown
     }
   });
   await fs.mkdir(reviewDir, { recursive: true });
@@ -146,6 +155,14 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
       `- ${candidate.conceptId}: ${candidate.reason}; negative=${candidate.negativeOutcomeCount}; activations=${candidate.activationCount}; ageDays=${candidate.ageDays}; suggestion=${candidate.suggestion}`
     ),
     "",
+    "## Debug Trace Summary",
+    "",
+    `Traced concepts: ${queue.debugTraceSummary.tracedConcepts}`,
+    `Conditional links: ${queue.debugTraceSummary.conditionalLinks}`,
+    `Open-world links: ${queue.debugTraceSummary.openWorldLinks}`,
+    `Review-blocked concepts: ${queue.debugTraceSummary.reviewBlockedConcepts}`,
+    queue.debugTraceSummary.artifactPath ? `Concept debug trace: ${queue.debugTraceSummary.artifactPath}` : "Concept debug trace: not written",
+    "",
     "## Focus Cards",
     ""
   ];
@@ -183,6 +200,7 @@ export function renderLearnV2ReviewQueue(queue: LearnV2ReviewQueue): string {
     if (card.scope.negativeTriggers.length) lines.push(`Negative triggers: ${card.scope.negativeTriggers.join(", ")}`);
     if (card.activation.phrases.length) lines.push(`Activation: ${card.activation.phrases.join(", ")}`);
     if (card.activation.commands.length) lines.push(`Commands: ${card.activation.commands.join(", ")}`);
+    if (queue.debugTraceSummary.artifactPath) lines.push(`Debug trace: ${queue.debugTraceSummary.artifactPath}#${card.id}`);
     lines.push(`Evidence: ${card.evidenceIds.join(", ")}`);
     lines.push("Raw refs: local-only, not exportable");
     const actions = queue.reviewActions[card.id] ?? [];

@@ -1100,12 +1100,25 @@ export const LearnV2ReviewQueueSchema = z.object({
     reasonCounts: {},
     staleCandidates: []
   }),
+  debugTraceSummary: z.object({
+    tracedConcepts: z.number().int().min(0),
+    conditionalLinks: z.number().int().min(0),
+    openWorldLinks: z.number().int().min(0),
+    reviewBlockedConcepts: z.number().int().min(0),
+    artifactPath: z.string().optional()
+  }).default({
+    tracedConcepts: 0,
+    conditionalLinks: 0,
+    openWorldLinks: 0,
+    reviewBlockedConcepts: 0
+  }),
   artifacts: z.object({
     markdown: z.string(),
     conflictLedger: z.string().optional(),
     declassifiedSnippets: z.string().optional(),
     counterevidenceLedger: z.string().optional(),
-    conceptDrift: z.string().optional()
+    conceptDrift: z.string().optional(),
+    conceptDebugTrace: z.string().optional()
   })
 });
 export type LearnV2ReviewQueue = z.infer<typeof LearnV2ReviewQueueSchema>;

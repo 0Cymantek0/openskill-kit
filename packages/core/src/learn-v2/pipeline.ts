@@ -551,7 +551,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     source.atomCount = behaviorAtoms.filter((atom) => atom.rawRefs.includes(rawRef)).length;
     source.conceptCount = concepts.filter((concept) => concept.rawRefs.includes(rawRef)).length;
   }
-  const reviewQueue = shouldWriteDerivedArtifacts
+  let reviewQueue = shouldWriteDerivedArtifacts
     ? await writeLearnV2ReviewQueue(root, conceptCardsForArtifacts, now, {
         ledger: conflictLedger.ledger,
         markdownPath: conflictLedger.artifactPaths.markdown,
@@ -561,7 +561,7 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
           markdownPath: counterevidenceLedger.artifactPaths.markdown
         },
         conceptDrift
-      })
+    })
     : emptyReviewQueue(root, now);
   const outcomePolicy = shouldWriteDerivedArtifacts
     ? await writeLearnV2OutcomePolicyArtifact(root, conceptCardsForArtifacts, now)
@@ -585,6 +585,19 @@ export async function runLearnV2RawLocalLearning(projectRootInput: string, optio
     ? await runLifecycleOnce({ projectRoot: root, maxEvents: options.maxTurns ?? 500, compileSafe: false, now: options.now })
     : undefined;
   const review = lifecycle ? await buildReviewQueue(root) : undefined;
+  if (shouldWriteDerivedArtifacts) {
+    reviewQueue = await writeLearnV2ReviewQueue(root, conceptCardsForArtifacts, now, {
+      ledger: conflictLedger.ledger,
+      markdownPath: conflictLedger.artifactPaths.markdown,
+      declassifiedSnippets,
+      counterevidenceLedger: {
+        ledger: counterevidenceLedger.ledger,
+        markdownPath: counterevidenceLedger.artifactPaths.markdown
+      },
+      conceptDrift,
+      conceptDebugTrace
+    });
+  }
   const legacyConcepts = concepts.map(toLegacyConceptCard);
   const digestPath = path.join(digestsDir, `raw-learning-${timestampSlug(generatedAt)}.json`);
   const reviewMarkdownPath = path.join(digestsDir, `raw-learning-${timestampSlug(generatedAt)}.md`);
