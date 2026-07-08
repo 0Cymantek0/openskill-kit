@@ -2641,6 +2641,58 @@ describe("learn-v2 substrate", () => {
     expect(candidateMatches[0]!.counterevidenceCount).toBe(1);
   });
 
+  it("gates runtime activation through applies and does-not-apply conditions", () => {
+    const conditionalEntry = {
+      conceptId: "concept_conditional_cta_activation",
+      status: "active" as const,
+      title: "Dark standalone CTA color",
+      behavior: "Use blue for standalone CTA buttons in dark UI surfaces.",
+      appliesWhen: ["UI theme is dark", "CTA button is standalone"],
+      doesNotApplyWhen: ["Button is inside a card"],
+      phrases: ["CTA button color", "dark CTA"],
+      pathGlobs: ["packages/site/src/**"],
+      commands: [],
+      taskTypes: ["ui-design"],
+      negativeTriggers: [],
+      semanticAliases: [],
+      keywordFingerprint: [],
+      subsystemLabels: ["ui design"],
+      confidence: 0.9,
+      risk: "low" as const,
+      counterevidenceCount: 0
+    };
+
+    const darkStandalone = scoreLearnV2ActivationEntries([conditionalEntry], {
+      query: "Adjust dark standalone CTA button color.",
+      paths: ["packages/site/src/DarkStandaloneCta.tsx"],
+      taskTypes: ["ui-design"]
+    });
+    expect(darkStandalone[0]!.suppressed).toBe(false);
+    expect(darkStandalone[0]!.score).toBeGreaterThan(0);
+    expect(darkStandalone[0]!.reasons).toEqual(expect.arrayContaining([
+      "applies-when:ui theme is dark,cta button is standalone"
+    ]));
+
+    const darkCard = scoreLearnV2ActivationEntries([conditionalEntry], {
+      query: "Adjust dark CTA button inside a card.",
+      paths: ["packages/site/src/DarkCardButton.tsx"],
+      taskTypes: ["ui-design"]
+    });
+    expect(darkCard[0]!.suppressed).toBe(true);
+    expect(darkCard[0]!.score).toBe(0);
+    expect(darkCard[0]!.reasons).toContain("does-not-apply:button is inside a card");
+
+    const lightStandalone = scoreLearnV2ActivationEntries([conditionalEntry], {
+      query: "Adjust light standalone CTA button color.",
+      paths: ["packages/site/src/LightStandaloneCta.tsx"],
+      taskTypes: ["ui-design"]
+    });
+    expect(lightStandalone[0]!.suppressed).toBe(true);
+    expect(lightStandalone[0]!.score).toBe(0);
+    expect(lightStandalone[0]!.reasons).toContain("applies-when:missing");
+    expect(lightStandalone[0]!.reasons).not.toContain("does-not-apply:button is inside a card");
+  });
+
   it("fails eval for overbroad or underspecified concept quality", async () => {
     const root = await tempProject();
     const now = new Date("2026-06-30T00:02:00Z");

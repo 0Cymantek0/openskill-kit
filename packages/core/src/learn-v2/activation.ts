@@ -373,6 +373,11 @@ function scoreActivationEntries(
   ].join(" ");
   const queryText = normalizeText(queryActivationText);
   const queryTokens = tokenSet(queryActivationText);
+  const queryConditionText = normalizeText([
+    queryActivationText,
+    ...(query.negativeSignals ?? [])
+  ].join(" "));
+  const queryConditionTokens = conditionTokenSet(queryConditionText);
   const querySignals = deriveActivationSignalsFromText(queryActivationText);
   const querySubsystemLabels = new Set(deriveLearnV2SubsystemLabels({
     text: queryActivationText,
@@ -387,7 +392,7 @@ function scoreActivationEntries(
   const visibleEntries = entries.filter((entry) => query.includeCandidates === true || entry.status === "active" || entry.status === "locked");
   const bm25 = buildActivationBm25Index(visibleEntries);
   return visibleEntries
-    .map((entry) => scoreEntry(entry, { queryText, queryTokens, querySignals, querySubsystemLabels, paths, commands, taskTypes, negativeSignals, bm25, outcomeFeedback }))
+    .map((entry) => scoreEntry(entry, { queryText, queryTokens, queryConditionText, queryConditionTokens, querySignals, querySubsystemLabels, paths, commands, taskTypes, negativeSignals, bm25, outcomeFeedback }))
     .sort((a, b) => Number(a.suppressed) - Number(b.suppressed) || b.score - a.score || a.title.localeCompare(b.title));
 }
 
@@ -396,6 +401,8 @@ function scoreEntry(
   query: {
     queryText: string;
     queryTokens: Set<string>;
+    queryConditionText: string;
+    queryConditionTokens: Set<string>;
     querySignals: ReturnType<typeof deriveActivationSignalsFromText>;
     querySubsystemLabels: Set<string>;
     paths: string[];
@@ -411,6 +418,10 @@ function scoreEntry(
   const counterevidenceCount = entry.counterevidenceCount ?? 0;
   if (counterevidenceCount > 0 && (entry.status === "active" || entry.status === "locked")) {
     return baseMatch(entry, 0, [`counterevidence:${counterevidenceCount}`], true, feedback);
+  }
+  const doesNotApplyHits = matchingConditions(entry.doesNotApplyWhen ?? [], query.queryConditionText, query.queryConditionTokens);
+  if (doesNotApplyHits.length) {
+    return baseMatch(entry, 0, doesNotApplyHits.map((condition) => `does-not-apply:${condition}`), true, feedback);
   }
   const suppressedBy = entry.negativeTriggers.map(normalizeText).filter((trigger) => query.negativeSignals.has(trigger));
   if (suppressedBy.length) {
@@ -491,6 +502,17 @@ function scoreEntry(
     reasons.push(`subsystem:${subsystemHits.slice(0, 4).join(",")}`);
   }
 
+  const appliesWhen = entry.appliesWhen ?? [];
+  const appliesWhenHits = matchingConditions(appliesWhen, query.queryConditionText, query.queryConditionTokens);
+  const appliesWhenHitSet = new Set(appliesWhenHits);
+  const missingAppliesWhen = appliesWhen
+    .map(normalizeText)
+    .filter((condition) => condition && !appliesWhenHitSet.has(condition));
+  if (appliesWhenHits.length) {
+    score += Math.min(0.16, appliesWhenHits.length * 0.08);
+    reasons.push(`applies-when:${appliesWhenHits.slice(0, 3).join(",")}`);
+  }
+
   if (feedback) {
     const helpfulBoost = Math.min(0.16, feedback.helpful * 0.05);
     const wrongPenalty = Math.min(0.24, feedback.wrong * 0.12);
@@ -503,6 +525,9 @@ function scoreEntry(
   }
 
   if (!reasons.length) score = 0;
+  if (score > 0 && missingAppliesWhen.length) {
+    return baseMatch(entry, 0, [...reasons, "applies-when:missing"], true, feedback);
+  }
   return baseMatch(entry, Number(Math.max(0, Math.min(1, score)).toFixed(3)), reasons, false, feedback);
 }
 
@@ -616,6 +641,63 @@ function tokenOverlap(left: Set<string>, right: Set<string>): number {
   let count = 0;
   for (const item of left) if (right.has(item)) count += 1;
   return count;
+}
+
+const CONDITION_STOP_TOKENS = new Set([
+  "applies",
+  "apply",
+  "when",
+  "where",
+  "with",
+  "without",
+  "task",
+  "context",
+  "change",
+  "changes",
+  "work",
+  "user",
+  "explicitly",
+  "asks",
+  "requested",
+  "request",
+  "component",
+  "button",
+  "element",
+  "page",
+  "screen",
+  "feature",
+  "file",
+  "files",
+  "source",
+  "inside",
+  "outside",
+  "touch",
+  "touches",
+  "matches"
+]);
+
+function matchingConditions(conditions: string[], queryText: string, queryTokens: Set<string>): string[] {
+  return conditions
+    .map((condition) => ({ raw: condition, normalized: normalizeText(condition), tokens: conditionTokenSet(condition) }))
+    .filter(({ normalized, tokens }) => {
+      if (!normalized) return false;
+      if (queryText.includes(normalized)) return true;
+      if (!tokens.size) return false;
+      const overlap = tokenOverlap(tokens, queryTokens);
+      const required = tokens.size <= 2 ? 1 : Math.min(2, tokens.size);
+      return overlap >= required;
+    })
+    .map(({ raw }) => normalizeText(raw))
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function conditionTokenSet(value: string): Set<string> {
+  return new Set(normalizeText(value)
+    .replace(/[./:-]+/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 2 && !CONDITION_STOP_TOKENS.has(token)));
 }
 
 interface ActivationBm25Index {
