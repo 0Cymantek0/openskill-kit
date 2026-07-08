@@ -232,6 +232,50 @@ export function extractLearnV2ContextFactors(input: {
   if (/\blanding page\b/.test(text)) add("surface.kind", "landing-page", "Surface is landing page", "text");
   if (/\bdashboard\b/.test(text)) add("surface.kind", "dashboard", "Surface is dashboard", "text");
 
+  const cssText = normalize(metadataStrings(input.metadata, "className", "class", "classes", "cssClasses", "tailwindClasses").join(" "));
+  if (cssText) {
+    if (hasDarkSurfaceSignal(cssText)) add("ui.theme", "dark", "UI theme is dark", "css", 0.76);
+    if (hasLightSurfaceSignal(cssText)) add("ui.theme", "light", "UI theme is light", "css", 0.76);
+    if (/\b(card|panel|tile)\b/.test(cssText)) add("component.container", "card", "Component is inside a card", "css", 0.76);
+    if (/\b(primary|cta)\b/.test(cssText)) add("component.role", "primary-cta", "Component role is primary CTA", "css", 0.7);
+  }
+
+  const componentTreeText = normalize(metadataStrings(input.metadata, "componentTree", "ancestorComponents", "parentComponents", "jsxAncestors", "domPath").map(pathSignalText).join(" "));
+  if (componentTreeText) {
+    if (/\b(card|panel|tile)\b/.test(componentTreeText)) add("component.container", "card", "Component is inside a card", "component-tree", 0.83);
+    if (/\b(page|main|root|screen)\b/.test(componentTreeText) && !/\b(card|panel|tile)\b/.test(componentTreeText)) {
+      add("component.container", "independent", "Component is independent", "component-tree", 0.78);
+    }
+    if (/\b(primary cta|cta)\b/.test(componentTreeText)) add("component.role", "primary-cta", "Component role is primary CTA", "component-tree", 0.8);
+    if (/\bbutton\b/.test(componentTreeText)) add("component.role", "button", "Component role is button", "component-tree", 0.76);
+  }
+
+  const astText = normalize(metadataStrings(input.metadata, "symbols", "componentNames", "jsxComponents", "imports", "exportedNames").map(pathSignalText).join(" "));
+  if (astText) {
+    if (/\b(card|panel|tile)\b/.test(astText)) add("component.container", "card", "Component is inside a card", "ast", 0.78);
+    if (/\b(primary cta|cta)\b/.test(astText)) add("component.role", "primary-cta", "Component role is primary CTA", "ast", 0.76);
+    if (/\bbutton\b/.test(astText)) add("component.role", "button", "Component role is button", "ast", 0.72);
+  }
+
+  const screenshotText = normalize(metadataStrings(input.metadata, "screenshotLabels", "visualLabels", "detectedObjects", "imageLabels").join(" "));
+  if (screenshotText) {
+    if (/\b(dark background|black background|dark page|dark mode)\b/.test(screenshotText)) add("ui.theme", "dark", "UI theme is dark", "screenshot", 0.68);
+    if (/\b(light background|white background|light page|light mode)\b/.test(screenshotText)) add("ui.theme", "light", "UI theme is light", "screenshot", 0.68);
+    if (/\b(card|panel|tile)\b/.test(screenshotText)) add("component.container", "card", "Component is inside a card", "screenshot", 0.66);
+  }
+
+  const designTokens = metadataStrings(input.metadata, "designToken", "designTokens", "design.token", "cssVariable", "cssVariables", "colorToken", "colorTokens")
+    .map((value) => value.trim())
+    .filter(looksLikeDesignToken)
+    .slice(0, 8);
+  for (const token of designTokens) {
+    const normalizedToken = normalizeValue(token).slice(0, 80);
+    add("ui.design-token", normalizedToken, `Design token is ${normalizedToken}`, "design-token", 0.82);
+    const tokenText = normalize(token);
+    if (hasDarkSurfaceSignal(tokenText)) add("ui.theme", "dark", "UI theme is dark", "design-token", 0.78);
+    if (hasLightSurfaceSignal(tokenText)) add("ui.theme", "light", "UI theme is light", "design-token", 0.78);
+  }
+
   for (const file of input.paths ?? []) {
     const normalizedPath = file.replace(/\\/g, "/").toLowerCase();
     const pathText = pathSignalText(file);
@@ -706,7 +750,7 @@ function factorKey(factor: LearnV2ContextFactor): string {
 }
 
 function factorPriority(factor: LearnV2ContextFactor): number {
-  const order = ["component.container", "ui.theme", "component.role", "surface.kind", "framework", "file.layer"];
+  const order = ["component.container", "ui.theme", "component.role", "ui.design-token", "surface.kind", "framework", "file.layer"];
   const index = order.indexOf(factor.key);
   return index === -1 ? 99 : index;
 }
@@ -721,12 +765,35 @@ function groupBy<T>(items: T[], keyFn: (item: T) => string): Map<string, T[]> {
 }
 
 function metadataString(metadata: Record<string, unknown> | undefined, ...keys: string[]): string | undefined {
-  if (!metadata) return undefined;
-  for (const key of keys) {
-    const value = metadata[key];
-    if (typeof value === "string" && value.trim()) return value;
-  }
-  return undefined;
+  return metadataStrings(metadata, ...keys)[0];
+}
+
+function metadataStrings(metadata: Record<string, unknown> | undefined, ...keys: string[]): string[] {
+  if (!metadata) return [];
+  const out: string[] = [];
+  for (const key of keys) out.push(...metadataValueStrings(metadata[key]));
+  return unique(out.map((item) => item.trim()).filter(Boolean)).slice(0, 40);
+}
+
+function metadataValueStrings(value: unknown): string[] {
+  if (typeof value === "string" && value.trim()) return [value];
+  if (typeof value === "number" || typeof value === "boolean") return [String(value)];
+  if (Array.isArray(value)) return value.flatMap(metadataValueStrings);
+  if (!value || typeof value !== "object") return [];
+  return Object.values(value as Record<string, unknown>).flatMap(metadataValueStrings);
+}
+
+function hasDarkSurfaceSignal(value: string): boolean {
+  return /\b(?:dark|black|night|theme-dark|surface-dark|bg-black|bg-slate-9\d{2}|bg-zinc-9\d{2}|bg-neutral-9\d{2}|background-dark)\b/.test(value);
+}
+
+function hasLightSurfaceSignal(value: string): boolean {
+  return /\b(?:light|white|theme-light|surface-light|bg-white|bg-slate-50|bg-zinc-50|bg-neutral-50|background-light)\b/.test(value);
+}
+
+function looksLikeDesignToken(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length <= 120 && /^(?:--|[a-z0-9_.-]+$)/i.test(trimmed) && /\b(?:color|theme|surface|background|bg|brand|accent|primary|secondary|dark|light|card|cta)\b/i.test(trimmed.replace(/[_-]+/g, " "));
 }
 
 function uniqueFactors(items: LearnV2ContextFactor[]): LearnV2ContextFactor[] {
@@ -755,6 +822,7 @@ function normalizeValue(value: string): string {
 function pathSignalText(value: string): string {
   return value
     .replace(/\\/g, "/")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[^A-Za-z0-9]+/g, " ")
     .toLowerCase()

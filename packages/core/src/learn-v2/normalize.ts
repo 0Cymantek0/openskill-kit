@@ -58,7 +58,8 @@ function normalizedFromObject(value: unknown, index: number, rawRecord: LearnV2R
       adapter: surface.adapterId,
       rawKeys: Object.keys(value).slice(0, 40),
       traceContext: safeTraceMetadata(traceContext),
-      opencodeSessionId: safeTraceId(traceContext?.opencodeSessionId, "opencode_session")
+      opencodeSessionId: safeTraceId(traceContext?.opencodeSessionId, "opencode_session"),
+      ...factorMetadataFromStructuredValue(value, metadataObject, toolInput)
     }
   })];
 }
@@ -358,6 +359,48 @@ function makeEvidence(rawRecord: LearnV2RawEvidenceRecord, index: number, input:
     commands: [...new Set(input.commands)].slice(0, 20),
     metadata: input.metadata ?? {}
   };
+}
+
+function factorMetadataFromStructuredValue(
+  value: Record<string, unknown>,
+  metadata: Record<string, unknown> | undefined,
+  toolInput: Record<string, unknown> | undefined
+): Record<string, unknown> {
+  const sources = [value, metadata, toolInput].filter((item): item is Record<string, unknown> => Boolean(item));
+  const out: Record<string, unknown> = {};
+  copyFirstFactorMetadata(out, sources, "theme", ["theme", "uiTheme", "mode", "colorMode", "dataTheme"]);
+  copyFirstFactorMetadata(out, sources, "component.container", ["container", "componentContainer", "parentContainer"]);
+  copyFirstFactorMetadata(out, sources, "componentRole", ["componentRole", "role", "ariaRole"]);
+  copyFirstFactorMetadata(out, sources, "surfaceKind", ["surfaceKind", "pageType", "routeType", "screenType"]);
+  copyFirstFactorMetadata(out, sources, "className", ["className", "class", "classes", "cssClasses", "tailwindClasses"]);
+  copyFirstFactorMetadata(out, sources, "componentTree", ["componentTree", "ancestorComponents", "parentComponents", "jsxAncestors", "domPath"]);
+  copyFirstFactorMetadata(out, sources, "componentNames", ["componentNames", "jsxComponents"]);
+  copyFirstFactorMetadata(out, sources, "symbols", ["symbols", "changedSymbols", "exportedNames"]);
+  copyFirstFactorMetadata(out, sources, "imports", ["imports", "changedImports"]);
+  copyFirstFactorMetadata(out, sources, "screenshotLabels", ["screenshotLabels", "visualLabels", "detectedObjects", "imageLabels"]);
+  copyFirstFactorMetadata(out, sources, "designTokens", ["designToken", "designTokens", "cssVariable", "cssVariables", "colorToken", "colorTokens"]);
+  return out;
+}
+
+function copyFirstFactorMetadata(out: Record<string, unknown>, sources: Record<string, unknown>[], target: string, keys: string[]): void {
+  for (const source of sources) {
+    for (const key of keys) {
+      const value = source[key];
+      if (isSafeFactorMetadata(value)) {
+        out[target] = value;
+        return;
+      }
+    }
+  }
+}
+
+function isSafeFactorMetadata(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0 && value.length <= 500;
+  if (typeof value === "number" || typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.length <= 50 && value.every(isSafeFactorMetadata);
+  if (!isObject(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= 30 && entries.every(([key, item]) => key.length <= 80 && isSafeFactorMetadata(item));
 }
 
 function parseStructuredObjects(text: string): unknown[] {

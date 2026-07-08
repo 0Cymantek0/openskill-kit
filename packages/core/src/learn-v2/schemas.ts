@@ -380,7 +380,7 @@ export const LearnV2ContextFactorSchema = z.object({
   label: z.string().min(1),
   confidence: z.number().min(0).max(1),
   evidenceIds: z.array(z.string()).default([]),
-  source: z.enum(["text", "path", "metadata", "patch", "model-proposal"]).default("text")
+  source: z.enum(["text", "path", "metadata", "patch", "model-proposal", "ast", "css", "component-tree", "screenshot", "design-token"]).default("text")
 });
 export type LearnV2ContextFactor = z.infer<typeof LearnV2ContextFactorSchema>;
 

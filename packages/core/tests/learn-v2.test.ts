@@ -2943,6 +2943,88 @@ describe("learn-v2 substrate", () => {
     expect(observabilityMarkdown).toContain("Memory admission:");
   });
 
+  it("extracts UI context factors from CSS component tree screenshot and design-token metadata", () => {
+    const factors = extractLearnV2ContextFactors({
+      text: "Make button orange.",
+      metadata: {
+        className: "rounded-lg bg-black shadow-sm",
+        componentTree: ["DashboardPage", "BillingCard", "PrimaryCTAButton"],
+        screenshotLabels: ["dark background", "card"],
+        designTokens: ["--color-surface-dark", "color.brand.primary"]
+      },
+      evidenceIds: ["ev_ui_factor_metadata"]
+    });
+
+    expect(factors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "ui.theme", value: "dark", source: "css" }),
+      expect.objectContaining({ key: "component.container", value: "card", source: "component-tree" }),
+      expect.objectContaining({ key: "component.role", value: "primary-cta", source: "component-tree" }),
+      expect.objectContaining({ key: "ui.design-token", value: "color-surface-dark", source: "design-token" })
+    ]));
+    expect(JSON.stringify(factors)).not.toContain("ev_ui_factor_metadata_secret");
+  });
+
+  it("uses structured UI metadata to infer hidden conditional factors without prompt words", async () => {
+    const root = await tempProject();
+    const record = previewRecord(root, "raw_structured_ui_factors");
+    const evidence = normalizeLearnV2Evidence({
+      adapterId: "codex",
+      sourcePath: "ui-events.json",
+      contentKind: "structured",
+      rawText: "",
+      detectedFormat: "json"
+    }, record, JSON.stringify([
+      {
+        role: "user",
+        text: "Make button green.",
+        paths: ["packages/site/src/LandingButton.tsx"],
+        metadata: {
+          className: "bg-white",
+          componentTree: ["LandingPage", "PrimaryCTAButton"],
+          designTokens: ["--color-surface-light"]
+        }
+      },
+      {
+        role: "user",
+        text: "Make button blue.",
+        paths: ["packages/site/src/DarkButton.tsx"],
+        metadata: {
+          className: "bg-black",
+          componentTree: ["DashboardPage", "PrimaryCTAButton"],
+          designTokens: ["--color-surface-dark"]
+        }
+      },
+      {
+        role: "user",
+        text: "Make button orange.",
+        paths: ["packages/site/src/CardButton.tsx"],
+        metadata: {
+          className: "bg-black",
+          componentTree: ["DashboardPage", "SettingsCard", "PrimaryCTAButton"],
+          designTokens: ["--color-surface-dark", "--color-card-background"]
+        }
+      }
+    ]));
+
+    const observations = buildLearnV2LearningObservationsFromEvidence(evidence);
+    const hypotheses = inferLearnV2ConditionalHypotheses(observations);
+    const orange = hypotheses.find((hypothesis) => hypothesis.desiredOutcome === "orange");
+
+    expect(observations).toHaveLength(3);
+    expect(observations.some((observation) =>
+      observation.desiredOutcome === "orange" &&
+      observation.factors.some((factor) => factor.key === "component.container" && factor.value === "card")
+    )).toBe(true);
+    expect(observations.some((observation) =>
+      observation.desiredOutcome === "blue" &&
+      observation.factors.some((factor) => factor.key === "ui.theme" && factor.value === "dark")
+    )).toBe(true);
+    expect(orange?.factorSet).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "component.container", value: "card" })
+    ]));
+    expect(JSON.stringify({ observations, hypotheses })).not.toContain(root);
+  });
+
   it("builds reviewable ontology operations for multi-namespace concepts", () => {
     const [card] = mergeLearnV2ConceptCards([
       {
