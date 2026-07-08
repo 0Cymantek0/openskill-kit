@@ -16,6 +16,7 @@ export * from "./eval.js";
 export * from "./store.js";
 export * from "./activation.js";
 export * from "./conditional-learning.js";
+export * from "./learning-memory.js";
 export * from "./skill-ontology.js";
 export * from "./resource-grounding.js";
 export * from "./concept-debug-trace.js";

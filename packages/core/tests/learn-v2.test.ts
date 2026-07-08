@@ -77,6 +77,7 @@ import {
   inferLearnV2ConditionalHypotheses,
   decideLearnV2MemoryAdmission,
   learnV2ConditionalHypothesesToBehaviorAtoms,
+  readLearnV2LearningMemoryStore,
   readLearnV2ConditionalLearningDebugView,
   buildLearnV2SkillNamespaces,
   buildLearnV2SkillOntologyOperations,
@@ -3137,6 +3138,7 @@ describe("learn-v2 substrate", () => {
     });
     expect(result.artifacts.learnV2RawVaultDir).toContain(".openskill-kit");
     expect(result.artifacts.learnV2ProductIndexPath).toContain("index.md");
+    expect(result.artifacts.learnV2LearningMemoryStorePath).toContain("learning-memory");
     expect(result.artifacts.learnV2ReviewQueuePath).toBeTruthy();
     expect(result.artifacts.learnV2ModelRoutingPath).toContain("osk-model-routing.json");
     expect(result.artifacts.learnV2RelevanceCalibrationPath).toContain("relevance-calibration.json");
@@ -3170,6 +3172,9 @@ describe("learn-v2 substrate", () => {
     expect(productIndexJson.sections.some((section: { key: string; sharePolicy: string }) =>
       section.key === "raw-vault" && section.sharePolicy === "local-only"
     )).toBe(true);
+    expect(productIndexJson.sections.some((section: { key: string; sharePolicy: string; status: string }) =>
+      section.key === "learning-memory" && section.sharePolicy === "local-only" && section.status === "written"
+    )).toBe(true);
     expect(JSON.stringify(productIndexJson)).not.toContain(root);
     const observability = JSON.parse(await readText(result.artifacts.learnV2ObservabilityReportPath));
     expect(observability.modelExecution.requestArtifacts.status).toBe("written");
@@ -3198,6 +3203,7 @@ describe("learn-v2 substrate", () => {
     });
 
     expect(result.artifacts.learnV2ConditionalLearningPath).toContain("conditional-learning");
+    expect(result.artifacts.learnV2LearningMemoryStorePath).toContain("learning-memory");
     expect(result.digest.conditionalObservations).toBe(3);
     expect(result.digest.conditionalHypotheses).toBeGreaterThanOrEqual(2);
     expect(result.digest.promotedConditionalHypotheses).toBe(0);
@@ -3224,6 +3230,17 @@ describe("learn-v2 substrate", () => {
     expect(conditionalDebugText).not.toContain(root);
     expect(conditionalDebugText).not.toContain("Make independent button green");
     expect(conditionalDebugText).not.toContain("No, this time I want blue");
+    const learningMemory = await readLearnV2LearningMemoryStore(root);
+    expect(learningMemory.schemaVersion).toBe("openskill-kit.learn-v2.learning-memory-store.v1");
+    expect(learningMemory.counts.observations).toBe(3);
+    expect(learningMemory.counts.latestRunObservations).toBe(3);
+    expect(learningMemory.counts.hypotheses).toBeGreaterThanOrEqual(2);
+    expect(learningMemory.counts.weakObservations).toBeGreaterThanOrEqual(3);
+    const learningMemoryMarkdown = await readText(learningMemory.artifacts.markdown);
+    expect(learningMemoryMarkdown).toContain("# Learn v2 Learning Memory Store");
+    expect(learningMemoryMarkdown).toContain("component.container=card");
+    expect(learningMemoryMarkdown).not.toContain(root);
+    expect(learningMemoryMarkdown).not.toContain("Make independent button green");
     const focusedConditionalDebug = await readLearnV2ConditionalLearningDebugView(root, { hypothesisId: conditionalDebug.hypotheses[0]!.id });
     expect(focusedConditionalDebug.hypotheses).toHaveLength(1);
     expect(focusedConditionalDebug.observations.length).toBeGreaterThanOrEqual(1);

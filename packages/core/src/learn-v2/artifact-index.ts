@@ -83,6 +83,7 @@ const sectionSpecs: SectionSpec[] = [
   { key: "raw-vault", artifactKey: "learnV2RawVaultDir", category: "privacy", purpose: "Project-local raw evidence retention; never compile, pack, or share." },
   { key: "episode-store", artifactKey: "learnV2EpisodeStorePath", category: "evidence", purpose: "Local reconstructed task episodes that feed learning and debug views." },
   { key: "conditional-learning", artifactKey: "learnV2ConditionalLearningPath", category: "learning", purpose: "Observation, context-factor, hypothesis, and memory-admission trace." },
+  { key: "learning-memory", artifactKey: "learnV2LearningMemoryStorePath", category: "learning", purpose: "Accumulated local-only observation, hypothesis, and admission memory across applied runs." },
   { key: "skill-ontology", artifactKey: "learnV2SkillOntologyPath", category: "learning", purpose: "Emergent namespace candidates and create/merge/split/attach operations." },
   { key: "open-world-grounding", artifactKey: "learnV2OpenWorldGroundingPath", category: "learning", purpose: "Project/external authority-tier anchors kept separate from user preference evidence." },
   { key: "concept-store", artifactKey: "learnV2ConceptStorePath", category: "review", purpose: "Canonical candidate/reviewed concept cards." },

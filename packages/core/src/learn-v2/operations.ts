@@ -3,6 +3,7 @@ import path from "node:path";
 import { reconstructLearnV2Episodes } from "./episodes.js";
 import { extractLearnV2BehaviorAtoms } from "./extract.js";
 import { writeLearnV2ConditionalLearningArtifact } from "./conditional-learning.js";
+import { writeLearnV2LearningMemoryStore } from "./learning-memory.js";
 import { writeLearnV2SkillOntologyArtifact } from "./skill-ontology.js";
 import { writeLearnV2OpenWorldGroundingArtifact } from "./resource-grounding.js";
 import { writeLearnV2ConceptDebugTraceArtifact } from "./concept-debug-trace.js";
@@ -40,6 +41,7 @@ export interface LearnV2ConceptExtractionResult {
   conceptCount: number;
   conceptStorePath: string;
   conditionalLearningPath: string;
+  learningMemoryStorePath: string;
   skillOntologyPath: string;
   openWorldGroundingPath: string;
   conceptDebugTracePath: string;
@@ -83,6 +85,7 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
   const episodeStore = await readLearnV2EpisodeStore(root);
   const extracted = extractLearnV2BehaviorAtoms(episodeStore.episodes);
   const conditionalLearning = await writeLearnV2ConditionalLearningArtifact(root, episodeStore.episodes, now);
+  const learningMemory = await writeLearnV2LearningMemoryStore(root, conditionalLearning, now);
   const atoms = [...extracted.atoms, ...conditionalLearning.atoms];
   const concepts = mergeLearnV2ConceptCards(atoms, now);
   const store = await writeLearnV2ConceptStore(root, concepts, now);
@@ -111,6 +114,7 @@ export async function extractPersistedLearnV2Concepts(rootInput: string, now = n
     conceptCount: store.cards.length,
     conceptStorePath: path.join(root, ".openskill-kit", "learn-v2", "concepts", "store.json"),
     conditionalLearningPath: conditionalLearning.artifacts.markdown,
+    learningMemoryStorePath: learningMemory.artifacts.json,
     skillOntologyPath: skillOntology.artifacts.markdown,
     openWorldGroundingPath: openWorldGrounding.artifacts.markdown,
     conceptDebugTracePath: conceptDebugTrace.artifacts.markdown,

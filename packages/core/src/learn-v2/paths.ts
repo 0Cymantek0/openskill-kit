@@ -45,6 +45,7 @@ export const LEARN_V2_GENERATED_DIRS = [
   ".openskill-kit/learn-v2/evidence-quality/",
   ".openskill-kit/learn-v2/source-gate/",
   ".openskill-kit/learn-v2/conditional-learning/",
+  ".openskill-kit/learn-v2/learning-memory/",
   ".openskill-kit/learn-v2/skill-ontology/",
   ".openskill-kit/learn-v2/open-world-grounding/",
   ".openskill-kit/learn-v2/concept-debug-trace/",
@@ -164,6 +165,16 @@ export const LEARN_V2_STABLE_ARTIFACT_PATHS: LearnV2StableArtifactPath[] = [
     sharePolicy: "local-declassified",
     cli: "openskill-kit osk learn --debug-learning",
     notes: ["Observation, factor, hypothesis, and memory-admission audit trail. Produced by --raw --surface-file <path>."]
+  },
+  {
+    key: "learning-memory",
+    label: "Durable learning memory store",
+    relativePath: ".openskill-kit/learn-v2/learning-memory/store.json",
+    kind: "file",
+    lifecycle: "debug",
+    sharePolicy: "local-only",
+    cli: "openskill-kit osk learn --raw --surface-file <path> --apply",
+    notes: ["Canonical local-only store for accumulated observations, hypotheses, and memory-admission decisions across applied runs."]
   },
   {
     key: "skill-ontology",
