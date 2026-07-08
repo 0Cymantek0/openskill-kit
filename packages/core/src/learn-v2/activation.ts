@@ -423,9 +423,12 @@ function scoreEntry(
   if (doesNotApplyHits.length) {
     return baseMatch(entry, 0, doesNotApplyHits.map((condition) => `does-not-apply:${condition}`), true, feedback);
   }
-  const suppressedBy = entry.negativeTriggers.map(normalizeText).filter((trigger) => query.negativeSignals.has(trigger));
+  const suppressedBy = [
+    ...entry.negativeTriggers.map(normalizeText).filter((trigger) => query.negativeSignals.has(trigger)),
+    ...matchingConditions(entry.negativeTriggers, query.queryConditionText, query.queryConditionTokens)
+  ];
   if (suppressedBy.length) {
-    return baseMatch(entry, 0, suppressedBy.map((trigger) => `negative-trigger:${trigger}`), true, feedback);
+    return baseMatch(entry, 0, [...new Set(suppressedBy)].map((trigger) => `negative-trigger:${trigger}`), true, feedback);
   }
   if (feedback) {
     const policy = decideLearnV2OutcomePolicy(entry.conceptId, feedback);

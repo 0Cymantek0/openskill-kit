@@ -6822,7 +6822,8 @@ describe("learn-v2 substrate", () => {
       reasons: ["behavior-key", "generated-preference-id", "learn-v2-evidence-link"]
     });
     expect(context.compactMarkdown).toContain("already covered by relevant preference nodes");
-    expect(context.compactMarkdown).toContain(`${active.id} covered by pref_${active.id}`);
+    expect(context.compactMarkdown).toContain("Prefer focused parser regression tests before parser changes.");
+    expect(context.compactMarkdown).toContain(`Covered by pref_${active.id}`);
     expect(context.compactMarkdown).not.toContain(`- ${active.title}: score`);
   });
 
@@ -7416,6 +7417,67 @@ describe("learn-v2 substrate", () => {
     expect(context.compactMarkdown).toContain("Do not apply when: User explicitly asks to skip parser tests");
     expect(context.compactMarkdown).toContain("Negative triggers: user says skip parser tests");
     expect(context.compactMarkdown).toContain("Commands: npm test -- parser");
+  });
+
+  it("renders synced conditional UI behavior in task context and suppresses query negative triggers", async () => {
+    const root = await tempProject();
+    const now = new Date("2026-06-30T00:13:00Z");
+    const [base] = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("task_context_ui_dark_card", "Use orange primary CTA buttons inside dark cards.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/**"],
+          taskTypes: ["ui-design-change"]
+        },
+        conditions: {
+          appliesWhen: ["ui.theme=dark", "component.container=card"],
+          doesNotApplyWhen: ["explicit color override"]
+        },
+        activationHints: {
+          phrases: ["dark card CTA", "dark card button"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: ["explicit color override"]
+        },
+        risk: "low"
+      }
+    ], now);
+    const active = {
+      ...base!,
+      title: "Dark Card CTA Color",
+      canonicalBehavior: "Use orange primary CTA buttons inside dark cards.",
+      status: "active" as const
+    };
+    await writeLearnV2ConceptStore(root, [active], now);
+    await syncLearnV2ActiveConcepts(root, [active], new Date("2026-06-30T00:14:00Z"));
+
+    const context = await getAgentTaskContext({
+      projectRoot: root,
+      query: "dark card CTA component styling",
+      paths: ["packages/site/src/NewDashboardCard.tsx"],
+      limit: 8
+    });
+
+    expect(context.learnV2Activation.query.taskTypes).toContain("ui-design-change");
+    expect(context.learnV2Activation.matches.some((match) => match.conceptId === active.id)).toBe(true);
+    expect(context.learnedConcepts.dedupedByPreference.some((match) => match.conceptId === active.id)).toBe(true);
+    expect(context.compactMarkdown).toContain("Dark Card CTA Color: Use orange primary CTA buttons inside dark cards.");
+    expect(context.compactMarkdown).toContain("Apply when: ui.theme=dark; component.container=card");
+    expect(context.compactMarkdown).toContain("Do not apply when: explicit color override");
+    expect(context.compactMarkdown).toContain("Negative triggers: explicit color override");
+    expect(context.compactMarkdown).not.toContain(root);
+
+    const suppressedContext = await getAgentTaskContext({
+      projectRoot: root,
+      query: "dark card CTA component styling with explicit color override",
+      paths: ["packages/site/src/NewDashboardCard.tsx"],
+      limit: 8
+    });
+    expect(suppressedContext.learnV2Activation.matches.some((match) => match.conceptId === active.id)).toBe(false);
+    expect(suppressedContext.learnV2Activation.suppressed.find((match) => match.conceptId === active.id)?.reasons)
+      .toContain("does-not-apply:explicit color override");
   });
 });
 

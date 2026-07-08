@@ -46,7 +46,8 @@ const semanticFamilies: Array<{ id: string; terms: string[] }> = [
   { id: "validation", terms: ["validate", "validation", "verify", "verification", "check", "ci", "build"] },
   { id: "privacy", terms: ["privacy", "redact", "redaction", "declassify", "declassified", "raw", "vault", "leak"] },
   { id: "mcp", terms: ["mcp", "tool", "tools", "resource", "resources", "server"] },
-  { id: "opencode", terms: ["opencode", "agent", "subagent", "model", "routing", "permission"] }
+  { id: "opencode", terms: ["opencode", "agent", "subagent", "model", "routing", "permission"] },
+  { id: "ui", terms: ["ui", "ux", "design", "visual", "theme", "dark", "light", "button", "cta", "card", "component", "layout", "surface"] }
 ];
 
 const familiesByTerm = new Map<string, Set<string>>();
@@ -217,6 +218,7 @@ function familyPairAliases(families: Set<string>): string[] {
   if (families.has("security") && families.has("privacy")) out.push("secret redaction", "credential privacy", "raw evidence leak");
   if (families.has("validation") && families.has("test")) out.push("verification command", "ci test", "test validation");
   if (families.has("mcp") && families.has("opencode")) out.push("opencode mcp", "agent tool routing", "mcp agent handoff");
+  if (families.has("ui")) out.push("ui design", "visual design", "component styling", "interface behavior");
   return out;
 }
 

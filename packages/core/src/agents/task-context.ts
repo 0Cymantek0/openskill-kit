@@ -303,8 +303,15 @@ function renderLearnV2ActivationMarkdown(learnedConcepts: AgentTaskContextResult
   }
   if (learnedConcepts.dedupedByPreference.length) {
     lines.push(`- ${learnedConcepts.dedupedByPreference.length} Learn v2 concept(s) already covered by relevant preference nodes.`);
-    for (const item of learnedConcepts.dedupeReasons.slice(0, 5)) {
-      lines.push(`  - ${item.conceptId} covered by ${item.preferenceIds.join(", ")} (${item.reasons.join(", ")})`);
+    const dedupeByConcept = new Map(learnedConcepts.dedupeReasons.map((item) => [item.conceptId, item]));
+    for (const match of learnedConcepts.dedupedByPreference.slice(0, 5)) {
+      const item = dedupeByConcept.get(match.conceptId);
+      lines.push(`  - ${match.title}: ${match.behavior}`);
+      lines.push(`    Covered by ${item?.preferenceIds.join(", ") ?? "preference graph"} (${item?.reasons.join(", ") ?? "deduped"}); score ${match.score}; confidence ${match.confidence}; risk ${match.risk}.`);
+      if (match.appliesWhen.length) lines.push(`    Apply when: ${match.appliesWhen.join("; ")}`);
+      if (match.doesNotApplyWhen.length) lines.push(`    Do not apply when: ${match.doesNotApplyWhen.join("; ")}`);
+      if (match.negativeTriggers.length) lines.push(`    Negative triggers: ${match.negativeTriggers.join("; ")}`);
+      if (match.preferredCommands.length) lines.push(`    Commands: ${match.preferredCommands.slice(0, 4).join("; ")}`);
     }
   }
   if (learnedConcepts.suppressed.length) {
@@ -320,6 +327,7 @@ function inferLearnV2TaskTypes(query: string | undefined, paths: string[], comma
   if (/\b(test|spec|fixture|regression|vitest|jest|pytest)\b/.test(text)) taskTypes.add("test-change");
   if (/\b(doc|docs|readme|markdown)\b/.test(text)) taskTypes.add("docs-change");
   if (/\b(security|secret|credential|auth|token)\b/.test(text)) taskTypes.add("security-change");
+  if (/\b(ui|ux|visual|design|theme|dark|light|button|cta|card|component|layout|surface)\b/.test(text)) taskTypes.add("ui-design-change");
   if (/\b(refactor|rewrite|architecture|dependency|package)\b/.test(text)) taskTypes.add("architecture-change");
   return [...taskTypes].sort();
 }
