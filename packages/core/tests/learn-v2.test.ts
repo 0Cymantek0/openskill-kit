@@ -3594,6 +3594,126 @@ describe("learn-v2 substrate", () => {
     expect(parserSplit.conceptIds).toEqual(expect.arrayContaining(parserChild.conceptIds));
   });
 
+  it("creates emergent term namespaces under detected skill parents", () => {
+    const cards = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("ui_motion_drawer_microinteraction", "Prefer spring microinteraction choreography for UI drawer motion.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/DrawerMotion.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        activationHints: {
+          phrases: ["spring microinteraction choreography", "drawer motion"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: []
+        }
+      },
+      {
+        ...behaviorAtom("ui_motion_menu_microinteraction", "Prefer spring microinteraction choreography for UI menu motion.", "positive"),
+        kind: "preference",
+        scope: {
+          level: "path",
+          paths: ["packages/site/src/MenuMotion.tsx"],
+          taskTypes: ["ui-design-change"]
+        },
+        activationHints: {
+          phrases: ["spring microinteraction choreography", "menu motion"],
+          pathGlobs: ["packages/site/src/**"],
+          commands: [],
+          negativeTriggers: []
+        }
+      }
+    ], new Date("2026-06-30T00:00:30Z"));
+
+    const namespaces = buildLearnV2SkillNamespaces(cards);
+    const labels = namespaces.map((namespace) => namespace.label);
+    const parent = namespaces.find((namespace) => namespace.label === "UI/UX design")!;
+    const microinteraction = namespaces.find((namespace) => namespace.label === "Microinteraction behavior")!;
+
+    expect(labels).toEqual(expect.arrayContaining([
+      "UI/UX design",
+      "Microinteraction behavior"
+    ]));
+    expect(microinteraction).toMatchObject({
+      status: "candidate",
+      parentNamespaceId: parent.id,
+      conceptIds: expect.arrayContaining(cards.map((card) => card.id)),
+      representativeSignals: expect.arrayContaining(["term:microinteraction"])
+    });
+    expect(microinteraction.hierarchyPath).toEqual(["UI/UX design", "Microinteraction behavior"]);
+
+    const operations = buildLearnV2SkillOntologyOperations(cards, namespaces);
+    expect(operations.some((operation) =>
+      operation.operation === "nest-namespace" &&
+      operation.namespaceIds.includes(parent.id) &&
+      operation.namespaceIds.includes(microinteraction.id)
+    )).toBe(true);
+    expect(operations.some((operation) =>
+      operation.operation === "create-namespace" &&
+      operation.namespaceIds.includes(microinteraction.id) &&
+      operation.rationale.includes("term:microinteraction")
+    )).toBe(true);
+  });
+
+  it("creates non-profiled namespaces from repeated unknown-domain terms", () => {
+    const cards = mergeLearnV2ConceptCards([
+      {
+        ...behaviorAtom("ops_runbook_quorum_freeze", "Prefer quorum freeze runbook checks before coordinator failover.", "positive"),
+        kind: "workflow",
+        scope: {
+          level: "path",
+          paths: ["packages/ops/src/coordinator.ts"],
+          taskTypes: ["coordinator-failover"]
+        },
+        activationHints: {
+          phrases: ["quorum freeze runbook", "coordinator failover"],
+          pathGlobs: ["packages/ops/src/**"],
+          commands: [],
+          negativeTriggers: []
+        }
+      },
+      {
+        ...behaviorAtom("ops_runbook_quorum_rebalance", "Prefer quorum freeze runbook checks before coordinator rebalance.", "positive"),
+        kind: "workflow",
+        scope: {
+          level: "path",
+          paths: ["packages/ops/src/rebalance.ts"],
+          taskTypes: ["coordinator-failover"]
+        },
+        activationHints: {
+          phrases: ["quorum freeze runbook", "coordinator rebalance"],
+          pathGlobs: ["packages/ops/src/**"],
+          commands: [],
+          negativeTriggers: []
+        }
+      }
+    ], new Date("2026-06-30T00:00:40Z"));
+
+    const namespaces = buildLearnV2SkillNamespaces(cards);
+    const profileLabels = new Set(["UI/UX design", "Parser behavior", "Security behavior", "Dependency policy", "Documentation behavior", "Verification workflow"]);
+    const emergent = namespaces.find((namespace) =>
+      namespace.label.includes("Quorum") &&
+      !profileLabels.has(namespace.label)
+    )!;
+
+    expect(emergent).toMatchObject({
+      status: "candidate",
+      conceptIds: expect.arrayContaining(cards.map((card) => card.id))
+    });
+    expect(emergent.representativeSignals).toEqual(expect.arrayContaining(["term:quorum"]));
+    expect(emergent.label).not.toBe("Project behavior");
+
+    const operations = buildLearnV2SkillOntologyOperations(cards, namespaces);
+    expect(operations.some((operation) =>
+      operation.operation === "create-namespace" &&
+      operation.namespaceIds.includes(emergent.id) &&
+      operation.rationale.includes("term:quorum")
+    )).toBe(true);
+  });
+
   it("reports conditional split operations for theme-variant UI namespaces", () => {
     const cards = mergeLearnV2ConceptCards([
       {

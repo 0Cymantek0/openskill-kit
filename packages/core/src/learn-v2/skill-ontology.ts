@@ -27,7 +27,9 @@ export interface LearnV2SkillOntologyDebugView {
 const stopWords = new Set([
   "about", "after", "again", "before", "behavior", "broad", "change", "changes", "concept",
   "context", "default", "files", "first", "learned", "prefer", "project", "review",
-  "should", "source", "task", "tasks", "tests", "using", "when", "with"
+  "should", "source", "task", "tasks", "tests", "using", "when", "with",
+  "button", "buttons", "color", "colors", "cta", "dark", "light", "landing", "page", "pages",
+  "parser", "verification", "adds", "future", "design", "checks"
 ]);
 
 const namespaceProfiles = [
@@ -260,22 +262,54 @@ function namespaceSignature(concept: LearnV2ConceptCard): { key: string; label: 
     ...(concept.conditions?.appliesWhen ?? []),
     ...(concept.conditions?.doesNotApplyWhen ?? [])
   ].join(" ").toLowerCase();
-  const signals = namespaceSignals(text);
+  const terms = topTerms(text);
+  const signals = uniqueInOrder([...namespaceSignals(text), ...topTerms(text, 8).map((term) => `term:${term}`)]);
   const profile = namespaceProfiles.find((item) => signals.some((signal) => signal.startsWith(item.prefix)));
   if (profile) return { key: profile.key, label: profile.label, signals };
-  const terms = topTerms(text);
-  const key = terms.length ? terms.join("-") : "project-behavior";
-  const label = terms.length ? `${titleCase(terms.join(" "))} behavior` : "Project behavior";
+  const signatureTerms = termSignals(signals).slice(0, 2);
+  const key = signatureTerms.length ? signatureTerms.join("-") : "project-behavior";
+  const label = signatureTerms.length ? `${titleCase(signatureTerms.join(" "))} behavior` : "Project behavior";
   return { key, label, signals: signals.length ? signals : terms.map((term) => `term:${term}`) };
 }
 
 function namespaceAssignments(concept: LearnV2ConceptCard): NamespaceAssignment[] {
   const signature = namespaceSignature(concept);
-  const profiled = namespaceProfiles
+  const matchedProfiles = namespaceProfiles
     .filter((profile) => signature.signals.some((signal) => signal.startsWith(profile.prefix)))
-    .map((profile) => ({ key: profile.key, label: profile.label, signals: signature.signals }));
+    .map((profile) => ({ key: profile.key, label: profile.label, prefix: profile.prefix, signals: signature.signals }));
+  const profiled = matchedProfiles.map(({ key, label, signals }) => ({ key, label, signals }));
   const children = childNamespaceAssignments(signature.signals);
-  return profiled.length ? uniqueAssignments([...profiled, ...children]) : [signature];
+  const emergent = emergentTermNamespaceAssignments(signature.signals, matchedProfiles);
+  return profiled.length ? uniqueAssignments([...profiled, ...children, ...emergent]) : uniqueAssignments([signature, ...emergent]);
+}
+
+function emergentTermNamespaceAssignments(
+  signals: string[],
+  parents: Array<{ key: string; label: string; prefix: string; signals: string[] }>
+): NamespaceAssignment[] {
+  const terms = termSignals(signals).slice(0, 4);
+  if (!terms.length) return [];
+  const parent = parents[0];
+  return terms.map((term) => {
+    const label = `${titleCase(term)} behavior`;
+    return {
+      key: `${parent?.key ?? "emergent"}-${term}`,
+      label,
+      parentKey: parent?.key,
+      hierarchyPath: parent ? [parent.label, label] : [label],
+      signals: uniqueInOrder([
+        `term:${term}`,
+        ...(parent ? signals.filter((signal) => signal.startsWith(parent.prefix)).slice(0, 4) : [])
+      ])
+    };
+  });
+}
+
+function termSignals(signals: string[]): string[] {
+  return signals
+    .filter((signal) => signal.startsWith("term:"))
+    .map((signal) => signal.slice("term:".length))
+    .filter((term) => term.length >= 4 && !stopWords.has(term));
 }
 
 function childNamespaceAssignments(signals: string[]): NamespaceAssignment[] {
@@ -538,7 +572,7 @@ function tokenOverlap(left: string, right: string): number {
   return union ? intersection / union : 0;
 }
 
-function topTerms(text: string): string[] {
+function topTerms(text: string, limit = 2): string[] {
   const counts = new Map<string, number>();
   for (const token of text.replace(/[^a-z0-9]+/g, " ").split(/\s+/)) {
     if (token.length < 4 || stopWords.has(token)) continue;
@@ -546,7 +580,7 @@ function topTerms(text: string): string[] {
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, 2)
+    .slice(0, limit)
     .map(([token]) => token);
 }
 
@@ -619,6 +653,10 @@ function operationRank(operation: LearnV2SkillOntologyOperation["operation"]): n
 
 function unique(values: string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function uniqueInOrder(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function titleCase(value: string): string {
