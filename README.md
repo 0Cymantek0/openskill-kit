@@ -91,6 +91,9 @@ Launch docs:
 
 ![OpenSkillKit Behavior Flow](docs/assets/openskillkit-behavior-flow.png)
 
+[Animated system map](docs/assets/openskillkit-system-map.mp4) built from
+[Hyperframes source](docs/visuals/openskillkit-system-map/).
+
 ```text
 safe events + explicit imports + task outcomes + OpenWorld artifacts
   -> signals and evidence
