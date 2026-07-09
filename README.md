@@ -1,48 +1,74 @@
 # OpenSkillKit
 
-OpenSkillKit is a local-first Adaptive Skill Graph for AI coding agents. It
-helps an existing harness learn how a repository wants work done without
-silently uploading prompts, importing memories, or taking over the editor. It
-turns safe workflow signals, reviewed interaction imports, explicit evidence,
-and OpenWorld research artifacts into an inspectable Behavior Profile. Reviewed
-behavior then compiles into Context Packs, skills, hooks, MCP descriptors,
-slash-command maps, host attach metadata, and shareable Project Behavior Packs.
+OpenSkillKit is a local-first behavior layer for AI coding agents. It lets a
+repository teach agents how work should be done there, without training a model,
+uploading private prompts, or silently importing user memories.
 
-OpenSkillKit is not model training and it does not need provider keys. The host
-agent still does the reasoning. OpenSkillKit supplies project-local behavior
-memory, evidence cards, review gates, verifier artifacts, and harness surfaces
-that agents already know how to use.
+The core idea is an Adaptive Skill Graph: safe project signals, reviewed task
+outcomes, explicit interaction imports, and grounded research artifacts become
+reviewable behavior. Accepted behavior then compiles into the surfaces agents
+already understand: Context Packs, skills, hooks, MCP tools, command maps,
+OpenCode plugin files, and Project Behavior Packs.
 
-The public user surface is 12 `/osk` command families: `init`, `status`,
-`task`, `learn`, `review`, `research`, `evolve`, `verify`, `compile`,
-`deploy`, `eval`, and `pack`. Low-level CLI commands and MCP tools remain
-available for automation, but daily harness workflows should start with these
-families.
+## Why It Exists
+
+AI coding agents still need project-specific judgment: which tests matter, which
+patterns are preferred, which commands are risky, where generated files live,
+how review feedback should change future behavior, and what evidence is safe to
+share. Most projects encode that knowledge in scattered docs, old PR comments,
+terminal habits, and reviewer memory.
+
+OpenSkillKit makes that knowledge explicit and auditable. It captures only
+approved local signals, turns them into behavior candidates, asks humans to
+review them, and ships the safe subset back to agents as normal project files.
+
+## What It Does
+
+- Loads relevant project behavior before an agent starts work.
+- Records safe task summaries after work finishes.
+- Learns review-gated preferences, workflows, command policies, and scoped
+  behavior from selected sources.
+- Runs Learn v2 raw-local learning over explicit files while keeping raw evidence
+  in a project-local vault and writing only declassified artifacts outward.
+- Builds OpenWorld research, anchors, verifier artifacts, and review-only skill
+  proposals for unfamiliar domains.
+- Compiles accepted behavior into Context Packs, scoped skills, MCP resources,
+  hooks, command maps, and host plugin bundles.
+- Exports Project Behavior Packs that exclude private events, raw prompts, raw
+  diffs, raw vault records, review drafts, and local run outputs by default.
+
+## What Makes It Different
+
+OpenSkillKit is not a prompt template, shared memory dump, or hosted telemetry
+service. Its design choices are narrower and more inspectable:
+
+| Principle | What it means |
+|---|---|
+| Local first | Project state lives under `.openskill-kit/`; raw evidence stays local unless a user explicitly exports safe artifacts. |
+| Review before activation | Learned behavior starts as candidates. `/osk review` decides what becomes active. |
+| Evidence over vibes | Preferences carry evidence cards, confidence, scope, counterevidence, and calibration data. |
+| Agent-native output | Behavior compiles into skills, MCP resources, hooks, and command files instead of requiring a new editor. |
+| Explicit privacy boundary | Raw prompts, raw diffs, secrets, hidden benchmark answers, private evidence blobs, and raw interaction imports are excluded from compiled and shared artifacts. |
+| Proof-aware claims | Evals, verifier reports, and proof ladders state what has been proven and what remains future work. |
 
 ## Quickstart
 
-For a coding harness, OpenCode is the primary full-feature target. Generic MCP,
-Codex, Claude Code, and Cursor attach paths are available with conservative
-preview-first behavior.
+OpenCode is the primary full-feature harness target. Generic MCP, Codex, Claude
+Code, and Cursor attach paths are available with conservative preview-first
+behavior.
 
 ```bash
 npm install
 npm run build
 
-# Preview setup, then re-run with --yes when the plan is acceptable
+# Preview setup first, then apply only after reviewing the plan.
 npx openskill-kit osk setup --host opencode
 npx openskill-kit osk setup --host opencode --yes
 
-# Preview uninstall, then apply. Local .openskill-kit state is preserved unless --delete-state is used.
+# Preview uninstall first. Local .openskill-kit state is preserved unless --delete-state is used.
 npx openskill-kit osk uninstall --host opencode
 npx openskill-kit osk uninstall --host opencode --yes
 ```
-
-When attached through MCP, the harness should call `osk_get_status`
-first, route `/osk ...` requests through the compiled command map, and fall back
-to the matching CLI command only when MCP is unavailable. Learned behavior stays
-inactive until review accepts it. Deploy/apply flows are preview-first and
-approval-gated.
 
 Generic MCP fallback:
 
@@ -53,6 +79,7 @@ npx openskill-kit agent attach-plugin --host generic-mcp --dry-run
 
 Launch docs:
 
+- [Quickstart](docs/quickstart.md)
 - [OpenCode harness guide](docs/harnesses/opencode.md)
 - [Codex harness guide](docs/harnesses/codex.md)
 - [Claude Code harness guide](docs/harnesses/claude-code.md)
@@ -60,49 +87,60 @@ Launch docs:
 - [MCP profiles](docs/mcp-profiles.md)
 - [Privacy by command](docs/security/privacy-by-command.md)
 
-This creates `.openskill-kit/`, records only explicitly supplied safe metadata,
-stages candidate behavior for Learning Review, compiles a Context Pack and
-project behavior skill, and writes an attachable plugin under
-`.openskill-kit/compiled/plugin/`. The plugin includes `.agent-plugin`,
-`.mcp.json`, command maps, MCP profiles, skills, install guides, behavior
-artifacts, and privacy gates. It does not copy raw prompts, raw diffs, hidden
-benchmark answers, raw interaction imports, private evidence blobs, review
-queues, or user memories into compiled artifacts.
-
 ## How It Works
 
+![OpenSkillKit Behavior Flow](docs/assets/openskillkit-behavior-flow.png)
+
 ```text
-events -> signals -> Preference Kernel -> Behavior Profile
+safe events + explicit imports + task outcomes + OpenWorld artifacts
+  -> signals and evidence
+  -> Preference Graph and Learn v2 concept store
+  -> human review gates
   -> Active Behavior Layer
-  -> Context Pack + Agent Skills + hooks + MCP config + Project Behavior Pack
+  -> Context Pack + skills + hooks + MCP resources + command maps + behavior packs
 ```
 
-OpenSkillKit stores raw lifecycle events in append-only JSONL only when privacy
-settings allow it. Secret-like content is redacted before storage. Signals and
-Preference Nodes stay reviewable as normal project files.
+```mermaid
+flowchart LR
+  A["Safe project signals<br/>task summaries, git metadata, explicit imports"] --> B["Evidence and signal extraction"]
+  B --> C["Preference Graph<br/>Learn v2 concept store"]
+  C --> D{"Human review"}
+  D -->|accept, lock, narrow| E["Active Behavior Layer"]
+  D -->|reject, demote, supersede| F["Inactive or review-only records"]
+  E --> G["Compiled agent surfaces"]
+  G --> H["Context Pack"]
+  G --> I["Scoped skills"]
+  G --> J["MCP resources and tools"]
+  G --> K["Hooks and command maps"]
+  G --> L["Project Behavior Packs"]
+```
 
-The OpenWorld layer now covers task records, leakage audits, local source
-discovery plans, source ingestion/cache, explicit web source fetches, Anchor
-Cards, named retrieval adapter contracts with allow-web gates, deterministic
-package/language docs-repo URL discovery, execution traces, source-plan execution artifacts, visible/holdout virtual verifier
-generation with traceable `file-exists`/`file-contains` checks, review-only candidate skill artifacts, local-process or opt-in Docker sandbox execution of
-generated verifier scripts, verifier quality scoring, bounded verifier
-refinement/eval report records, candidate revision artifacts, local-process
-sandbox repair probes with optional caller-provided Docker mode, and review-only promotion proposals. It also has a static
-hidden-oracle denied-path harness that scans generated artifacts without reading
-oracle files. It still does not perform broad search-engine-backed web crawling,
-built-in LLM skill generation, managed container runtime/pools, or hidden-oracle
-benchmark evaluation yet.
+The host agent still does the reasoning. OpenSkillKit supplies project-local
+behavior memory, scoped retrieval, review gates, verifier artifacts, command
+policy, and installable harness surfaces.
+
+### Core Planes
+
+| Plane | Purpose | Main artifacts |
+|---|---|---|
+| Preference Kernel | Stores reviewed preferences, workflows, evidence, calibration, and retrieval traces. | `.openskill-kit/preferences/`, compiled Context Pack, dynamic skills |
+| Learn v2 | Learns scoped behavior from explicit raw/local evidence without propagating raw content. | concept store, review queue, activation index, eval reports, debug traces |
+| OpenWorld | Grounds unfamiliar-domain skills with leakage-audited sources and verifier artifacts. | task reports, Anchor Cards, virtual suites, evolution runs |
+| Plugin Bundle | Publishes agent-facing command maps, MCP descriptors, profiles, hooks, and OpenCode files. | `.openskill-kit/compiled/plugin/` |
+| Packs and Sync | Shares reviewed behavior safely across machines or teams. | signed/encrypted Project Behavior Packs |
 
 ## Core Commands
+
+The public surface is 12 `/osk` command families. Harnesses should route to MCP
+facade tools first and fall back to CLI only when MCP is unavailable.
 
 | Family | Use it for | First route |
 |---|---|---|
 | `/osk init` | Set up local state and preview attach. | `osk_get_status` |
-| `/osk status` | Show readiness, review counts, plugin state, OpenWorld proof boundary, and next actions. | `osk_get_status` |
+| `/osk status` | Show readiness, review counts, plugin state, proof boundary, and next actions. | `osk_get_status` |
 | `/osk task` | Load behavior before work and record a safe finish summary after work. | `osk_get_task_context` |
-| `/osk learn` | Plan and run review-gated learning from selected safe sources. | `osk_plan_learning_sources` |
-| `/osk review` | Approve, reject, edit, lock, or demote candidate behavior. | `osk_review_behavior` |
+| `/osk learn` | Learn from current session, selected safe sources, explicit imports, or raw local files. | `osk_plan_learning_sources` |
+| `/osk review` | Approve, reject, edit, lock, demote, merge, split, or narrow candidate behavior. | `osk_review_behavior` |
 | `/osk research` | Build leakage-audited OpenWorld source and anchor plans. | `osk_run_openworld_workflow` |
 | `/osk evolve` | Refine source-grounded candidate skills through verifier artifacts. | `osk_run_openworld_workflow` |
 | `/osk verify` | Check descriptors, compiled artifacts, verifier suites, and proof limits. | `osk_verify_behavior` |
@@ -111,11 +149,16 @@ benchmark evaluation yet.
 | `/osk eval` | Measure behavior quality, calibration, and context overhead. | `osk_run_eval` |
 | `/osk pack` | Export, sign, verify, import, or apply reviewed behavior packs. | `osk_pack_behavior` |
 
-See [`docs/commands.md`](docs/commands.md) for the full generated command map.
-For Learn v2 packaging and integration, `openskill-kit osk learn --artifact-paths`
-prints the stable project-root-relative artifact contract, including CLI/MCP entry
-points, share policy, team-sharing boundary, and production install startup notes.
-The lower-level CLI remains stable for scripts and advanced users:
+See [docs/commands.md](docs/commands.md) for the generated command map.
+
+For Learn v2 packaging and integration:
+
+```bash
+openskill-kit osk learn --artifact-paths
+```
+
+This prints stable project-root-relative artifact paths, CLI/MCP entry points,
+share policy, team-sharing boundary, and production install notes.
 
 Compatibility commands remain available for manual skill scaffolding:
 
@@ -126,33 +169,68 @@ openskill-kit test .openskill-kit/runs/<run-id>/candidate/<skill>
 openskill-kit evaluate .openskill-kit/runs/<run-id>/candidate/<skill>
 ```
 
-`review --tui` supports `e N` for sanitized evidence cards, `p N` for
-compile/privacy preview, `wa/wr/wl/wd N` for workflow candidate decisions, and
-`c` for calibration reliability while reviewing a candidate batch.
+## Learn v2 In Plain Terms
+
+Learn v2 is the current raw-local learning plane. It can inspect explicit local
+evidence files, but it does not turn raw evidence into shared behavior directly.
+
+```mermaid
+flowchart TD
+  A["Explicit raw/local source"] --> B["Project relevance + privacy gate"]
+  B -->|accepted apply| C["Project-local raw vault"]
+  B -->|preview or rejected| D["No raw vault write"]
+  C --> E["Declassified normalized evidence"]
+  E --> F["Task episode reconstruction"]
+  F --> G["Behavior atoms + concept cards"]
+  G --> H["Quality gates<br/>conflicts, counterevidence, scope, privacy"]
+  H --> I["Review queue"]
+  I -->|accepted or locked| J["Activation index + compiled behavior"]
+  I -->|rejected, dormant, demoted| K["Inactive, retained for audit"]
+  J --> L["Runtime task context and command policy"]
+```
+
+1. A user selects files or safe sources.
+2. OSK gates them for project relevance and privacy.
+3. Raw content stays in the project-local Learn v2 vault on apply.
+4. Declassified normalized evidence becomes task episodes.
+5. Deterministic extractors and optional sanitized OpenCode request artifacts
+   propose behavior atoms, conditions, activation hints, scopes, and
+   counterevidence.
+6. Review queues show behavior deltas, evidence, quality gates, conflicts, and
+   debug traces.
+7. Accepted or locked concepts compile into scoped behavior resources and
+   command policy.
+
+Recent Learn v2 work completed first-class ontology dormancy, changed-file and
+dead-code/reachability audits, descriptor/plugin parity, behavior-evaluator
+request artifacts, artifact path manifests, outcome policy gates, activation
+diagnostics, and docs coverage for the reviewed release-candidate scope.
+
+Useful docs:
+
+- [`/osk learn`](docs/commands/learn.md)
+- [Model routing](docs/model-routing.md)
+- [Proof ladder](docs/proof-ladder.md)
+- [OpenWorld proof levels](docs/openworld/proof-levels.md)
 
 ## Safety And Privacy
 
 - Local-only behavior is default.
-- Raw prompts and raw diffs are not stored unless enabled in config.
+- Raw prompts and raw diffs are not stored unless explicitly enabled.
 - Secret-like values are redacted before event storage.
-- Interaction imports default to dry-run, write source-hash summaries, and do
-  not copy raw session exports into OpenSkillKit artifacts.
-- Detection flags possible session/export files as high-risk explicit-import
-  surfaces, reports hook/override/MCP risks, and gives safe next actions; it
-  does not import them silently.
-- Invalid custom redaction regexes are reported by `doctor --full` and skipped
-  during event capture.
+- User/global memories are never imported silently.
+- Interaction imports default to preview/dry-run.
+- Raw local learning writes raw blobs only to the project-local Learn v2 vault
+  and keeps compiled/shared outputs declassified.
 - Evidence Cards explain learned preferences without storing raw private prompts.
-- Memory integrity checks block poisoned auto-apply candidates and report risks
-  before compile.
+- Memory integrity checks block poisoned or unsafe auto-apply candidates.
 - Generated skills and hooks are scanned before install.
-- Managed AGENTS/CLAUDE install preserves user-authored content outside the
-  OpenSkillKit block and supports dry-run diffs plus managed uninstall.
-- Install writes receipts under `.openskill-kit/installs/`.
+- Managed AGENTS/CLAUDE install preserves user-authored content outside managed
+  OpenSkillKit blocks and supports dry-run diffs plus managed uninstall.
 - Project Behavior Packs exclude private events, raw signals, interaction import
-  runs, review drafts, and run outputs by default.
-- Encrypted sync envelopes wrap the already privacy-filtered pack with
-  AES-256-GCM and require an explicit passphrase or passphrase file.
+  runs, review drafts, run outputs, and raw vault content by default.
+- Encrypted sync wraps the already privacy-filtered pack with AES-256-GCM and
+  requires an explicit passphrase or passphrase file.
 
 ## Agent Integration
 
@@ -162,7 +240,7 @@ The stdio MCP server exposes the adaptive runtime:
 openskill-kit-mcp
 ```
 
-Public-profile facade tools:
+The default public MCP profile exposes 12 facade tools:
 
 - `osk_get_status`
 - `osk_get_task_context`
@@ -177,84 +255,84 @@ Public-profile facade tools:
 - `osk_pack_behavior`
 - `osk_get_docs_help`
 
-Advanced-profile tools remain available for scripts and lower-level automation,
-including interaction imports, manifest install/uninstall, hook install,
-OpenWorld source/verifier primitives, encrypted packs, signing, maintenance, and
-`osk_get_learn_v2_artifact_paths` for the same stable Learn v2 artifact-path
-contract exposed by the CLI.
-Use `OPENSKILLKIT_MCP_PROFILE=advanced` to expose them; default runtime exposure is
-the 12 public facade tools.
+Use `OPENSKILLKIT_MCP_PROFILE=advanced` for lower-level automation tools such
+as interaction imports, manifest install/uninstall, OpenWorld primitives,
+encrypted packs, signing, maintenance, and
+`osk_get_learn_v2_artifact_paths`.
 
-Legacy skill drafting, audit, test, evaluation, install, list, and inspect tools
-remain available for compatibility.
+Recommended harness lifecycle:
 
-`osk_get_status` is the recommended first call for a coding harness. It
-returns initialization status plus compiled plugin readiness, attach path,
-published skills/capabilities, MCP command, privacy exclusions, approval gates,
-and next actions.
+1. Call `osk_get_status` at startup or `/osk status`.
+2. Call `osk_get_task_context` before editing.
+3. Do the work in the host agent.
+4. Call `osk_finish_task` with a safe summary, touched files, command statuses,
+   and outcome.
+5. Review candidate behavior with `/osk review`.
+6. Compile/deploy after review.
 
-For normal coding work, call `osk_get_task_context` before editing and
-`osk_finish_task` after verification. The finish call records a safe
-task summary, commands, touched files, and outcome, then runs the same learning
-and review queue path as the CLI. Do not send raw prompts, raw diffs, secrets,
-or hidden benchmark answers as the summary.
-
-For cross-agent session learning, route `/osk import session` to
-`osk_import_interaction_source` and keep the first pass as a preview unless the
-user approves applying it. Route `/osk session imports` to
-`osk_list_interaction_imports` for read-only import receipts. Route
-`/osk explain import` to `osk_explain_interaction_import` before learning from
-an imported source when a harness needs privacy state and learning next actions. Route
-`/osk interaction pool` to `osk_get_interaction_pool` for normalized import
-metadata that never includes raw transcript content. Route
-`/osk import adapters` to `osk_list_interaction_adapters` before import when a
-harness needs accepted formats, adapter status, and the explicit-import-only
-privacy policy.
-
-For unfamiliar-domain skill work, route `/osk openworld doctor`,
-`/osk openworld source plan`, `/osk openworld refine`, and
-`/osk openworld report` to the OpenWorld MCP tools. Route
-`/osk openworld promote review` to `osk_openworld_promote_review` only after
-explicit approval; it creates a review-only proposal and never activates
-behavior or claims hidden-oracle benchmark proof. Proof wording lives in
-[`docs/openworld/proof-levels.md`](docs/openworld/proof-levels.md) and the
-product-wide ladder in [`docs/proof-ladder.md`](docs/proof-ladder.md).
+Do not send raw prompts, raw diffs, secrets, hidden benchmark answers, or raw
+transcript content as task summaries.
 
 ## Project Owner Workflow
 
 1. Initialize the project.
-2. Let the agent record useful lifecycle events.
-3. Review candidates in small batches.
-4. Compile and install the Active Behavior Layer.
-5. Commit the safe subset of `.openskill-kit/`.
-6. Export a Project Behavior Pack for contributors when needed.
+2. Let agents record safe lifecycle events and finish summaries.
+3. Import richer evidence only through explicit preview-first commands.
+4. Review candidates in small batches.
+5. Compile and install the Active Behavior Layer.
+6. Commit the safe subset of `.openskill-kit/`.
+7. Export a Project Behavior Pack for contributors when needed.
 
 See [docs/release-checklist.md](docs/release-checklist.md) for publish checks
 and [examples/project-behavior-demo](examples/project-behavior-demo) for a
 static before/after behavior fixture.
 
-## Current Boundary
+## Current Strengths
 
-This release implements the production spine: adaptive config, event store,
-redaction with config validation, deterministic and proposal-based signal
-extraction, Preference Graph, Evidence Cards, memory integrity checks, Learning
-Review, extractor registry, v2 preference metadata, calibration from review outcomes,
-scope/evidence/eval-aware calibration, progressive task/path-aware retrieval with
-budget traces, encrypted privacy-safe sync envelopes,
-target-aware context/skill/manifest/hook/MCP/plugin compilation, standalone hook scripts,
-managed AGENTS/CLAUDE previews and installer, plugin output, MCP config
-generation, host MCP attach preview/apply with detection of invalid/conflicting
-MCP configs, Codex project `.codex/config.toml` attach support, env-bound project root, plugin attachment health in status/bootstrap,
-project skill install, Project Behavior Pack
-export/sign/verify/inspect/diff/review/apply, behavior evals, maintenance
-commands, import diff gates, external-agent eval prompt harness, CLI, MCP tools,
-tests, and smoke coverage.
+- End-to-end local behavior lifecycle: init, learn, review, compile, deploy,
+  eval, verify, and pack.
+- Public `/osk` facade that keeps harness integrations small and stable.
+- Rich Learn v2 artifact trail: relevance gates, vault status, episodes,
+  concept cards, activation indexes, debug traces, conflict/counterevidence
+  ledgers, eval reports, and artifact manifests.
+- Strong privacy posture around raw evidence, compiled artifacts, packs, and MCP
+  output sanitization.
+- Proof-aware documentation and release checks that avoid overclaiming hidden
+  benchmark or real-agent A/B success.
+- OpenCode plugin bundle with command maps, generated agents, model routing,
+  hooks, MCP descriptors, and parity tests.
 
-Compiled skills include the broad `project-behavior` skill plus scoped dynamic
-shards such as `project-testing`, `project-security`, and `project-architecture`
-when matching active preferences exist. Agents can load the small shard instead
-of the full project behavior when task scope is narrow.
+## Current Boundary And Gaps
 
-Future depth should focus on larger golden scenario packs, hosted sync, review
-UI polish, and real external-agent A/B evals.
+Implemented now: adaptive config, event store, redaction validation, signal
+extraction, Preference Graph, Evidence Cards, Learning Review, calibration,
+task/path-aware retrieval, Learn v2 raw-local learning, sanitized model request
+artifacts, OpenWorld verifier artifacts, behavior evals, plugin compilation,
+MCP facades, host attach previews, Project Behavior Packs, release checks, and
+smoke coverage.
 
+Still intentionally limited:
+
+- No hosted sync service yet.
+- No raw-to-model dispatch; `opencode-host-raw-allowed` remains a reserved
+  future policy and is rejected.
+- No broad search-engine-backed crawler for OpenWorld.
+- No managed container runtime or verifier pool.
+- No claim of hidden-oracle benchmark proof.
+- Real external-agent A/B evaluation is opt-in/future depth, not the default
+  deterministic proof boundary.
+- Review UI polish and larger golden scenario packs remain future work.
+
+## Documentation Map
+
+- [Concepts](docs/concepts.md)
+- [Architecture](docs/architecture.md)
+- [Configuration](docs/configuration.md)
+- [Commands](docs/commands.md)
+- [Skill format](docs/skill-format.md)
+- [Agent plugin bundle](docs/agent-plugin-bundle.md)
+- [Security model](docs/security-model.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Examples](docs/examples.md)
+- [Release checklist](docs/release-checklist.md)
+- [Development plan](docs/dev-plan.md)

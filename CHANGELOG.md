@@ -4,6 +4,10 @@
 
 Experimental Learn v2 deterministic/raw-local scaffold:
 
+- Documentation refresh: README now explains the problem, novelty, architecture,
+  safety model, command surface, Learn v2 status, strengths, and current gaps in
+  a shorter reader-first structure; Learn v2 command and architecture docs now
+  state the 2026-07-08 audit outcome and proof boundary.
 - Activation quality gates now consider concept status, evidence, and outcome
   feedback before surfacing matches, and suppress matches tied to harmful or
   superseded outcomes.

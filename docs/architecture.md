@@ -283,6 +283,47 @@ Project Behavior Packs include project identity, schema compatibility, source me
 
 Encrypted sync wraps privacy-filtered behavior packs. Raw event logs and private runtime state stay local by default.
 
+## Learn v2 Raw-Local Learning Plane
+
+Learn v2 is the newer learning plane for explicit raw/local evidence. It exists
+to extract durable project behavior from richer local traces without converting
+raw transcripts, raw diffs, shell output, or private paths into compiled or
+shared artifacts.
+
+The core flow is:
+
+```text
+explicit source file or safe source
+  -> project relevance gate
+  -> local raw vault on apply
+  -> declassified normalized evidence
+  -> task episodes
+  -> behavior atoms and concept cards
+  -> review queue, eval, debug traces, activation index
+  -> accepted/locked concepts in compiled behavior
+```
+
+Key boundaries:
+
+- Raw sources are explicit-file or safe-metadata inputs only.
+- Raw blobs stay under `.openskill-kit/learn-v2/raw-vault/` and are excluded
+  from compile, pack, sync, and plugin outputs.
+- Model assistance uses sanitized OpenCode request artifacts only. Raw-to-model
+  execution is reserved and rejected.
+- Concept activation is scoped by query, paths, commands, task types, conditions,
+  negative triggers, counterevidence, outcome telemetry, and lifecycle state.
+- Review writes reconcile compatibility Preference/Workflow graph nodes so
+  rejected, one-off, superseded, demoted, or dormant concepts do not remain
+  active through older graph projections.
+
+The 2026-07-08 Learn v2 audit closed the release-candidate gaps around ontology
+dormancy, descriptor/plugin parity, dead-code/reachability documentation,
+changed-file matrix documentation, behavior-evaluator artifacts, stable artifact
+path manifests, and documentation coverage. The remaining architectural gaps are
+intentional product boundaries: no raw-to-model dispatch, no hidden-oracle proof,
+no broad web crawler, no managed verifier container pool, and no default
+real-agent A/B proof.
+
 ## Behavior Evals
 
 Current eval tracks are useful but not paper-level proof:

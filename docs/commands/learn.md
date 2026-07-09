@@ -10,6 +10,21 @@ writes declassified compatibility records and analysis artifacts, reconstructs
 task episodes, mines declassified concept cards, then keeps activation
 review-gated.
 
+## Current Learn v2 Status
+
+The reviewed Learn v2 release-candidate scope is complete as of the
+2026-07-08 completion audit. The closed gates include first-class ontology
+dormancy, dead-code/reachability audit documentation, changed-file matrix
+documentation, descriptor and plugin bundle parity, behavior-evaluator request
+artifacts, stable artifact path manifests, activation diagnostics, and docs
+coverage.
+
+The proof boundary is still explicit. Built-in checks prove deterministic local
+replay, sanitized artifact validation, review-gated activation, and configured
+golden behavior cases. They do not claim raw-to-model dispatch, hidden-oracle
+benchmark proof, or default real-agent A/B success. Use the proof ladder docs
+when release notes, README copy, or status output need exact claim language.
+
 ## Source Selection
 
 | Source | Default | Policy | Notes |
